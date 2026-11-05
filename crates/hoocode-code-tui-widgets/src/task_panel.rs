@@ -33,6 +33,7 @@
 //! clock is [`TaskPanelComponent::ticking`]: the app re-renders every second
 //! while it is true.
 
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::collections::{HashMap, HashSet};
 
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
@@ -353,7 +354,13 @@ fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool) -> Line<'static>
         spans.push(Span::styled(label, style));
     }
     if hint {
-        spans.push(Span::styled(" · ctrl+g", st.dim_style()));
+        spans.push(Span::styled(
+            format!(
+                " · {}",
+                hoocode_code_tui_keybindings::key_hint_text("app.panel.focus")
+            ),
+            st.dim_style(),
+        ));
     }
     Line::from(spans)
 }
@@ -700,10 +707,15 @@ fn render_flight_plan(
     let row_inner = width.saturating_sub(4);
     let mut pane = if focused {
         let mut pane = Pane::new("Tasks");
-        pane.command = "/tasks · ctrl+g".to_string();
+        pane.command = format!(
+            "/tasks · {}",
+            hoocode_code_tui_keybindings::key_hint_text("app.panel.focus")
+        );
         pane.facts = tab_strip(model, view, false);
         pane.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
-        pane.hint = hint_line(&pick_hints(model, selected));
+        let owned = pick_hints(model, selected);
+        let refs: Vec<(&str, &str)> = owned.iter().map(|(k, a)| (k.as_str(), *a)).collect();
+        pane.hint = hint_line(&refs);
         pane
     } else {
         let mut pane = Pane::new("");
@@ -751,15 +763,22 @@ fn is_cancellable(task: &Task) -> bool {
 /// The hint foot's keys for the picked row: the moves, then only what Enter and
 /// `x` do on that row (the app's `open_task_panel_row`, the panel's `cancel_pick`).
 /// A plan item or a schedule job has neither, so its foot names none.
-fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(&'static str, &'static str)> {
-    let mut keys = vec![("↑↓", "move"), ("←→", "tab")];
+fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(String, &'static str)> {
+    let open = key_hint_text("app.panel.open");
+    let mut keys = vec![
+        (key_pair_hint("app.panel.up", "app.panel.down"), "move"),
+        (
+            key_pair_hint("app.panel.prevTab", "app.panel.nextTab"),
+            "tab",
+        ),
+    ];
     if let Some(task) = picked.and_then(|id| model.task(id)) {
         if task.action == Some(RowAction::Login) {
-            keys.push(("enter", "log in"));
+            keys.push((open.clone(), "log in"));
         } else if task.kind() == TaskKind::Subagent && task.agent.is_some() {
-            keys.push(("enter", "open its log"));
+            keys.push((open.clone(), "open its log"));
         } else if task.kind() == TaskKind::Shell && task.key.is_some() {
-            keys.push(("enter", "open output"));
+            keys.push((open.clone(), "open output"));
         }
         if is_cancellable(task) {
             let word = if task.kind() == TaskKind::Shell {
@@ -767,10 +786,10 @@ fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(&'static str, &'sta
             } else {
                 "cancel"
             };
-            keys.push(("x", word));
+            keys.push((key_hint_text("app.panel.cancel"), word));
         }
     }
-    keys.push(("esc", "back"));
+    keys.push((key_hint_text("app.panel.exit"), "back"));
     keys
 }
 

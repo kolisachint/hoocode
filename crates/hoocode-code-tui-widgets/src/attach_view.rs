@@ -5,7 +5,7 @@
 //! session. The prompt's stand-in takes the keyboard, so typed text goes
 //! nowhere.
 
-use hoocode_code_tui_keybindings::key_display_label;
+use hoocode_code_tui_keybindings::{key_display_label, key_hint_text};
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_render::Component;
@@ -38,11 +38,12 @@ impl AttachHeader {
     /// attached view's own (spec §4 c3); the parent mission and step number
     /// are not threaded yet, so the state word stays.
     pub fn text(&self, width: usize) -> String {
-        let fixed = format!("◆ {} ·  · {} · Esc back", self.agent_type, self.state);
+        let back = key_hint_text("app.subagent.detach");
+        let fixed = format!("◆ {} ·  · {} · {back} back", self.agent_type, self.state);
         let room = width.saturating_sub(visible_width(&fixed));
         let description = truncate_to_width(&self.description, room, "…", false);
         let line = format!(
-            "◆ {} · {} · {} · Esc back",
+            "◆ {} · {} · {} · {back} back",
             self.agent_type, description, self.state
         );
         // A row too narrow for the fixed parts still fits the screen.

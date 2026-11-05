@@ -6,6 +6,7 @@
 //! Shared pane chrome in `code-tui-widgets/src/console.rs`; keys and events
 //! are unchanged.
 
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -194,7 +195,14 @@ impl Component for UserMessageSelectorComponent {
                 )])];
             }
         }
-        console.hint = hints(&[("↑↓", "move"), ("enter", "fork"), ("esc", "close")]);
+        console.hint = hints(&[
+            (
+                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                "move",
+            ),
+            (key_hint_text("tui.select.confirm").as_str(), "fork"),
+            (key_hint_text("tui.select.cancel").as_str(), "close"),
+        ]);
         console.render(width)
     }
 

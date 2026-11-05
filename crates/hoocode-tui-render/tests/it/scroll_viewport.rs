@@ -564,19 +564,47 @@ fn the_prompt_is_not_painted_again_at_the_bottom() {
     );
 }
 
+/// The scroll and picker keys the status row names, installed as the keymap
+/// the app would install at startup. Without one the row has no key names.
+fn install_scroll_keys() {
+    let defs = [
+        ("app.scroll.lineUp", &["up", "k"][..]),
+        ("app.scroll.lineDown", &["down", "j"][..]),
+        ("app.scroll.pageUp", &["pageUp"][..]),
+        ("app.scroll.pageDown", &["pageDown"][..]),
+        ("app.scroll.exit", &["escape", "q"][..]),
+        ("tui.select.pageUp", &["pageUp"][..]),
+        ("tui.select.pageDown", &["pageDown"][..]),
+    ]
+    .into_iter()
+    .map(|(id, keys)| {
+        (
+            id.to_string(),
+            hoocode_tui_keys::KeybindingDefinition::new(keys, id),
+        )
+    })
+    .collect();
+    hoocode_tui_keys::set_keybindings(hoocode_tui_keys::KeybindingsManager::new(
+        defs,
+        std::collections::HashMap::new(),
+    ));
+}
+
 #[test]
 fn a_focused_picker_is_not_offered_the_arrows_or_escape_in_the_indicator() {
+    install_scroll_keys();
     let (mut tui, term, _) = setup();
     tui.set_focus(Some(options(&["Option A"])));
     tui.scroll_by_lines(-20);
     let status = status_row(&term);
-    assert!(status.contains("PgUp/PgDn page"), "{status}");
+    assert!(status.contains("pageUp/pageDown page"), "{status}");
     assert!(!status.contains("esc"), "{status}");
     assert!(!status.contains('\u{2191}'), "{status}");
 }
 
 #[test]
 fn the_default_indicator_offers_the_arrows_and_escape_only_at_the_prompt() {
+    install_scroll_keys();
     let mut status = ScrollStatus {
         top: 1,
         bottom: 9,
@@ -593,7 +621,7 @@ fn the_default_indicator_offers_the_arrows_and_escape_only_at_the_prompt() {
     assert!(prompt.contains("esc live"), "{prompt}");
     status.picker = true;
     let picker = default_scroll_status(&status);
-    assert!(picker.contains("PgUp/PgDn page"), "{picker}");
+    assert!(picker.contains("pageUp/pageDown page"), "{picker}");
     assert!(!picker.contains("esc"), "{picker}");
     assert!(!picker.contains('\u{2191}'), "{picker}");
 }

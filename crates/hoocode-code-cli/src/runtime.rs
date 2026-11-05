@@ -1968,6 +1968,13 @@ fn resource_listing(
         listing.context_files = context.agents_files;
         listing.context_warnings = context.warnings;
     }
+    // A theme file that did not load, or a theme name that is not one.
+    listing.theme_diagnostics = hoocode_code_tui_theme::theme_warnings()
+        .into_iter()
+        .map(|message| {
+            hoocode_code_resources::diagnostics::ResourceDiagnostic::warning(message, None)
+        })
+        .collect();
     // Dispatchable agents only when the Agent tool is on.
     if session.get_active_tool_names().iter().any(|t| t == "Agent") {
         let registry = hoocode_code_resources::agent_registry::load_agent_registry(
@@ -2956,20 +2963,23 @@ mod tests {
             true
         }
 
-        const CTRL_O: &str = "\x0f";
+        /// Ctrl+X, the leader. The tool output step is leader p (it was Ctrl+O, K-4).
+        const CTRL_X: &str = "\x18";
+
+        /// `n` tool output steps: each one is the leader, then p.
+        fn step_keys(n: usize) -> Vec<&'static str> {
+            (0..n).flat_map(|_| [CTRL_X, "p"]).collect()
+        }
 
         #[test]
         fn ctrl_o_cycles_outline_peek_full_and_back() {
             let outline = "outline · ";
-            let (drawn, _) = run(
-                json!({ "toolOutputView": "outline" }),
-                &[CTRL_O, CTRL_O, CTRL_O],
-            );
+            let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &step_keys(3));
             assert!(
                 in_order(&drawn, &[outline, "peek · ", "full · ", outline]),
                 "{drawn}"
             );
-            let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O, CTRL_O]);
+            let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &step_keys(2));
             assert!(
                 in_order(&drawn, &["peek · ", "full · ", outline]),
                 "{drawn}"
@@ -2981,7 +2991,7 @@ mod tests {
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
             assert!(drawn.contains("full · "), "{drawn}");
             assert!(!drawn.contains("outline · "), "{drawn}");
-            let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
+            let (drawn, _) = run(json!({ "toolOutputView": "full" }), &step_keys(1));
             assert!(in_order(&drawn, &["full · ", "outline · "]), "{drawn}");
         }
 
@@ -2995,18 +3005,18 @@ mod tests {
 
         #[test]
         fn the_cycled_choice_is_saved() {
-            let (_, session) = run(json!({ "toolOutputView": "outline" }), &[CTRL_O]);
+            let (_, session) = run(json!({ "toolOutputView": "outline" }), &step_keys(1));
             assert_eq!(session.settings().tool_output_view().as_str(), "peek");
-            let (_, session) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O]);
+            let (_, session) = run(json!({ "toolOutputView": "peek" }), &step_keys(1));
             assert_eq!(session.settings().tool_output_view().as_str(), "full");
-            let (_, session) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
+            let (_, session) = run(json!({ "toolOutputView": "full" }), &step_keys(1));
             assert_eq!(session.settings().tool_output_view().as_str(), "outline");
         }
 
         #[test]
         fn the_toggle_leaves_the_startup_header_compact() {
             // The header opens under `verbose`, not with the dial.
-            let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &[CTRL_O]);
+            let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &step_keys(1));
             assert!(in_order(&drawn, &["peek · "]), "{drawn}");
             assert!(
                 !drawn.contains("Compose — the message in your hands"),

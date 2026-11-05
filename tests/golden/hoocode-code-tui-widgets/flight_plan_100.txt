@@ -1,4 +1,4 @@
-  Tasks  /tasks · ctrl+g  plan 1/3 · agents 1/1 · mcp 1/1
+  Tasks  /tasks · ctrl+x g  plan 1/3 · agents 1/1 · mcp 1/1
  › ● Read the migration plan
    ◉ Port the task panel renderer
    ○ Add golden snapshots
@@ -7,10 +7,10 @@
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
 r0 c1-7 fg=#14141c bg=#5cc8bb bold
 r0 c8 fg=#e5e5e7 bg=#1e1e2a
-r0 c9-23 fg=#989898 bg=#1e1e2a
-r0 c24-33 fg=#e5e5e7 bg=#1e1e2a
-r0 c34-56 fg=#989898 bg=#1e1e2a
-r0 c57-99 fg=#e5e5e7 bg=#1e1e2a
+r0 c9-25 fg=#989898 bg=#1e1e2a
+r0 c26-35 fg=#e5e5e7 bg=#1e1e2a
+r0 c36-58 fg=#989898 bg=#1e1e2a
+r0 c59-99 fg=#e5e5e7 bg=#1e1e2a
 r1 c0-2 fg=#5cc8bb bg=#233239
 r1 c3 fg=#b5bd68 bg=#233239
 r1 c4 fg=#e5e5e7 bg=#233239

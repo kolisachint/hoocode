@@ -20,9 +20,12 @@ doctest = false
 hoocode-code-paths = { workspace = true }
 hoocode-code-tui-theme = { workspace = true }
 hoocode-tui-keys = { workspace = true }
+hoocode-tui-render = { workspace = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
+hoocode-tui-render = { workspace = true, features = ["golden"] }
+hoocode-tui-util = { workspace = true }
 regex = "1"
 tempfile = "3"
 

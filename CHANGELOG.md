@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: themes and keys (2026-11-05)
+- **Themes.** `/theme` lists `auto` (follows the system light or dark setting), the built-ins and your themes in `~/.hoocode/themes/`, and saves the choice to the global settings. A project's own `theme` setting wins, and the picker says so. New built-ins: `high-contrast`, `dusk`, `paper`.
+- **`"inherits": "<theme>"`** in a theme file takes the missing colours from another theme, so a custom theme can be a few lines. Reference copies of the built-ins and the schema are written to `~/.hoocode/themes/defaults/` on each upgrade.
+- **A bad theme file or unknown name** shows a warning and keeps the last good theme. The theme on/off toggles in `hoocode config` and the unused `theme_paths` setting are gone (old settings files still load).
+- **No Alt keys in the defaults. Ctrl+X is a leader key:** press it, then a letter (`m` model, `t` thinking, `e` external editor, `/` search the transcript, `?` all keys). A popup lists the leader keys after a short pause. Newline is Shift+Enter or Ctrl+X Enter.
+- **Enter while a turn runs steers it.** Ctrl+X `f` queues a follow-up, and Up on an empty prompt takes the last queued message back. Ctrl+R searches past prompts.
+- **Pickers, the tree and scroll mode use plain letters** (`j`/`k`, `g`/`G`, `q`, `?`). `/` starts typing a search. The approval card: `y` yes and `n` no answer at once, `a` selects always and Enter confirms.
+- **`~/.hoocode/keybindings.json`** takes a grouped form with `leader` and per-context bindings as well as the old flat form. Alt keys you set there still work. New `hoocode keybindings --defaults`, `check` and `--read`. See the keybindings page.
+
 ### Changed: a plainer, calmer screen (2026-11-04)
 - **Plain words everywhere.** The space words (SHIP, FUEL, CR, LANDED, HIT, CLEARANCE, HANGAR, mission, comms, satellites) are gone from the screen, help and notices. `scripts/ci/plain_words.sh` keeps them out.
 - **No header, logo or frames.** The start screen is two text lines. The prompt is one row (` › `). Under it a status line shows the view, session, model, context use, cost and what hoocode is doing now (`◉ working`, the last turn's result, `not signed in  /login`). Scroll and search position show there too.

@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use hoocode_code_tui_keybindings::{keybindings, KeybindingEntry};
+use hoocode_code_tui_keybindings::{key_hint_text, keybindings, KeybindingEntry};
 use hoocode_code_tui_theme::style_input;
 use hoocode_tui_components::Input;
 use hoocode_tui_keys::get_keybindings;
@@ -44,6 +44,10 @@ fn effective_keys(entry: &KeybindingEntry) -> Vec<String> {
 /// A key name with literal parts (`esc` for escape, lower case), so the
 /// console reads the same on macOS and Linux.
 fn lit_key(key: &str) -> String {
+    // A leader sequence keeps its step as typed: `ctrl+x T` is not `ctrl+x t`.
+    if let Some((lead, step)) = key.split_once(' ') {
+        return format!("{} {step}", lit_key(lead));
+    }
     key.split('+')
         .map(|part| {
             if part.eq_ignore_ascii_case("escape") {
@@ -57,8 +61,17 @@ fn lit_key(key: &str) -> String {
 }
 
 /// The single letter a key names, with its layer: `g` is plain, `ctrl+g` is
-/// ctrl, `alt+m` is alt. Chords with anything else name no cap.
+/// ctrl, `alt+m` is alt, and `ctrl+x m` (a leader sequence, K-P2) is leader
+/// with the step's own character, so `m` and `M` stay apart. Chords with
+/// anything else name no cap.
 fn layer_cap(key: &str) -> Option<(Layer, char)> {
+    if let Some((_, step)) = key.split_once(' ') {
+        let mut chars = step.chars();
+        return match (chars.next(), chars.next()) {
+            (Some(c), None) => Some((Layer::Leader, c)),
+            _ => None,
+        };
+    }
     let lower = key.to_ascii_lowercase();
     let (layer, letter) = match lower.split_once('+') {
         None => {
@@ -90,6 +103,8 @@ enum Layer {
     Plain,
     #[default]
     Ctrl,
+    /// The keys after the leader (`ctrl+x`, then one key).
+    Leader,
     Alt,
 }
 
@@ -98,7 +113,8 @@ impl Layer {
     fn next(self) -> Self {
         match self {
             Layer::Plain => Layer::Ctrl,
-            Layer::Ctrl => Layer::Alt,
+            Layer::Ctrl => Layer::Leader,
+            Layer::Leader => Layer::Alt,
             Layer::Alt => Layer::Plain,
         }
     }
@@ -107,6 +123,7 @@ impl Layer {
         match self {
             Layer::Plain => "plain",
             Layer::Ctrl => "ctrl",
+            Layer::Leader => "leader",
             Layer::Alt => "alt",
         }
     }
@@ -336,6 +353,8 @@ pub struct ControlsComponent {
     search: Rc<RefCell<Input>>,
     events: Vec<ControlsEvent>,
     focused: bool,
+    /// Problems in `keybindings.json` (errors, then cautions), shown under the groups.
+    problems: Vec<String>,
 }
 
 impl ControlsComponent {
@@ -347,7 +366,13 @@ impl ControlsComponent {
             search: Rc::new(RefCell::new(search)),
             events: Vec::new(),
             focused: false,
+            problems: Vec::new(),
         }
+    }
+
+    /// Replaces the problems shown under the groups. An empty list hides the section.
+    pub fn set_problems(&mut self, problems: Vec<String>) {
+        self.problems = problems;
     }
 
     /// The events the app has not collected yet.
@@ -359,7 +384,7 @@ impl ControlsComponent {
     fn tabs(&self) -> Line<'static> {
         let pal = Palette::current();
         let mut spans = Vec::new();
-        for layer in [Layer::Plain, Layer::Ctrl, Layer::Alt] {
+        for layer in [Layer::Plain, Layer::Ctrl, Layer::Leader, Layer::Alt] {
             if !spans.is_empty() {
                 spans.push(Span::raw("   ".to_string()));
             }
@@ -406,8 +431,28 @@ impl Component for ControlsComponent {
                 Palette::current().dim(),
             )])];
         }
+        if !self.problems.is_empty() {
+            let count = self.problems.len();
+            let noun = if count == 1 { "problem" } else { "problems" };
+            console.top.push(Line::from(vec![Span::styled(
+                format!("keybindings.json · {count} {noun}"),
+                Palette::current().warn(),
+            )]));
+            for problem in &self.problems {
+                console.top.push(Line::from(truncate_spans(
+                    vec![Span::styled(
+                        format!("  {problem}"),
+                        Palette::current().dim(),
+                    )],
+                    width,
+                )));
+            }
+        }
         // The hint row only promises what the pane does.
-        console.hint = hints(&[("tab", "layer"), ("esc", "close")]);
+        console.hint = hints(&[
+            (key_hint_text("tui.input.tab").as_str(), "layer"),
+            (key_hint_text("tui.select.cancel").as_str(), "close"),
+        ]);
         console.render(width)
     }
 

@@ -108,6 +108,7 @@ fn flight_path_search_counts_the_matches() {
     let _g = lock();
     let (tree, leaf) = fixture();
     let mut selector = TreeSelectorComponent::new(&tree, Some(leaf), 24, None, None);
+    selector.handle_input("/");
     for ch in "width".chars() {
         selector.handle_input(&ch.to_string());
     }

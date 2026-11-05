@@ -8,13 +8,22 @@
 //! `keybinding_layout` tests; the rationale for each key is in hoocode's
 //! `core/keybindings.ts`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::Duration;
 
-use hoocode_tui_keys::{KeybindingDefinition, KeybindingsManager, TUI_KEYBINDINGS};
+use hoocode_tui_keys::{
+    KeySequence, KeybindingDefinition, KeybindingsManager, LeaderKey, LeaderMachine,
+    TUI_KEYBINDINGS,
+};
 use serde_json::{Map, Value};
+
+use crate::config::{
+    effective_overrides, normalize_key, Context, ContextOverride, KeymapConfig, DEFAULT_LEADER,
+};
+use crate::defaults::context_of;
 
 /// One binding: id, default keys, description.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,90 +55,103 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "Suspend to background",
         ),
         // ── Compose — the message in your hands
-        entry("app.editor.external", &["alt+e"], "Open external editor"),
+        entry("app.editor.external", &["ctrl+x e"], "Open external editor"),
         entry(
             "app.input.voiceTranscribe",
-            &["alt+r"],
+            &["ctrl+x r"],
             "Record voice and transcribe into the editor",
         ),
         entry(
             "app.clipboard.pasteImage",
-            if windows { &["alt+v"] } else { &["ctrl+v"] },
+            if windows { &["ctrl+x v"] } else { &["ctrl+v"] },
             "Paste image from clipboard",
         ),
         entry(
             "app.clipboard.copyMessage",
-            &["alt+q"],
+            &["ctrl+x c"],
             "Copy the agent's last message to the clipboard",
         ),
         entry(
             "app.message.followUp",
-            &["alt+enter"],
+            &["ctrl+x f"],
             "Queue follow-up message",
         ),
         entry(
             "app.message.dequeue",
-            &["alt+up"],
-            "Restore queued messages",
+            &["ctrl+x d"],
+            "Take back the last queued message",
+        ),
+        entry(
+            "app.history.search",
+            &["ctrl+r"],
+            "Search prompt history (reverse, incremental)",
         ),
         // ── Steer — what the agent is before it runs
         entry(
             "app.mode.cycleForward",
-            &["shift+tab", "alt+a"],
+            &["shift+tab"],
             "Cycle agent mode (ask → plan → build → debug)",
         ),
         entry(
             "app.mode.cycleBackward",
-            &["shift+alt+a"],
+            &["ctrl+x a"],
             "Cycle agent mode backward",
         ),
-        entry("app.model.cycleForward", &["alt+m"], "Cycle to next model"),
+        entry(
+            "app.model.cycleForward",
+            &["ctrl+x m"],
+            "Cycle to next model",
+        ),
         entry(
             "app.model.cycleBackward",
-            &["shift+alt+m"],
+            &["ctrl+x M"],
             "Cycle to previous model",
         ),
         entry("app.model.select", &[], "Open model selector"),
         entry(
             "app.thinking.cycleForward",
-            &["alt+t"],
+            &["ctrl+x t"],
             "Cycle thinking level (off → … → high)",
         ),
         entry(
             "app.thinking.cycleBackward",
-            &["shift+alt+t"],
+            &["ctrl+x T"],
             "Cycle thinking level backward",
         ),
         // ── Read — what you see of what it did
         entry(
             "app.view.cycleForward",
-            &["alt+o"],
+            &["ctrl+x o"],
             "Cycle tool output view (outline → peek → full)",
         ),
         entry(
             "app.view.cycleBackward",
-            &["shift+alt+o"],
+            &["ctrl+x O"],
             "Cycle tool output view backward",
         ),
         entry(
             "app.tools.expand",
-            &["ctrl+o"],
+            &["ctrl+x p"],
             "Step tool output: outline → peek → full → outline",
         ),
-        entry("app.thinking.toggle", &["ctrl+t"], "Toggle thinking blocks"),
+        entry(
+            "app.thinking.toggle",
+            &["ctrl+x b"],
+            "Toggle thinking blocks",
+        ),
         entry(
             "app.tasks.cycleForward",
-            &["alt+l"],
+            &["ctrl+x l"],
             "Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)",
         ),
         entry(
             "app.tasks.cycleBackward",
-            &["shift+alt+l"],
+            &["ctrl+x L"],
             "Cycle task panel view backward",
         ),
         entry(
             "app.panel.focus",
-            &["ctrl+g"],
+            &["ctrl+x g"],
             "Show or hide the task panel",
         ),
         // ── Scroll — where in the transcript you are looking
@@ -145,23 +167,19 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         ),
         entry(
             "app.scroll.top",
-            &["ctrl+home"],
+            &["g"],
             "Jump to the start of the transcript",
         ),
-        entry(
-            "app.scroll.bottom",
-            &["ctrl+end"],
-            "Jump back to live output",
-        ),
-        entry("app.scroll.search", &["ctrl+r"], "Search the transcript"),
+        entry("app.scroll.bottom", &["G"], "Jump back to live output"),
+        entry("app.scroll.search", &["ctrl+x /"], "Search the transcript"),
         entry(
             "app.scroll.previousMessage",
-            &["ctrl+up"],
+            &["["],
             "Jump to your previous message",
         ),
         entry(
             "app.scroll.nextMessage",
-            &["ctrl+down"],
+            &["]"],
             "Jump to your next message",
         ),
         entry(
@@ -177,7 +195,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         // ── Go — sessions and places
         entry(
             "app.session.resume",
-            &["alt+h"],
+            &["ctrl+x h"],
             "Resume a session from history",
         ),
         entry("app.session.tree", &[], "Open session tree"),
@@ -185,25 +203,29 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry("app.session.fork", &[], "Fork current session"),
         entry(
             "app.session.changeDirectory",
-            &["alt+w"],
+            &["ctrl+x w"],
             "Change working directory (move to another repo without quitting)",
         ),
-        entry("app.settings.open", &["alt+s"], "Open settings"),
-        entry("app.hotkeys.open", &["alt+k"], "Show keyboard shortcuts"),
+        entry("app.settings.open", &["ctrl+x s"], "Open settings"),
+        entry(
+            "app.hotkeys.open",
+            &["ctrl+x ?", "ctrl+x k"],
+            "Show keyboard shortcuts",
+        ),
         // ── Overlays — live only while their surface is open
         entry(
             "app.scroll.lineUp",
-            &["up"],
+            &["up", "k"],
             "Scroll up a line (pinned view)",
         ),
         entry(
             "app.scroll.lineDown",
-            &["down"],
+            &["down", "j"],
             "Scroll down a line (pinned view)",
         ),
         entry(
             "app.scroll.exit",
-            &["escape"],
+            &["escape", "q"],
             "Leave the pinned view and follow live output",
         ),
         entry(
@@ -254,7 +276,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         ),
         entry(
             "app.subagent.attach",
-            &["ctrl+n"],
+            &["ctrl+x n"],
             "Attach to the subagent run of the last Agent block (read-only)",
         ),
         entry(
@@ -274,95 +296,106 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         ),
         entry(
             "app.session.togglePath",
-            &["alt+p"],
+            &["p"],
             "Toggle session path display",
         ),
         entry(
             "app.session.toggleSort",
-            &["alt+o"],
+            &["o"],
             "Toggle session sort order",
         ),
         entry(
             "app.session.toggleNamedFilter",
-            &["alt+n"],
+            &["n"],
             "Toggle named session filter",
         ),
-        entry("app.session.rename", &["alt+r"], "Rename session"),
-        entry("app.session.delete", &["alt+x"], "Delete session"),
+        entry("app.session.rename", &["r"], "Rename session"),
+        entry("app.session.delete", &["x"], "Delete session"),
         entry(
             "app.session.deleteNoninvasive",
             &["ctrl+backspace"],
             "Delete session when query is empty",
         ),
-        entry("app.models.save", &["alt+s"], "Save model selection"),
-        entry("app.models.enableAll", &["alt+a"], "Enable all models"),
-        entry("app.models.clearAll", &["alt+x"], "Clear all models"),
+        entry("app.models.save", &["s"], "Save model selection"),
+        entry("app.models.enableAll", &["a"], "Enable all models"),
+        entry("app.models.clearAll", &["x"], "Clear all models"),
         entry(
             "app.models.toggleProvider",
-            &["alt+g"],
+            &["g"],
             "Toggle all models for provider",
         ),
         entry(
             "app.models.reorderUp",
-            &["alt+up"],
+            &["shift+up"],
             "Move model up in order",
         ),
         entry(
             "app.models.reorderDown",
-            &["alt+down"],
+            &["shift+down"],
             "Move model down in order",
         ),
+        entry("app.models.category", &["c"], "Model: category"),
         entry(
             "app.tree.foldOrUp",
-            &["ctrl+left", "alt+left"],
+            &["h", "left"],
             "Fold tree branch or move up",
         ),
         entry(
             "app.tree.unfoldOrDown",
-            &["ctrl+right", "alt+right"],
+            &["l", "right"],
             "Unfold tree branch or move down",
         ),
-        entry("app.tree.editLabel", &["alt+l"], "Edit tree label"),
+        entry("app.tree.editLabel", &["e"], "Edit tree label"),
         entry(
             "app.tree.toggleLabelTimestamp",
-            &["alt+t"],
+            &["t"],
             "Toggle tree label timestamps",
         ),
         entry(
             "app.tree.filter.default",
-            &["alt+1"],
+            &["1"],
             "Tree filter: default view",
         ),
         entry(
             "app.tree.filter.noTools",
-            &["alt+2"],
+            &["2"],
             "Tree filter: hide tool results",
         ),
         entry(
             "app.tree.filter.userOnly",
-            &["alt+3"],
+            &["3"],
             "Tree filter: user messages only",
         ),
         entry(
             "app.tree.filter.labeledOnly",
-            &["alt+4"],
+            &["4"],
             "Tree filter: labeled entries only",
         ),
         entry(
             "app.tree.filter.all",
-            &["alt+5"],
+            &["5"],
             "Tree filter: show all entries",
         ),
         entry(
             "app.tree.filter.cycleForward",
-            &["alt+c"],
+            &["c"],
             "Tree filter: cycle forward",
         ),
         entry(
             "app.tree.filter.cycleBackward",
-            &["shift+alt+c"],
+            &[],
             "Tree filter: cycle backward",
         ),
+        // ── Lists — bare letters, live while the query is empty (K-P4)
+        entry("app.list.up", &["k"], "List: move up"),
+        entry("app.list.down", &["j"], "List: move down"),
+        entry("app.list.search", &["/"], "List: focus the search"),
+        entry("app.list.help", &["f1", "?"], "List: show or hide the keys"),
+        entry("app.list.close", &["q"], "List: close"),
+        // ── Dialogs — letters answer while no reply is typed (K-P4)
+        entry("app.dialog.yes", &["y"], "Dialog: yes"),
+        entry("app.dialog.no", &["n"], "Dialog: no"),
+        entry("app.dialog.always", &["a"], "Dialog: always"),
     ]
 }
 
@@ -393,15 +426,46 @@ pub fn keybinding(id: &str) -> Option<KeybindingEntry> {
 
 /// [`keybindings`] as the TUI manager's definition map.
 pub fn keybinding_definitions() -> HashMap<String, KeybindingDefinition> {
+    keybinding_definitions_for(DEFAULT_LEADER)
+}
+
+/// The definition map with the default leader sequences written with `leader`
+/// (`"ctrl+x m"` becomes `"<leader> m"`). Other keys are unchanged.
+pub fn keybinding_definitions_for(leader: &str) -> HashMap<String, KeybindingDefinition> {
     table()
         .iter()
         .map(|e| {
+            let keys: Vec<String> = e
+                .default_keys
+                .iter()
+                .map(|key| with_leader(key, leader))
+                .collect();
+            let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
             (
                 e.id.to_string(),
-                KeybindingDefinition::new(&e.default_keys, e.description),
+                KeybindingDefinition::new(&refs, e.description),
             )
         })
         .collect()
+}
+
+/// Swaps the default leader in a default key for `leader`. A key that does not
+/// start with the default leader is returned as it is.
+fn with_leader(key: &str, leader: &str) -> String {
+    match key.strip_prefix(DEFAULT_LEADER) {
+        Some(rest) if rest.starts_with(' ') => format!("{leader}{rest}"),
+        _ => key.to_string(),
+    }
+}
+
+/// One leader sequence that applies in a context: the key typed after the
+/// leader, the action it runs, and the action's description.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderEntry {
+    /// The keys after the leader, for example `"m"`.
+    pub key: String,
+    pub action: String,
+    pub description: String,
 }
 
 /// `toKeybindingsConfig`: keep string and string-array bindings; a string
@@ -451,27 +515,14 @@ pub fn order_keybindings_config(config: &Map<String, Value>) -> Map<String, Valu
     ordered
 }
 
-fn load_raw_config(path: &Path) -> Option<Map<String, Value>> {
-    let content = std::fs::read_to_string(path).ok()?;
-    match serde_json::from_str::<Value>(&content).ok()? {
-        Value::Object(map) => Some(map),
-        _ => None,
-    }
-}
-
-fn load_from_file(path: &Path) -> HashMap<String, Vec<String>> {
-    let Some(raw) = load_raw_config(path) else {
-        return HashMap::new();
-    };
-    to_keybindings_config(&Value::Object(raw))
-}
-
 /// The app's keybindings manager: the TUI manager over [`keybindings`], plus
-/// the `keybindings.json` it was loaded from.
+/// the parsed `keybindings.json` it was loaded from (leader, timeout, context
+/// bindings and warnings).
 #[derive(Debug, Clone)]
 pub struct AppKeybindingsManager {
     manager: KeybindingsManager,
     config_path: Option<PathBuf>,
+    config: KeymapConfig,
 }
 
 impl AppKeybindingsManager {
@@ -479,29 +530,202 @@ impl AppKeybindingsManager {
         Self {
             manager: KeybindingsManager::new(keybinding_definitions(), user_bindings),
             config_path,
+            config: KeymapConfig::defaults(),
         }
     }
 
-    /// `KeybindingsManager.create`: load `<agent_dir>/keybindings.json`
+    /// The manager for a parsed `keybindings.json`, with no file on disk. For
+    /// tests and tools that hold the text already.
+    pub fn from_json_str(text: &str) -> Self {
+        let mut manager = Self::new(HashMap::new(), None);
+        manager.apply(Some(KeymapConfig::from_json_str(text)));
+        manager
+    }
+
+    /// `KeybindingsManager.create`: load `<agent_dir>/keybindings.json`.
+    /// A missing file gives the defaults. A bad file gives the defaults and a warning.
     pub fn create(agent_dir: Option<&Path>) -> Self {
         let agent_dir = agent_dir
             .map(Path::to_path_buf)
             .unwrap_or_else(hoocode_code_paths::agent_dir);
         let config_path = agent_dir.join("keybindings.json");
-        let user_bindings = load_from_file(&config_path);
-        Self::new(user_bindings, Some(config_path))
+        let mut manager = Self::new(HashMap::new(), Some(config_path.clone()));
+        manager.apply(KeymapConfig::load(&config_path));
+        manager
     }
 
-    /// Re-read the config file.
+    /// Re-read the config file. A file that is now missing gives the defaults.
     pub fn reload(&mut self) {
-        if let Some(path) = &self.config_path {
-            let bindings = load_from_file(path);
-            self.manager.set_user_bindings(bindings);
+        if let Some(path) = self.config_path.clone() {
+            self.apply(KeymapConfig::load(&path));
         }
+    }
+
+    /// Takes a parsed file (`None`: no file, so the defaults).
+    fn apply(&mut self, loaded: Option<KeymapConfig>) {
+        let mut config = loaded.unwrap_or_else(KeymapConfig::defaults);
+        for action in config.flat.keys() {
+            if keybinding(action).is_none() {
+                config
+                    .warnings
+                    .push(format!("unknown action {action:?}; skipped"));
+            }
+        }
+        for o in &config.overrides {
+            if let Some(action) = &o.action {
+                if keybinding(action).is_none() {
+                    config.warnings.push(format!(
+                        "{}: unknown action {action:?}; skipped",
+                        o.context.name()
+                    ));
+                }
+            }
+        }
+        // The default leader sequences follow the configured leader. The
+        // single keys of the grouped form are folded into each action's keys,
+        // so the screens that ask "is this key bound to X?" see them too.
+        let definitions = keybinding_definitions_for(config.leader.id());
+        let resolved = KeybindingsManager::new(definitions.clone(), config.flat.clone())
+            .get_resolved_bindings();
+        config
+            .warnings
+            .extend(leader_shadow_warnings(config.leader.id()));
+        config
+            .warnings
+            .extend(flat_default_collisions(&resolved, &config.flat));
+        let keys = keys_after_overrides(resolved, &config.overrides, &mut config.warnings);
+        self.manager = KeybindingsManager::new(definitions, keys);
+        self.config = config;
     }
 
     pub fn config_path(&self) -> Option<&Path> {
         self.config_path.as_deref()
+    }
+
+    /// The leader key (`ctrl+x` unless the file names another).
+    pub fn leader(&self) -> &LeaderKey {
+        &self.config.leader
+    }
+
+    /// How long a pending leader waits for its next key.
+    pub fn leader_timeout(&self) -> Duration {
+        self.config.leader_timeout
+    }
+
+    /// Problems found in the file. Each names what was skipped.
+    pub fn warnings(&self) -> &[String] {
+        &self.config.warnings
+    }
+
+    /// Bindings kept but cautioned about: a key the terminal or the shell often takes.
+    pub fn cautions(&self) -> &[String] {
+        &self.config.cautions
+    }
+
+    /// Every key the file lists (flat values, grouped keys, leader sequences),
+    /// sorted and without repeats. The Alt notice reads it.
+    pub fn bound_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self
+            .config
+            .flat
+            .values()
+            .flatten()
+            .cloned()
+            .chain(self.config.overrides.iter().map(|o| o.key.clone()))
+            .collect();
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
+    /// The grouped form's bindings, and the flat form's sequences, as read.
+    pub fn overrides(&self) -> &[ContextOverride] {
+        &self.config.overrides
+    }
+
+    /// The action bound to `key` in `context`, or `None` when the key is
+    /// unbound there. A key the file sets in this context (or in `Global`)
+    /// wins. Any other key uses the flat bindings, defaults included. If
+    /// several actions share a key, the first id in sorted order wins.
+    pub fn action_for_key(&self, context: Context, key: &str) -> Option<String> {
+        let key = normalize_key(key);
+        if let Some(action) = effective_overrides(&self.config.overrides, context).get(&key) {
+            return action.clone();
+        }
+        let resolved = self.manager.get_resolved_bindings();
+        let mut ids: Vec<&String> = resolved
+            .iter()
+            .filter(|(_, keys)| keys.iter().any(|k| normalize_key(k) == key))
+            .map(|(id, _)| id)
+            .collect();
+        ids.sort();
+        ids.first().map(|id| (*id).clone())
+    }
+
+    /// The leader sequences that apply in `context`: the defaults, then the
+    /// file's entries for `Global`, `Leader` (written after the leader) and
+    /// `context`. A later entry for the same key wins, and `null` removes it.
+    /// Maps each full key (`"ctrl+x m"`) to its action.
+    pub fn leader_table(&self, context: Context) -> BTreeMap<String, String> {
+        let leader = self.config.leader.id();
+        let mut table: BTreeMap<String, Option<String>> = BTreeMap::new();
+        for (id, keys) in self.manager.get_resolved_bindings() {
+            for key in keys {
+                let key = normalize_key(&key);
+                if is_leader_sequence(&key, leader) {
+                    table.insert(key, Some(id.clone()));
+                }
+            }
+        }
+        for o in &self.config.overrides {
+            let full = match o.context {
+                Context::Global => o.key.clone(),
+                Context::Leader => normalize_key(&format!("{leader} {}", o.key)),
+                _ if o.context == context => o.key.clone(),
+                _ => continue,
+            };
+            table.insert(full, o.action.clone());
+        }
+        table
+            .into_iter()
+            .filter_map(|(key, action)| action.map(|action| (key, action)))
+            .collect()
+    }
+
+    /// The leader sequences in the prompt, as the which-key popup lists them:
+    /// the key after the leader, the action, and its description. Sorted by key.
+    pub fn leader_entries(&self) -> Vec<LeaderEntry> {
+        let leader_len = self.config.leader.id().len();
+        self.leader_table(Context::Prompt)
+            .into_iter()
+            .map(|(full, action)| {
+                let key = full
+                    .get(leader_len..)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let description = keybinding(&action)
+                    .map(|e| e.description.to_string())
+                    .unwrap_or_else(|| action.clone());
+                LeaderEntry {
+                    key,
+                    action,
+                    description,
+                }
+            })
+            .collect()
+    }
+
+    /// A leader state machine for `context`, bound to [`Self::leader_table`].
+    pub fn leader_machine(&self, context: Context) -> LeaderMachine {
+        let mut machine =
+            LeaderMachine::new(self.config.leader.clone(), self.config.leader_timeout);
+        for (key, action) in self.leader_table(context) {
+            // Each key starts with the leader and uses no reserved step (the
+            // file parser checked that), so bind cannot fail here.
+            let _ = machine.bind(&key, &action);
+        }
+        machine
     }
 
     /// Install as the manager library components consult.
@@ -512,6 +736,177 @@ impl AppKeybindingsManager {
     pub fn into_manager(self) -> KeybindingsManager {
         self.manager
     }
+}
+
+/// Whether a grouped binding's key is a single key (not a leader sequence and
+/// not a `Leader`-context key, which the leader table handles).
+fn is_single_key(o: &ContextOverride) -> bool {
+    o.context != Context::Leader && !is_multi_step(&o.key)
+}
+
+/// Whether a key text is a sequence of two or more steps.
+fn is_multi_step(key: &str) -> bool {
+    KeySequence::parse(key).is_ok_and(|s| s.steps().len() > 1)
+}
+
+/// The key lists of every action after the file's single-key grouped bindings.
+///
+/// A binding applies in the context of its action: `Global` applies to every
+/// action, and another context applies to the actions defined in it (see
+/// `defaults::context_of`). A binding of `key` to an action adds the key to
+/// that action and takes it from the other actions of the binding's context
+/// (for `Global`, the Global actions only). `null` or `"none"` takes the key
+/// from every action in the scope, `Global` included. A binding whose
+/// action runs in another context is skipped with a warning. `Global` entries
+/// are applied first, so a context entry for the same key wins.
+fn keys_after_overrides(
+    mut keys: HashMap<String, Vec<String>>,
+    overrides: &[ContextOverride],
+    warnings: &mut Vec<String>,
+) -> HashMap<String, Vec<String>> {
+    let mut singles: Vec<&ContextOverride> =
+        overrides.iter().filter(|o| is_single_key(o)).collect();
+    singles.sort_by_key(|o| o.context != Context::Global);
+    for o in singles {
+        let key = normalize_key(&o.key);
+        let in_scope = |id: &str| o.context == Context::Global || context_of(id) == o.context;
+        match o.action.as_deref() {
+            None => {
+                for (id, list) in keys.iter_mut() {
+                    if in_scope(id) {
+                        list.retain(|k| normalize_key(k) != key);
+                    }
+                }
+            }
+            Some(action) => {
+                if keybinding(action).is_none() {
+                    // Reported as an unknown action when the file is read.
+                    continue;
+                }
+                if !in_scope(action) {
+                    warnings.push(format!(
+                        "{}: {key} is bound to {action}, which runs in the {} context; skipped",
+                        o.context.name(),
+                        context_of(action).name()
+                    ));
+                    continue;
+                }
+                // Taking a key removes it from the actions of the binding's own
+                // context only. A Global binding takes it from the Global actions
+                // alone, so it never strips a key from another context.
+                let takes_from = |id: &str| context_of(id) == o.context;
+                for (id, list) in keys.iter_mut() {
+                    if id == action {
+                        if !list.iter().any(|k| normalize_key(k) == key) {
+                            list.push(key.clone());
+                        }
+                    } else if takes_from(id) {
+                        list.retain(|k| normalize_key(k) != key);
+                    }
+                }
+            }
+        }
+    }
+    keys
+}
+
+/// The result of `hoocode keybindings check`: the file's problems. `errors`
+/// are bindings skipped or ignored, and `cautions` are bindings kept that may not work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckReport {
+    /// The file that was read (`<agent dir>/keybindings.json`).
+    pub path: PathBuf,
+    /// Whether the file exists. A missing file is fine: the defaults apply.
+    pub exists: bool,
+    pub errors: Vec<String>,
+    pub cautions: Vec<String>,
+}
+
+/// Reads `<agent_dir>/keybindings.json` and reports what it found. Never fails.
+pub fn check_file(agent_dir: &Path) -> CheckReport {
+    let manager = AppKeybindingsManager::create(Some(agent_dir));
+    let path = agent_dir.join("keybindings.json");
+    CheckReport {
+        exists: path.is_file(),
+        path,
+        errors: manager.warnings().to_vec(),
+        cautions: manager.cautions().to_vec(),
+    }
+}
+
+/// Whether two actions can meet on one key: they share a context, or one of
+/// them is `Global`. A key is not a collision across two other contexts.
+fn same_scope(a: &str, b: &str) -> bool {
+    let (ca, cb) = (context_of(a), context_of(b));
+    ca == cb || ca == Context::Global || cb == Context::Global
+}
+
+/// A flat binding of a key that an app action uses by default, in the same
+/// scope. Both keep the key, so the warning names both. The library's editor
+/// keys (`tui.*`) are not checked: rebinding one of them is deliberate and
+/// common. The flat form of two actions that both change is reported by the
+/// file reader instead.
+fn flat_default_collisions(
+    resolved: &HashMap<String, Vec<String>>,
+    flat: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut owners: Vec<&String> = flat.keys().collect();
+    owners.sort();
+    for action in owners {
+        for key in flat[action].iter().map(|k| normalize_key(k).to_lowercase()) {
+            if key.contains(' ') {
+                continue;
+            }
+            let mut others: Vec<&String> = resolved
+                .iter()
+                .filter(|(id, keys)| {
+                    id.as_str() != action
+                        && id.starts_with("app.")
+                        && !flat.contains_key(id.as_str())
+                        && same_scope(action, id)
+                        && keys.iter().any(|k| normalize_key(k).to_lowercase() == key)
+                })
+                .map(|(id, _)| id)
+                .collect();
+            others.sort();
+            for other in others {
+                warnings.push(format!(
+                    "{key}: bound to {action} in the file and to {other} by default; both keep it"
+                ));
+            }
+        }
+    }
+    warnings
+}
+
+/// A leader that is also a default single key: the leader runs first, so that
+/// binding can no longer be reached by its key.
+fn leader_shadow_warnings(leader: &str) -> Vec<String> {
+    let leader = normalize_key(leader).to_lowercase();
+    table()
+        .iter()
+        .filter(|e| {
+            e.default_keys
+                .iter()
+                .any(|k| !k.contains(' ') && normalize_key(k).to_lowercase() == leader)
+        })
+        .map(|e| {
+            format!(
+                "leader {leader} shadows the default binding of {}; that key now starts the leader",
+                e.id
+            )
+        })
+        .collect()
+}
+
+/// Whether a whole key is a sequence that starts with `leader`.
+fn is_leader_sequence(key: &str, leader: &str) -> bool {
+    let mut steps = key.split_whitespace();
+    steps
+        .next()
+        .is_some_and(|first| first.eq_ignore_ascii_case(leader))
+        && steps.next().is_some()
 }
 
 impl Default for AppKeybindingsManager {

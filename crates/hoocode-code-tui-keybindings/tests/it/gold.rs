@@ -29,6 +29,11 @@ fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() 
             "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)",
             "Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)",
         ),
+        (
+            "app.message.dequeue",
+            "Restore queued messages",
+            "Take back the last queued message",
+        ),
     ];
     let gold = gold();
     let mut expected: Vec<(String, Vec<String>, String)> = gold["table"]
@@ -48,6 +53,23 @@ fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() 
             )
         })
         .collect();
+    // Declared divergence, keys (2026-11-05, K-9): the picker's help key lists
+    // f1 first. f1 opens help while a query is typed, where "?" types, so the
+    // "more" hint shows f1 from the keymap.
+    const DECLARED_KEYS: &[(&str, &[&str], &[&str])] = &[("app.list.help", &["?"], &["f1", "?"])];
+    let mut used_keys = 0usize;
+    for (id, pinned, ours) in DECLARED_KEYS {
+        let pinned: Vec<String> = pinned.iter().map(|k| k.to_string()).collect();
+        if let Some(row) = expected.iter_mut().find(|r| r.0 == *id && r.1 == pinned) {
+            row.1 = ours.iter().map(|k| k.to_string()).collect();
+            used_keys += 1;
+        }
+    }
+    assert_eq!(
+        used_keys,
+        DECLARED_KEYS.len(),
+        "every declared key divergence must match its pinned row exactly"
+    );
     let mut used = 0usize;
     for (id, pinned, ours) in DECLARED {
         if let Some(row) = expected.iter_mut().find(|r| r.0 == *id && r.2 == *pinned) {

@@ -14,6 +14,7 @@
 //! opener next to it (`utils/open-url.ts`). The provider's display name is
 //! resolved by the caller.
 
+use hoocode_code_tui_keybindings::key_hint_text;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -72,7 +73,7 @@ impl LoginDialogComponent {
             provider_name: provider_name.to_string(),
             rows: vec![line("Starting…".to_string(), pal.dim())],
             placeholder: true,
-            hint: hints(&[("esc", "cancel")]),
+            hint: hints(&[(key_hint_text("tui.select.cancel").as_str(), "cancel")]),
             input: Rc::new(RefCell::new(input)),
             signal: AbortSignal::new(),
             awaiting_input: false,
@@ -116,7 +117,10 @@ impl LoginDialogComponent {
         self.separate();
         self.rows.push(line(format!("1 {url}"), pal.acc()));
         self.rows.push(line(
-            "scan, or enter to open the browser".to_string(),
+            format!(
+                "scan, or {} to open the browser",
+                key_hint_text("tui.select.confirm")
+            ),
             pal.dim(),
         ));
         self.rows.push(line(
@@ -128,7 +132,7 @@ impl LoginDialogComponent {
             self.rows.push(Line::raw(""));
             self.rows.push(line(instructions.to_string(), pal.warn()));
         }
-        self.hint = hints(&[("esc", "cancel")]);
+        self.hint = hints(&[(key_hint_text("tui.select.cancel").as_str(), "cancel")]);
     }
 
     /// `showManualInput`: an input for a pasted code or redirect URL, as
@@ -138,7 +142,10 @@ impl LoginDialogComponent {
         self.separate();
         self.rows.push(line(format!("2 {prompt}"), pal.dim()));
         self.awaiting_input = true;
-        self.hint = hints(&[("enter", "submit"), ("esc", "cancel")]);
+        self.hint = hints(&[
+            (key_hint_text("tui.input.submit").as_str(), "submit"),
+            (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+        ]);
     }
 
     /// `showPrompt`: a question under what is already shown.
@@ -151,7 +158,10 @@ impl LoginDialogComponent {
         }
         self.input.borrow_mut().set_value("");
         self.awaiting_input = true;
-        self.hint = hints(&[("enter", "submit"), ("esc", "cancel")]);
+        self.hint = hints(&[
+            (key_hint_text("tui.input.submit").as_str(), "submit"),
+            (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+        ]);
     }
 
     /// `showInfo`: lines to read, nothing to answer.
@@ -161,7 +171,7 @@ impl LoginDialogComponent {
         for text in lines {
             self.rows.push(line(text.clone(), pal.ink()));
         }
-        self.hint = hints(&[("esc", "close")]);
+        self.hint = hints(&[(key_hint_text("tui.select.cancel").as_str(), "close")]);
     }
 
     /// `showWaiting`: a polling flow's wait.
@@ -170,7 +180,7 @@ impl LoginDialogComponent {
         self.separate();
         self.rows
             .push(line(format!("{} {message}", status::RUNNING), pal.dim()));
-        self.hint = hints(&[("esc", "cancel")]);
+        self.hint = hints(&[(key_hint_text("tui.select.cancel").as_str(), "cancel")]);
     }
 
     /// `showProgress`.

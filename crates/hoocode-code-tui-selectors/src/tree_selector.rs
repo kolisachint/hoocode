@@ -17,14 +17,17 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use hoocode_code_session::SessionTreeNode;
 use hoocode_code_settings::TreeFilterMode;
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, key_text};
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_tui_components::{Input, PickerCursor};
-use hoocode_tui_keys::get_keybindings;
+use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{bold, italic, Line, Palette, Span};
 use hoocode_tui_render::Component;
 use serde_json::Value;
+
+use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
 
 /// One session entry, flattened out of the tree.
 struct Node {
@@ -245,6 +248,8 @@ pub struct TreeList {
     events: Vec<TreeEvent>,
     /// The entry whose label the owner should open an editor for.
     label_edit: Option<(String, Option<String>)>,
+    /// List mode or typing mode (see [`LetterGate`]).
+    gate: LetterGate,
 }
 
 impl TreeList {
@@ -281,6 +286,7 @@ impl TreeList {
             folded: HashSet::new(),
             events: Vec::new(),
             label_edit: None,
+            gate: LetterGate::default(),
         };
         list.flat_nodes = list.flatten_tree(&roots);
         list.build_active_path();
@@ -332,6 +338,11 @@ impl TreeList {
     }
 
     /// `getSearchQuery`.
+    /// Whether bare letters act as keys now (list mode).
+    fn letters_list(&self) -> bool {
+        self.gate.lists(self.search_query.is_empty())
+    }
+
     pub fn search_query(&self) -> &str {
         &self.search_query
     }
@@ -1153,9 +1164,21 @@ impl TreeList {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
+        // A bare letter acts in list mode only. `/` opens typing mode, where it types.
+        let letter = is_printable(data);
+        let list_mode = self.letters_list();
+        let live = !letter || list_mode;
         if self.cursor.handle_key(data, &kb) {
             // Navigation: the cursor clamps at both ends.
-        } else if kb.matches(data, "app.tree.foldOrUp") {
+        } else if live && kb.matches(data, "app.list.down") {
+            self.cursor.step(1);
+        } else if live && kb.matches(data, "app.list.up") {
+            self.cursor.step(-1);
+        } else if live && kb.matches(data, "app.list.close") {
+            self.events.push(TreeEvent::Cancel);
+        } else if live && kb.matches(data, "app.list.search") {
+            self.gate.start_typing();
+        } else if live && kb.matches(data, "app.tree.foldOrUp") {
             match self.selected_id() {
                 Some(id) if self.is_foldable(&id) && !self.folded.contains(&id) => {
                     self.folded.insert(id);
@@ -1166,7 +1189,7 @@ impl TreeList {
                     self.cursor.select(target);
                 }
             }
-        } else if kb.matches(data, "app.tree.unfoldOrDown") {
+        } else if live && kb.matches(data, "app.tree.unfoldOrDown") {
             match self.selected_id() {
                 Some(id) if self.folded.contains(&id) => {
                     self.folded.remove(&id);
@@ -1177,48 +1200,56 @@ impl TreeList {
                     self.cursor.select(target);
                 }
             }
-        } else if kb.matches(data, "tui.editor.cursorLeft") {
-            self.cursor.page(false);
-        } else if kb.matches(data, "tui.editor.cursorRight") {
-            self.cursor.page(true);
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(id) = self.selected_id() {
                 self.events.push(TreeEvent::Select(id));
             }
         } else if kb.matches(data, "tui.select.cancel") {
-            if self.search_query.is_empty() {
-                self.events.push(TreeEvent::Cancel);
+            let query_empty = self.search_query.is_empty();
+            let action = if matches_key(data, "escape") {
+                self.gate.escape(query_empty)
+            } else if query_empty {
+                EscapeAction::Close
             } else {
-                self.search_query.clear();
-                self.folded.clear();
-                self.apply_filter();
+                EscapeAction::ClearQuery
+            };
+            match action {
+                EscapeAction::ClearQuery => {
+                    self.search_query.clear();
+                    self.folded.clear();
+                    self.apply_filter();
+                }
+                EscapeAction::LeaveTyping => {}
+                EscapeAction::Close => self.events.push(TreeEvent::Cancel),
             }
-        } else if kb.matches(data, "app.tree.filter.default") {
+        } else if live && kb.matches(data, "app.tree.filter.default") {
             self.set_filter(TreeFilterMode::Default);
-        } else if kb.matches(data, "app.tree.filter.noTools") {
+        } else if live && kb.matches(data, "app.tree.filter.noTools") {
             self.toggle_filter(TreeFilterMode::NoTools);
-        } else if kb.matches(data, "app.tree.filter.userOnly") {
+        } else if live && kb.matches(data, "app.tree.filter.userOnly") {
             self.toggle_filter(TreeFilterMode::UserOnly);
-        } else if kb.matches(data, "app.tree.filter.labeledOnly") {
+        } else if live && kb.matches(data, "app.tree.filter.labeledOnly") {
             self.toggle_filter(TreeFilterMode::LabeledOnly);
-        } else if kb.matches(data, "app.tree.filter.all") {
+        } else if live && kb.matches(data, "app.tree.filter.all") {
             self.toggle_filter(TreeFilterMode::All);
-        } else if kb.matches(data, "app.tree.filter.cycleBackward") {
+        } else if live && kb.matches(data, "app.tree.filter.cycleBackward") {
             self.cycle_filter(false);
-        } else if kb.matches(data, "app.tree.filter.cycleForward") {
+        } else if live && kb.matches(data, "app.tree.filter.cycleForward") {
             self.cycle_filter(true);
         } else if kb.matches(data, "tui.editor.deleteCharBackward") {
             if self.search_query.pop().is_some() {
                 self.folded.clear();
                 self.apply_filter();
             }
-        } else if kb.matches(data, "app.tree.editLabel") {
+        } else if live && kb.matches(data, "app.tree.editLabel") {
             if let Some(f) = self.filtered_nodes.get(self.cursor.selected()) {
                 let node = &self.nodes[f.node];
                 self.label_edit = Some((node.id.clone(), node.label.clone()));
             }
-        } else if kb.matches(data, "app.tree.toggleLabelTimestamp") {
+        } else if live && kb.matches(data, "app.tree.toggleLabelTimestamp") {
             self.show_label_timestamps = !self.show_label_timestamps;
+        } else if list_mode && letter {
+            // In list mode a printable key with no key of its own does nothing.
         } else {
             let control = data.chars().any(|c| {
                 let code = c as u32;
@@ -1242,15 +1273,26 @@ fn entries(count: usize) -> String {
     }
 }
 
-/// The hint foot with literal keys, so the bytes hold on macOS and Linux:
-/// the longest leading run that fits `available`, like the old top row.
-const TREE_HINTS: [(&str, &str); 5] = [
-    ("↑↓", "move"),
-    ("enter", "go here"),
-    ("alt+l", "label"),
-    ("esc", "close"),
-    ("alt+t", "timestamps"),
-];
+/// The hint foot: the keys come from the keymap (K-P5). The longest leading
+/// run that fits shows, like the old top row.
+fn tree_hints() -> Vec<(String, &'static str)> {
+    vec![
+        (key_pair_hint("tui.select.up", "tui.select.down"), "move"),
+        (key_hint_text("tui.select.confirm"), "go here"),
+        (key_text("app.list.search"), "search"),
+        (key_hint_text("tui.select.cancel"), "close"),
+        (key_text("app.tree.editLabel"), "label"),
+        (key_text("app.tree.toggleLabelTimestamp"), "timestamps"),
+    ]
+}
+
+/// The hint pairs as the hint helpers take them.
+fn as_pairs<'a>(hints: &'a [(String, &'static str)]) -> Vec<(&'a str, &'static str)> {
+    hints
+        .iter()
+        .map(|(key, action)| (key.as_str(), *action))
+        .collect()
+}
 
 /// `LabelInput`: the label editor that replaces the tree while open.
 struct LabelInput {
@@ -1403,7 +1445,10 @@ impl Component for TreeSelectorComponent {
         let mut console = Console::new("Tree · /tree", self.list.borrow().count_text());
         if self.label_input.borrow().is_some() {
             console.top = self.label_lines();
-            console.hint = hints(&[("enter", "save"), ("esc", "cancel")]);
+            console.hint = hints(&[
+                (key_hint_text("tui.select.confirm").as_str(), "save"),
+                (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+            ]);
         } else {
             let list = self.list.borrow();
             console.query = Some(query_row(list.search_query(), false));
@@ -1415,9 +1460,11 @@ impl Component for TreeSelectorComponent {
             console.list_width = Some(width * 56 / 100);
             drop(list);
             if self.help {
-                console.bottom.extend(help_rows(&TREE_HINTS));
+                let hints = tree_hints();
+                console.bottom.extend(help_rows(&as_pairs(&hints)));
             }
-            console.hint = capped_hint_line(&TREE_HINTS, true);
+            let hints = tree_hints();
+            console.hint = capped_hint_line(&as_pairs(&hints), true);
         }
         console.render(width)
     }
@@ -1427,7 +1474,10 @@ impl Component for TreeSelectorComponent {
             self.label_input_key(data);
             return;
         }
-        if hoocode_tui_keys::matches_key(data, "f1") {
+        let letters = self.list.borrow().letters_list();
+        let help = hoocode_tui_keys::matches_key(data, "f1")
+            || (letters && get_keybindings().matches(data, "app.list.help"));
+        if help {
             self.help = !self.help;
             return;
         }

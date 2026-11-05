@@ -28,5 +28,6 @@ mod subagent_spawn_audit_ts;
 mod subagent_visual_tie_ts;
 mod support;
 mod suspend_ts;
+mod theme_diagnostics;
 mod tips;
 mod transient_lines;

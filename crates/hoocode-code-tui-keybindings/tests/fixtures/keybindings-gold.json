@@ -48,18 +48,14 @@
   [
    "tui.editor.cursorWordLeft",
    [
-    "alt+left",
-    "ctrl+left",
-    "alt+b"
+    "ctrl+left"
    ],
    "Move cursor word left"
   ],
   [
    "tui.editor.cursorWordRight",
    [
-    "alt+right",
-    "ctrl+right",
-    "alt+f"
+    "ctrl+right"
    ],
    "Move cursor word right"
   ],
@@ -88,9 +84,7 @@
   ],
   [
    "tui.editor.jumpBackward",
-   [
-    "ctrl+alt+]"
-   ],
+   [],
    "Jump backward to character"
   ],
   [
@@ -121,16 +115,14 @@
   [
    "tui.editor.deleteWordBackward",
    [
-    "ctrl+w",
-    "alt+backspace"
+    "ctrl+w"
    ],
    "Delete word backward"
   ],
   [
    "tui.editor.deleteWordForward",
    [
-    "alt+d",
-    "alt+delete"
+    "ctrl+delete"
    ],
    "Delete word forward"
   ],
@@ -158,7 +150,7 @@
   [
    "tui.editor.yankPop",
    [
-    "alt+y"
+    "ctrl+x y"
    ],
    "Yank pop"
   ],
@@ -172,14 +164,15 @@
   [
    "tui.editor.redo",
    [
-    "alt+u"
+    "ctrl+x z"
    ],
    "Redo"
   ],
   [
    "tui.input.newLine",
    [
-    "shift+enter"
+    "shift+enter",
+    "ctrl+x enter"
    ],
    "Insert newline"
   ],
@@ -278,14 +271,14 @@
   [
    "app.editor.external",
    [
-    "alt+e"
+    "ctrl+x e"
    ],
    "Open external editor"
   ],
   [
    "app.input.voiceTranscribe",
    [
-    "alt+r"
+    "ctrl+x r"
    ],
    "Record voice and transcribe into the editor"
   ],
@@ -299,50 +292,56 @@
   [
    "app.clipboard.copyMessage",
    [
-    "alt+q"
+    "ctrl+x c"
    ],
    "Copy the agent's last message to the clipboard"
   ],
   [
    "app.message.followUp",
    [
-    "alt+enter"
+    "ctrl+x f"
    ],
    "Queue follow-up message"
   ],
   [
    "app.message.dequeue",
    [
-    "alt+up"
+    "ctrl+x d"
    ],
    "Restore queued messages"
   ],
   [
+   "app.history.search",
+   [
+    "ctrl+r"
+   ],
+   "Search prompt history (reverse, incremental)"
+  ],
+  [
    "app.mode.cycleForward",
    [
-    "shift+tab",
-    "alt+a"
+    "shift+tab"
    ],
    "Cycle agent mode (ask → plan → build → debug)"
   ],
   [
    "app.mode.cycleBackward",
    [
-    "shift+alt+a"
+    "ctrl+x a"
    ],
    "Cycle agent mode backward"
   ],
   [
    "app.model.cycleForward",
    [
-    "alt+m"
+    "ctrl+x m"
    ],
    "Cycle to next model"
   ],
   [
    "app.model.cycleBackward",
    [
-    "shift+alt+m"
+    "ctrl+x M"
    ],
    "Cycle to previous model"
   ],
@@ -354,63 +353,63 @@
   [
    "app.thinking.cycleForward",
    [
-    "alt+t"
+    "ctrl+x t"
    ],
    "Cycle thinking level (off → … → high)"
   ],
   [
    "app.thinking.cycleBackward",
    [
-    "shift+alt+t"
+    "ctrl+x T"
    ],
    "Cycle thinking level backward"
   ],
   [
    "app.view.cycleForward",
    [
-    "alt+o"
+    "ctrl+x o"
    ],
    "Cycle tool output view (outline → peek → full)"
   ],
   [
    "app.view.cycleBackward",
    [
-    "shift+alt+o"
+    "ctrl+x O"
    ],
    "Cycle tool output view backward"
   ],
   [
    "app.tools.expand",
    [
-    "ctrl+o"
+    "ctrl+x p"
    ],
    "Jump to the full view from wherever you are, and back again"
   ],
   [
    "app.thinking.toggle",
    [
-    "ctrl+t"
+    "ctrl+x b"
    ],
    "Toggle thinking blocks"
   ],
   [
    "app.tasks.cycleForward",
    [
-    "alt+l"
+    "ctrl+x l"
    ],
    "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)"
   ],
   [
    "app.tasks.cycleBackward",
    [
-    "shift+alt+l"
+    "ctrl+x L"
    ],
    "Cycle task panel view backward"
   ],
   [
    "app.panel.focus",
    [
-    "ctrl+g"
+    "ctrl+x g"
    ],
    "Show or hide the task panel"
   ],
@@ -431,35 +430,35 @@
   [
    "app.scroll.top",
    [
-    "ctrl+home"
+    "g"
    ],
    "Jump to the start of the transcript"
   ],
   [
    "app.scroll.bottom",
    [
-    "ctrl+end"
+    "G"
    ],
    "Jump back to live output"
   ],
   [
    "app.scroll.search",
    [
-    "ctrl+r"
+    "ctrl+x /"
    ],
    "Search the transcript"
   ],
   [
    "app.scroll.previousMessage",
    [
-    "ctrl+up"
+    "["
    ],
    "Jump to your previous message"
   ],
   [
    "app.scroll.nextMessage",
    [
-    "ctrl+down"
+    "]"
    ],
    "Jump to your next message"
   ],
@@ -480,7 +479,7 @@
   [
    "app.session.resume",
    [
-    "alt+h"
+    "ctrl+x h"
    ],
    "Resume a session from history"
   ],
@@ -502,42 +501,46 @@
   [
    "app.session.changeDirectory",
    [
-    "alt+w"
+    "ctrl+x w"
    ],
    "Change working directory (move to another repo without quitting)"
   ],
   [
    "app.settings.open",
    [
-    "alt+s"
+    "ctrl+x s"
    ],
    "Open settings"
   ],
   [
    "app.hotkeys.open",
    [
-    "alt+k"
+    "ctrl+x ?",
+    "ctrl+x k"
    ],
    "Show keyboard shortcuts"
   ],
   [
    "app.scroll.lineUp",
    [
-    "up"
+    "up",
+    "k"
    ],
    "Scroll up a line (pinned view)"
   ],
   [
    "app.scroll.lineDown",
    [
-    "down"
+    "down",
+    "j"
    ],
    "Scroll down a line (pinned view)"
   ],
   [
    "app.scroll.exit",
    [
-    "escape"
+    "escape",
+    "q"
    ],
    "Leave the pinned view and follow live output"
   ],
@@ -616,7 +619,7 @@
   [
    "app.subagent.attach",
    [
-    "ctrl+n"
+    "ctrl+x n"
    ],
    "Attach to the subagent run of the last Agent block (read-only)"
   ],
@@ -644,35 +647,35 @@
   [
    "app.session.togglePath",
    [
-    "alt+p"
+    "p"
    ],
    "Toggle session path display"
   ],
   [
    "app.session.toggleSort",
    [
-    "alt+o"
+    "o"
    ],
    "Toggle session sort order"
   ],
   [
    "app.session.toggleNamedFilter",
    [
-    "alt+n"
+    "n"
    ],
    "Toggle named session filter"
   ],
   [
    "app.session.rename",
    [
-    "alt+r"
+    "r"
    ],
    "Rename session"
   ],
   [
    "app.session.delete",
    [
-    "alt+x"
+    "x"
    ],
    "Delete session"
   ],
@@ -686,123 +689,184 @@
   [
    "app.models.save",
    [
-    "alt+s"
+    "s"
    ],
    "Save model selection"
   ],
   [
    "app.models.enableAll",
    [
-    "alt+a"
+    "a"
    ],
    "Enable all models"
   ],
   [
    "app.models.clearAll",
    [
-    "alt+x"
+    "x"
    ],
    "Clear all models"
   ],
   [
    "app.models.toggleProvider",
    [
-    "alt+g"
+    "g"
    ],
    "Toggle all models for provider"
   ],
   [
    "app.models.reorderUp",
    [
-    "alt+up"
+    "shift+up"
    ],
    "Move model up in order"
   ],
   [
    "app.models.reorderDown",
    [
-    "alt+down"
+    "shift+down"
    ],
    "Move model down in order"
   ],
   [
+   "app.models.category",
+   [
+    "c"
+   ],
+   "Model: category"
+  ],
+  [
    "app.tree.foldOrUp",
    [
-    "ctrl+left",
-    "alt+left"
+    "h",
+    "left"
    ],
    "Fold tree branch or move up"
   ],
   [
    "app.tree.unfoldOrDown",
    [
-    "ctrl+right",
-    "alt+right"
+    "l",
+    "right"
    ],
    "Unfold tree branch or move down"
   ],
   [
    "app.tree.editLabel",
    [
-    "alt+l"
+    "e"
    ],
    "Edit tree label"
   ],
   [
    "app.tree.toggleLabelTimestamp",
    [
-    "alt+t"
+    "t"
    ],
    "Toggle tree label timestamps"
   ],
   [
    "app.tree.filter.default",
    [
-    "alt+1"
+    "1"
    ],
    "Tree filter: default view"
   ],
   [
    "app.tree.filter.noTools",
    [
-    "alt+2"
+    "2"
    ],
    "Tree filter: hide tool results"
   ],
   [
    "app.tree.filter.userOnly",
    [
-    "alt+3"
+    "3"
    ],
    "Tree filter: user messages only"
   ],
   [
    "app.tree.filter.labeledOnly",
    [
-    "alt+4"
+    "4"
    ],
    "Tree filter: labeled entries only"
   ],
   [
    "app.tree.filter.all",
    [
-    "alt+5"
+    "5"
    ],
    "Tree filter: show all entries"
   ],
   [
    "app.tree.filter.cycleForward",
    [
-    "alt+c"
+    "c"
    ],
    "Tree filter: cycle forward"
   ],
   [
    "app.tree.filter.cycleBackward",
-   [
-    "shift+alt+c"
-   ],
+   [],
    "Tree filter: cycle backward"
+  ],
+  [
+   "app.list.up",
+   [
+    "k"
+   ],
+   "List: move up"
+  ],
+  [
+   "app.list.down",
+   [
+    "j"
+   ],
+   "List: move down"
+  ],
+  [
+   "app.list.search",
+   [
+    "/"
+   ],
+   "List: focus the search"
+  ],
+  [
+   "app.list.help",
+   [
+    "?"
+   ],
+   "List: show or hide the keys"
+  ],
+  [
+   "app.list.close",
+   [
+    "q"
+   ],
+   "List: close"
+  ],
+  [
+   "app.dialog.yes",
+   [
+    "y"
+   ],
+   "Dialog: yes"
+  ],
+  [
+   "app.dialog.no",
+   [
+    "n"
+   ],
+   "Dialog: no"
+  ],
+  [
+   "app.dialog.always",
+   [
+    "a"
+   ],
+   "Dialog: always"
   ]
  ],
  "format": {

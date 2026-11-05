@@ -1,7 +1,8 @@
 # Themes and keybindings (design, 2026-11-05)
 
-Status: **decided with the user 2026-11-05. Not built yet.** Two parts that can be
-built on their own: **T** (themes) and **K** (keybindings). This is the third plan,
+Status: **decided with the user 2026-11-05. Built 2026-11-05: T-1 to T-6 and K-0 to K-10.**
+The deviations from this plan, as built, are listed under "Built deviations" below.
+Two parts that can be built on their own: **T** (themes) and **K** (keybindings). This is the third plan,
 next to the core plan and the TUI plan ([README](README.md)). TUI work is done by
 Haiku subagents. The main session orchestrates, briefs and merges.
 
@@ -54,18 +55,17 @@ Setting `theme` takes a name, `auto`, or `auto:<light>:<dark>`.
 | T8 | New built-in themes: a high-contrast theme and two more. Original palettes only, so no licence questions. Each one passes `theme_contrast.rs`. |
 | T9 | Hot reload keeps the existing poll. No `notify` crate. |
 
-Open (decide while building):
-
-- Wire `theme_paths` into the loader, or remove it. **Recommendation: remove it**, unless someone uses it.
-- Optional `ansi:<name>` colours that follow the terminal palette. Later.
+| T10 | Remove the unused `theme_paths` setting (user, 2026-11-05). Done in T-3. |
+| T11 | Persistence (user, 2026-11-05): choosing a theme in the picker saves `theme` to the global settings (`~/.hoocode`). `auto` (follow the system light or dark setting) is a picker entry and is saved the same way. Done in T-1. |
+| T12 | `ansi:<name>` colours that follow the terminal palette: later, not this round. |
 
 ### What we build (T)
 
 | Step | Size | Files | Done when |
 |---|---|---|---|
-| T-1 Picker lists user themes | S | `small_selectors.rs`, `registry.rs` (list function) | The picker shows built-ins and user themes, with paths. A test lists a user theme. |
+| T-1 Picker lists user themes; picker saves the choice | S | `small_selectors.rs`, `registry.rs` (list function), settings | The picker shows `auto`, the built-ins and user themes, with paths. Choosing one saves `theme` to the global settings and survives a restart. Tests list a user theme and check the saved value. |
 | T-2 `inherits` | M | `schema.rs`, `registry.rs` (`create_theme`), `themes/theme-schema.json`, tests in `tests/it/` | A 5-line theme that inherits from `dark` loads with every token set. A cycle is an error. |
-| T-3 Warnings and keep-last-good | S | `registry.rs`, `resource_display.rs` | A bad file shows a warning in diagnostics. The last good theme stays on screen. No silent switch. Tests cover both cases. |
+| T-3 Warnings and keep-last-good; remove `theme_paths` | S | `registry.rs`, `resource_display.rs`, `manager.rs`, `config_selector.rs` | A bad file shows a warning in diagnostics. The last good theme stays on screen. No silent switch. Tests cover both cases. `theme_paths` is gone. |
 | T-4 Defaults folder on version change | S | `registry.rs` or the startup code, `docs/user/configuration.md` | After an upgrade, `themes/defaults/` holds the current built-ins and schema. The docs page describes the folder. |
 | T-5 Token-literal test | S | `theme.rs` tests | The test fails when code uses a token that is not in the schema. |
 | T-6 New built-in themes | S each | `themes/*.json`, `theme_contrast.rs` | Each theme passes the contrast test. The picker shows it. |
@@ -151,8 +151,8 @@ mean one thing on one surface and another thing on another (`alt+s`, `alt+x`, `a
 
 | Key | Action | Note |
 |---|---|---|
-| Enter | Submit. While a turn runs, queue the message | Queue was Alt+Enter |
-| Shift+Enter, Ctrl+J | Newline | Ctrl+J depends on the finding in "Ctrl+J" below |
+| Enter | Submit. While a turn runs, steer the agent with the message (user, 2026-11-05) | Queue was Alt+Enter (K-7 had made it a queue; reverted) |
+| Shift+Enter | Newline | Leader Enter is the fallback where Shift+Enter cannot be sent. Ctrl+J is not changed (see "Ctrl+J") |
 | Esc | Interrupt the running turn, or close a popup | |
 | Esc Esc | Clear a non-empty prompt (kept in history) | |
 | Up, Down | History. Up on an empty prompt with queued messages takes the last one back | Replaces Alt+Up |
@@ -181,7 +181,7 @@ mean one thing on one surface and another thing on another (`alt+s`, `alt+x`, `a
 | `g` | Task panel show or hide | Ctrl+G |
 | `l` / `L` | Task panel tab next / previous | Alt+L |
 | `n` | Attach subagent | Ctrl+N |
-| `f` | Queue follow-up (same as Enter while running) | Alt+Enter |
+| `f` | Queue follow-up, sent after the turn (Enter steers while running) | Alt+Enter |
 | `d` | Take back a queued message | Alt+Up |
 | `/` | Search transcript | Ctrl+R |
 | `r` | Voice input | Alt+R |
@@ -214,12 +214,49 @@ accepts, `/` searches, `?` shows keys, `q` or Esc closes.
 - Model picker: `s` save, `a` enable all, `x` clear all, `g` provider, Shift+Up/Down reorder (was Alt+Up/Down).
 - Tree: `h`/`l` or left/right fold, `e` edit label (was Alt+L), `t` timestamps, `1`-`5` filters, `c` filter cycle.
 
-**Approval and confirm dialogs:** not listed yet. Step K-0 lists them. Target keys: `y` yes,
-`n` no, `a` always, Enter default, Esc deny.
+**Approval and confirm dialogs** (listed 2026-11-05 from the code; line numbers as of that date).
+Target keys: `y` yes, `n` no, `a` always, Enter default, Esc deny. Bare letters fire only
+when no text field holds text (K-P4). Where a reply field is always open, the letter fires
+only while the reply is empty, the same gate the clearance card uses for `e` today (decided by the
+user, 2026-11-05).
 
-**Mission Control keys** (`docs/design/mission-control.md:420-430`) are already Ctrl or
-PgUp only. Review them against K-P3 in K-0. Fix the Alt mentions at
-`mission-control.md:210` and `:285`.
+| Surface | Current key | Target key | file:line |
+|---|---|---|---|
+| Tool clearance card (yes, always, no) | Enter picks the highlighted row (yes at the start). `1` `2` `3` pick. `↑` `↓` move. Esc = no. `e` edits the command first. Letters type into the reply | `y` yes and `n` no answer at once while the reply is empty. `a` highlights always, and Enter confirms it (`a` alone does not answer; with no always row `a` types). Enter default, Esc no. `1` `2` `3` stay as aliases. `e` stays | `clearance_card.rs:125-136` (labels), `:193-202` (`choose`), `:210` (handler), `:250-267` (keys) |
+| Tool clearance card, reply typed | Enter sends the reply as the denial. Esc clears the reply (a second Esc denies). Letters type | No change. Letters type while the reply holds text | `clearance_card.rs:231-243` |
+| End-of-shift card (quit) | Enter ends the shift. Esc stays | No change (Enter default, Esc stay) | `end_shift.rs:81-87` (keys `:83-84`) |
+| End-of-shift jobs card | Enter or `k` kills all. `l` leaves them running. Esc stays | Enter kills all (default). `k` and `l` stay, since they name the action. Open question 4 | `end_shift.rs:229-236` (keys `:232-234`) |
+| Yes/No lists on the generic selector: import confirm, missing-cwd confirm, extension and permission gate prompts | `↑` `↓` and `j` `k` move. Enter picks. Esc or Ctrl+C cancels. No letter answers | `y` = first "Yes", `n` = "No", `a` = "Always" when offered. Enter default, Esc deny | `extension_selector.rs:179-192` (shared selector); `mode/dialogs.rs:127-146` (gate); `mode/session_ops.rs:352-359` (import), `:690` (missing cwd); `dialog_bridge.rs:142` (permission gate select) |
+| MCP trust prompt ("Trust and start", "Not now") | Generic selector: Enter picks row 1. Esc cancels | `y` = Trust and start, `n` = Not now. Enter default, Esc deny | `mode/mcp.rs:8-10` (labels), `:81` (`ui.select`) |
+| MCP elicitation (URL: Accept, Decline, Cancel; form: Answer, Decline, Cancel) | Generic selector: Enter picks row 1. Esc cancels | `y` = Accept or Answer, `n` = Decline, Esc = Cancel. Enter default | `mcp_elicitation.rs:50-83` (choices at `:56`, `:67`) |
+| Ask-user question card (AskUserQuestion) | Enter or Tab confirms. `→` next. Esc skips. `1`-`9` answer at once. Letters type into the custom answer when the row allows it | No `y` or `n`: the card has a text row, and letters are its text. Enter default, Esc skip, digits stay | `ask_options.rs:273` (handler), `:292-293` (confirm), `:298-299` (cancel), `:313` (letters), `:324-330` (digits) |
+
+Not an approval, noted in passing: the session picker's delete (`app.session.delete`,
+`alt+x`, `keybindings.rs:291`) has no confirm step in the code.
+
+**Mission Control keys** (`docs/design/mission-control.md`, keys table at `:420-430`, plus keys named
+elsewhere in that doc). Review against K-P3 (Ctrl only for interrupt or clear, exit, suspend,
+paste, history search, line editing, leader):
+
+| Key | Today (Mission Control) | K-P3 check | Target | Where |
+|---|---|---|---|---|
+| PgUp, PgDn | Page the transcript, pinning at the prompt | Not Ctrl. Keep | Keep | `:424` |
+| Shift+↑, Shift+↓ | Aliases of PgUp and PgDn (M1d) | Not Ctrl. Keep | Keep | `:437` |
+| Mouse wheel, scrollbar click | Scroll, pin, return to live | Not a key. Keep | Keep | `tui.rs:141`, `:1068`, `:527` (mission-control.md Keys, scroll rows) |
+| Ctrl+Home, Ctrl+End | Top, and live | Ctrl not on the list | Scroll mode `g` / `G` (plan, Scroll mode) | `:425` |
+| Ctrl+R | Transcript search (SCAN), pins at the bottom | Ctrl+R is for prompt history only | Leader `/` (plan: Ctrl+R moves to leader `/`) | `:78`, `:93`, `:426` |
+| Ctrl+Up, Ctrl+Down | Previous and next user message | Ctrl not on the list | Scroll mode `[` / `]` | `:427` |
+| ↑, ↓ (pinned) | One line. At the live prompt: input history | Arrows allowed (K-P4) | Keep | `:206-213` in code, `:428` |
+| Esc | Leave the pinned view. Clears search first. Aborts a run | Esc allowed | Keep | `:429` |
+| `/`, `n`, `p` | Search in the pinned view; next and previous match | Bare letters, scroll mode (K-P4) | Keep | `:430` |
+| Ctrl+G | Flight plan console (task panel) | Ctrl not on the list | Leader `g` (task panel show or hide). Assumes the flight plan console is the task panel | `:38`, `:79` |
+| Ctrl+T | Expand thinking text | Ctrl not on the list | Leader `b` (show or hide thinking blocks) | `:39`, `:133` |
+| Shift+Tab | BUILD and PLAN toggle | Keep (plan: Shift+Tab cycles mode) | Keep | `:80` |
+| Ctrl+C, twice | End of shift (`/quit` too) | Clear or exit. Keep | Keep | `:81` |
+| Ctrl+Z | Suspend (M1e check) | Suspend. Keep | Keep | `:285`, `:460` |
+| Alt+e | External editor (M1e check) | Alt is out of defaults (K-P1) | Leader `e` (ctrl+x, then e) | `:285` (fixed in this commit) |
+
+The Alt mentions at `mission-control.md:210` and `:285` now name the leader keys.
 
 ### Leader behaviour
 
@@ -299,7 +336,11 @@ as Enter. Details:
   for terminals that send a bare LF for Shift+Enter. Ctrl+J in kitty mode arrives as a
   CSI u sequence and parses as `ctrl+j` already.
 
-Change needed (K-5):
+**Decision (user, 2026-11-05): no change.** Newline is Shift+Enter, with leader Enter as
+the fallback. Legacy Enter and 0x0A parsing stay as they are. The change below is kept
+for reference only and is not built.
+
+Change that was considered:
 
 1. `parse.rs:133`: stop mapping `"\n"` to `enter` in legacy mode. Then `parse.rs:176`
    returns `ctrl+j`.
@@ -321,7 +362,7 @@ macOS Terminal.app, tmux and a plain Linux tty before merge.
 | K-2 Leader config, grouped form, contexts | S | `AppKeybindingsManager` (`keybindings.rs`) | The grouped form loads. The flat form still works. A printable leader is rejected. |
 | K-3 Footer pending text and which-key popup | M | `hints.rs`, footer code | The footer shows "Ctrl+X …" while pending. The popup appears after 400 ms and lists keys from the keymap. |
 | K-4 New defaults in the app table | S | app key table, `keybinding_layout.rs`, `keybindings-gold.json` | The layout tests and the gold file match the table in this page. |
-| K-5 Remove Alt from the library table; Ctrl+Delete parser entry; Ctrl+J newline | S | `keys` library table, `parse.rs`, `matching.rs` | No Alt in the defaults. Ctrl+Delete parses. Ctrl+J gives a newline (see "Ctrl+J"). |
+| K-5 Remove Alt from the library table; Ctrl+Delete parser entry | S | `keys` library table, `parse.rs` | No Alt in the defaults. Ctrl+Delete parses. Enter and 0x0A parsing unchanged. |
 | K-6 Bare-letter pickers, scroll mode keys, empty-query gate, `/` focus | M | picker and scroll-mode code in `hoocode-code-tui-app` | Each list in "Pickers and panes" and "Scroll mode" works with its keys. Typing in a query field still types. |
 | K-7 Enter queues while running; Up takes back a queued message | S | `mode/input.rs` | While a turn runs, Enter queues. Up on an empty prompt takes back the last queued message. |
 | K-8 Validation, `check`, `--defaults`, `--read`, defaults file, Alt migration notice | S | `AppKeybindingsManager`, CLI | Each command works. Errors show in `/hotkeys`. A bad file never crashes. The Alt notice shows once per version. |
@@ -334,6 +375,28 @@ then K-3, K-6, K-7, K-8, K-9, K-10.
 Every step runs `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`
 and `cargo nextest run -p <touched crates>` (CLAUDE.md). TUI steps are done by Haiku subagents.
 
+## Built deviations (2026-11-05)
+
+What was built differs from the text above in these places. The user pages
+(`docs/user/keybindings.md`) and `docs/maps/ui.md` say what the build does.
+
+- **Leader only at the prompt.** Ctrl+X starts a sequence only when the prompt has
+  focus. A picker, pane or the task panel above it takes the key instead.
+- **`q` closes lists, not dialogs.** In a picker or list with an empty query, `q`
+  closes it, as Esc does, and it leaves the pinned transcript view. The dialog
+  answers are `y`, `a` and `n` (while no reply is typed); `q` does not answer a dialog.
+- **Picker help is `f1` first.** `app.list.help` lists `f1` before `?`. `?` types
+  while a query is typed, so the "more" hint shows `f1`. The gold test records it.
+- **A grouped binding applies where its action runs.** `"u": "app.scroll.lineDown"`
+  is a Scroll binding. Written under another context, it is skipped with a warning.
+  A `null` in a context takes the key away from that context's actions only.
+- **Some hint keys are fixed, not keymap ids.** Space (the second toggle in
+  settings and config), `k` and `l` on the end-of-shift card, `v` and `r` on the
+  interrupted-run row, and `e` on the approval card are written as they are typed.
+  They are not in the keymap, so the K-9 lint does not cover them as key names.
+- **Scroll indicator names.** The keymap's own names show: `pageUp/pageDown`, not
+  `PgUp/PgDn`, and `↑↓` is kept for the bare arrows.
+
 ## Not doing
 
 - No Alt key in any default.
@@ -342,18 +405,24 @@ and `cargo nextest run -p <touched crates>` (CLAUDE.md). TUI steps are done by H
 - No rewrite of the user's `keybindings.json` or theme files.
 - No built-in theme override by name.
 - No chords beyond the leader. No second leader.
-- No ANSI-palette themes in this round (later, see Open questions).
+- No in-app key editor. No Ctrl+J newline.
+- No ANSI-palette themes in this round (later, T12).
 
-## Open questions
+## Decided questions (user, 2026-11-05)
 
-Each question lists the recommended answer first.
-
-1. **`theme_paths`:** remove it, or wire it into the loader? Recommendation: remove, unless someone uses it. Trade-off: removing is a settings change for anyone who set it (the setting is not read, so it does nothing today).
-2. **`ansi:<name>` colours** that follow the terminal palette: later, or now? Recommendation: later. Trade-off: it is useful on terminals with custom palettes, but it needs a test per terminal.
-3. **Ctrl+J:** make it a newline in legacy mode (the change in "Ctrl+J"), or only use Shift+Enter and leader Enter? Recommendation: make Ctrl+J a newline. Trade-off: a terminal or tool that sends LF (0x0A) for Enter would now insert a newline instead of submitting. Test on each terminal before merge.
-4. **Dialog keys** (K-0): use `y`, `n`, `a`, Enter and Esc as listed? Recommendation: yes. Trade-off: `a` ("always") is a bare letter, so it must not fire while a text field has focus.
-5. **Leader timeout** (1500 ms) and the which-key delay (400 ms): keep as defaults? Recommendation: yes. Trade-off: a short timeout can cancel a slow user's key.
-6. **VS Code:** does its integrated terminal take Ctrl+X? Check before K-2. If it does, the default leader stays, and the docs say so.
+1. `theme_paths`: removed (T10).
+2. `ansi:<name>` colours: later (T12).
+3. Ctrl+J: not changed. Newline is Shift+Enter and leader Enter.
+4. Dialog keys: `y`, `n`, `a`, Enter, Esc. A bare letter fires only while the text field is
+   empty. On the clearance card, whose reply field is always open, `y` and `n` answer at once while
+   the reply is empty. `a` only highlights the always row, and Enter confirms it (user, 2026-11-05:
+   "y/n instant, a needs Enter").
+5. Leader timeout 1500 ms and which-key delay 400 ms are the defaults.
+6. VS Code: check whether its terminal takes Ctrl+X before K-2. If it does, the default
+   leader stays and the docs say so.
+7. Persistence: the theme picker saves to the global settings, `auto` included (T11).
+   Keys change only by editing `~/.hoocode/keybindings.json`. No in-app key editor.
+8. Enter while running steers; Ctrl+X f queues a follow-up (user, 2026-11-05).
 
 ## Details
 

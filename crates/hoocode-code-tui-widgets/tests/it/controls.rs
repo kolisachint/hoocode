@@ -1,5 +1,5 @@
-//! Component goldens: `/hotkeys` as the Keys pane: the layer's bindings
-//! grouped as prompt, transcript and app at 100 columns, stacked at 80.
+//! Component goldens: `/hotkeys` as the Keys pane on its leader layer: the
+//! bindings grouped as prompt, transcript and app at 100 columns, stacked at 80.
 //! Everything on screen comes from the real keybindings with literal key
 //! names (no `option`), so the bytes hold on macOS and Linux. Accept a
 //! deliberate change with
@@ -8,17 +8,23 @@
 use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
+use hoocode_tui_render::Component;
 
 use crate::support::lock;
 
 fn check(name: &str, width: u16) {
     let _g = lock();
     let mut controls = ControlsComponent::new();
+    // The leader layer: the transcript's keys are leader keys now (K-P2, K-P3).
+    controls.handle_input("\t");
     let rendered = render_golden(&mut controls, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(text.contains("Keys  ?"), "{name}: missing title in\n{text}");
     assert!(
-        text.contains("plain") && text.contains("ctrl") && text.contains("alt"),
+        text.contains("plain")
+            && text.contains("ctrl")
+            && text.contains("leader")
+            && text.contains("alt"),
         "{name}: missing layer tabs in\n{text}"
     );
     assert!(
@@ -48,4 +54,20 @@ fn controls_100() {
 #[test]
 fn controls_80() {
     check("controls_80", 80);
+}
+
+#[test]
+fn keybinding_problems_are_listed_under_the_groups_and_hidden_when_none() {
+    let _g = lock();
+    let mut controls = ControlsComponent::new();
+    controls.set_problems(vec![
+        "error: ctrl+c is reserved and cannot be rebound".into()
+    ]);
+    let rendered = render_golden(&mut controls, 100);
+    let text = rendered.split("--- styles ---").next().unwrap_or_default();
+    assert!(text.contains("keybindings.json · 1 problem"), "{text}");
+    assert!(text.contains("ctrl+c is reserved"), "{text}");
+    controls.set_problems(Vec::new());
+    let rendered = render_golden(&mut controls, 100);
+    assert!(!rendered.contains("keybindings.json ·"), "{rendered}");
 }

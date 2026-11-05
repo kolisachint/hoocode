@@ -172,3 +172,126 @@ fn extension_picker_fits_the_width_and_fills_its_selected_row() {
         }
     }
 }
+
+// --- K-6: bare letters (K-P4) ------------------------------------------------
+
+fn with_app_keys() {
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+}
+
+#[test]
+fn y_n_and_a_answer_with_the_option_they_name() {
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, outcomes) = selector(&["Yes (once)", "No (block)", "Always"]);
+    s.handle_input("a");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("Always".to_string())]
+    );
+    let (mut s, outcomes) = selector(&["Yes (once)", "No (block)", "Always"]);
+    s.handle_input("n");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("No (block)".to_string())]
+    );
+    let (mut s, outcomes) = selector(&["Yes (once)", "No (block)", "Always"]);
+    s.handle_input("y");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("Yes (once)".to_string())]
+    );
+}
+
+#[test]
+fn a_letter_answers_nothing_when_the_options_offer_no_such_answer() {
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, outcomes) = selector(&["Subscription", "API key"]);
+    s.handle_input("y");
+    s.handle_input("a");
+    assert!(outcomes.borrow().is_empty(), "no answer offered");
+}
+
+#[test]
+fn j_and_k_move_and_q_closes() {
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, outcomes) = selector(&["one", "two", "three"]);
+    s.handle_input("j");
+    s.handle_input("j");
+    s.handle_input("k");
+    s.handle_input(ENTER);
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("two".to_string())]
+    );
+    let (mut s, outcomes) = selector(&["one", "two"]);
+    s.handle_input("q");
+    assert_eq!(*outcomes.borrow(), vec![SelectorOutcome::Cancelled]);
+}
+
+#[test]
+fn question_mark_shows_the_keys_under_the_options() {
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, _) = selector(&["Yes (once)", "No (block)"]);
+    assert!(!plain(s.render(70)).join("\n").contains("hide keys"));
+    s.handle_input("?");
+    let shown = plain(s.render(70)).join("\n");
+    assert!(
+        shown.contains("hide keys") && shown.contains("yes"),
+        "{shown}"
+    );
+    s.handle_input("?");
+    assert!(!plain(s.render(70)).join("\n").contains("hide keys"));
+}
+
+#[test]
+fn a_letter_answers_a_whole_label_or_its_first_word_never_a_prefix() {
+    // `None` is not `No`, and `Yesterday` is not `Yes`.
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, outcomes) = selector(&["None", "Yesterday"]);
+    s.handle_input("n");
+    s.handle_input("y");
+    assert!(outcomes.borrow().is_empty(), "a prefix is not an answer");
+
+    let (mut s, outcomes) = selector(&["None", "No thanks"]);
+    s.handle_input("n");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("No thanks".to_string())]
+    );
+}
+
+#[test]
+fn a_letter_answer_ignores_case() {
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, outcomes) = selector(&["yes", "NO"]);
+    s.handle_input("y");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("yes".to_string())]
+    );
+    let (mut s, outcomes) = selector(&["yes", "NO"]);
+    s.handle_input("n");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("NO".to_string())]
+    );
+}
+
+#[test]
+fn q_does_not_answer_a_dialog_but_esc_does() {
+    // A permission or a yes/no question: a stray q does not decide it.
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (s, outcomes) = selector(&["Yes", "No"]);
+    let mut s = s.as_dialog();
+    s.handle_input("q");
+    assert!(outcomes.borrow().is_empty(), "q is not a dialog key");
+    s.handle_input("\x1b");
+    assert_eq!(*outcomes.borrow(), vec![SelectorOutcome::Cancelled]);
+}

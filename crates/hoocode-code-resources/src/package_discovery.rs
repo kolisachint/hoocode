@@ -1,5 +1,5 @@
 //! `core/package-resource-discovery.ts`: resource file discovery (ignore files,
-//! skill/prompt/theme/extension layouts) and the include/exclude pattern engine
+//! skill/prompt/extension layouts) and the include/exclude pattern engine
 //! (plain globs plus `!` / `+` / `-` overrides).
 
 use crate::node_path;
@@ -12,7 +12,6 @@ pub enum ResourceType {
     Extensions,
     Skills,
     Prompts,
-    Themes,
     Agents,
 }
 
@@ -23,7 +22,6 @@ impl ResourceType {
             Self::Extensions => "extensions",
             Self::Skills => "skills",
             Self::Prompts => "prompts",
-            Self::Themes => "themes",
             Self::Agents => "agents",
         }
     }
@@ -32,17 +30,15 @@ impl ResourceType {
         match self {
             Self::Extensions => name.ends_with(".ts") || name.ends_with(".js"),
             Self::Skills | Self::Prompts | Self::Agents => name.ends_with(".md"),
-            Self::Themes => name.ends_with(".json"),
         }
     }
 }
 
 /// `SETTINGS_RESOURCE_TYPES`.
-pub const SETTINGS_RESOURCE_TYPES: [ResourceType; 4] = [
+pub const SETTINGS_RESOURCE_TYPES: [ResourceType; 3] = [
     ResourceType::Extensions,
     ResourceType::Skills,
     ResourceType::Prompts,
-    ResourceType::Themes,
 ];
 
 const IGNORE_FILE_NAMES: [&str; 3] = [".gitignore", ".ignore", ".fdignore"];
@@ -301,7 +297,7 @@ pub fn collect_ancestor_agents_skill_dirs(start: &str) -> Vec<String> {
     dirs
 }
 
-/// Flat files of one kind directly in `dir` (prompts, themes).
+/// Flat files of one kind directly in `dir` (prompts).
 fn collect_flat(dir: &str, extension: &str) -> Vec<String> {
     let mut out = Vec::new();
     if !exists(dir) {
@@ -330,11 +326,6 @@ fn collect_flat(dir: &str, extension: &str) -> Vec<String> {
 /// `collectAutoPromptEntries`.
 pub fn collect_auto_prompt_entries(dir: &str) -> Vec<String> {
     collect_flat(dir, ".md")
-}
-
-/// `collectAutoThemeEntries`.
-pub fn collect_auto_theme_entries(dir: &str) -> Vec<String> {
-    collect_flat(dir, ".json")
 }
 
 /// `readHooCodeManifestFile`: the `hoocode` (or legacy `pi`) key of a package.json.

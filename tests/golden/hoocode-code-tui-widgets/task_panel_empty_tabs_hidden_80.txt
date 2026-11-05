@@ -1,9 +1,9 @@
-   plan 1/1 · mcp 1/1 · ctrl+g
+   plan 1/1 · mcp 1/1 · ctrl+x g
    ● Read the migration plan
 --- styles ---
 r0 c0-10 fg=#e5e5e7 bg=#1e1e2a
-r0 c11-29 fg=#989898 bg=#1e1e2a
-r0 c30-79 fg=#e5e5e7 bg=#1e1e2a
+r0 c11-31 fg=#989898 bg=#1e1e2a
+r0 c32-79 fg=#e5e5e7 bg=#1e1e2a
 r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r1 c3 fg=#b5bd68 bg=#1e1e2a
 r1 c4 fg=#e5e5e7 bg=#1e1e2a

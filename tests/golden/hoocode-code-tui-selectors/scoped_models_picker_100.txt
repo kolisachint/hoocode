@@ -3,7 +3,7 @@
    gpt-5-mini        on
    gpt-5             off
  › filter
- enter on / off · tab effort · alt+s save to settings · esc close · f1 more
+ enter on / off · / search · s save to settings · esc close · f1 more
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
 r0 c1-15 fg=#14141c bg=#5cc8bb bold
@@ -29,12 +29,12 @@ r4 c3-8 fg=#989898 bg=#2a2a36
 r4 c9-99 fg=#e5e5e7 bg=#2a2a36
 r5 c0-5 fg=#e5e5e7 bg=#1e1e2a
 r5 c6-17 fg=#989898 bg=#1e1e2a
-r5 c18-20 fg=#e5e5e7 bg=#1e1e2a
-r5 c21-30 fg=#989898 bg=#1e1e2a
-r5 c31-35 fg=#e5e5e7 bg=#1e1e2a
-r5 c36-55 fg=#989898 bg=#1e1e2a
-r5 c56-58 fg=#e5e5e7 bg=#1e1e2a
-r5 c59-67 fg=#989898 bg=#1e1e2a
-r5 c68-69 fg=#e5e5e7 bg=#1e1e2a
-r5 c70-74 fg=#989898 bg=#1e1e2a
-r5 c75-99 fg=#e5e5e7 bg=#1e1e2a
+r5 c18 fg=#e5e5e7 bg=#1e1e2a
+r5 c19-28 fg=#989898 bg=#1e1e2a
+r5 c29 fg=#e5e5e7 bg=#1e1e2a
+r5 c30-49 fg=#989898 bg=#1e1e2a
+r5 c50-52 fg=#e5e5e7 bg=#1e1e2a
+r5 c53-61 fg=#989898 bg=#1e1e2a
+r5 c62-63 fg=#e5e5e7 bg=#1e1e2a
+r5 c64-68 fg=#989898 bg=#1e1e2a
+r5 c69-99 fg=#e5e5e7 bg=#1e1e2a

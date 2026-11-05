@@ -104,11 +104,17 @@ struct Screen {
     output: Output,
     chat: Rc<RefCell<Container>>,
     alternate: Arc<AtomicBool>,
+    editor: Rc<RefCell<Editor>>,
 }
 
 impl Screen {
     fn send(&mut self, data: &str) {
         self.ui.process_event(TuiEvent::input(data));
+    }
+
+    /// The text in the prompt.
+    fn text(&self) -> String {
+        self.editor.borrow().get_text()
     }
 
     fn top(&self) -> i64 {
@@ -181,14 +187,12 @@ fn screen() -> Screen {
         output,
         chat,
         alternate,
+        editor,
     }
 }
 
 const SHIFT_UP: &str = "\x1b[1;2A";
 const SHIFT_DOWN: &str = "\x1b[1;2B";
-const CTRL_UP: &str = "\x1bOa";
-const CTRL_DOWN: &str = "\x1bOb";
-const CTRL_END: &str = "\x1b[8^";
 const PAGE_UP: &str = "\x1b[5~";
 const WHEEL_UP: &str = "\x1b[<64;1;1M";
 /// A left press on the last column, screen row 3 (the first body row).
@@ -226,23 +230,31 @@ fn shift_down_at_the_tail_is_consumed_and_does_nothing() {
 #[test]
 fn jump_to_user_message_finds_the_chat_inside_the_body() {
     let mut s = screen();
+    // `[` and `]` are scroll mode's (K-P4): pin at the tail first, as the leader does.
+    s.ui.scroll_to_row(i64::MAX, None);
+    assert!(s.ui.scroll_pinned());
     // The last user message is at body row 42; the view lands three rows above it.
-    s.send(CTRL_UP);
+    s.send("[");
     assert_eq!(s.top(), 39, "previous message, from the tail");
     // The one before is at body row 11.
-    s.send(CTRL_UP);
+    s.send("[");
     assert_eq!(s.top(), 8, "previous again");
-    s.send(CTRL_DOWN);
+    s.send("]");
     assert_eq!(s.top(), 8, "next user message, already in view");
 }
 
 #[test]
-fn ctrl_end_returns_to_live_and_page_up_pins() {
+fn capital_g_returns_to_live_and_page_up_pins() {
     let mut s = screen();
     s.send(PAGE_UP);
     assert!(s.ui.scroll_pinned(), "page up pins");
-    s.send(CTRL_END);
-    assert!(s.ui.get_scroll_position().is_none(), "ctrl+end is live");
+    s.send("G");
+    assert!(s.ui.get_scroll_position().is_none(), "G is live");
+    assert_eq!(
+        s.text(),
+        "",
+        "G is a key, not a letter typed into the prompt"
+    );
 }
 
 #[test]

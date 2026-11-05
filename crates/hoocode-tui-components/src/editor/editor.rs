@@ -411,6 +411,11 @@ impl Editor {
         self.autocomplete_provider = Some(provider);
     }
 
+    /// The prompt history, newest first (what Up walks through).
+    pub fn history(&self) -> &[String] {
+        &self.history
+    }
+
     /// Add a prompt to history for up/down navigation (after submission).
     pub fn add_to_history(&mut self, text: &str) {
         let trimmed = js_trim(text);
@@ -1753,6 +1758,22 @@ impl Editor {
 
     pub fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
+    }
+
+    /// Runs an editor command by its binding id, as its key would
+    /// (`tui.editor.undo`, `tui.editor.redo`, `tui.editor.yankPop`,
+    /// `tui.input.newLine`). The leader's sequences name a command with no
+    /// key of its own. `false` for an id this does not run.
+    pub fn run_command(&mut self, id: &str) -> bool {
+        match id {
+            "tui.editor.undo" => self.undo(),
+            "tui.editor.redo" => self.redo(),
+            "tui.editor.yankPop" => self.yank_pop(),
+            "tui.input.newLine" => self.add_new_line(),
+            _ => return false,
+        }
+        self.request_render();
+        true
     }
 
     /// `handleInput`, with the keybindings passed explicitly.

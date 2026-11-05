@@ -2,8 +2,9 @@
 //!
 //! Loads skills, prompt templates / slash commands, context files and the
 //! system-prompt inputs from the settings, the auto-discovered directories and
-//! explicit paths. Not ported yet: extensions (ledger 12.3), themes (11.1) and
-//! package sources (12.2); their getters are absent and their paths ignored.
+//! explicit paths. Not ported yet: extensions (ledger 12.3) and package sources
+//! (12.2); their getters are absent and their paths ignored. Themes are not a
+//! resource kind here: they load from the themes folder (see `hoocode-code-tui-theme`).
 
 use crate::context_files::{
     load_project_context_files, resolve_prompt_input, ContextFile, LoadProjectContextFilesOptions,
@@ -39,7 +40,7 @@ pub struct PathEntry {
     pub metadata: PathMetadata,
 }
 
-/// `ResourceExtensionPaths` (themes are not ported yet).
+/// `ResourceExtensionPaths` (extensions are not ported yet).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResourceExtensionPaths {
     pub skill_paths: Vec<PathEntry>,
@@ -357,7 +358,6 @@ impl DefaultResourceLoader {
             .into_iter()
             .map(|r| r.path)
             .collect();
-        let _enabled_themes = enabled(&resolved.themes, &mut metadata_by_path);
         let _enabled_extensions = enabled(&resolved.extensions, &mut metadata_by_path);
         let mut enabled_agents: Vec<String> = enabled(&resolved.agents, &mut metadata_by_path)
             .into_iter()

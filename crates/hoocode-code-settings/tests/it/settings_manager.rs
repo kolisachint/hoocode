@@ -117,6 +117,59 @@ fn preserves_custom_settings_when_changing_theme() {
 }
 
 #[test]
+fn an_old_settings_file_with_theme_paths_still_loads_and_keeps_its_keys() {
+    let d = Dirs::new();
+    // `themes` is the key the old theme-path setting wrote; `theme_paths` is
+    // the name it went by. Neither is read any more, but both must load.
+    write(
+        &d.global_path(),
+        &json!({"theme": "light", "themes": ["./old-themes"], "theme_paths": ["./more"]}),
+    );
+    let mut manager = d.manager();
+    assert!(manager.drain_errors().is_empty());
+    assert_eq!(manager.theme().as_deref(), Some("light"));
+    manager.set_theme("dark");
+    let saved = read(&d.global_path());
+    assert_eq!(saved["theme"], "dark");
+    assert_eq!(saved["theme_paths"], json!(["./more"]));
+    assert_eq!(saved["themes"], json!(["./old-themes"]));
+}
+
+#[test]
+fn an_old_package_filter_with_themes_still_loads_and_keeps_the_key() {
+    let d = Dirs::new();
+    write(
+        &d.global_path(),
+        &json!({"packages": [{"source": "npm:tools", "themes": ["-themes/dark.json"]}]}),
+    );
+    let mut manager = d.manager();
+    assert!(manager.drain_errors().is_empty());
+    manager.set_theme("light");
+    let saved = read(&d.global_path());
+    assert_eq!(
+        saved["packages"],
+        json!([{"source": "npm:tools", "themes": ["-themes/dark.json"]}])
+    );
+}
+
+#[test]
+fn a_picked_theme_is_saved_globally_and_read_back_after_a_restart() {
+    let d = Dirs::new();
+    write(&d.global_path(), &json!({"defaultModel": "claude-sonnet"}));
+    let mut manager = d.manager();
+    // The picker's choices: `auto`, then a user theme name. Each is saved at once.
+    manager.set_theme("auto");
+    assert_eq!(read(&d.global_path())["theme"], "auto");
+    manager.set_theme("my-theme");
+    assert_eq!(read(&d.global_path())["theme"], "my-theme");
+    assert_eq!(read(&d.global_path())["defaultModel"], "claude-sonnet");
+
+    // A new manager (a restart) sees the saved choice.
+    let restarted = d.manager();
+    assert_eq!(restarted.theme().as_deref(), Some("my-theme"));
+}
+
+#[test]
 fn in_memory_changes_override_file_changes_for_the_same_key() {
     let d = Dirs::new();
     write(&d.global_path(), &json!({"theme": "dark"}));

@@ -125,6 +125,8 @@ pub fn parse_key(data: &str) -> Option<String> {
         "\x1b[C" => return Some("right".to_string()),
         "\x1b[D" => return Some("left".to_string()),
         "\x1b[3~" => return Some("delete".to_string()),
+        // xterm's modifyOtherKeys-free form of Ctrl+Delete (the legacy byte sequence).
+        "\x1b[3;5~" => return Some("ctrl+delete".to_string()),
         "\x1b[5~" => return Some("pageUp".to_string()),
         "\x1b[6~" => return Some("pageDown".to_string()),
         _ => {}
@@ -243,6 +245,15 @@ mod tests {
             .read()
             .unwrap_or_else(|e| e.into_inner());
         assert_eq!(parse_key("\x1bx").as_deref(), Some("alt+x"));
+    }
+
+    #[test]
+    fn test_parse_key_ctrl_delete_legacy() {
+        let _kitty = crate::state::KITTY_TEST_LOCK
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        assert_eq!(parse_key("\x1b[3;5~").as_deref(), Some("ctrl+delete"));
+        assert_eq!(parse_key("\x1b[3~").as_deref(), Some("delete"));
     }
 
     #[test]

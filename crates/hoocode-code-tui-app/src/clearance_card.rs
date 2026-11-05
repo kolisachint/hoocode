@@ -4,7 +4,9 @@
 //! pipes, then numbered options (`1 yes`, `2 yes, always for <program> this
 //! session`, `3 no, tell it why`), the reply row and the hint row. `1`/`2`/`3`
 //! pick, `e` edits the command first, and every other letter types a reply
-//! that `enter` sends as the denial's reason.
+//! that `enter` sends as the denial's reason. While the reply is empty, `y`
+//! answers yes and `n` no at once; `a` only moves the highlight to the always
+//! row, and `enter` confirms it. With no always row, `a` types like any letter.
 //!
 //! `e edit first` cannot run inside the gate (the call's arguments are
 //! fixed), so `enter` denies the original call and the host sends the edited
@@ -12,9 +14,10 @@
 //! (asking again when it still needs clearance).
 
 use hoocode_code_permissions::{is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo};
+use hoocode_code_tui_keybindings::key_hint_text;
 use hoocode_code_tui_widgets::pane::{hint_line, input_line, Chip, Pane, PaneStyle};
 use hoocode_tui_components::Input;
-use hoocode_tui_keys::matches_key;
+use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{Line, Span};
 use hoocode_tui_render::Component;
 
@@ -161,7 +164,9 @@ impl ClearanceCard {
         }
         if self.editing {
             pane.input = Some(input_line(self.edit.get_value(), "", self.focused));
-            pane.hint = hint_line(&[("enter", "run"), ("esc", "cancel")]);
+            let run = key_hint_text("tui.input.submit");
+            let cancel = key_hint_text("tui.select.cancel");
+            pane.hint = hint_line(&[(run.as_str(), "run"), (cancel.as_str(), "cancel")]);
         } else {
             let options = self.options();
             let count = options.len();
@@ -183,7 +188,23 @@ impl ClearanceCard {
             pane.selected = Some(self.selected.min(count - 1));
             pane.input = Some(input_line(&self.reply, "or type a reply", self.focused));
             let pick = format!("1–{count}");
-            pane.hint = hint_line(&[(pick.as_str(), "pick"), ("e", "edit first")]);
+            let yes = key_hint_text("app.dialog.yes");
+            let always = key_hint_text("app.dialog.always");
+            let no = key_hint_text("app.dialog.no");
+            let enter = key_hint_text("tui.input.submit");
+            // `a` only highlights the always row, so its hint names enter too.
+            // The letters answer only the options offered: `always` needs three.
+            let always_label = format!("always ({enter})");
+            let mut hint = vec![
+                (pick.as_str(), "pick"),
+                (yes.as_str(), "yes"),
+                (no.as_str(), "no"),
+            ];
+            if count >= 3 {
+                hint.push((always.as_str(), always_label.as_str()));
+            }
+            hint.push(("e", "edit first"));
+            pane.hint = hint_line(&hint);
         }
         pane.style = Some(st);
         pane
@@ -245,6 +266,7 @@ impl Component for ClearanceCard {
             return;
         }
         let count = self.options().len();
+        let kb = get_keybindings();
         match data {
             // Esc alone is no (spec §6.2).
             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),
@@ -259,6 +281,11 @@ impl Component for ClearanceCard {
             "1" => self.choose(0),
             "2" if count >= 2 => self.choose(1),
             "3" if count >= 3 => self.choose(2),
+            // The dialog letters (K-P4), only here with no reply typed: y and n
+            // answer at once. a moves the highlight to the always row; enter confirms it.
+            _ if kb.matches(data, "app.dialog.yes") => self.choose(0),
+            _ if kb.matches(data, "app.dialog.always") && count >= 3 => self.selected = 1,
+            _ if kb.matches(data, "app.dialog.no") => self.choose(count - 1),
             "\u{7f}" | "\u{8}" => {}
             _ if matches_key(data, "up") => {
                 self.selected = (self.selected + count - 1) % count;

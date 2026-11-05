@@ -92,7 +92,6 @@ fn should_return_no_package_sourced_paths_when_no_sources_configured() {
     let r = env().resolve();
     assert!(r.extensions.is_empty());
     assert!(r.prompts.is_empty());
-    assert!(r.themes.is_empty());
     assert!(r
         .skills
         .iter()
@@ -157,12 +156,8 @@ fn should_resolve_symlinked_user_and_project_resources_once() {
         &skill("shared-skill"),
     );
     write(&format!("{shared}/prompts/shared.md"), "Shared prompt");
-    write(
-        &format!("{shared}/themes/shared.json"),
-        "{\"name\": \"shared-theme\"}",
-    );
     std::fs::create_dir_all(format!("{}/{CONFIG}", e.temp)).unwrap();
-    for kind in ["extensions", "skills", "prompts", "themes"] {
+    for kind in ["extensions", "skills", "prompts"] {
         std::os::unix::fs::symlink(
             format!("{shared}/{kind}"),
             format!("{}/{kind}", e.agent_dir),
@@ -176,15 +171,10 @@ fn should_resolve_symlinked_user_and_project_resources_once() {
     }
     let r = e.resolve();
     assert_eq!(
-        (
-            r.extensions.len(),
-            r.skills.len(),
-            r.prompts.len(),
-            r.themes.len()
-        ),
-        (1, 1, 1, 1)
+        (r.extensions.len(), r.skills.len(), r.prompts.len()),
+        (1, 1, 1)
     );
-    for list in [&r.extensions, &r.skills, &r.prompts, &r.themes] {
+    for list in [&r.extensions, &r.skills, &r.prompts] {
         assert_eq!(list[0].metadata.scope, SourceScope::Project);
     }
 }
@@ -449,19 +439,6 @@ fn should_exclude_extensions_with_bang_pattern() {
 }
 
 #[test]
-fn should_filter_themes_with_glob_patterns() {
-    let mut e = env();
-    for f in ["dark", "light", "funky"] {
-        write(&format!("{}/themes/{f}.json", e.agent_dir), "{}");
-    }
-    e.set("themes", &["themes", "!funky.json"]);
-    let r = e.resolve();
-    assert!(enabled_ending(&r.themes, "dark.json"));
-    assert!(enabled_ending(&r.themes, "light.json"));
-    assert!(disabled_ending(&r.themes, "funky.json"));
-}
-
-#[test]
 fn should_filter_prompts_with_exclusion_pattern() {
     let mut e = env();
     write(&format!("{}/prompts/review.md", e.agent_dir), "Review code");
@@ -548,22 +525,6 @@ fn should_force_include_after_specific_exclusion() {
     let r = e.resolve();
     assert!(enabled_ending(&r.extensions, "/a.ts"));
     assert!(enabled_ending(&r.extensions, "/b.ts"));
-}
-
-#[test]
-fn should_force_include_themes() {
-    let mut e = env();
-    for f in ["dark", "light", "special"] {
-        write(&format!("{}/themes/{f}.json", e.agent_dir), "{}");
-    }
-    e.set(
-        "themes",
-        &["themes", "!themes/*.json", "+themes/special.json"],
-    );
-    let r = e.resolve();
-    assert!(disabled_ending(&r.themes, "dark.json"));
-    assert!(disabled_ending(&r.themes, "light.json"));
-    assert!(enabled_ending(&r.themes, "special.json"));
 }
 
 #[test]

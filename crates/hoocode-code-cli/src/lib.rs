@@ -12,6 +12,7 @@ mod config_command;
 mod help;
 mod help_text;
 pub mod initial_message;
+mod keybindings_command;
 mod list_models;
 mod plugin_command;
 mod runtime;
@@ -165,6 +166,9 @@ pub fn main(argv: &[String]) -> i32 {
 
     if argv.first().is_some_and(|a| a == "app-server") {
         return app_server::run(&argv[1..], &mut stderr);
+    }
+    if argv.first().is_some_and(|a| a == "keybindings") {
+        return keybindings_command::run(&argv[1..], &mut stdout, &mut stderr);
     }
     if argv.first().is_some_and(|a| a == "config") {
         return config_command::run_config_command(env.color, &mut stderr);

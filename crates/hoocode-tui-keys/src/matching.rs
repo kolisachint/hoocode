@@ -30,6 +30,11 @@ impl KeySpec {
             return None;
         }
         let mut modifier = 0u32;
+        // A single capital letter is Shift+letter: `G` is the key that types
+        // a capital G, not the plain `g`.
+        if is_single_capital(key_id) {
+            modifier |= modifiers::SHIFT;
+        }
         if parts.contains(&"shift") {
             modifier |= modifiers::SHIFT;
         }
@@ -49,6 +54,80 @@ impl KeySpec {
     pub fn matches(&self, data: &str) -> bool {
         matches_spec(data, &self.key, self.modifier)
     }
+
+    /// Whether this key types a character: a single-character key (a letter,
+    /// digit or symbol) or space, with no Ctrl, Alt or Super. Shift alone
+    /// still types, so `shift+a` is printable.
+    pub fn is_printable(&self) -> bool {
+        let non_text = modifiers::CTRL | modifiers::ALT | modifiers::SUPER;
+        if self.modifier & non_text != 0 {
+            return false;
+        }
+        self.key == "space" || self.key.chars().count() == 1
+    }
+}
+
+/// Whether `text` is one ASCII capital letter.
+fn is_single_capital(text: &str) -> bool {
+    let mut chars = text.chars();
+    matches!((chars.next(), chars.next()), (Some(c), None) if c.is_ascii_uppercase())
+}
+
+/// Whether `key_id` names a key hoocode can match: zero or more of the
+/// modifiers `shift`, `ctrl`, `alt` and `super`, then one key name (a named
+/// key, a letter, a digit or a symbol). A misspelled modifier is not read as
+/// a modifier, so `shfit+enter` is refused and not taken for plain Enter.
+pub fn is_known_key_id(key_id: &str) -> bool {
+    let lower = key_id.to_lowercase();
+    let mut parts: Vec<&str> = lower.split('+').collect();
+    let Some(key) = parts.pop() else {
+        return false;
+    };
+    if parts
+        .iter()
+        .any(|m| !matches!(*m, "shift" | "ctrl" | "alt" | "super"))
+    {
+        return false;
+    }
+    let mut chars = key.chars();
+    let single = match (chars.next(), chars.next()) {
+        (Some(c), None) => c.is_ascii_lowercase() || c.is_ascii_digit() || is_symbol_key(c),
+        _ => false,
+    };
+    single
+        || matches!(
+            key,
+            "escape"
+                | "esc"
+                | "space"
+                | "tab"
+                | "enter"
+                | "return"
+                | "backspace"
+                | "insert"
+                | "delete"
+                | "clear"
+                | "home"
+                | "end"
+                | "pageup"
+                | "pagedown"
+                | "up"
+                | "down"
+                | "left"
+                | "right"
+                | "f1"
+                | "f2"
+                | "f3"
+                | "f4"
+                | "f5"
+                | "f6"
+                | "f7"
+                | "f8"
+                | "f9"
+                | "f10"
+                | "f11"
+                | "f12"
+        )
 }
 
 /// Raw 0x08 (BS) is ambiguous: Windows Terminal uses it for Ctrl+Backspace,

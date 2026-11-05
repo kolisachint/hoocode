@@ -171,7 +171,10 @@ fn faults(label: &str, lines: &[String], width: usize, sheet: bool) -> Vec<Strin
 #[test]
 fn has_at_least_the_themes_this_suite_expects() {
     let built_ins = built_ins();
-    assert_eq!(built_ins, ["dark", "light"]);
+    assert_eq!(
+        built_ins,
+        ["dark", "dusk", "high-contrast", "light", "paper"]
+    );
     let available = get_available_themes();
     for name in &built_ins {
         assert!(available.contains(name), "{name}");
@@ -256,7 +259,7 @@ fn a_custom_theme_with_only_the_required_colors_renders_plain_bands() {
     // Built from the schema's own required list: no `warningBg` (it falls back
     // to `customMessageBg`), no `paperShadow`, none of the cut-out pairs.
     let schema: serde_json::Value = serde_json::from_str(THEME_SCHEMA_JSON).unwrap();
-    let required = schema["properties"]["colors"]["required"]
+    let required = schema["then"]["properties"]["colors"]["required"]
         .as_array()
         .unwrap();
     let colors: serde_json::Map<String, serde_json::Value> = required

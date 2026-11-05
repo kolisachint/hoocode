@@ -80,8 +80,15 @@ mod clipboard;
 mod commands;
 mod dialogs;
 mod events;
+mod history_search;
+#[cfg(test)]
+mod history_search_tests;
 mod input;
 mod job_tail;
+mod keymap_notices;
+mod leader;
+#[cfg(test)]
+mod leader_tests;
 mod loop_command;
 mod mcp;
 mod models;
@@ -94,6 +101,8 @@ mod session_op;
 mod session_ops;
 mod settings;
 mod shutdown;
+#[cfg(test)]
+mod steer_tests;
 mod subagents;
 mod task_panel;
 #[cfg(test)]
@@ -447,6 +456,18 @@ struct Mode {
     tips: TipsController,
     /// The transient rows above the prompt (warning, retry, statuses, progress).
     transient: Rc<RefCell<TransientLines>>,
+    /// The leader key at the prompt (Ctrl+X, then a key): see `leader.rs`.
+    leader: leader::LeaderState,
+    /// Problems in `keybindings.json` (errors, then cautions), listed by `/hotkeys`.
+    keybinding_problems: Vec<String>,
+    /// The open Ctrl+R history search, if any (`history_search.rs`).
+    history_search: Option<history_search::HistorySearch>,
+    /// Mirrors `history_search.is_some()` for `CustomEditor`, which routes keys.
+    history_search_active: Rc<Cell<bool>>,
+    /// Messages are queued: `CustomEditor` lets Up take the last one back.
+    queue_recallable: Rc<Cell<bool>>,
+    /// The transcript's scroll view: the leader opens its search (`leader.rs`).
+    scroll_view: Rc<RefCell<crate::scroll_view::ScrollView>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
@@ -622,7 +643,12 @@ impl Mode {
 
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
+        let leader = leader::LeaderState::new(&keybindings);
+        let keybinding_problems = keymap_notices::problem_lines(&keybindings);
 
+        // The bundled themes' reference copies, after an upgrade. A failure is
+        // a diagnostics warning, never a crash.
+        hoocode_code_tui_theme::refresh_theme_defaults(VERSION);
         // Themes: the settings' theme (retired names resolve), watched.
         set_registered_themes(Vec::new());
         init_theme(theme_name.as_deref(), true);
@@ -669,10 +695,14 @@ impl Mode {
                 .push(Action::AutocompleteVisibility(visible))
         }));
         let panel_takes_up = Rc::new(Cell::new(false));
+        let history_search_active = Rc::new(Cell::new(false));
+        let queue_recallable = Rc::new(Cell::new(false));
         let editor = handle(CustomEditor {
             editor,
             actions: actions.clone(),
             panel_takes_up: panel_takes_up.clone(),
+            search_active: history_search_active.clone(),
+            queue_recallable: queue_recallable.clone(),
         });
 
         let footer_data = FooterDataProvider::new(session.cwd());
@@ -835,7 +865,7 @@ impl Mode {
         // the pinned view (`scroll_view.rs`).
         let prompt_text = editor.clone();
         let busy_session = session.clone();
-        install_scroll_view(
+        let scroll_view = install_scroll_view(
             &mut tui,
             as_component(&prompt_row),
             chat.clone(),
@@ -912,6 +942,8 @@ impl Mode {
             notifications,
             tips,
             transient,
+            leader,
+            scroll_view,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,
@@ -948,6 +980,10 @@ impl Mode {
             compaction_queue: Vec::new(),
             task_panel,
             panel_takes_up,
+            history_search: None,
+            keybinding_problems,
+            history_search_active,
+            queue_recallable,
             task_store_subscription: None,
             previous_cwd: Rc::new(RefCell::new(None)),
             restarted_input: None,
@@ -985,7 +1021,14 @@ impl Mode {
         // a key in the same batch as an Up or a Down-exit reaches the right place.
         self.refresh_panel_takes_up();
         self.release_stale_panel_focus();
-        self.tui.accept_event(event);
+        // The leader sees a key first: a key it takes never reaches the screen.
+        let taken = match &event {
+            TuiEvent::Input(data, _) => self.leader_takes_key(data),
+            _ => false,
+        };
+        if !taken {
+            self.tui.accept_event(event);
+        }
         self.hand_off_panel_up();
         self.return_panel_focus_if_asked();
         self.show_main();
@@ -1115,7 +1158,11 @@ impl Mode {
             self.tips.deadline(),
             self.editor.borrow().editor.autocomplete_deadline(),
         ];
-        for deadline in deadlines.into_iter().flatten() {
+        for deadline in deadlines
+            .into_iter()
+            .chain(self.leader_wake_times(now))
+            .flatten()
+        {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
         // Wake when a loader's frame falls due, not on a fixed cadence: the
@@ -1243,11 +1290,9 @@ impl Mode {
         self.update_terminal_title();
         let theme_name = self.session.settings().theme();
         if let Some(name) = theme_name {
-            if let Err(error) = set_theme(&name, true) {
-                self.show_error(&format!(
-                    "Failed to load theme \"{name}\": {error}\nFell back to dark theme."
-                ));
-            }
+            // A theme that does not load keeps the current one; the warning is
+            // listed under theme diagnostics by `render_resources` below.
+            let _ = set_theme(&name, true);
         }
         let changelog = {
             let has_messages = !self.session.messages().is_empty();
@@ -1256,6 +1301,7 @@ impl Mode {
         };
         self.render_resources();
         self.show_startup_notices(changelog);
+        self.show_keymap_startup_notes();
         // Messages after the resource listing, as the pin orders them.
         self.render_initial_messages();
         if self.footer_data.get_skip_permissions() {
@@ -1397,6 +1443,7 @@ impl Mode {
             }
             self.poll_attached_prompt();
             self.drain_task_panel_events();
+            self.poll_leader();
             loop {
                 let pending: Vec<Action> = self.actions.borrow_mut().drain(..).collect();
                 if pending.is_empty() {

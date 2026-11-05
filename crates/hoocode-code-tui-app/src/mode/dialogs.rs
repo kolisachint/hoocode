@@ -132,25 +132,46 @@ impl Mode {
     ) {
         self.dialog_select.set(self.dialog_select.get() + 1);
         let open = self.dialog_select.clone();
-        self.show_selector(
+        self.open_selector(
             title,
             options,
             Box::new(move |choice| {
                 open.set(open.get().saturating_sub(1));
                 let _ = reply.send(choice);
             }),
+            true,
         );
     }
 
-    /// `showSelector`: swap the selector into the editor's slot.
+    /// `showSelector`: swap the selector into the editor's slot, as a list
+    /// (`q` closes it).
     pub(super) fn show_selector(&mut self, title: &str, options: Vec<String>, answer: Answer) {
+        self.open_selector(title, options, answer, false);
+    }
+
+    /// As [`Self::show_selector`], for a yes/no question or a permission: `q`
+    /// does not answer it (Esc still does).
+    pub(super) fn show_dialog_selector(
+        &mut self,
+        title: &str,
+        options: Vec<String>,
+        answer: Answer,
+    ) {
+        self.open_selector(title, options, answer, true);
+    }
+
+    fn open_selector(&mut self, title: &str, options: Vec<String>, answer: Answer, dialog: bool) {
         let sink = self.actions.clone();
-        let selector = handle(ExtensionSelectorComponent::new(
+        let mut selector = ExtensionSelectorComponent::new(
             title,
             options,
             None,
             Box::new(move |outcome| sink.borrow_mut().push(Action::SelectorDone(outcome))),
-        ));
+        );
+        if dialog {
+            selector = selector.as_dialog();
+        }
+        let selector = handle(selector);
         self.set_picker(
             ActivePicker::Selector(selector.clone(), answer),
             as_component(&selector),

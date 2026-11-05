@@ -224,9 +224,6 @@ fn with_picker(h: &mut Harness) -> Rc<RefCell<Vec<String>>> {
     seen
 }
 
-const CTRL_HOME: &str = "\x1b[7^";
-const CTRL_END: &str = "\x1b[8^";
-
 #[test]
 fn a_picker_lets_the_wheel_pin_the_view() {
     let mut h = setup();
@@ -246,15 +243,66 @@ fn a_picker_lets_page_up_pin_the_view() {
 }
 
 #[test]
-fn a_picker_gets_ctrl_home_and_ctrl_end_as_transcript_keys() {
-    let mut h = setup();
+fn a_picker_keeps_its_letters_and_the_pinned_view_stays() {
+    // `g` and `G` are the transcript's over an empty prompt (K-P4), not a
+    // picker's: under a picker they go to the picker, and the pin stays.
+    let mut h = pinned();
     let seen = with_picker(&mut h);
-    h.send(CTRL_HOME);
+    let before = h.top();
+    h.send("g");
+    h.send("G");
     assert!(h.ui.scroll_pinned());
-    assert_eq!(h.top(), 0);
-    h.send(CTRL_END);
+    assert_eq!(h.top(), before);
+    assert_eq!(*seen.borrow(), ["g", "G"]);
+}
+
+#[test]
+fn bare_letters_step_the_pinned_view_over_an_empty_prompt() {
+    let mut h = pinned();
+    let before = h.top();
+    h.send("k");
+    assert_eq!(h.top(), before - 1, "k is one line up");
+    h.send("j");
+    assert_eq!(h.top(), before, "j is one line down");
+    assert_eq!(h.text(), "", "the letters do not reach the prompt");
+}
+
+#[test]
+fn bare_letters_type_into_a_prompt_that_holds_text() {
+    // With text in the prompt, `j` and `k` are typed, and the view goes back to live.
+    let mut h = setup();
+    h.send("a");
+    h.send(PAGE_UP);
+    assert!(h.ui.scroll_pinned(), "page up pins");
+    h.send("k");
+    assert!(!h.ui.scroll_pinned(), "a typed letter goes back to live");
+    assert_eq!(h.text(), "ak");
+}
+
+#[test]
+fn q_leaves_the_pinned_view_over_an_empty_prompt() {
+    let mut h = pinned();
+    h.send("q");
     assert!(!h.ui.scroll_pinned());
-    assert!(seen.borrow().is_empty());
+    assert_eq!(
+        h.text(),
+        "",
+        "q is a pager key, not a letter for the prompt"
+    );
+}
+
+#[test]
+fn g_and_capital_g_go_to_the_top_and_back_to_live() {
+    let mut h = pinned();
+    h.send("g");
+    assert_eq!(h.top(), 0, "g is the top");
+    h.send("G");
+    assert!(!h.ui.scroll_pinned(), "G is live");
+    assert_eq!(
+        h.text(),
+        "",
+        "G is a key, not a letter typed into the prompt"
+    );
 }
 
 #[test]
@@ -580,7 +628,10 @@ fn forgets_a_half_typed_query_when_the_view_unpins_without_it() {
 
 #[test]
 fn opens_from_the_prompt_on_ctrl_r_pinning_first() {
+    // Ctrl+R is no default any more (the transcript search is leader /, which
+    // the leader runs). A keybindings file that binds it still opens the search.
     let mut h = setup();
+    AppKeybindingsManager::from_json_str(r#"{"app.scroll.search": "ctrl+r"}"#).install();
     assert!(!h.ui.scroll_pinned());
     h.send(CTRL_R);
     assert!(h.ui.scroll_pinned());

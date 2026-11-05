@@ -5,18 +5,24 @@
 mod constants;
 mod keybindings;
 mod kitty;
+mod leader;
 mod matching;
 mod parse;
+mod sequence;
 mod state;
 
 pub use keybindings::{
-    default_tui_keybindings, get_keybindings, set_keybindings, KeybindingConflict,
-    KeybindingDefinition, KeybindingsManager, TUI_KEYBINDINGS,
+    default_tui_keybindings, first_key_name, get_keybindings, set_keybindings, KeybindingConflict,
+    KeybindingDefinition, KeybindingsManager, SPACE_KEY, TUI_KEYBINDINGS,
 };
 pub use kitty::{
     decode_kitty_printable, decode_modify_other_keys_printable, decode_printable_key,
     is_key_release, parse_kitty_sequence, ParsedKittySequence,
 };
-pub use matching::{matches_key, KeySpec};
+pub use leader::{
+    CancelReason, LeaderError, LeaderKey, LeaderMachine, LeaderOutcome, DEFAULT_LEADER_TIMEOUT,
+};
+pub use matching::{is_known_key_id, matches_key, KeySpec};
 pub use parse::parse_key;
+pub use sequence::{KeySequence, KeyStep, SequenceError};
 pub use state::{is_kitty_protocol_active, set_kitty_protocol_active};

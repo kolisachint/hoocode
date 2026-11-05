@@ -107,13 +107,15 @@ fn render(s: &mut SessionSelectorComponent, width: u16) -> String {
 }
 
 /// Key input for an `alt+<char>` binding, read from the keybinding.
-fn alt_key(id: &str) -> (String, String) {
+/// The bare letter bound to `id` (K-P4): the key is typed as itself.
+fn bare_key(id: &str) -> (String, String) {
     let key = keybindings().get_keys(id)[0].clone();
-    let ch = key
-        .strip_prefix("alt+")
-        .unwrap_or_else(|| panic!("expected an alt+<char> binding for {id}, got {key}"));
-    assert_eq!(ch.chars().count(), 1);
-    (key.clone(), format!("\x1b{ch}"))
+    assert_eq!(
+        key.chars().count(),
+        1,
+        "expected a bare letter for {id}, got {key}"
+    );
+    (key.clone(), key)
 }
 
 const CTRL_BACKSPACE: &str = "\x1b[127;5u";
@@ -141,7 +143,7 @@ fn confirmation_changes(events: &[ListEvent]) -> Vec<Option<PathBuf>> {
 #[test]
 fn rename_key_opens_rename_mode_when_a_handler_is_set() {
     let _g = lock();
-    let (_, rename_input) = alt_key("app.session.rename");
+    let (_, rename_input) = bare_key("app.session.rename");
     let mut s = selector(
         vec![make("a", Make::default())],
         SessionSelectorOptions {
@@ -159,7 +161,7 @@ fn rename_key_opens_rename_mode_when_a_handler_is_set() {
 #[test]
 fn hides_rename_hint_in_cli_resume_picker_configuration() {
     let _g = lock();
-    let (rename_key, _) = alt_key("app.session.rename");
+    let (rename_key, _) = bare_key("app.session.rename");
     let mut s = selector(
         vec![make("a", Make::default())],
         SessionSelectorOptions {
@@ -169,14 +171,14 @@ fn hides_rename_hint_in_cli_resume_picker_configuration() {
         None,
     );
     let out = render(&mut s, 120);
-    assert!(!out.contains(&rename_key), "{out}");
     assert!(!out.contains("rename"), "{out}");
+    assert!(!rename_key.is_empty());
 }
 
 #[test]
 fn enters_rename_mode_and_submits_with_enter() {
     let _g = lock();
-    let (_, rename_input) = alt_key("app.session.rename");
+    let (_, rename_input) = bare_key("app.session.rename");
     let session = make(
         "a",
         Make {
@@ -227,23 +229,39 @@ fn two_sessions() -> Vec<SessionInfo> {
 fn ctrl_backspace_is_not_delete_with_a_non_empty_query() {
     let _g = lock();
     let mut s = selector(two_sessions(), default_options(), None);
+    press_list(&mut s, "/");
     let mut events = press_list(&mut s, "a");
     events.extend(press_list(&mut s, CTRL_BACKSPACE));
     assert!(confirmation_changes(&events).is_empty());
 }
 
 #[test]
-fn delete_key_confirms_even_with_a_non_empty_query() {
+fn delete_key_confirms_on_an_empty_query() {
     let _g = lock();
-    let (_, delete) = alt_key("app.session.delete");
+    let (_, delete) = bare_key("app.session.delete");
     let sessions = two_sessions();
     let mut s = selector(sessions.clone(), default_options(), None);
-    let mut events = press_list(&mut s, "a");
-    events.extend(press_list(&mut s, &delete));
+    let events = press_list(&mut s, &delete);
     assert_eq!(
         confirmation_changes(&events),
         vec![Some(sessions[0].path.clone())]
     );
+}
+
+#[test]
+fn delete_key_types_into_a_non_empty_query() {
+    // K-P4: a bare letter acts only while the query is empty; otherwise it types.
+    let _g = lock();
+    let (_, delete) = bare_key("app.session.delete");
+    let mut s = selector(two_sessions(), default_options(), None);
+    press_list(&mut s, "/");
+    let mut events = press_list(&mut s, "a");
+    events.extend(press_list(&mut s, &delete));
+    assert!(
+        confirmation_changes(&events).is_empty(),
+        "x typed, no delete"
+    );
+    assert!(render(&mut s, 120).contains("ax"));
 }
 
 #[test]
@@ -380,7 +398,7 @@ fn threads_sessions_across_symlink_aliases() {
 #[test]
 fn current_session_is_active_across_symlink_aliases() {
     let _g = lock();
-    let (_, delete) = alt_key("app.session.delete");
+    let (_, delete) = bare_key("app.session.delete");
     let p = symlinked_session_paths();
     let sessions = vec![make(
         "parent",
@@ -542,6 +560,7 @@ fn a_search_matches_the_parent_rows_only() {
     let _g = lock();
     let sessions = parent_and_run(SubagentState::Finished("complete".into()));
     let mut s = selector(sessions, default_options(), None);
+    press_list(&mut s, "/");
     // "scan" is only in the run's own text.
     for ch in "scan".chars() {
         press_list(&mut s, &ch.to_string());
@@ -556,6 +575,7 @@ fn a_search_still_finds_the_parent() {
     let _g = lock();
     let sessions = parent_and_run(SubagentState::Finished("complete".into()));
     let mut s = selector(sessions, default_options(), None);
+    press_list(&mut s, "/");
     for ch in "parent".chars() {
         press_list(&mut s, &ch.to_string());
     }
@@ -710,4 +730,30 @@ fn enter_on_a_finished_run_opens_its_transcript() {
             "/tmp/parent-int/subagents/run-2.jsonl"
         ))]
     );
+}
+
+#[test]
+fn q_closes_the_list_on_an_empty_query_and_types_into_a_query() {
+    // K-P4: `q` closes while the query is empty; with a query it is typed.
+    let _g = lock();
+    let mut s = selector(two_sessions(), default_options(), None);
+    let events = press_list(&mut s, "q");
+    assert!(events.iter().any(|e| matches!(e, ListEvent::Cancel)));
+    let mut s = selector(two_sessions(), default_options(), None);
+    press_list(&mut s, "/");
+    press_list(&mut s, "a");
+    let events = press_list(&mut s, "q");
+    assert!(!events.iter().any(|e| matches!(e, ListEvent::Cancel)));
+    assert!(render(&mut s, 120).contains("aq"));
+}
+
+#[test]
+fn question_mark_shows_the_keys_on_an_empty_query() {
+    let _g = lock();
+    let mut s = selector(two_sessions(), default_options(), None);
+    assert!(!render(&mut s, 120).contains("show path"));
+    s.handle_input("?");
+    assert!(render(&mut s, 120).contains("show path"), "the keys show");
+    s.handle_input("?");
+    assert!(!render(&mut s, 120).contains("show path"));
 }

@@ -1,24 +1,33 @@
-  Keys  ?   plain   ctrl   alt  114 bindings · 17 shown
+  Keys  ?   plain   ctrl   leader   alt  124 bindings · 26 shown
  prompt
- ctrl+a  Move to line start
- ctrl+b  Move cursor left
- ctrl+c  Clear editor
- ctrl+e  Move to line end
- ctrl+f  Move cursor right
- ctrl+k  Delete to line end
- ctrl+u  Delete to line start
- ctrl+v  Paste image from clipboard
- ctrl+w  Delete word backward
- ctrl+y  Yank
+ ctrl+x c  Copy the agent's last message to the clipboard
+ ctrl+x y  Yank pop
+ ctrl+x z  Redo
  transcript
- ctrl+n  Attach to the subagent run of the last Agent block (read-only)
- ctrl+o  Step tool output: outline → peek → full → outline
- ctrl+r  Search the transcript
- ctrl+t  Toggle thinking blocks
+ ctrl+x /  Search the transcript
+ ctrl+x T  Cycle thinking level backward
+ ctrl+x b  Toggle thinking blocks
+ ctrl+x n  Attach to the subagent run of the last Agent block (read-only)
+ ctrl+x p  Step tool output: outline → peek → full → outline
+ ctrl+x t  Cycle thinking level (off → … → high)
  app
- ctrl+d  Exit when editor is empty
- ctrl+g  Show or hide the task panel
- ctrl+z  Suspend to background
+ ctrl+x ?  Show keyboard shortcuts
+ ctrl+x L  Cycle task panel view backward
+ ctrl+x M  Cycle to previous model
+ ctrl+x O  Cycle tool output view backward
+ ctrl+x a  Cycle agent mode backward
+ ctrl+x d  Take back the last queued message
+ ctrl+x e  Open external editor
+ ctrl+x f  Queue follow-up message
+ ctrl+x g  Show or hide the task panel
+ ctrl+x h  Resume a session from history
+ ctrl+x k  Show keyboard shortcuts
+ ctrl+x l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)
+ ctrl+x m  Cycle to next model
+ ctrl+x o  Cycle tool output view (outline → peek → full)
+ ctrl+x r  Record voice and transcribe into the editor
+ ctrl+x s  Open settings
+ ctrl+x w  Change working directory (move to another repo without quitting)
  › filter
  tab layer · esc close
 --- styles ---
@@ -29,77 +38,106 @@ r0 c8 fg=#989898 bg=#1e1e2a
 r0 c9-11 fg=#e5e5e7 bg=#1e1e2a
 r0 c12-16 fg=#989898 bg=#1e1e2a
 r0 c17-19 fg=#e5e5e7 bg=#1e1e2a
-r0 c20-23 fg=#5cc8bb bg=#1e1e2a
+r0 c20-23 fg=#989898 bg=#1e1e2a
 r0 c24-26 fg=#e5e5e7 bg=#1e1e2a
-r0 c27-29 fg=#989898 bg=#1e1e2a
-r0 c30-31 fg=#e5e5e7 bg=#1e1e2a
-r0 c32-54 fg=#989898 bg=#1e1e2a
-r0 c55-79 fg=#e5e5e7 bg=#1e1e2a
+r0 c27-32 fg=#5cc8bb bg=#1e1e2a
+r0 c33-35 fg=#e5e5e7 bg=#1e1e2a
+r0 c36-38 fg=#989898 bg=#1e1e2a
+r0 c39-40 fg=#e5e5e7 bg=#1e1e2a
+r0 c41-63 fg=#989898 bg=#1e1e2a
+r0 c64-79 fg=#e5e5e7 bg=#1e1e2a
 r1 c0 fg=#e5e5e7 bg=#1e1e2a
 r1 c1-6 fg=#989898 bg=#1e1e2a
 r1 c7-79 fg=#e5e5e7 bg=#1e1e2a
-r2 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r2 c7-26 fg=#989898 bg=#1e1e2a
-r2 c27-79 fg=#e5e5e7 bg=#1e1e2a
-r3 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r3 c7-24 fg=#989898 bg=#1e1e2a
-r3 c25-79 fg=#e5e5e7 bg=#1e1e2a
-r4 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r4 c7-20 fg=#989898 bg=#1e1e2a
-r4 c21-79 fg=#e5e5e7 bg=#1e1e2a
-r5 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r5 c7-24 fg=#989898 bg=#1e1e2a
-r5 c25-79 fg=#e5e5e7 bg=#1e1e2a
-r6 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r6 c7-25 fg=#989898 bg=#1e1e2a
-r6 c26-79 fg=#e5e5e7 bg=#1e1e2a
-r7 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r7 c7-26 fg=#989898 bg=#1e1e2a
-r7 c27-79 fg=#e5e5e7 bg=#1e1e2a
-r8 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r8 c7-28 fg=#989898 bg=#1e1e2a
-r8 c29-79 fg=#e5e5e7 bg=#1e1e2a
-r9 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r9 c7-34 fg=#989898 bg=#1e1e2a
-r9 c35-79 fg=#e5e5e7 bg=#1e1e2a
-r10 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r10 c7-28 fg=#989898 bg=#1e1e2a
-r10 c29-79 fg=#e5e5e7 bg=#1e1e2a
-r11 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r11 c7-12 fg=#989898 bg=#1e1e2a
-r11 c13-79 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r2 c9-56 fg=#989898 bg=#1e1e2a
+r2 c57-79 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r3 c9-18 fg=#989898 bg=#1e1e2a
+r3 c19-79 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r4 c9-14 fg=#989898 bg=#1e1e2a
+r4 c15-79 fg=#e5e5e7 bg=#1e1e2a
+r5 c0 fg=#e5e5e7 bg=#1e1e2a
+r5 c1-10 fg=#989898 bg=#1e1e2a
+r5 c11-79 fg=#e5e5e7 bg=#1e1e2a
+r6 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r6 c9-31 fg=#989898 bg=#1e1e2a
+r6 c32-79 fg=#e5e5e7 bg=#1e1e2a
+r7 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r7 c9-39 fg=#989898 bg=#1e1e2a
+r7 c40-79 fg=#e5e5e7 bg=#1e1e2a
+r8 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r8 c9-32 fg=#989898 bg=#1e1e2a
+r8 c33-79 fg=#e5e5e7 bg=#1e1e2a
+r9 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r9 c9-72 fg=#989898 bg=#1e1e2a
+r9 c73-79 fg=#e5e5e7 bg=#1e1e2a
+r10 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r10 c9-59 fg=#989898 bg=#1e1e2a
+r10 c60-79 fg=#e5e5e7 bg=#1e1e2a
+r11 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r11 c9-47 fg=#989898 bg=#1e1e2a
+r11 c48-79 fg=#e5e5e7 bg=#1e1e2a
 r12 c0 fg=#e5e5e7 bg=#1e1e2a
-r12 c1-10 fg=#989898 bg=#1e1e2a
-r12 c11-79 fg=#e5e5e7 bg=#1e1e2a
-r13 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r13 c7-70 fg=#989898 bg=#1e1e2a
-r13 c71-79 fg=#e5e5e7 bg=#1e1e2a
-r14 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r14 c7-57 fg=#989898 bg=#1e1e2a
-r14 c58-79 fg=#e5e5e7 bg=#1e1e2a
-r15 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r15 c7-29 fg=#989898 bg=#1e1e2a
-r15 c30-79 fg=#e5e5e7 bg=#1e1e2a
-r16 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r16 c7-30 fg=#989898 bg=#1e1e2a
-r16 c31-79 fg=#e5e5e7 bg=#1e1e2a
-r17 c0 fg=#e5e5e7 bg=#1e1e2a
-r17 c1-3 fg=#989898 bg=#1e1e2a
-r17 c4-79 fg=#e5e5e7 bg=#1e1e2a
-r18 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r18 c7-33 fg=#989898 bg=#1e1e2a
-r18 c34-79 fg=#e5e5e7 bg=#1e1e2a
-r19 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r19 c7-35 fg=#989898 bg=#1e1e2a
-r19 c36-79 fg=#e5e5e7 bg=#1e1e2a
-r20 c0-6 fg=#e5e5e7 bg=#1e1e2a
-r20 c7-29 fg=#989898 bg=#1e1e2a
-r20 c30-79 fg=#e5e5e7 bg=#1e1e2a
-r21 c0-2 fg=#5cc8bb bg=#2a2a36
-r21 c3-8 fg=#989898 bg=#2a2a36
-r21 c9-79 fg=#e5e5e7 bg=#2a2a36
-r22 c0-3 fg=#e5e5e7 bg=#1e1e2a
-r22 c4-12 fg=#989898 bg=#1e1e2a
-r22 c13-15 fg=#e5e5e7 bg=#1e1e2a
-r22 c16-21 fg=#989898 bg=#1e1e2a
-r22 c22-79 fg=#e5e5e7 bg=#1e1e2a
+r12 c1-3 fg=#989898 bg=#1e1e2a
+r12 c4-79 fg=#e5e5e7 bg=#1e1e2a
+r13 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r13 c9-33 fg=#989898 bg=#1e1e2a
+r13 c34-79 fg=#e5e5e7 bg=#1e1e2a
+r14 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r14 c9-40 fg=#989898 bg=#1e1e2a
+r14 c41-79 fg=#e5e5e7 bg=#1e1e2a
+r15 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r15 c9-33 fg=#989898 bg=#1e1e2a
+r15 c34-79 fg=#e5e5e7 bg=#1e1e2a
+r16 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r16 c9-41 fg=#989898 bg=#1e1e2a
+r16 c42-79 fg=#e5e5e7 bg=#1e1e2a
+r17 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r17 c9-35 fg=#989898 bg=#1e1e2a
+r17 c36-79 fg=#e5e5e7 bg=#1e1e2a
+r18 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r18 c9-43 fg=#989898 bg=#1e1e2a
+r18 c44-79 fg=#e5e5e7 bg=#1e1e2a
+r19 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r19 c9-30 fg=#989898 bg=#1e1e2a
+r19 c31-79 fg=#e5e5e7 bg=#1e1e2a
+r20 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r20 c9-33 fg=#989898 bg=#1e1e2a
+r20 c34-79 fg=#e5e5e7 bg=#1e1e2a
+r21 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r21 c9-37 fg=#989898 bg=#1e1e2a
+r21 c38-79 fg=#e5e5e7 bg=#1e1e2a
+r22 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r22 c9-39 fg=#989898 bg=#1e1e2a
+r22 c40-79 fg=#e5e5e7 bg=#1e1e2a
+r23 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r23 c9-33 fg=#989898 bg=#1e1e2a
+r23 c34-79 fg=#e5e5e7 bg=#1e1e2a
+r24 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r24 c9-71 fg=#989898 bg=#1e1e2a
+r24 c72-79 fg=#e5e5e7 bg=#1e1e2a
+r25 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r25 c9-29 fg=#989898 bg=#1e1e2a
+r25 c30-79 fg=#e5e5e7 bg=#1e1e2a
+r26 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r26 c9-56 fg=#989898 bg=#1e1e2a
+r26 c57-79 fg=#e5e5e7 bg=#1e1e2a
+r27 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r27 c9-53 fg=#989898 bg=#1e1e2a
+r27 c54-79 fg=#e5e5e7 bg=#1e1e2a
+r28 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r28 c9-23 fg=#989898 bg=#1e1e2a
+r28 c24-79 fg=#e5e5e7 bg=#1e1e2a
+r29 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r29 c9-74 fg=#989898 bg=#1e1e2a
+r29 c75-79 fg=#e5e5e7 bg=#1e1e2a
+r30 c0-2 fg=#5cc8bb bg=#2a2a36
+r30 c3-8 fg=#989898 bg=#2a2a36
+r30 c9-79 fg=#e5e5e7 bg=#2a2a36
+r31 c0-3 fg=#e5e5e7 bg=#1e1e2a
+r31 c4-12 fg=#989898 bg=#1e1e2a
+r31 c13-15 fg=#e5e5e7 bg=#1e1e2a
+r31 c16-21 fg=#989898 bg=#1e1e2a
+r31 c22-79 fg=#e5e5e7 bg=#1e1e2a

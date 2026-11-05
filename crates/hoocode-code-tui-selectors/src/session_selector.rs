@@ -26,19 +26,20 @@ use chrono::{DateTime, Utc};
 use hoocode_code_paths::canonicalize_path;
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
 use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentState};
-use hoocode_code_tui_keybindings::key_text;
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, key_text};
 use hoocode_code_tui_theme::{session_color_token, style_input};
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_home::shorten_path;
 use hoocode_tui_components::{Input, PickerCursor};
-use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
+use hoocode_tui_keys::{get_keybindings, matches_key, KeybindingsManager};
 use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::js_trim;
 use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
 
+use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
 use crate::session_selector_search::{
     filter_and_sort_sessions, has_session_name, NameFilter, SortMode,
 };
@@ -174,17 +175,18 @@ impl SessionSelectorHeader {
 
     /// Every key the picker answers to, in hint order (the first four
     /// show; `f1` lists the rest).
-    fn all_hints() -> [(&'static str, &'static str); 9] {
-        [
-            ("↑↓", "move"),
-            ("enter", "open"),
-            ("tab", "scope"),
-            ("esc", "close"),
-            ("alt+o", "sort"),
-            ("alt+n", "named only"),
-            ("alt+p", "show path"),
-            ("alt+r", "rename"),
-            ("alt+x", "delete"),
+    fn all_hints() -> Vec<(String, &'static str)> {
+        vec![
+            (key_pair_hint("tui.select.up", "tui.select.down"), "move"),
+            (key_hint_text("tui.select.confirm"), "open"),
+            (key_text("app.list.search"), "search"),
+            (key_hint_text("tui.select.cancel"), "close"),
+            (key_hint_text("tui.input.tab"), "scope"),
+            (key_text("app.session.toggleSort"), "sort"),
+            (key_text("app.session.toggleNamedFilter"), "named only"),
+            (key_text("app.session.togglePath"), "show path"),
+            (key_text("app.session.rename"), "rename"),
+            (key_text("app.session.delete"), "delete"),
         ]
     }
 
@@ -195,14 +197,26 @@ impl SessionSelectorHeader {
         let pal = Palette::current();
         if self.confirming_delete {
             let mut spans = vec![Span::styled("Delete session? ".to_string(), pal.err())];
-            spans.extend(hints(&[("enter", "confirm"), ("esc", "cancel")]).spans);
+            spans.extend(
+                hints(&[
+                    (key_hint_text("tui.select.confirm").as_str(), "confirm"),
+                    (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+                ])
+                .spans,
+            );
             return Line::from(spans);
         }
         if self.choosing_subagent {
             let text = if self.can_resume {
-                "Interrupted run · v view · r resume · esc back"
+                &format!(
+                    "Interrupted run · v view · r resume · {} back",
+                    key_hint_text("tui.select.cancel")
+                )
             } else {
-                "Interrupted run · v view · esc back"
+                &format!(
+                    "Interrupted run · v view · {} back",
+                    key_hint_text("tui.select.cancel")
+                )
             };
             return Line::from(vec![Span::styled(text.to_string(), pal.acc())]);
         }
@@ -214,17 +228,27 @@ impl SessionSelectorHeader {
             };
             return Line::from(vec![Span::styled(message.clone(), style)]);
         }
-        capped_hint_line(&Self::all_hints(), true)
+        let hints = Self::all_hints();
+        capped_hint_line(&as_pairs(&hints), true)
     }
 
     /// The full key list rows (after `f1`); none while it is closed.
     fn help_lines(&self) -> Vec<Line<'static>> {
         if self.help && !self.confirming_delete {
-            help_rows(&Self::all_hints())
+            let hints = Self::all_hints();
+            help_rows(&as_pairs(&hints))
         } else {
             Vec::new()
         }
     }
+}
+
+/// The hint pairs as the hint helpers take them.
+fn as_pairs<'a>(hints: &'a [(String, &'static str)]) -> Vec<(&'a str, &'static str)> {
+    hints
+        .iter()
+        .map(|(key, action)| (key.as_str(), *action))
+        .collect()
 }
 
 // ---- list ------------------------------------------------------------------
@@ -502,6 +526,8 @@ pub struct SessionList {
     /// An interrupted run whose choice (view or resume) is open.
     choosing: Option<SubagentRunRef>,
     can_resume: bool,
+    /// List mode or typing mode (see [`LetterGate`]).
+    gate: LetterGate,
 }
 
 impl SessionList {
@@ -528,9 +554,15 @@ impl SessionList {
             now: None,
             choosing: None,
             can_resume: false,
+            gate: LetterGate::default(),
         };
         list.filter_sessions("");
         list
+    }
+
+    /// Whether bare letters act as keys now (list mode).
+    fn letters_list(&self) -> bool {
+        self.gate.lists(self.search_input.get_value().is_empty())
     }
 
     /// The path of the highlighted session.
@@ -676,27 +708,31 @@ impl SessionList {
             events.push(ListEvent::ToggleScope);
             return events;
         }
-        if kb.matches(data, "app.session.toggleSort") {
+        // Bare letters act in list mode only. `/` opens typing mode, where they type.
+        let query_empty = self.search_input.get_value().is_empty();
+        let bare = self.gate.lists(query_empty);
+        if bare && kb.matches(data, "app.session.toggleSort") {
             events.push(ListEvent::ToggleSort);
             return events;
         }
-        if self
-            .keybindings
-            .matches(data, "app.session.toggleNamedFilter")
+        if bare
+            && self
+                .keybindings
+                .matches(data, "app.session.toggleNamedFilter")
         {
             events.push(ListEvent::ToggleNameFilter);
             return events;
         }
-        if kb.matches(data, "app.session.togglePath") {
+        if bare && kb.matches(data, "app.session.togglePath") {
             self.show_path = !self.show_path;
             events.push(ListEvent::TogglePath(self.show_path));
             return events;
         }
-        if kb.matches(data, "app.session.delete") {
+        if bare && kb.matches(data, "app.session.delete") {
             self.start_delete_confirmation(&mut events);
             return events;
         }
-        if kb.matches(data, "app.session.rename") {
+        if bare && kb.matches(data, "app.session.rename") {
             if let Some(selected) = self.filtered.get(self.cursor.selected()) {
                 events.push(ListEvent::Rename(selected.session.path.clone()));
             }
@@ -714,6 +750,14 @@ impl SessionList {
 
         if self.cursor.handle_query_key(data, &kb) {
             // Navigation: the cursor clamps at both ends.
+        } else if bare && kb.matches(data, "app.list.down") {
+            self.cursor.step(1);
+        } else if bare && kb.matches(data, "app.list.up") {
+            self.cursor.step(-1);
+        } else if bare && kb.matches(data, "app.list.close") {
+            events.push(ListEvent::Cancel);
+        } else if bare && kb.matches(data, "app.list.search") {
+            self.gate.start_typing();
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(selected) = self.filtered.get(self.cursor.selected()) {
                 match interrupted_run(&selected.session) {
@@ -725,7 +769,21 @@ impl SessionList {
                 }
             }
         } else if kb.matches(data, "tui.select.cancel") {
-            events.push(ListEvent::Cancel);
+            if matches_key(data, "escape") {
+                match self.gate.escape(query_empty) {
+                    EscapeAction::ClearQuery => {
+                        self.search_input.set_value("");
+                        let query = self.search_value();
+                        self.filter_sessions(&query);
+                    }
+                    EscapeAction::LeaveTyping => {}
+                    EscapeAction::Close => events.push(ListEvent::Cancel),
+                }
+            } else {
+                events.push(ListEvent::Cancel);
+            }
+        } else if bare && is_printable(data) {
+            // In list mode a printable key with no key of its own does nothing.
         } else {
             self.forward_to_search(data);
         }
@@ -947,17 +1005,21 @@ impl SessionList {
         if self.filtered.is_empty() {
             let message = if self.name_filter == NameFilter::Named {
                 let toggle = key_text("app.session.toggleNamedFilter");
+                let tab = key_hint_text("tui.input.tab");
                 if self.show_cwd {
                     format!("No named sessions found. Press {toggle} to show all.")
                 } else {
                     format!(
-                        "  No named sessions in current folder. Press {toggle} to show all, or tab to view all."
+                        "  No named sessions in current folder. Press {toggle} to show all, or {tab} to view all."
                     )
                 }
             } else if self.show_cwd {
                 "No sessions found".to_string()
             } else {
-                "No sessions in this folder. Press tab to view all.".to_string()
+                format!(
+                    "No sessions in this folder. Press {} to view all.",
+                    key_hint_text("tui.input.tab")
+                )
             };
             return (
                 Vec::new(),
@@ -1540,7 +1602,10 @@ impl SessionSelectorComponent {
         )])];
         let value = self.rename_input.borrow().get_value().to_string();
         console.query = Some(query_row(&value, self.focused));
-        console.hint = hints(&[("enter", "save"), ("esc", "cancel")]);
+        console.hint = hints(&[
+            (key_hint_text("tui.select.confirm").as_str(), "save"),
+            (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+        ]);
         console.render(width)
     }
 
@@ -1646,7 +1711,10 @@ impl Component for SessionSelectorComponent {
             }
             return;
         }
-        if hoocode_tui_keys::matches_key(data, "f1") {
+        let help_key = hoocode_tui_keys::matches_key(data, "f1")
+            || (self.session_list.borrow().letters_list()
+                && get_keybindings().matches(data, "app.list.help"));
+        if help_key {
             let mut header = self.header.borrow_mut();
             header.help = !header.help;
             return;

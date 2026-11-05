@@ -642,6 +642,29 @@ impl Drop for ProcessTerminal {
     }
 }
 
+/// Raw mode for a short-lived reader (`hoocode keybindings --read`). The mode
+/// that was in place is restored when the guard drops.
+pub struct RawModeGuard {
+    was_raw: bool,
+}
+
+impl RawModeGuard {
+    /// Turns raw mode on. An error means the terminal would not change mode.
+    pub fn enter() -> io::Result<Self> {
+        let was_raw = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
+        crossterm::terminal::enable_raw_mode()?;
+        Ok(Self { was_raw })
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        if !self.was_raw {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

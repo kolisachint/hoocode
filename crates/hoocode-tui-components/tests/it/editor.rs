@@ -32,12 +32,41 @@ pub fn theme() -> EditorTheme {
     }
 }
 
+/// The Alt keys a user's `keybindings.json` would set for the editor. No
+/// default has Alt (K-P1), so these tests install the keys as a file does: the
+/// Alt parsing they test still works. Set per test thread, over the defaults.
+pub fn user_alt_keys() {
+    let user: std::collections::HashMap<String, Vec<String>> = [
+        ("tui.editor.yankPop", vec!["alt+y"]),
+        ("tui.editor.deleteWordForward", vec!["alt+d", "alt+delete"]),
+        (
+            "tui.editor.deleteWordBackward",
+            vec!["ctrl+w", "alt+backspace"],
+        ),
+        ("tui.editor.redo", vec!["alt+u"]),
+        ("tui.editor.jumpBackward", vec!["ctrl+alt+]"]),
+    ]
+    .into_iter()
+    .map(|(id, keys)| {
+        (
+            id.to_string(),
+            keys.into_iter().map(str::to_string).collect(),
+        )
+    })
+    .collect();
+    hoocode_tui_keys::set_keybindings(hoocode_tui_keys::KeybindingsManager::new(
+        hoocode_tui_keys::default_tui_keybindings(),
+        user,
+    ));
+}
+
 pub fn ed_with(
     _cols: usize,
     rows: u16,
     padding_x: usize,
     border: Option<EditorBorderStyle>,
 ) -> Editor {
+    user_alt_keys();
     Editor::new(
         EditorHost {
             rows: Box::new(move || rows),

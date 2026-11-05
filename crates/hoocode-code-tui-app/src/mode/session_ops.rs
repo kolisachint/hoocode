@@ -300,6 +300,7 @@ impl Mode {
         if let Some(error) = self.session.model_registry().error() {
             self.show_error(&format!("models.json error: {error}"));
         }
+        self.show_keybinding_problems();
         self.show_status("Reloaded keybindings, skills, prompts, themes");
     }
 
@@ -356,7 +357,7 @@ impl Mode {
             cwd_fallback,
             choice,
         });
-        self.show_selector(title, vec!["Yes".into(), "No".into()], answer);
+        self.show_dialog_selector(title, vec!["Yes".into(), "No".into()], answer);
     }
 
     /// `runtimeHost.importFromJsonl`; a stored cwd that is gone asks first.
@@ -687,7 +688,7 @@ impl Mode {
                     fallback: issue.fallback_cwd,
                     choice,
                 });
-                self.show_selector(&title, vec!["Yes".into(), "No".into()], answer);
+                self.show_dialog_selector(&title, vec!["Yes".into(), "No".into()], answer);
             }
             Err(error) => {
                 // `handleFatalRuntimeError`.
@@ -755,7 +756,7 @@ impl Mode {
         if let Some(name) = theme_name {
             if let Err(error) = set_theme(&name, true) {
                 self.show_error(&format!(
-                    "Failed to load theme \"{name}\": {error}\nFell back to dark theme."
+                    "Theme \"{name}\" did not load: {error}. Kept the current theme."
                 ));
             }
         }
@@ -767,7 +768,10 @@ impl Mode {
     /// the screen (keybindings, editor, cursor). Startup, a session swap and
     /// /reload all rebuild these from disk, so they repaint alike.
     fn apply_runtime_settings(&mut self) {
-        AppKeybindingsManager::create(None).install();
+        let keybindings = AppKeybindingsManager::create(None);
+        keybindings.install();
+        self.leader = super::leader::LeaderState::new(&keybindings);
+        self.keybinding_problems = super::keymap_notices::problem_lines(&keybindings);
         let settings = self.session.settings();
         let (show_hardware_cursor, clear_on_shrink, hide_thinking_block) = (
             settings.show_hardware_cursor(),

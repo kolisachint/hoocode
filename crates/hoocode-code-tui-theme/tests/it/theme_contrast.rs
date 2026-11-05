@@ -20,8 +20,8 @@ fn isolate() {
     });
 }
 
-const LIGHT_THEMES: [&str; 1] = ["light"];
-const DARK_THEMES: [&str; 1] = ["dark"];
+const LIGHT_THEMES: [&str; 2] = ["light", "paper"];
+const DARK_THEMES: [&str; 3] = ["dark", "dusk", "high-contrast"];
 
 fn shipped_themes() -> Vec<&'static str> {
     let mut all: Vec<&str> = LIGHT_THEMES
@@ -117,7 +117,8 @@ const LIGHT_DECORATIVE_TOKENS: [&str; 3] = ["borderMuted", "mdHr", "thinkingOff"
 /// agent palette and `mcp`.
 fn all_tokens() -> Vec<String> {
     let schema: Value = serde_json::from_str(THEME_SCHEMA_JSON).unwrap();
-    let mut tokens: Vec<String> = schema["properties"]["colors"]["required"]
+    // The schema requires the tokens for a theme that does not inherit.
+    let mut tokens: Vec<String> = schema["then"]["properties"]["colors"]["required"]
         .as_array()
         .unwrap()
         .iter()
@@ -631,11 +632,13 @@ mod the_shipped_roster {
     use super::*;
 
     #[test]
-    fn is_two_themes_one_light_and_one_dark() {
+    fn lists_each_shipped_theme_once_on_one_side_of_the_split() {
         isolate();
         assert_eq!(get_available_themes(), shipped_themes());
-        assert_eq!(LIGHT_THEMES.len(), 1);
-        assert_eq!(DARK_THEMES.len(), 1);
+        assert_eq!(
+            shipped_themes().len(),
+            LIGHT_THEMES.len() + DARK_THEMES.len()
+        );
     }
 
     #[test]
@@ -921,5 +924,31 @@ mod session_colour_slots {
             }
             assert_eq!(failures, Vec::<String>::new(), "{theme}");
         }
+    }
+}
+
+mod high_contrast_theme {
+    use super::*;
+    /// WCAG AAA for text, for low vision.
+    const MIN_TEXT_CONTRAST: f64 = 7.0;
+    /// The quiet rules and borders still have to be seen.
+    const MIN_DECORATIVE_CONTRAST: f64 = 3.0;
+    const DECORATIVE: [&str; 4] = ["borderMuted", "mdHr", "thinkingOff", "mdQuoteBorder"];
+
+    #[test]
+    fn keeps_every_text_token_at_aaa_contrast_on_every_surface_it_paints() {
+        let failures = legibility_failures("high-contrast", &surfaces("high-contrast"), |token| {
+            if is_chip_token(token) {
+                return None;
+            }
+            Some(
+                if DECORATIVE.contains(&token) || token == "mdCodeBlockBorder" {
+                    MIN_DECORATIVE_CONTRAST
+                } else {
+                    MIN_TEXT_CONTRAST
+                },
+            )
+        });
+        assert_eq!(failures, Vec::<String>::new());
     }
 }

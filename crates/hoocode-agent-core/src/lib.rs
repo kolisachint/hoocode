@@ -527,6 +527,16 @@ impl Agent {
         self.message_queued.notify_one();
     }
 
+    /// Removes the newest queued steering message, if any (take-back).
+    pub fn pop_last_steer(&self) -> Option<AgentMessage> {
+        self.steering_queue.lock().unwrap().messages.pop()
+    }
+
+    /// Removes the newest queued follow-up message, if any (take-back).
+    pub fn pop_last_follow_up(&self) -> Option<AgentMessage> {
+        self.follow_up_queue.lock().unwrap().messages.pop()
+    }
+
     pub fn clear_steering_queue(&self) {
         self.steering_queue.lock().unwrap().messages.clear();
     }

@@ -71,6 +71,8 @@ arboard = { version = "3", default-features = false, features = ["image-data"] }
 hoocode-tui-render = { workspace = true, features = ["golden"] }
 # An `Agent` for the `Mode` tests in `mode/attach.rs`; no provider is called.
 hoocode-agent-core = { workspace = true }
+# A streaming turn for the key tests in `mode/steer_tests.rs`.
+hoocode-ai-provider-faux = { workspace = true }
 serde_json = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }

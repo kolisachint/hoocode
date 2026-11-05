@@ -10,7 +10,7 @@ use std::rc::Rc;
 use hoocode_ai_models::{clamp_thinking_level, get_supported_thinking_levels};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_code_settings::{ModelCategoryName, ScopedModel};
-use hoocode_code_tui_keybindings::{format_key_text, key_text};
+use hoocode_code_tui_keybindings::{key_hint_text, key_text};
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
@@ -20,12 +20,11 @@ use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 
-/// Cycles the selected row's effort through the model's levels, then unset.
-/// Handled by the picker itself (no `keybindings.rs` entry).
-pub const EFFORT_KEY: &str = "tab";
-/// Cycles the selected row's category: none, cheap, fast, standard, capable.
-/// `alt+j` is not bound elsewhere; `alt+t` (thinking) and `shift+tab` (mode) are not it.
-pub const CATEGORY_KEY: &str = "alt+j";
+use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
+
+// The effort cycle is the picker's own Tab (`tui.input.tab`): it cycles the
+// selected row's effort through the model's levels, then unset. The category
+// cycle is `app.models.category` (a bare letter, K-P4).
 
 const MAX_VISIBLE: usize = 8;
 
@@ -232,10 +231,11 @@ impl State {
         let pair = |key: String, action: &str| (key, action.to_string());
         vec![
             pair(key_text("tui.select.confirm"), "on / off"),
-            pair(format_key_text(EFFORT_KEY, false), "effort"),
+            pair(key_text("app.list.search"), "search"),
             pair(key_text("app.models.save"), "save to settings"),
-            pair("esc".to_string(), "close"),
-            pair(format_key_text(CATEGORY_KEY, false), "category"),
+            pair(key_hint_text("tui.select.cancel"), "close"),
+            pair(key_hint_text("tui.input.tab"), "effort"),
+            pair(key_text("app.models.category"), "category"),
             pair(key_text("app.models.enableAll"), "all on"),
             pair(key_text("app.models.clearAll"), "all off"),
             pair(key_text("app.models.toggleProvider"), "provider"),
@@ -313,6 +313,8 @@ pub struct ScopedModelsSelectorComponent {
     focused: bool,
     /// The full key list shows (`f1`).
     help: bool,
+    /// List mode or typing mode (see [`LetterGate`]).
+    gate: LetterGate,
 }
 
 impl ScopedModelsSelectorComponent {
@@ -372,6 +374,7 @@ impl ScopedModelsSelectorComponent {
             events: Vec::new(),
             focused: false,
             help: false,
+            gate: LetterGate::default(),
         }
     }
 
@@ -516,14 +519,38 @@ impl Component for ScopedModelsSelectorComponent {
     }
 
     fn handle_input(&mut self, data: &str) {
-        if matches_key(data, "f1") {
+        let kb = get_keybindings();
+        // Bare letters act in list mode only. `/` opens typing mode, where they type.
+        let query_empty = self.query().is_empty();
+        let bare = self.gate.lists(query_empty);
+        if matches_key(data, "f1") || (bare && kb.matches(data, "app.list.help")) {
             self.help = !self.help;
             return;
         }
-        let kb = get_keybindings();
         let navigated = self.state.borrow_mut().cursor.handle_query_key(data, &kb);
         if navigated {
             return;
+        }
+        if bare {
+            let step = if kb.matches(data, "app.list.down") {
+                Some(1)
+            } else if kb.matches(data, "app.list.up") {
+                Some(-1)
+            } else {
+                None
+            };
+            if let Some(delta) = step {
+                self.state.borrow_mut().cursor.step(delta);
+                return;
+            }
+            if kb.matches(data, "app.list.close") {
+                self.events.push(ScopedModelsEvent::Cancel);
+                return;
+            }
+            if kb.matches(data, "app.list.search") {
+                self.gate.start_typing();
+                return;
+            }
         }
 
         let reorder_up = kb.matches(data, "app.models.reorderUp");
@@ -573,8 +600,8 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        let enable = kb.matches(data, "app.models.enableAll");
-        if enable || kb.matches(data, "app.models.clearAll") {
+        let enable = bare && kb.matches(data, "app.models.enableAll");
+        if enable || (bare && kb.matches(data, "app.models.clearAll")) {
             let targets = self.search_targets();
             let next = {
                 let state = self.state.borrow();
@@ -588,7 +615,7 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        if kb.matches(data, "app.models.toggleProvider") {
+        if bare && kb.matches(data, "app.models.toggleProvider") {
             let next = {
                 let state = self.state.borrow();
                 state.filtered.get(state.cursor.selected()).map(|item| {
@@ -612,7 +639,7 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        if matches_key(data, EFFORT_KEY) {
+        if kb.matches(data, "tui.input.tab") {
             self.edit_selected(|extras, model| {
                 let levels = effort_levels(model);
                 extras.effort = next_effort(extras.effort.as_deref(), &levels);
@@ -620,12 +647,12 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        if matches_key(data, CATEGORY_KEY) {
+        if bare && kb.matches(data, "app.models.category") {
             self.edit_selected(|extras, _| extras.category = next_category(extras.category));
             return;
         }
 
-        if kb.matches(data, "app.models.save") {
+        if bare && kb.matches(data, "app.models.save") {
             let entries = self.persisted_entries();
             {
                 let mut state = self.state.borrow_mut();
@@ -636,7 +663,7 @@ impl Component for ScopedModelsSelectorComponent {
         }
 
         if matches_key(data, "ctrl+c") {
-            if self.query().is_empty() {
+            if query_empty {
                 self.events.push(ScopedModelsEvent::Cancel);
             } else {
                 self.search.borrow_mut().set_value("");
@@ -646,7 +673,19 @@ impl Component for ScopedModelsSelectorComponent {
         }
 
         if matches_key(data, "escape") {
-            self.events.push(ScopedModelsEvent::Cancel);
+            match self.gate.escape(query_empty) {
+                EscapeAction::ClearQuery => {
+                    self.search.borrow_mut().set_value("");
+                    self.refresh();
+                }
+                EscapeAction::LeaveTyping => {}
+                EscapeAction::Close => self.events.push(ScopedModelsEvent::Cancel),
+            }
+            return;
+        }
+
+        // In list mode a printable key with no key of its own does nothing.
+        if bare && is_printable(data) {
             return;
         }
 

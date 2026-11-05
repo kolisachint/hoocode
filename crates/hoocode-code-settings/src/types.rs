@@ -175,8 +175,6 @@ pub struct PackageFilter {
     pub skills: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompts: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub themes: Option<Vec<String>>,
     /// Keys this version does not know, kept as written.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -422,8 +420,7 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
     "extensions": [],
     "skills": [],
     "prompts": [],
-    "slashCommands": [],
-    "themes": []
+    "slashCommands": []
 }"#;
 
 /// `DEFAULT_SETTINGS`.

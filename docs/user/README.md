@@ -9,7 +9,7 @@ The site copies this folder from the **latest release tag**, not from `main`,
 so the published pages always describe a version people can install. Anything
 merged after the last release reaches the site with the next one.
 
-- `install.md`, `quickstart.md`, `configuration.md`, `commands.md`
+- `install.md`, `quickstart.md`, `configuration.md`, `commands.md`, `keybindings.md`
 - Short and plain. Describe only what this build does; check flags against
   `hoocode --help` (`crates/hoocode-code-cli/src/help_text.rs`).
 - Link between pages as `commands.md`; link repository files relatively

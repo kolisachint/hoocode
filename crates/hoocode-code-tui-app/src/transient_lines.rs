@@ -4,6 +4,7 @@
 //! footer that used to carry them is gone (declutter: the status line under
 //! the prompt holds the session facts).
 
+use hoocode_code_tui_keybindings::{which_key_rows, LeaderEntry};
 use hoocode_tui_ratatui::{paint, Palette};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
@@ -72,24 +73,49 @@ fn render_startup_line(entry: &StartupProgress) -> String {
     }
 }
 
-/// The transient rows: the warning, then the retry notice, then extension
-/// statuses, then startup progress. Indent 1, at most `width` cells each.
+/// The leader's rows: the footer text (`Ctrl+X …`, or a note such as `no
+/// binding`), and the which-key popup once the leader has waited.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderLine {
+    pub text: String,
+    /// Empty until the popup is due.
+    pub which_key: Vec<LeaderEntry>,
+}
+
+/// The transient rows: the leader, the warning, then the retry notice, then
+/// extension statuses, then startup progress. Indent 1, at most `width` cells each.
 pub struct TransientLines {
     data: FooterDataProvider,
+    /// The leader's footer row and popup, while the leader is pending or has a note.
+    leader: Option<LeaderLine>,
     /// A warning (memory shedding, UI stall).
     notice: Option<String>,
     /// The auto-retry notice while the session retries a transient failure
     /// (`retrying · attempt 2 of 6 · …`).
     retry_notice: Option<String>,
+    /// The prompt-history search's two rows (`history_search.rs`), while it is open.
+    history_search: Option<(String, String)>,
 }
 
 impl TransientLines {
     pub fn new(data: FooterDataProvider) -> Self {
         Self {
             data,
+            leader: None,
             notice: None,
             retry_notice: None,
+            history_search: None,
         }
+    }
+
+    /// The leader's rows now, if any.
+    pub fn leader(&self) -> Option<&LeaderLine> {
+        self.leader.as_ref()
+    }
+
+    /// Sets or clears the leader's rows. `None` removes them.
+    pub fn set_leader(&mut self, leader: Option<LeaderLine>) {
+        self.leader = leader;
     }
 
     /// Sets or clears the warning. `None` removes it.
@@ -100,6 +126,11 @@ impl TransientLines {
     /// Sets or clears the auto-retry notice. `None` removes it.
     pub fn set_retry_notice(&mut self, notice: Option<String>) {
         self.retry_notice = notice;
+    }
+
+    /// Sets or clears the history search's rows: the query and match, then the keys.
+    pub fn set_history_search(&mut self, rows: Option<(String, String)>) {
+        self.history_search = rows;
     }
 
     /// The rows at `width`.
@@ -113,6 +144,21 @@ impl TransientLines {
             )
         };
         let mut lines = Vec::new();
+        if let Some((shown, hints)) = &self.history_search {
+            lines.push(cut(&paint(pal.dim(), shown), "…"));
+            lines.push(cut(&paint(pal.dim(), hints), "…"));
+        }
+        if let Some(leader) = &self.leader {
+            lines.push(cut(&paint(pal.dim(), &leader.text), "…"));
+            for row in which_key_rows(&leader.which_key, width) {
+                lines.push(truncate_to_width(
+                    &row,
+                    width,
+                    &paint(pal.dim(), "…"),
+                    false,
+                ));
+            }
+        }
         if let Some(notice) = &self.notice {
             lines.push(cut(&paint(pal.warn(), notice), "…"));
         }

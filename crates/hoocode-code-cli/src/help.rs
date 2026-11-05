@@ -103,6 +103,7 @@ mod tests {
             "hoocode config ",
             "hoocode update ",
             "hoocode app-server [--listen URL]",
+            "hoocode keybindings ",
         ] {
             assert!(help.contains(command), "missing {command}");
         }
@@ -127,6 +128,7 @@ mod tests {
             "config",
             "update",
             "app-server",
+            "keybindings",
             "<command>",
         ];
         for line in block.lines() {

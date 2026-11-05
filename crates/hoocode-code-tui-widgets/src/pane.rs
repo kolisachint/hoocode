@@ -18,6 +18,7 @@
 //! Every painted background also sets its foreground ([`PaneStyle`]). The
 //! pane only draws: callers keep keys, filtering and events.
 
+use hoocode_code_tui_keybindings::key_hint_text;
 use hoocode_tui_ratatui::core::style::Color;
 use hoocode_tui_ratatui::{
     buffer_to_lines, flatten, truncate_line, Buffer, Line, Modifier, Palette, Rect, Span, Style,
@@ -679,12 +680,16 @@ pub fn hint_line(hints: &[(&str, &str)]) -> Line<'static> {
 }
 
 /// The hint row the spec asks for: at most [`MAX_HINTS`] items, then
-/// `f1 more` when there are more (or `more` says the pane has more keys).
+/// the help key (`app.list.help`) and `more` when there are more (or `more`
+/// says the pane has more keys).
 pub fn capped_hint_line(hints: &[(&str, &str)], more: bool) -> Line<'static> {
     let more = more || hints.len() > MAX_HINTS;
     let shown = hints.iter().copied().take(MAX_HINTS);
+    let help = key_hint_text("app.list.help");
     let items: Vec<(&str, &str)> = if more {
-        shown.chain(std::iter::once(("f1", "more"))).collect()
+        shown
+            .chain(std::iter::once((help.as_str(), "more")))
+            .collect()
     } else {
         shown.collect()
     };

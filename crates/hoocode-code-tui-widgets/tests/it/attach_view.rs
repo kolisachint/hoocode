@@ -15,7 +15,7 @@ fn the_header_names_the_run_its_state_and_how_to_go_back() {
     let shown = strip_all(&header.render(80));
     assert_eq!(
         shown.trim_end(),
-        "◆ explore · Find the footer code · running · Esc back"
+        "◆ explore · Find the footer code · running · esc back"
     );
     assert_golden!("attach_header_80", render_golden(&mut header, 80));
 }
@@ -29,7 +29,7 @@ fn a_long_description_gives_way_before_the_state_or_the_way_back() {
         "complete",
     );
     let shown = strip_all(&header.render(60));
-    assert!(shown.contains("complete · Esc back"), "{shown}");
+    assert!(shown.contains("complete · esc back"), "{shown}");
     assert!(shown.contains('…'), "{shown}");
     assert!(shown.trim_end().chars().count() <= 60, "{shown}");
     assert_golden!("attach_header_60_long", render_golden(&mut header, 60));
@@ -54,7 +54,7 @@ fn a_state_change_shows_in_the_header() {
     let mut header = AttachHeader::new("explore", "Find the footer code", "running");
     header.set_state("interrupted");
     let shown = strip_all(&header.render(80));
-    assert!(shown.contains("· interrupted · Esc back"), "{shown}");
+    assert!(shown.contains("· interrupted · esc back"), "{shown}");
 }
 
 #[test]

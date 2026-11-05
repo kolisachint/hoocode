@@ -77,7 +77,7 @@ fn check(name: &str, width: u16) {
             text.contains("effort low · cheap"),
             "{name}: missing the selected row's facts in\n{text}"
         );
-        let hint = format!("{} effort", format_key_text("tab", false));
+        let hint = format!("{} search", format_key_text("/", false));
         assert!(
             text.contains(&hint),
             "{name}: missing hint {hint:?} in\n{text}"

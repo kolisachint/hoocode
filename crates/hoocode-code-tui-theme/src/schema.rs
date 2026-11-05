@@ -293,8 +293,17 @@ fn validate(json: &Value, errors: &mut Errors) -> Option<ThemeJson> {
         errors.push("", "must be object");
         return None;
     };
-    let missing: Vec<&str> = ["name", "colors"]
-        .into_iter()
+    // A theme that `inherits` may leave out `colors` and any required token:
+    // the loader fills them from the base and validates the merged theme.
+    let inheriting = root.contains_key("inherits");
+    let required: &[&str] = if inheriting {
+        &["name"]
+    } else {
+        &["name", "colors"]
+    };
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
         .filter(|k| !root.contains_key(*k))
         .collect();
     if !missing.is_empty() {
@@ -318,7 +327,8 @@ fn validate(json: &Value, errors: &mut Errors) -> Option<ThemeJson> {
     let (schema_ok, schema) = string_prop(errors, "$schema");
     let (name_ok, name) = string_prop(errors, "name");
     let (desc_ok, description) = string_prop(errors, "description");
-    ok &= schema_ok && name_ok && desc_ok;
+    let (inherits_ok, _) = string_prop(errors, "inherits");
+    ok &= schema_ok && name_ok && desc_ok && inherits_ok;
 
     let vars = match root.get("vars") {
         None => None,
@@ -330,10 +340,11 @@ fn validate(json: &Value, errors: &mut Errors) -> Option<ThemeJson> {
     };
 
     let colors = match root.get("colors") {
+        None if inheriting => Some(Vec::new()),
         None => None,
         Some(Value::Object(map)) => {
             for (key, optional) in COLOR_PROPERTIES {
-                if !optional && !map.contains_key(key) {
+                if !optional && !inheriting && !map.contains_key(key) {
                     errors.missing_colors.push(key.to_string());
                     ok = false;
                 }
@@ -402,9 +413,14 @@ fn validate(json: &Value, errors: &mut Errors) -> Option<ThemeJson> {
     })
 }
 
+/// A theme file's text as JSON, with the loader's parse-error text.
+pub fn theme_json_value(label: &str, content: &str) -> Result<Value, String> {
+    serde_json::from_str(content)
+        .map_err(|error| format!("Failed to parse theme {label}: SyntaxError: {error}"))
+}
+
 /// `parseThemeJsonContent`: parse and validate a theme file's text.
 pub fn parse_theme_json_content(label: &str, content: &str) -> Result<ThemeJson, String> {
-    let json: Value = serde_json::from_str(content)
-        .map_err(|error| format!("Failed to parse theme {label}: SyntaxError: {error}"))?;
+    let json = theme_json_value(label, content)?;
     parse_theme_json(label, &json)
 }
