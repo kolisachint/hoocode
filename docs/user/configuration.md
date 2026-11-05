@@ -12,7 +12,7 @@ to move it.
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
-| `~/.hoocode/themes/` | Custom themes. The built-in themes are `dark` and `light`; the `theme` setting also accepts `auto` (follows the terminal background). An unknown value falls back to `auto` |
+| `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark` and `light`, and your files here (by file name, with the path shown). The `theme` setting also accepts `auto` (follows the terminal background). An unknown value falls back to `auto` |
 | `~/.hoocode/sessions/` | Saved sessions |
 
 ## Per project
@@ -80,7 +80,7 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
   turn, `peek` (the default) shows each call on one row with its facts, `full` shows
   every body. The old name `radar` still works as `outline` in `toolOutputView`.
 - **Themes**: `dark` and `light`, and `auto` follows the terminal background and
-  re-checks when it changes. Pick one with `/theme`. The older names (`daylight`,
+  re-checks when it changes. Pick one with `/theme`, which also lists your own themes. The older names (`daylight`,
   `deep-space`, `colorsafe-*`, `high-contrast-*`, `warm-*`, `solarized-*`) are gone; a
   saved value that no longer exists falls back to `auto`.
 - **No colour**: with `NO_COLOR` set, `TERM=dumb` or fewer than 256 colours, panes get

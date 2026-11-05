@@ -117,6 +117,23 @@ fn preserves_custom_settings_when_changing_theme() {
 }
 
 #[test]
+fn a_picked_theme_is_saved_globally_and_read_back_after_a_restart() {
+    let d = Dirs::new();
+    write(&d.global_path(), &json!({"defaultModel": "claude-sonnet"}));
+    let mut manager = d.manager();
+    // The picker's choices: `auto`, then a user theme name. Each is saved at once.
+    manager.set_theme("auto");
+    assert_eq!(read(&d.global_path())["theme"], "auto");
+    manager.set_theme("my-theme");
+    assert_eq!(read(&d.global_path())["theme"], "my-theme");
+    assert_eq!(read(&d.global_path())["defaultModel"], "claude-sonnet");
+
+    // A new manager (a restart) sees the saved choice.
+    let restarted = d.manager();
+    assert_eq!(restarted.theme().as_deref(), Some("my-theme"));
+}
+
+#[test]
 fn in_memory_changes_override_file_changes_for_the_same_key() {
     let d = Dirs::new();
     write(&d.global_path(), &json!({"theme": "dark"}));

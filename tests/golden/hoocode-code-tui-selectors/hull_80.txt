@@ -3,6 +3,7 @@
  › dark  in use
    light
  dark  Default dark theme
+ built-in
 
  › add a width check to wrap_text
  ● Edit src/wrap.rs  +4 −1
@@ -26,25 +27,28 @@ r3 c0-79 fg=#e5e5e7 bg=#1e1e2a
 r4 c0-6 fg=#e5e5e7 bg=#292b40
 r4 c7-24 fg=#989898 bg=#292b40
 r4 c25-79 fg=#e5e5e7 bg=#292b40
-r5 c0-79 fg=#e5e5e7 bg=#292b40
-r6 c0 fg=#e5e5e7 bg=#292b40
-r6 c1-2 fg=#989898 bg=#292b40
-r6 c3-79 fg=#e5e5e7 bg=#292b40
+r5 c0 fg=#e5e5e7 bg=#292b40
+r5 c1-8 fg=#989898 bg=#292b40
+r5 c9-79 fg=#e5e5e7 bg=#292b40
+r6 c0-79 fg=#e5e5e7 bg=#292b40
 r7 c0 fg=#e5e5e7 bg=#292b40
-r7 c1-2 fg=#b5bd68 bg=#292b40
-r7 c3-6 fg=#989898 bg=#292b40 bold
-r7 c7-25 fg=#989898 bg=#292b40
-r7 c26-79 fg=#e5e5e7 bg=#292b40
+r7 c1-2 fg=#989898 bg=#292b40
+r7 c3-79 fg=#e5e5e7 bg=#292b40
 r8 c0 fg=#e5e5e7 bg=#292b40
-r8 c1-2 fg=#d58181 bg=#292b40
-r8 c3-7 fg=#989898 bg=#292b40 bold
-r8 c8-41 fg=#989898 bg=#292b40
-r8 c42-79 fg=#e5e5e7 bg=#292b40
-r9 c0-79 fg=#e5e5e7 bg=#292b40
-r10 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r10 c3-13 fg=#989898 bg=#1e1e2a
-r10 c14-18 fg=#e5e5e7 bg=#1e1e2a
-r10 c19-26 fg=#989898 bg=#1e1e2a
-r10 c27-29 fg=#e5e5e7 bg=#1e1e2a
-r10 c30-34 fg=#989898 bg=#1e1e2a
-r10 c35-79 fg=#e5e5e7 bg=#1e1e2a
+r8 c1-2 fg=#b5bd68 bg=#292b40
+r8 c3-6 fg=#989898 bg=#292b40 bold
+r8 c7-25 fg=#989898 bg=#292b40
+r8 c26-79 fg=#e5e5e7 bg=#292b40
+r9 c0 fg=#e5e5e7 bg=#292b40
+r9 c1-2 fg=#d58181 bg=#292b40
+r9 c3-7 fg=#989898 bg=#292b40 bold
+r9 c8-41 fg=#989898 bg=#292b40
+r9 c42-79 fg=#e5e5e7 bg=#292b40
+r10 c0-79 fg=#e5e5e7 bg=#292b40
+r11 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r11 c3-13 fg=#989898 bg=#1e1e2a
+r11 c14-18 fg=#e5e5e7 bg=#1e1e2a
+r11 c19-26 fg=#989898 bg=#1e1e2a
+r11 c27-29 fg=#e5e5e7 bg=#1e1e2a
+r11 c30-34 fg=#989898 bg=#1e1e2a
+r11 c35-79 fg=#e5e5e7 bg=#1e1e2a

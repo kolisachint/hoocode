@@ -18,3 +18,4 @@ mod theme_color_switch;
 mod theme_contrast;
 mod theme_cutout_tokens;
 mod theme_export;
+mod theme_picker_list;

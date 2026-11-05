@@ -129,6 +129,55 @@ pub fn get_available_themes_with_paths() -> Vec<ThemeInfo> {
     result
 }
 
+/// The theme picker's list, read from the user's themes folder: `auto`,
+/// the built-in themes, then every user theme in `dir` that loads, by name.
+/// Only the folder's top level counts, so `defaults/` is never listed. A
+/// user file that reuses a built-in or `auto` name is left out (built-ins
+/// win), and so is a file that does not load (its warning comes from the
+/// theme diagnostics).
+pub fn picker_theme_list_in(dir: &Path) -> Vec<ThemeInfo> {
+    let mut list = vec![ThemeInfo {
+        name: "auto".to_string(),
+        path: None,
+    }];
+    list.extend(builtin_themes().keys().map(|name| ThemeInfo {
+        name: name.clone(),
+        path: None,
+    }));
+    let mut user: Vec<ThemeInfo> = Vec::new();
+    for file in json_files(dir) {
+        let name = file.trim_end_matches(".json").to_string();
+        if is_builtin_theme(&name) || is_auto_theme(&name) {
+            continue;
+        }
+        let path = dir.join(&file);
+        if load_theme_from_path(&path, None).is_ok() {
+            user.push(ThemeInfo {
+                name,
+                path: Some(path),
+            });
+        }
+    }
+    user.sort_by(|a, b| a.name.cmp(&b.name));
+    list.extend(user);
+    list
+}
+
+/// [`picker_theme_list_in`] for the user's own themes folder.
+pub fn picker_theme_list() -> Vec<ThemeInfo> {
+    picker_theme_list_in(&custom_themes_dir())
+}
+
+/// The file of user theme `name` in the themes folder, when there is one.
+/// Built-ins, `auto` and names without a file give `None`.
+pub fn user_theme_path(name: &str) -> Option<PathBuf> {
+    if is_builtin_theme(name) || is_auto_theme(name) {
+        return None;
+    }
+    let path = custom_themes_dir().join(format!("{name}.json"));
+    path.is_file().then_some(path)
+}
+
 fn read_file(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => format!(
