@@ -755,7 +755,7 @@ impl Mode {
         if let Some(name) = theme_name {
             if let Err(error) = set_theme(&name, true) {
                 self.show_error(&format!(
-                    "Failed to load theme \"{name}\": {error}\nFell back to dark theme."
+                    "Theme \"{name}\" did not load: {error}. Kept the current theme."
                 ));
             }
         }

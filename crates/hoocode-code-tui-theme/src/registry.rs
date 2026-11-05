@@ -544,8 +544,8 @@ fn os_dark_mode() -> Option<bool> {
 /// now. Non-auto values pass through unchanged. The OS reading decides the
 /// side; when it cannot be read the `COLORFGBG` heuristic does (which itself
 /// falls back to dark), so a total failure resolves to the dark side. An
-/// unknown custom side falls back to its built-in default, silently: the
-/// loader's own `dark` fallback still covers a theme deleted mid-flight.
+/// unknown custom side falls back to its built-in default and records a
+/// theme warning (see [`theme_warnings`]), which clears once the side loads.
 pub fn resolve_auto_theme(value: &str) -> String {
     if !is_auto_theme(value) {
         return value.to_string();
@@ -559,8 +559,14 @@ pub fn resolve_auto_theme(value: &str) -> String {
     };
     let name = side;
     if get_available_themes().iter().any(|t| t == &name) {
+        clear_theme_warning(&name);
         name
     } else {
+        record_theme_warning(
+            &name,
+            "Theme not found",
+            "Using the built-in theme for that side.",
+        );
         fallback.to_string()
     }
 }
@@ -578,6 +584,42 @@ struct State {
     registered: Vec<(String, Arc<Theme>)>,
     on_change: Option<ChangeCallback>,
     watcher: Option<Watcher>,
+    /// Problems with themes the user asked for, by the name they asked for.
+    warnings: BTreeMap<String, String>,
+}
+
+/// Counts new theme warnings, so the screen can show each one once.
+static WARNING_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The theme warnings to show: a bad file, or a name that is not a theme.
+/// Each says what the screen does instead (keeps the last good theme, or
+/// uses the built-in dark for now). A warning clears when its name loads.
+pub fn theme_warnings() -> Vec<String> {
+    state().warnings.values().cloned().collect()
+}
+
+/// Bumps with every new theme warning (a repeat of the same one does not).
+pub fn theme_warning_generation() -> u64 {
+    WARNING_GENERATION.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Records that theme `name` did not load. The error text is put on one line.
+fn record_theme_warning(name: &str, error: &str, consequence: &str) {
+    let error = error.split_whitespace().collect::<Vec<_>>().join(" ");
+    let message = format!("Theme \"{name}\" did not load: {error}. {consequence}");
+    {
+        let mut s = state();
+        if s.warnings.get(name) == Some(&message) {
+            return;
+        }
+        s.warnings.insert(name.to_string(), message);
+    }
+    WARNING_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Clears the warning for theme `name`, once it loads.
+fn clear_theme_warning(name: &str) {
+    state().warnings.remove(name);
 }
 
 /// The running custom-theme watcher: told to stop by `stop`, and joined when
@@ -651,24 +693,26 @@ fn fallback_dark() -> Arc<Theme> {
 }
 
 /// `initTheme`: load the requested (or detected default) theme; `"auto"`
-/// resolves to the OS side first, and an invalid one falls back to `dark`
-/// silently.
+/// resolves to the OS side first. A theme that does not load (a bad file, or
+/// a name that is not a theme) records a warning and the built-in dark stands
+/// in, since nothing loaded yet. The requested setting is left as it is.
 pub fn init_theme(theme_name: Option<&str>, enable_watcher: bool) {
     let requested = theme_name.map_or_else(|| default_theme().to_string(), str::to_string);
-    let mut name = resolve_auto_theme(&requested);
-    // An unknown saved value (an old theme name) quietly follows `auto`.
-    if !get_available_themes().iter().any(|t| t == &name) {
-        name = resolve_auto_theme("auto");
-    }
-    state().current_name = Some(name.clone());
+    let name = resolve_auto_theme(&requested);
     match load_theme(&name, None) {
         Ok(theme) => {
-            state().theme = Some(theme);
+            clear_theme_warning(&requested);
+            {
+                let mut s = state();
+                s.current_name = Some(name.clone());
+                s.theme = Some(theme);
+            }
             if enable_watcher {
                 start_theme_watcher();
             }
         }
-        Err(_) => {
+        Err(error) => {
+            record_theme_warning(&requested, &error, "Using the built-in dark theme for now.");
             let dark = fallback_dark();
             let mut s = state();
             s.current_name = Some("dark".to_string());
@@ -694,31 +738,31 @@ fn notify_change() {
     }
 }
 
-/// `setTheme`: switch themes; on failure fall back to `dark` and return the
-/// error. `"auto"` resolves to the OS side first, so the current name is
-/// always concrete.
+/// `setTheme`: switch themes. `"auto"` resolves to the OS side first, so the
+/// current name is always concrete. On failure nothing changes: the last good
+/// theme stays on screen and the error is returned for the caller to show.
 pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
+    // A new choice replaces the warnings about the old one. A side of an
+    // auto pair that is still missing warns again in the resolve below.
+    state().warnings.clear();
     let name = resolve_auto_theme(requested);
-    state().current_name = Some(name.clone());
-    match load_theme(&name, None) {
-        Ok(theme) => {
-            state().theme = Some(theme);
-            if enable_watcher {
-                start_theme_watcher();
-            }
-            notify_change();
-            Ok(())
-        }
+    let theme = match load_theme(&name, None) {
+        Ok(theme) => theme,
         Err(error) => {
-            let dark = fallback_dark();
-            let mut s = state();
-            s.current_name = Some("dark".to_string());
-            s.theme = Some(dark);
-            drop(s);
-            bump_theme_generation();
-            Err(error)
+            record_theme_warning(requested, &error, "Kept the current theme.");
+            return Err(error);
         }
+    };
+    {
+        let mut s = state();
+        s.current_name = Some(name.clone());
+        s.theme = Some(theme);
     }
+    if enable_watcher {
+        start_theme_watcher();
+    }
+    notify_change();
+    Ok(())
 }
 
 /// `setThemeInstance`: use a theme object directly (not watchable).
@@ -798,10 +842,15 @@ fn reload_watched(watched_name: &str, theme_file: &Path) {
     if !theme_file.exists() {
         return;
     }
-    // A file mid-edit may be invalid: keep the current theme.
-    let Ok(reloaded) = load_theme_from_path(theme_file, None) else {
-        return;
+    // A file mid-edit may be invalid: keep the current theme and say why.
+    let reloaded = match load_theme_from_path(theme_file, None) {
+        Ok(theme) => theme,
+        Err(error) => {
+            record_theme_warning(watched_name, &error, "Keeping the last good theme.");
+            return;
+        }
     };
+    clear_theme_warning(watched_name);
     {
         let reloaded = Arc::new(reloaded);
         let mut s = state();

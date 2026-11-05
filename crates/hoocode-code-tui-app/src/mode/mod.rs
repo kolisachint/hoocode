@@ -1243,11 +1243,9 @@ impl Mode {
         self.update_terminal_title();
         let theme_name = self.session.settings().theme();
         if let Some(name) = theme_name {
-            if let Err(error) = set_theme(&name, true) {
-                self.show_error(&format!(
-                    "Failed to load theme \"{name}\": {error}\nFell back to dark theme."
-                ));
-            }
+            // A theme that does not load keeps the current one; the warning is
+            // listed under theme diagnostics by `render_resources` below.
+            let _ = set_theme(&name, true);
         }
         let changelog = {
             let has_messages = !self.session.messages().is_empty();

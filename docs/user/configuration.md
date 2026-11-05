@@ -12,7 +12,7 @@ to move it.
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
-| `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark` and `light`, and your files here (by file name, with the path shown). A theme may set `"inherits": "<name>"` to take the colors it leaves out from a built-in theme or another file here. The `theme` setting also accepts `auto` (follows the terminal background). An unknown value falls back to `auto` |
+| `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark` and `light`, and your files here (by file name, with the path shown). A theme may set `"inherits": "<name>"` to take the colors it leaves out from a built-in theme or another file here. The `theme` setting also accepts `auto` (follows the terminal background). A file that does not load, or a name that is not a theme, shows a warning under theme diagnostics: a switch keeps the theme on screen, and at startup the built-in `dark` stands in until the setting is fixed. |
 | `~/.hoocode/sessions/` | Saved sessions |
 
 ## Per project
@@ -80,9 +80,10 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
   turn, `peek` (the default) shows each call on one row with its facts, `full` shows
   every body. The old name `radar` still works as `outline` in `toolOutputView`.
 - **Themes**: `dark` and `light`, and `auto` follows the terminal background and
-  re-checks when it changes. Pick one with `/theme`, which also lists your own themes. The older names (`daylight`,
-  `deep-space`, `colorsafe-*`, `high-contrast-*`, `warm-*`, `solarized-*`) are gone; a
-  saved value that no longer exists falls back to `auto`.
+  re-checks when it changes. Pick one with `/theme`, which also lists your own themes.
+  The older names (`daylight`, `deep-space`, `colorsafe-*`, `high-contrast-*`, `warm-*`,
+  `solarized-*`) are gone; a saved value that no longer exists shows a warning under
+  theme diagnostics and the built-in `dark` stands in until you pick another theme.
 - **No colour**: with `NO_COLOR` set, `TERM=dumb` or fewer than 256 colours, panes get
   light borders and the selected row keeps its ` › ` marker.
 - **Removed**: the `/chrome` and `/color` commands and the `alt+z` key. Notices no longer

@@ -35,11 +35,11 @@ impl AgentDir {
     }
 
     fn write(&self, name: &str, theme: &Value) {
-        std::fs::write(
-            self.theme_file(name),
-            serde_json::to_string_pretty(theme).unwrap(),
-        )
-        .unwrap();
+        self.write_text(name, &serde_json::to_string_pretty(theme).unwrap());
+    }
+
+    fn write_text(&self, name: &str, text: &str) {
+        std::fs::write(self.theme_file(name), text).unwrap();
     }
 }
 
@@ -150,25 +150,83 @@ fn init_and_set_fall_back_to_dark_on_an_invalid_theme() {
     broken["colors"].as_object_mut().unwrap().remove("accent");
     agent.write("broken", &broken);
 
+    // Nothing loaded yet: the built-in dark stands in, and a warning says so.
     init_theme(Some("broken"), false);
     assert_eq!(current_theme_name().as_deref(), Some("dark"));
     assert_eq!(theme().name.as_deref(), Some("dark"));
+    assert!(warning_for("broken").contains("Using the built-in dark theme"));
 
+    // A failed switch keeps the last good theme on screen, and warns.
     init_theme(Some("light"), false);
     let error = set_theme("broken", false).unwrap_err();
     assert!(error.starts_with("Invalid theme \"broken\":"), "{error}");
-    assert_eq!(current_theme_name().as_deref(), Some("dark"));
+    assert_eq!(current_theme_name().as_deref(), Some("light"));
+    assert_eq!(theme().name.as_deref(), Some("light"));
+    assert!(warning_for("broken").contains("Kept the current theme"));
 
     let error = set_theme("does-not-exist", false).unwrap_err();
     assert_eq!(error, "Theme not found: does-not-exist");
+    assert_eq!(current_theme_name().as_deref(), Some("light"));
 }
 
 #[test]
-fn init_with_an_unknown_name_quietly_follows_auto() {
+fn init_with_an_unknown_name_warns_and_uses_dark() {
     let _agent = AgentDir::new();
     init_theme(Some("solarized-dark"), false);
-    let current = current_theme_name().unwrap();
-    assert!(current == "dark" || current == "light", "{current}");
+    assert_eq!(current_theme_name().as_deref(), Some("dark"));
+    assert!(warning_for("solarized-dark")
+        .starts_with("Theme \"solarized-dark\" did not load: Theme not found: solarized-dark."));
+}
+
+/// The warning recorded for theme `name`, or an empty string.
+fn warning_for(name: &str) -> String {
+    let prefix = format!("Theme \"{name}\" did not load:");
+    theme_warnings()
+        .into_iter()
+        .find(|w| w.starts_with(&prefix))
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_good_theme_clears_its_warning_and_a_switch_clears_the_old_ones() {
+    let _agent = AgentDir::new();
+    init_theme(Some("nope-theme"), false);
+    assert!(!warning_for("nope-theme").is_empty());
+    set_theme("light", false).unwrap();
+    assert!(warning_for("nope-theme").is_empty());
+    assert!(theme_warnings().is_empty(), "{:?}", theme_warnings());
+}
+
+#[test]
+fn the_watcher_keeps_the_last_good_theme_when_an_edit_breaks_it() {
+    let agent = AgentDir::new();
+    let mut custom = dark_theme();
+    custom["name"] = json!("edited");
+    agent.write("edited", &custom);
+    init_theme(Some("edited"), true);
+    let before = theme().get_fg_ansi("accent").to_string();
+
+    // Let the watcher take its first look, then break the file.
+    std::thread::sleep(Duration::from_millis(120));
+    agent.write_text("edited", "{ \"name\": \"edited\", \"colors\": ");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while warning_for("edited").is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(warning_for("edited").contains("Keeping the last good theme"));
+    assert_eq!(current_theme_name().as_deref(), Some("edited"));
+    assert_eq!(theme().get_fg_ansi("accent"), before);
+
+    // A valid file again: the warning clears.
+    custom["colors"]["accent"] = json!("#010203");
+    custom["description"] = json!("valid again, with a different length");
+    agent.write("edited", &custom);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !warning_for("edited").is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(warning_for("edited").is_empty());
+    stop_theme_watcher();
 }
 
 #[test]

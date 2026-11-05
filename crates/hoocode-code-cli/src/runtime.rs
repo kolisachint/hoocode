@@ -1968,6 +1968,13 @@ fn resource_listing(
         listing.context_files = context.agents_files;
         listing.context_warnings = context.warnings;
     }
+    // A theme file that did not load, or a theme name that is not one.
+    listing.theme_diagnostics = hoocode_code_tui_theme::theme_warnings()
+        .into_iter()
+        .map(|message| {
+            hoocode_code_resources::diagnostics::ResourceDiagnostic::warning(message, None)
+        })
+        .collect();
     // Dispatchable agents only when the Agent tool is on.
     if session.get_active_tool_names().iter().any(|t| t == "Agent") {
         let registry = hoocode_code_resources::agent_registry::load_agent_registry(
