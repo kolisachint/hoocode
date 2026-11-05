@@ -11,6 +11,9 @@ pub fn lock() -> MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
     let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("COLORTERM", "truecolor");
+    // The agent dir is a temp dir, so the theme picker never reads the real
+    // `~/.hoocode/themes/` and its golden lists only the built-ins.
+    std::env::set_var("HOOCODE_CODING_AGENT_DIR", agent_dir());
     hoocode_code_tui_theme::init_theme(Some("dark"), false);
     AppKeybindingsManager::create(Some(agent_dir())).install();
     guard

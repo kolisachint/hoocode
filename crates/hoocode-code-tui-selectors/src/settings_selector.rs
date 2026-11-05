@@ -1582,6 +1582,14 @@ impl SettingsSelectorComponent {
                 config.current_theme.clone(),
                 Rc::new(move |current: &str, slot: DoneSlot| {
                     let themes = crate::small_selectors::picker_themes();
+                    // A pick is saved to the global settings; this repo's own
+                    // `theme` wins over it, so the pane says so.
+                    let top = if config.project_pinned_settings.iter().any(|k| k == "theme") {
+                        // Short: the pane's left column truncates long rows.
+                        "Project sets theme: it wins.".to_string()
+                    } else {
+                        String::new()
+                    };
                     let options = themes
                         .iter()
                         .map(|t| SelectItem {
@@ -1598,7 +1606,7 @@ impl SettingsSelectorComponent {
                     let hull = SubmenuConsole {
                         title: "Theme · /theme".to_string(),
                         count: themes_count(themes.len()),
-                        top: String::new(),
+                        top,
                         hint: vec![
                             ("↑↓".to_string(), "preview".to_string()),
                             ("enter".to_string(), "keep".to_string()),

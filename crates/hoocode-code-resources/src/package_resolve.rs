@@ -7,9 +7,9 @@
 use crate::node_path;
 use crate::package_discovery::{
     apply_patterns, collect_ancestor_agents_skill_dirs, collect_auto_extension_entries,
-    collect_auto_prompt_entries, collect_auto_skill_entries, collect_auto_theme_entries,
-    collect_resource_files, is_enabled_by_overrides, split_patterns, ResourceType,
-    SkillDiscoveryMode, SETTINGS_RESOURCE_TYPES,
+    collect_auto_prompt_entries, collect_auto_skill_entries, collect_resource_files,
+    is_enabled_by_overrides, split_patterns, ResourceType, SkillDiscoveryMode,
+    SETTINGS_RESOURCE_TYPES,
 };
 use crate::source_info::{SourceInfo, SourceOrigin, SourceScope};
 use serde_json::{Map, Value};
@@ -69,7 +69,6 @@ pub struct ResolvedPaths {
     pub extensions: Vec<ResolvedResource>,
     pub skills: Vec<ResolvedResource>,
     pub prompts: Vec<ResolvedResource>,
-    pub themes: Vec<ResolvedResource>,
     pub agents: Vec<ResolvedResource>,
 }
 
@@ -79,7 +78,6 @@ impl ResolvedPaths {
             ResourceType::Extensions => &self.extensions,
             ResourceType::Skills => &self.skills,
             ResourceType::Prompts => &self.prompts,
-            ResourceType::Themes => &self.themes,
             ResourceType::Agents => &self.agents,
         }
     }
@@ -107,7 +105,6 @@ struct Accumulator {
     extensions: Target,
     skills: Target,
     prompts: Target,
-    themes: Target,
     agents: Target,
 }
 
@@ -117,7 +114,6 @@ impl Accumulator {
             ResourceType::Extensions => &mut self.extensions,
             ResourceType::Skills => &mut self.skills,
             ResourceType::Prompts => &mut self.prompts,
-            ResourceType::Themes => &mut self.themes,
             ResourceType::Agents => &mut self.agents,
         }
     }
@@ -368,14 +364,6 @@ fn add_auto_discovered(
         &overrides(project, ResourceType::Prompts),
         project_base,
     );
-    add(
-        acc,
-        ResourceType::Themes,
-        collect_auto_theme_entries(&dir(project_base, "themes")),
-        &project_meta,
-        &overrides(project, ResourceType::Themes),
-        project_base,
-    );
 
     add(
         acc,
@@ -437,14 +425,6 @@ fn add_auto_discovered(
         &overrides(global, ResourceType::Prompts),
         global_base,
     );
-    add(
-        acc,
-        ResourceType::Themes,
-        collect_auto_theme_entries(&dir(global_base, "themes")),
-        &user_meta,
-        &overrides(global, ResourceType::Themes),
-        global_base,
-    );
 }
 
 /// `toResolvedPaths`: stable sort by precedence, then drop later entries that
@@ -461,7 +441,6 @@ fn to_resolved_paths(acc: Accumulator) -> ResolvedPaths {
         extensions: finish(acc.extensions),
         skills: finish(acc.skills),
         prompts: finish(acc.prompts),
-        themes: finish(acc.themes),
         agents: finish(acc.agents),
     }
 }

@@ -44,8 +44,8 @@ The same commands work from the shell, without a session: `hoocode install`,
 `hoocode remove`, `hoocode list` and `hoocode plugin ...`. See
 [Commands](commands.md).
 
-`hoocode config` opens a list for turning skills, prompts and other resources on
-or off.
+`hoocode config` opens a list for turning extensions, skills and prompts on or
+off. Themes are not in it: pick one with `/theme`.
 
 ## Herdr
 
@@ -81,6 +81,8 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
   every body. The old name `radar` still works as `outline` in `toolOutputView`.
 - **Themes**: `dark` and `light`, and `auto` follows the terminal background and
   re-checks when it changes. Pick one with `/theme`, which also lists your own themes.
+  A pick is saved to your global settings. If this repo's `.hoocode/settings.json` sets
+  `theme`, that wins over the pick, and the picker says so.
   The older names (`daylight`, `deep-space`, `colorsafe-*`, `high-contrast-*`, `warm-*`,
   `solarized-*`) are gone; a saved value that no longer exists shows a warning under
   theme diagnostics and the built-in `dark` stands in until you pick another theme.

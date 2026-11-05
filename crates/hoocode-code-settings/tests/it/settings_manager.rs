@@ -132,6 +132,24 @@ fn an_old_settings_file_with_theme_paths_still_loads_and_keeps_its_keys() {
     let saved = read(&d.global_path());
     assert_eq!(saved["theme"], "dark");
     assert_eq!(saved["theme_paths"], json!(["./more"]));
+    assert_eq!(saved["themes"], json!(["./old-themes"]));
+}
+
+#[test]
+fn an_old_package_filter_with_themes_still_loads_and_keeps_the_key() {
+    let d = Dirs::new();
+    write(
+        &d.global_path(),
+        &json!({"packages": [{"source": "npm:tools", "themes": ["-themes/dark.json"]}]}),
+    );
+    let mut manager = d.manager();
+    assert!(manager.drain_errors().is_empty());
+    manager.set_theme("light");
+    let saved = read(&d.global_path());
+    assert_eq!(
+        saved["packages"],
+        json!([{"source": "npm:tools", "themes": ["-themes/dark.json"]}])
+    );
 }
 
 #[test]

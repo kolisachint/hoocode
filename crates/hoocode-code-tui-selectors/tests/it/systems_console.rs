@@ -163,6 +163,36 @@ fn hull_80() {
     check_hull("hull_80", 80);
 }
 
+/// A project `theme` setting wins over the pick, so the Theme pane says so.
+#[test]
+fn hull_notes_when_the_project_sets_the_theme() {
+    let _g = lock();
+    let mut config = SettingsConfig {
+        current_theme: "dark".into(),
+        available_themes: themes(),
+        tips_enabled: false,
+        ..SettingsConfig::default()
+    };
+    config.project_pinned_settings = vec!["theme".into()];
+    let mut pane = SettingsSelectorComponent::new(config, |_| {});
+    let (hull, _) = open_hull(&mut pane);
+    let text = render_golden(&mut *hull.borrow_mut(), 100);
+    assert!(
+        text.contains("Project sets theme: it wins."),
+        "missing the project note in\n{text}"
+    );
+}
+
+/// Without a project `theme`, the Theme pane has no such note.
+#[test]
+fn hull_has_no_project_note_by_default() {
+    let _g = lock();
+    let mut pane = pane(Rc::default());
+    let (hull, _) = open_hull(&mut pane);
+    let text = render_golden(&mut *hull.borrow_mut(), 100);
+    assert!(!text.contains("Project sets theme"), "{text}");
+}
+
 /// Moving the cursor previews the theme at once.
 #[test]
 fn hull_move_previews_live() {

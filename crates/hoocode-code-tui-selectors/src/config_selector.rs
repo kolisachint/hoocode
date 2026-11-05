@@ -1,7 +1,8 @@
 //! The `config` subcommand's resource list, hoocode
-//! `components/config-selector.ts`: every resolved extension, skill, prompt
-//! and theme, grouped by where it came from, each with a checkbox that
-//! writes a `+pattern` / `-pattern` entry to the settings file it belongs to.
+//! `components/config-selector.ts`: every resolved extension, skill and
+//! prompt, grouped by where it came from, each with a checkbox that writes a
+//! `+pattern` / `-pattern` entry to the settings file it belongs to. Themes
+//! are not listed: they are picked with `/theme`, not switched off here.
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -20,13 +21,12 @@ use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use serde_json::Value;
 
-/// The four resource kinds the list shows, in display order.
+/// The three resource kinds the list shows, in display order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ResourceType {
     Extensions,
     Skills,
     Prompts,
-    Themes,
 }
 
 impl ResourceType {
@@ -36,7 +36,6 @@ impl ResourceType {
             Self::Extensions => "extensions",
             Self::Skills => "skills",
             Self::Prompts => "prompts",
-            Self::Themes => "themes",
         }
     }
 
@@ -46,7 +45,6 @@ impl ResourceType {
             Self::Extensions => "Extensions",
             Self::Skills => "Skills",
             Self::Prompts => "Prompts",
-            Self::Themes => "Themes",
         }
     }
 }
@@ -239,7 +237,6 @@ pub fn build_groups(resolved: &ResolvedPaths) -> Vec<ResourceGroup> {
     add(&resolved.extensions, ResourceType::Extensions);
     add(&resolved.skills, ResourceType::Skills);
     add(&resolved.prompts, ResourceType::Prompts);
-    add(&resolved.themes, ResourceType::Themes);
 
     js_sort(&mut groups, |a, b| {
         if a.origin != b.origin {
@@ -472,11 +469,9 @@ impl ResourceList {
             (true, ResourceType::Extensions) => settings.set_project_extension_paths(&updated),
             (true, ResourceType::Skills) => settings.set_project_skill_paths(&updated),
             (true, ResourceType::Prompts) => settings.set_project_prompt_template_paths(&updated),
-            (true, ResourceType::Themes) => settings.set_project_theme_paths(&updated),
             (false, ResourceType::Extensions) => settings.set_extension_paths(&updated),
             (false, ResourceType::Skills) => settings.set_skill_paths(&updated),
             (false, ResourceType::Prompts) => settings.set_prompt_template_paths(&updated),
-            (false, ResourceType::Themes) => settings.set_theme_paths(&updated),
         }
     }
 
@@ -518,14 +513,11 @@ impl ResourceList {
             ResourceType::Extensions => &mut filter.extensions,
             ResourceType::Skills => &mut filter.skills,
             ResourceType::Prompts => &mut filter.prompts,
-            ResourceType::Themes => &mut filter.themes,
         };
         let updated = Self::with_toggle(slot.as_deref().unwrap_or_default(), &pattern, enabled);
         *slot = (!updated.is_empty()).then_some(updated);
-        let has_filters = filter.extensions.is_some()
-            || filter.skills.is_some()
-            || filter.prompts.is_some()
-            || filter.themes.is_some();
+        let has_filters =
+            filter.extensions.is_some() || filter.skills.is_some() || filter.prompts.is_some();
         packages[index] = if has_filters {
             PackageSource::Filtered(filter)
         } else {

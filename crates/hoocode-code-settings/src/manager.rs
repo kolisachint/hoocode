@@ -951,14 +951,6 @@ impl SettingsManager {
         self.set_project("slashCommands", strings(paths));
     }
 
-    pub fn set_theme_paths(&mut self, paths: &[String]) {
-        self.set("themes", Some(strings(paths)));
-    }
-
-    pub fn set_project_theme_paths(&mut self, paths: &[String]) {
-        self.set_project("themes", strings(paths));
-    }
-
     pub fn enable_skill_commands(&self) -> bool {
         self.bool_or("enableSkillCommands", true)
     }
