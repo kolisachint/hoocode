@@ -170,7 +170,7 @@ fn reports_resolution_errors_when_the_theme_is_built() {
 
 #[test]
 fn every_bundled_theme_validates() {
-    for name in ["dark", "dusk", "high-contrast", "light"] {
+    for name in ["dark", "dusk", "high-contrast", "light", "paper"] {
         let parsed = parse_theme_json_content(name, builtin_theme_source(name).unwrap()).unwrap();
         assert_eq!(parsed.name, name);
     }

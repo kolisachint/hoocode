@@ -171,7 +171,10 @@ fn faults(label: &str, lines: &[String], width: usize, sheet: bool) -> Vec<Strin
 #[test]
 fn has_at_least_the_themes_this_suite_expects() {
     let built_ins = built_ins();
-    assert_eq!(built_ins, ["dark", "dusk", "high-contrast", "light"]);
+    assert_eq!(
+        built_ins,
+        ["dark", "dusk", "high-contrast", "light", "paper"]
+    );
     let available = get_available_themes();
     for name in &built_ins {
         assert!(available.contains(name), "{name}");

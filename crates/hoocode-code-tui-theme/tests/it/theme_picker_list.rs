@@ -39,7 +39,15 @@ fn the_picker_lists_auto_builtins_and_valid_user_themes_with_paths() {
     let list = picker_theme_list_in(&themes);
     assert_eq!(
         names(&list),
-        ["auto", "dark", "dusk", "high-contrast", "light", "mine"]
+        [
+            "auto",
+            "dark",
+            "dusk",
+            "high-contrast",
+            "light",
+            "paper",
+            "mine"
+        ]
     );
 
     let auto = &list[0];
@@ -59,7 +67,7 @@ fn a_missing_themes_folder_lists_only_auto_and_the_builtins() {
     let list = picker_theme_list_in(&root.path().join("no-such-dir"));
     assert_eq!(
         names(&list),
-        ["auto", "dark", "dusk", "high-contrast", "light"]
+        ["auto", "dark", "dusk", "high-contrast", "light", "paper"]
     );
 }
 
@@ -81,6 +89,7 @@ fn user_themes_are_listed_by_name() {
             "dusk",
             "high-contrast",
             "light",
+            "paper",
             "Alpha",
             "zebra"
         ]
@@ -91,7 +100,7 @@ fn user_themes_are_listed_by_name() {
 fn the_picker_lists_the_new_builtins() {
     let root = tempfile::tempdir().unwrap();
     let list = picker_theme_list_in(&root.path().join("no-such-dir"));
-    for name in ["dusk", "high-contrast"] {
+    for name in ["dusk", "high-contrast", "paper"] {
         let theme = list
             .iter()
             .find(|t| t.name == name)

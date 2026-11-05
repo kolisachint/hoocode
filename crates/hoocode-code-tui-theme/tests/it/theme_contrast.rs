@@ -20,7 +20,7 @@ fn isolate() {
     });
 }
 
-const LIGHT_THEMES: [&str; 1] = ["light"];
+const LIGHT_THEMES: [&str; 2] = ["light", "paper"];
 const DARK_THEMES: [&str; 3] = ["dark", "dusk", "high-contrast"];
 
 fn shipped_themes() -> Vec<&'static str> {
