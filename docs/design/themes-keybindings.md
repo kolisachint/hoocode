@@ -216,8 +216,8 @@ accepts, `/` searches, `?` shows keys, `q` or Esc closes.
 **Approval and confirm dialogs** (listed 2026-11-05 from the code; line numbers as of that date).
 Target keys: `y` yes, `n` no, `a` always, Enter default, Esc deny. Bare letters fire only
 when no text field holds text (K-P4). Where a reply field is always open, the letter fires
-only while the reply is empty, the same gate the clearance card uses for `e` today. Open
-question 4 decides this.
+only while the reply is empty, the same gate the clearance card uses for `e` today (decided by the
+user, 2026-11-05).
 
 | Surface | Current key | Target key | file:line |
 |---|---|---|---|
@@ -390,7 +390,8 @@ and `cargo nextest run -p <touched crates>` (CLAUDE.md). TUI steps are done by H
 1. `theme_paths`: removed (T10).
 2. `ansi:<name>` colours: later (T12).
 3. Ctrl+J: not changed. Newline is Shift+Enter and leader Enter.
-4. Dialog keys: `y`, `n`, `a`, Enter, Esc. `a` never fires while a text field has focus.
+4. Dialog keys: `y`, `n`, `a`, Enter, Esc. A bare letter fires only while the text field is
+   empty. On the clearance card, whose reply field is always open, y/n/a work while the reply is empty.
 5. Leader timeout 1500 ms and which-key delay 400 ms are the defaults.
 6. VS Code: check whether its terminal takes Ctrl+X before K-2. If it does, the default
    leader stays and the docs say so.
