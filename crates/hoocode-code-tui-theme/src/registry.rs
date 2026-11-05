@@ -10,7 +10,11 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::color::{ansi256_to_hex, detect_color_mode, relative_luminance, ColorMode, RawColor};
-use crate::schema::{parse_theme_json_content, ColorValue, ThemeJson};
+use serde_json::{Map, Value};
+
+use crate::schema::{
+    parse_theme_json, parse_theme_json_content, theme_json_value, ColorValue, ThemeJson,
+};
 use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, PANE_BG_TOKENS, THEME_BGS};
 
 /// The bundled theme files, by file name (the `readdirSync().sort()` order).
@@ -198,19 +202,118 @@ pub fn load_theme_json(name: &str) -> Result<ThemeJson, String> {
         return match &theme.source_path {
             Some(path) => {
                 let content = read_file(path)?;
-                parse_theme_json_content(&path.display().to_string(), &content)
+                let (stem, dir) = theme_file_identity(path);
+                parse_user_theme(&stem, &path.display().to_string(), &content, &dir)
             }
             None => Err(format!(
                 "Theme \"{name}\" does not have a source path for export"
             )),
         };
     }
-    let theme_path = custom_themes_dir().join(format!("{name}.json"));
+    let dir = custom_themes_dir();
+    let theme_path = dir.join(format!("{name}.json"));
     if !theme_path.exists() {
         return Err(format!("Theme not found: {name}"));
     }
     let content = read_file(&theme_path)?;
-    parse_theme_json_content(name, &content)
+    parse_user_theme(name, name, &content, &dir)
+}
+
+/// A theme file's name without `.json` (the name other themes inherit it by)
+/// and the folder it sits in (where its base theme is looked up).
+fn theme_file_identity(path: &Path) -> (String, PathBuf) {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    (stem, dir)
+}
+
+/// Parses a user theme file: `inherits` is resolved against `dir` (the
+/// folder the file is in), then the merged theme is validated as a whole.
+fn parse_user_theme(
+    name: &str,
+    label: &str,
+    content: &str,
+    dir: &Path,
+) -> Result<ThemeJson, String> {
+    let raw = theme_json_value(label, content)?;
+    let merged = resolve_inherits(label, raw, dir, vec![name.to_string()])?;
+    parse_theme_json(label, &merged)
+}
+
+/// Resolves `inherits` for the theme at the end of `chain`, the names being
+/// resolved outermost first. Each level is checked on its own first. A base
+/// is a built-in theme or a file in `dir`, and its own base resolves the same
+/// way. A name already in the chain is a cycle, so this always ends.
+fn resolve_inherits(
+    label: &str,
+    raw: Value,
+    dir: &Path,
+    chain: Vec<String>,
+) -> Result<Value, String> {
+    // Required tokens wait for the merged theme (see `validate`).
+    parse_theme_json(label, &raw)?;
+    let Some(base_name) = raw.get("inherits").and_then(Value::as_str) else {
+        return Ok(raw);
+    };
+    let base_name = base_name.to_string();
+    if chain.contains(&base_name) {
+        let mut cycle = chain;
+        cycle.push(base_name);
+        return Err(format!("Theme inheritance cycle: {}", cycle.join(" -> ")));
+    }
+    let child = chain.last().cloned().unwrap_or_default();
+    let base_raw = base_theme_value(&base_name, &child, dir)?;
+    let mut next = chain;
+    next.push(base_name.clone());
+    let base = resolve_inherits(&base_name, base_raw, dir, next)?;
+    Ok(merge_over_base(raw, &base))
+}
+
+/// The JSON of base theme `base`, which theme `child` inherits: a built-in,
+/// or a file in `dir`. Anything else is an error.
+fn base_theme_value(base: &str, child: &str, dir: &Path) -> Result<Value, String> {
+    if let Some(text) = builtin_theme_source(base) {
+        return theme_json_value(base, text);
+    }
+    let path = dir.join(format!("{base}.json"));
+    if !path.is_file() {
+        return Err(format!(
+            "Theme \"{child}\" inherits \"{base}\", which is neither a built-in theme nor a file in the themes folder"
+        ));
+    }
+    let content = read_file(&path)?;
+    theme_json_value(base, &content)
+}
+
+/// `raw` over `base`: the theme's own `colors` and `vars` entries win over
+/// the base's, its `export` wins when it has one, and `inherits` is dropped.
+/// The name and description stay the theme's own.
+fn merge_over_base(mut raw: Value, base: &Value) -> Value {
+    if let (Value::Object(own), Value::Object(base)) = (&mut raw, base) {
+        own.remove("inherits");
+        for section in ["colors", "vars"] {
+            if !base.contains_key(section) && !own.contains_key(section) {
+                continue;
+            }
+            let mut merged: Map<String, Value> = match base.get(section) {
+                Some(Value::Object(entries)) => entries.clone(),
+                _ => Map::new(),
+            };
+            if let Some(Value::Object(mine)) = own.get(section) {
+                merged.extend(mine.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+            own.insert(section.to_string(), Value::Object(merged));
+        }
+        if !own.contains_key("export") {
+            if let Some(export) = base.get("export") {
+                own.insert("export".to_string(), export.clone());
+            }
+        }
+    }
+    raw
 }
 
 /// `resolveVarRefs`.
@@ -324,7 +427,8 @@ pub fn create_theme(
 /// `loadThemeFromPath`.
 pub fn load_theme_from_path(theme_path: &Path, mode: Option<ColorMode>) -> Result<Theme, String> {
     let content = read_file(theme_path)?;
-    let theme_json = parse_theme_json_content(&theme_path.display().to_string(), &content)?;
+    let (stem, dir) = theme_file_identity(theme_path);
+    let theme_json = parse_user_theme(&stem, &theme_path.display().to_string(), &content, &dir)?;
     create_theme(&theme_json, mode, Some(theme_path.to_path_buf()))
 }
 

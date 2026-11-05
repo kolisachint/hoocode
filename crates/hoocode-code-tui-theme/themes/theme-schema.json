@@ -4,9 +4,89 @@
 	"description": "Theme schema for Pi coding agent",
 	"type": "object",
 	"required": [
-		"name",
-		"colors"
+		"name"
 	],
+	"anyOf": [
+		{
+			"required": [
+				"colors"
+			]
+		},
+		{
+			"required": [
+				"inherits"
+			]
+		}
+	],
+	"if": {
+		"not": {
+			"required": [
+				"inherits"
+			]
+		}
+	},
+	"then": {
+		"required": [
+			"colors"
+		],
+		"properties": {
+			"colors": {
+				"required": [
+					"accent",
+					"border",
+					"borderAccent",
+					"borderMuted",
+					"success",
+					"error",
+					"warning",
+					"muted",
+					"dim",
+					"text",
+					"thinkingText",
+					"selectedBg",
+					"userMessageBg",
+					"userMessageText",
+					"customMessageBg",
+					"customMessageText",
+					"customMessageLabel",
+					"toolPendingBg",
+					"toolSuccessBg",
+					"toolErrorBg",
+					"toolTitle",
+					"toolOutput",
+					"mdHeading",
+					"mdLink",
+					"mdLinkUrl",
+					"mdCode",
+					"mdCodeBlock",
+					"mdCodeBlockBorder",
+					"mdQuote",
+					"mdQuoteBorder",
+					"mdHr",
+					"mdListBullet",
+					"toolDiffAdded",
+					"toolDiffRemoved",
+					"toolDiffContext",
+					"syntaxComment",
+					"syntaxKeyword",
+					"syntaxFunction",
+					"syntaxVariable",
+					"syntaxString",
+					"syntaxNumber",
+					"syntaxType",
+					"syntaxOperator",
+					"syntaxPunctuation",
+					"thinkingOff",
+					"thinkingMinimal",
+					"thinkingLow",
+					"thinkingMedium",
+					"thinkingHigh",
+					"thinkingXhigh",
+					"bashMode"
+				]
+			}
+		}
+	},
 	"properties": {
 		"$schema": {
 			"type": "string",
@@ -19,6 +99,10 @@
 		"description": {
 			"type": "string",
 			"description": "One-line summary shown next to the name in the theme picker"
+		},
+		"inherits": {
+			"type": "string",
+			"description": "Name of a built-in theme or a file in the themes folder. Colors, vars and export the theme does not set come from it; a theme with inherits may leave out colors and required tokens"
 		},
 		"vars": {
 			"type": "object",
@@ -41,59 +125,6 @@
 		"colors": {
 			"type": "object",
 			"description": "Theme color definitions (all required)",
-			"required": [
-				"accent",
-				"border",
-				"borderAccent",
-				"borderMuted",
-				"success",
-				"error",
-				"warning",
-				"muted",
-				"dim",
-				"text",
-				"thinkingText",
-				"selectedBg",
-				"userMessageBg",
-				"userMessageText",
-				"customMessageBg",
-				"customMessageText",
-				"customMessageLabel",
-				"toolPendingBg",
-				"toolSuccessBg",
-				"toolErrorBg",
-				"toolTitle",
-				"toolOutput",
-				"mdHeading",
-				"mdLink",
-				"mdLinkUrl",
-				"mdCode",
-				"mdCodeBlock",
-				"mdCodeBlockBorder",
-				"mdQuote",
-				"mdQuoteBorder",
-				"mdHr",
-				"mdListBullet",
-				"toolDiffAdded",
-				"toolDiffRemoved",
-				"toolDiffContext",
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-				"syntaxOperator",
-				"syntaxPunctuation",
-				"thinkingOff",
-				"thinkingMinimal",
-				"thinkingLow",
-				"thinkingMedium",
-				"thinkingHigh",
-				"thinkingXhigh",
-				"bashMode"
-			],
 			"properties": {
 				"accent": {
 					"$ref": "#/$defs/colorValue",
@@ -129,7 +160,7 @@
 				},
 				"dim": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Very dimmed text (more subtle than muted)"
+					"description": "Screen colour: dimmed text (optional; falls back to dim)"
 				},
 				"text": {
 					"$ref": "#/$defs/colorValue",
@@ -306,10 +337,6 @@
 				"ink": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Screen colour: default text (optional; falls back to text)"
-				},
-				"dim": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Screen colour: dimmed text (optional; falls back to dim)"
 				},
 				"faint": {
 					"$ref": "#/$defs/colorValue",

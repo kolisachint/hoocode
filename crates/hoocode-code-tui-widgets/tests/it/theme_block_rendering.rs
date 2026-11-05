@@ -256,7 +256,7 @@ fn a_custom_theme_with_only_the_required_colors_renders_plain_bands() {
     // Built from the schema's own required list: no `warningBg` (it falls back
     // to `customMessageBg`), no `paperShadow`, none of the cut-out pairs.
     let schema: serde_json::Value = serde_json::from_str(THEME_SCHEMA_JSON).unwrap();
-    let required = schema["properties"]["colors"]["required"]
+    let required = schema["then"]["properties"]["colors"]["required"]
         .as_array()
         .unwrap();
     let colors: serde_json::Map<String, serde_json::Value> = required
