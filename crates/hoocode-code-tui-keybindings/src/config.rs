@@ -127,6 +127,22 @@ pub fn parse_key_text(text: &str) -> Option<KeySequence> {
     })
 }
 
+/// Why a leader key text cannot be the leader, if it cannot: a sequence, or a
+/// key that cancels or edits a pending sequence (Esc, Enter, Tab, Backspace).
+fn leader_problem(text: &str) -> Option<&'static str> {
+    if text.split_whitespace().count() != 1 {
+        return Some("is a sequence; the leader is one key");
+    }
+    let name = text.rsplit('+').next().unwrap_or_default().to_lowercase();
+    if matches!(
+        name.as_str(),
+        "escape" | "esc" | "enter" | "return" | "tab" | "backspace"
+    ) {
+        return Some("cannot be the leader: it cancels or edits a pending sequence");
+    }
+    None
+}
+
 fn default_leader() -> LeaderKey {
     // A constant that is a valid, non-printable key.
     LeaderKey::new(DEFAULT_LEADER).unwrap_or_else(|_| unreachable!("ctrl+x is a valid leader"))
@@ -200,6 +216,11 @@ impl KeymapConfig {
                 .push(format!("leader {text:?} is not a key; using ctrl+x"));
             return;
         }
+        if let Some(problem) = leader_problem(text) {
+            self.warnings
+                .push(format!("leader {text:?} {problem}; using ctrl+x"));
+            return;
+        }
         match LeaderKey::new(text) {
             Ok(leader) if self.allow_key("leader", text) => self.leader = leader,
             Ok(_) => {}
@@ -256,7 +277,11 @@ impl KeymapConfig {
                         .push(format!("{action}: {key:?} is not a key; skipped"));
                 } else if self.is_sequence(&key) {
                     kept += 1;
-                    self.add_sequence(Context::Prompt, &key, Some(action.clone()));
+                    self.add_sequence(action, Context::Prompt, &key, Some(action.clone()));
+                } else if self.is_leader_step(&key) {
+                    self.warnings.push(format!(
+                        "{action}: {key:?} is the leader key; bind a sequence after it, e.g. \"{key} m\"; skipped"
+                    ));
                 } else if self.allow_key(action, &key) {
                     kept += 1;
                     single.push(key);
@@ -408,13 +433,16 @@ impl KeymapConfig {
                 ));
                 return;
             }
+            if !self.allow_key("Leader", &key) {
+                return;
+            }
             self.push_override(ContextOverride {
                 context,
                 key,
                 action,
             });
         } else if is_sequence {
-            self.add_sequence(context, &key, action);
+            self.add_sequence(context.name(), context, &key, action);
         } else if self.is_leader_step(&key) {
             self.warnings.push(format!(
                 "{}: {key:?} is the leader key; bind a sequence after it, e.g. \"{key} m\"; skipped",
@@ -445,17 +473,26 @@ impl KeymapConfig {
         id.eq_ignore_ascii_case(self.leader.id())
     }
 
-    /// Adds a multi-step sequence, if it starts with the leader.
-    fn add_sequence(&mut self, context: Context, key: &str, action: Option<String>) {
+    /// Adds a multi-step sequence, if it starts with the leader. The keys after
+    /// the leader go through the reserved-key check, as single keys do. `label`
+    /// names the file's context or action in the messages.
+    fn add_sequence(&mut self, label: &str, context: Context, key: &str, action: Option<String>) {
         let key = normalize_key(key);
-        let starts_with_leader =
-            parse_key_text(&key).is_some_and(|s| self.is_leader_id(s.steps()[0].id()));
+        let Some(sequence) = parse_key_text(&key) else {
+            return;
+        };
+        let starts_with_leader = self.is_leader_id(sequence.steps()[0].id());
         if !starts_with_leader {
             self.warnings.push(format!(
                 "{key:?} is a sequence, so it must start with the leader ({}); skipped",
                 self.leader.id()
             ));
             return;
+        }
+        for step in &sequence.steps()[1..] {
+            if !self.allow_key(label, step.id()) {
+                return;
+            }
         }
         self.push_override(ContextOverride {
             context,

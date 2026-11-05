@@ -104,11 +104,17 @@ struct Screen {
     output: Output,
     chat: Rc<RefCell<Container>>,
     alternate: Arc<AtomicBool>,
+    editor: Rc<RefCell<Editor>>,
 }
 
 impl Screen {
     fn send(&mut self, data: &str) {
         self.ui.process_event(TuiEvent::input(data));
+    }
+
+    /// The text in the prompt.
+    fn text(&self) -> String {
+        self.editor.borrow().get_text()
     }
 
     fn top(&self) -> i64 {
@@ -181,6 +187,7 @@ fn screen() -> Screen {
         output,
         chat,
         alternate,
+        editor,
     }
 }
 
@@ -243,6 +250,11 @@ fn capital_g_returns_to_live_and_page_up_pins() {
     assert!(s.ui.scroll_pinned(), "page up pins");
     s.send("G");
     assert!(s.ui.get_scroll_position().is_none(), "G is live");
+    assert_eq!(
+        s.text(),
+        "",
+        "G is a key, not a letter typed into the prompt"
+    );
 }
 
 #[test]

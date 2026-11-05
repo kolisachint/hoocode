@@ -217,3 +217,85 @@ fn check_splits_errors_from_cautions() {
     assert!(any_contains(&report.cautions, &["ctrl+q"]));
     assert!(!any_contains(&report.errors, &["ctrl+q"]));
 }
+
+#[test]
+fn a_multi_step_leader_keeps_the_default_leader_with_an_error() {
+    let (_dir, m) = load(r#"{"leader": "ctrl+x m"}"#);
+    assert_eq!(m.leader().id(), "ctrl+x");
+    assert!(any_contains(m.warnings(), &["ctrl+x m", "sequence"]));
+}
+
+#[test]
+fn an_esc_enter_or_tab_leader_keeps_the_default_leader_with_an_error() {
+    for leader in [
+        "escape",
+        "enter",
+        "return",
+        "tab",
+        "backspace",
+        "shift+enter",
+    ] {
+        let (_dir, m) = load(&format!(r#"{{"leader": "{leader}"}}"#));
+        assert_eq!(m.leader().id(), "ctrl+x", "{leader} must not be the leader");
+        assert!(
+            any_contains(m.warnings(), &[leader, "cannot be the leader"]),
+            "{leader}: {:?}",
+            m.warnings()
+        );
+    }
+}
+
+#[test]
+fn a_leader_that_shadows_a_default_binding_is_warned() {
+    let (_dir, m) = load(r#"{"leader": "ctrl+r"}"#);
+    assert_eq!(m.leader().id(), "ctrl+r", "the leader is kept");
+    assert!(any_contains(
+        m.warnings(),
+        &["ctrl+r", "shadows", "app.history.search"]
+    ));
+}
+
+#[test]
+fn a_flat_single_binding_equal_to_the_leader_is_skipped_with_a_warning() {
+    let (_dir, m) = load(r#"{"app.model.cycleForward": "ctrl+x"}"#);
+    assert!(
+        any_contains(m.warnings(), &["ctrl+x", "leader key"]),
+        "{:?}",
+        m.warnings()
+    );
+    assert!(!m
+        .get_keys("app.model.cycleForward")
+        .contains(&"ctrl+x".to_string()));
+}
+
+#[test]
+fn a_reserved_key_after_the_leader_is_rejected_in_both_forms() {
+    // Leader context: the key typed after the leader is checked.
+    let (_dir, m) = load(
+        r#"{"bindings": [{"context": "Leader", "bindings": {"ctrl+c": "app.model.cycleForward"}}]}"#,
+    );
+    assert!(any_contains(m.warnings(), &["ctrl+c", "reserved"]));
+    assert!(!m
+        .leader_table(hoocode_code_tui_keybindings::Context::Prompt)
+        .contains_key("ctrl+x ctrl+c"));
+
+    // Flat sequence: ctrl+x ctrl+c is refused the same way.
+    let (_dir, m) = load(r#"{"app.model.cycleForward": "ctrl+x ctrl+c"}"#);
+    assert!(any_contains(m.warnings(), &["ctrl+c", "reserved"]));
+    assert!(!m
+        .leader_table(hoocode_code_tui_keybindings::Context::Prompt)
+        .contains_key("ctrl+x ctrl+c"));
+}
+
+#[test]
+fn a_flat_key_that_another_action_uses_by_default_is_warned_with_both_names() {
+    let (_dir, m) = load(r#"{"app.model.cycleForward": "ctrl+r"}"#);
+    assert!(
+        any_contains(
+            m.warnings(),
+            &["ctrl+r", "app.model.cycleForward", "app.history.search"]
+        ),
+        "{:?}",
+        m.warnings()
+    );
+}

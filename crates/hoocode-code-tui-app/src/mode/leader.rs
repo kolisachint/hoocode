@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use hoocode_code_tui_keybindings::{
     leader_label, AppKeybindingsManager, Context, LeaderEntry, WHICH_KEY_DELAY,
 };
-use hoocode_tui_keys::{is_key_release, CancelReason, LeaderMachine, LeaderOutcome};
+use hoocode_tui_keys::{is_key_release, matches_key, CancelReason, LeaderMachine, LeaderOutcome};
 
 use super::input::action_for_binding;
 use super::*;
@@ -20,6 +20,12 @@ use crate::transient_lines::LeaderLine;
 
 /// How long a note such as "no binding" stays in the footer.
 const NOTE_TIME: Duration = Duration::from_millis(1500);
+
+/// Whether a key typed while the leader is pending ends it and goes to the
+/// screen: Ctrl+C, Ctrl+D, and the start of a bracketed paste.
+fn leader_yields(data: &str) -> bool {
+    data.contains("\x1b[200~") || matches_key(data, "ctrl+c") || matches_key(data, "ctrl+d")
+}
 
 /// The prompt's leader: the machine, the popup's entries, and the footer note.
 pub(super) struct LeaderState {
@@ -113,6 +119,12 @@ impl Mode {
         }
         // The history search owns every key at the prompt, Ctrl+X included.
         if self.history_search.is_some() {
+            return false;
+        }
+        // A pending leader gives way to Ctrl+C, Ctrl+D and a paste: they end
+        // the sequence and go on to the screen, so the exit and the paste work.
+        if self.leader.machine.is_pending() && leader_yields(data) {
+            self.leader.machine.reset();
             return false;
         }
         self.leader.note = None;

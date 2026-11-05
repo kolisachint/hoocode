@@ -51,15 +51,8 @@ pub struct KeyStep {
 impl KeyStep {
     /// Parses one step. A single uppercase letter becomes Shift+letter.
     pub fn parse(text: &str) -> Result<Self, SequenceError> {
-        let mut chars = text.chars();
-        let spec_text = match (chars.next(), chars.next()) {
-            (Some(c), None) if c.is_ascii_uppercase() => {
-                format!("shift+{}", c.to_ascii_lowercase())
-            }
-            _ => text.to_string(),
-        };
-        let spec =
-            KeySpec::parse(&spec_text).ok_or_else(|| SequenceError::BadStep(text.to_string()))?;
+        // `KeySpec::parse` reads a single capital as Shift+letter.
+        let spec = KeySpec::parse(text).ok_or_else(|| SequenceError::BadStep(text.to_string()))?;
         Ok(Self {
             id: text.to_string(),
             spec,

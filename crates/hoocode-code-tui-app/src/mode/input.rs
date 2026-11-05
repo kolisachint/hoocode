@@ -143,8 +143,12 @@ const EDITOR_ACTIONS: [(&str, Action); 28] = [
 ];
 
 /// Prompt bindings that also match on a key press and are not in the table above.
-const EXTRA_ACTIONS: [(&str, Action); 1] =
-    [("app.thinking.cycleBackward", Action::ThinkingBackward)];
+const EXTRA_ACTIONS: [(&str, Action); 2] = [
+    ("app.thinking.cycleBackward", Action::ThinkingBackward),
+    // The Windows default of the paste-image action is leader v (Ctrl+V is the
+    // terminal's paste there), so the leader must reach it.
+    ("app.clipboard.pasteImage", Action::PasteImage),
+];
 
 /// The prompt action a binding id runs, if the prompt answers it. The leader
 /// uses this for the keys typed after it.

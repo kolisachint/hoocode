@@ -298,6 +298,11 @@ fn g_and_capital_g_go_to_the_top_and_back_to_live() {
     assert_eq!(h.top(), 0, "g is the top");
     h.send("G");
     assert!(!h.ui.scroll_pinned(), "G is live");
+    assert_eq!(
+        h.text(),
+        "",
+        "G is a key, not a letter typed into the prompt"
+    );
 }
 
 #[test]

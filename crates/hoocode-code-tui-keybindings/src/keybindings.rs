@@ -587,6 +587,12 @@ impl AppKeybindingsManager {
         let definitions = keybinding_definitions_for(config.leader.id());
         let resolved = KeybindingsManager::new(definitions.clone(), config.flat.clone())
             .get_resolved_bindings();
+        config
+            .warnings
+            .extend(leader_shadow_warnings(config.leader.id()));
+        config
+            .warnings
+            .extend(flat_default_collisions(&resolved, &config.flat));
         let keys = keys_after_overrides(resolved, &config.overrides, &mut config.warnings);
         self.manager = KeybindingsManager::new(definitions, keys);
         self.config = config;
@@ -748,8 +754,9 @@ fn is_multi_step(key: &str) -> bool {
 /// A binding applies in the context of its action: `Global` applies to every
 /// action, and another context applies to the actions defined in it (see
 /// `defaults::context_of`). A binding of `key` to an action adds the key to
-/// that action and takes it from the other actions in the scope. `null` or
-/// `"none"` takes the key from every action in the scope. A binding whose
+/// that action and takes it from the other actions of the binding's context
+/// (for `Global`, the Global actions only). `null` or `"none"` takes the key
+/// from every action in the scope, `Global` included. A binding whose
 /// action runs in another context is skipped with a warning. `Global` entries
 /// are applied first, so a context entry for the same key wins.
 fn keys_after_overrides(
@@ -784,12 +791,16 @@ fn keys_after_overrides(
                     ));
                     continue;
                 }
+                // Taking a key removes it from the actions of the binding's own
+                // context only. A Global binding takes it from the Global actions
+                // alone, so it never strips a key from another context.
+                let takes_from = |id: &str| context_of(id) == o.context;
                 for (id, list) in keys.iter_mut() {
                     if id == action {
                         if !list.iter().any(|k| normalize_key(k) == key) {
                             list.push(key.clone());
                         }
-                    } else if in_scope(id) {
+                    } else if takes_from(id) {
                         list.retain(|k| normalize_key(k) != key);
                     }
                 }
@@ -821,6 +832,72 @@ pub fn check_file(agent_dir: &Path) -> CheckReport {
         errors: manager.warnings().to_vec(),
         cautions: manager.cautions().to_vec(),
     }
+}
+
+/// Whether two actions can meet on one key: they share a context, or one of
+/// them is `Global`. A key is not a collision across two other contexts.
+fn same_scope(a: &str, b: &str) -> bool {
+    let (ca, cb) = (context_of(a), context_of(b));
+    ca == cb || ca == Context::Global || cb == Context::Global
+}
+
+/// A flat binding of a key that an app action uses by default, in the same
+/// scope. Both keep the key, so the warning names both. The library's editor
+/// keys (`tui.*`) are not checked: rebinding one of them is deliberate and
+/// common. The flat form of two actions that both change is reported by the
+/// file reader instead.
+fn flat_default_collisions(
+    resolved: &HashMap<String, Vec<String>>,
+    flat: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut owners: Vec<&String> = flat.keys().collect();
+    owners.sort();
+    for action in owners {
+        for key in flat[action].iter().map(|k| normalize_key(k).to_lowercase()) {
+            if key.contains(' ') {
+                continue;
+            }
+            let mut others: Vec<&String> = resolved
+                .iter()
+                .filter(|(id, keys)| {
+                    id.as_str() != action
+                        && id.starts_with("app.")
+                        && !flat.contains_key(id.as_str())
+                        && same_scope(action, id)
+                        && keys.iter().any(|k| normalize_key(k).to_lowercase() == key)
+                })
+                .map(|(id, _)| id)
+                .collect();
+            others.sort();
+            for other in others {
+                warnings.push(format!(
+                    "{key}: bound to {action} in the file and to {other} by default; both keep it"
+                ));
+            }
+        }
+    }
+    warnings
+}
+
+/// A leader that is also a default single key: the leader runs first, so that
+/// binding can no longer be reached by its key.
+fn leader_shadow_warnings(leader: &str) -> Vec<String> {
+    let leader = normalize_key(leader).to_lowercase();
+    table()
+        .iter()
+        .filter(|e| {
+            e.default_keys
+                .iter()
+                .any(|k| !k.contains(' ') && normalize_key(k).to_lowercase() == leader)
+        })
+        .map(|e| {
+            format!(
+                "leader {leader} shadows the default binding of {}; that key now starts the leader",
+                e.id
+            )
+        })
+        .collect()
 }
 
 /// Whether a whole key is a sequence that starts with `leader`.

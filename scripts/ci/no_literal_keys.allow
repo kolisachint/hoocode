@@ -11,12 +11,23 @@ crates/hoocode-tui-keys/src/keybindings.rs | * | the library's default key table
 crates/hoocode-tui-keys/src/sequence.rs | * | key sequence parsing (errors name the leader and the steps)
 crates/hoocode-tui-keys/src/leader.rs | * | leader key validation
 crates/hoocode-code-tui-keybindings/src/keybindings.rs | * | the app's default key table (declaration order is the grouping)
-crates/hoocode-code-tui-keybindings/src/config.rs | * | keybindings.json parser: reserved and warned key lists, messages that name the default leader
 crates/hoocode-code-tui-keybindings/src/hints.rs | "escape" => "esc" | display name of the escape key, the one mapping
 crates/hoocode-code-tui-widgets/src/controls.rs | part.eq_ignore_ascii_case("escape") | lit_key: key-name formatter for the /hotkeys pane
 crates/hoocode-code-tui-widgets/src/controls.rs | "esc".to_string() | lit_key: key-name formatter for the /hotkeys pane
 crates/hoocode-tui-components/src/markdown/lexer.rs | Self::Space => "space" | markdown token name, not a key hint
 crates/hoocode-tui-components/src/markdown/lexer.rs | Self::Escape => "escape" | markdown token name, not a key hint
+
+# keybindings.json parser (crates/hoocode-code-tui-keybindings/src/config.rs). Each
+# needle is one key table or one message; the rest of the file is checked.
+crates/hoocode-code-tui-keybindings/src/config.rs | DEFAULT_LEADER: &str = "ctrl+x" | the default leader's key name, a constant
+crates/hoocode-code-tui-keybindings/src/config.rs | "ctrl+c", "ctrl+d", "ctrl+z", "ctrl+m" | RESERVED_KEYS: the key table of keys no binding may take
+crates/hoocode-code-tui-keybindings/src/config.rs | "ctrl+s", "ctrl+q", "ctrl+b" | WARNED_KEYS: the key table of keys the terminal or shell often takes
+crates/hoocode-code-tui-keybindings/src/config.rs | "backspace" | key names a leader cannot be (key table, not a hint)
+crates/hoocode-code-tui-keybindings/src/config.rs | ctrl+x is a valid leader | panic text for the built-in default leader, an invariant
+crates/hoocode-code-tui-keybindings/src/config.rs | must be a key such as | user-visible message: the leader must be a key, default named
+crates/hoocode-code-tui-keybindings/src/config.rs | is not a key; using ctrl+x | user-visible message: the leader is not a key, default named
+crates/hoocode-code-tui-keybindings/src/config.rs | {problem}; using ctrl+x | user-visible message: the leader cannot be that key, default named
+crates/hoocode-code-tui-keybindings/src/config.rs | leader rejected ({err}); using ctrl+x | user-visible message: the leader was refused, default named
 
 # Key matching in the code path: the key is read, not shown.
 crates/hoocode-tui-components/src/editor/editor.rs | matches_key( | key handling (raw input match), not a hint
@@ -24,6 +35,8 @@ crates/hoocode-tui-components/src/editor/editor.rs | k == "shift+enter" | key ha
 crates/hoocode-code-tui-selectors/src/config_selector.rs | matches_key(data, "ctrl+c") | key handling: Ctrl+C exits, not a hint
 crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs | matches_key(data, "f1") | key handling: f1 opens help beside the keymap help key
 crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs | matches_key(data, "ctrl+c") | key handling: Ctrl+C exits, not a hint
+crates/hoocode-code-tui-app/src/mode/leader.rs | matches_key(data, "ctrl+c") | key handling: Ctrl+C ends a pending leader, not a hint
+crates/hoocode-code-tui-app/src/mode/leader.rs | matches_key(data, "ctrl+d") | key handling: Ctrl+D ends a pending leader, not a hint
 crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs | matches_key(data, "escape") | key handling: escape cancels, not a hint
 crates/hoocode-code-tui-selectors/src/session_selector.rs | matches_key(data, "f1") | key handling: f1 opens help beside the keymap help key
 crates/hoocode-code-tui-selectors/src/tree_selector.rs | matches_key(data, "f1") | key handling: f1 opens help beside the keymap help key

@@ -250,3 +250,35 @@ fn a_key_that_is_a_release_is_not_a_leader_press() {
     assert!(!mode.leader_takes_key_at("\x1b[120;5:3u", t0));
     assert!(!mode.leader.is_pending());
 }
+
+#[test]
+fn leader_v_runs_the_paste_image_action() {
+    // The Windows default of paste image is leader v. The keymap here binds it
+    // on every platform, so the leader must reach the action.
+    let mut mode = test_mode(None);
+    let keys = AppKeybindingsManager::from_json_str(
+        r#"{"bindings": [{"context": "Prompt", "bindings": {"ctrl+x v": "app.clipboard.pasteImage"}}]}"#,
+    );
+    mode.leader = LeaderState::new(&keys);
+    let t0 = Instant::now();
+    press(&mut mode, CTRL_X, t0);
+    press(&mut mode, "v", t0);
+    assert_eq!(queued(&mode), vec![Action::PasteImage]);
+    assert_eq!(prompt_text(&mode), "");
+}
+
+#[test]
+fn a_pending_leader_gives_way_to_ctrl_c_ctrl_d_and_a_paste() {
+    for key in ["\x03", "\x04", "\x1b[200~pasted\x1b[201~"] {
+        let mut mode = leader_mode();
+        let t0 = Instant::now();
+        press(&mut mode, CTRL_X, t0);
+        assert!(mode.leader.is_pending());
+        assert!(
+            !mode.leader_takes_key_at(key, t0),
+            "{key:?} must pass through to the screen"
+        );
+        assert!(!mode.leader.is_pending(), "{key:?} cancels the leader");
+        assert!(queued(&mode).is_empty(), "{key:?} runs no leader action");
+    }
+}

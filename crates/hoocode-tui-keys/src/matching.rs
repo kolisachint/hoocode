@@ -30,6 +30,11 @@ impl KeySpec {
             return None;
         }
         let mut modifier = 0u32;
+        // A single capital letter is Shift+letter: `G` is the key that types
+        // a capital G, not the plain `g`.
+        if is_single_capital(key_id) {
+            modifier |= modifiers::SHIFT;
+        }
         if parts.contains(&"shift") {
             modifier |= modifiers::SHIFT;
         }
@@ -60,6 +65,12 @@ impl KeySpec {
         }
         self.key == "space" || self.key.chars().count() == 1
     }
+}
+
+/// Whether `text` is one ASCII capital letter.
+fn is_single_capital(text: &str) -> bool {
+    let mut chars = text.chars();
+    matches!((chars.next(), chars.next()), (Some(c), None) if c.is_ascii_uppercase())
 }
 
 /// Whether `key_id` names a key hoocode can match: zero or more of the

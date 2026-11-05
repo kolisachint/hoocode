@@ -48,6 +48,34 @@ fn a_global_null_applies_to_every_context() {
 }
 
 #[test]
+fn a_global_binding_takes_the_key_only_from_global_actions() {
+    // app.interrupt is the one Global-context action. Escape stays with the
+    // Picker, Scroll and Panel actions that use it.
+    let (_dir, m) = installed(
+        r#"{"bindings": [{"context": "Global", "bindings": {"escape": "app.interrupt"}}]}"#,
+    );
+    assert!(m.warnings().is_empty(), "{:?}", m.warnings());
+    let live = get_keybindings();
+    assert!(live.matches("\x1b", "app.interrupt"));
+    assert!(live.matches("\x1b", "tui.select.cancel"));
+    assert!(live.matches("\x1b", "app.scroll.exit"));
+    assert!(live.matches("\x1b", "app.panel.exit"));
+}
+
+#[test]
+fn a_capital_letter_in_the_file_is_shift_and_moves_its_key() {
+    // "G" in keybindings.json is Shift+g, the key that types a capital G, the
+    // same key as the default. Binding it to top takes it from the bottom action.
+    let (_dir, m) =
+        installed(r#"{"bindings": [{"context": "Scroll", "bindings": {"G": "app.scroll.top"}}]}"#);
+    assert!(m.warnings().is_empty(), "{:?}", m.warnings());
+    let live = get_keybindings();
+    assert!(live.matches("G", "app.scroll.top"));
+    assert!(!live.matches("G", "app.scroll.bottom"));
+    assert!(live.matches("g", "app.scroll.top"), "the default g stays");
+}
+
+#[test]
 fn a_single_key_binding_adds_the_key_to_its_action() {
     let (_dir, m) = installed(
         r#"{"bindings": [{"context": "Scroll", "bindings": {"u": "app.scroll.lineDown"}}]}"#,
