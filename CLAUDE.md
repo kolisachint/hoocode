@@ -17,8 +17,9 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
 - **What to build next:** `docs/design/README.md` (cards in build order, plus the user's
   design preferences). Start with step 0a of the plan in `docs/design/README.md`.
   A design session changes docs only.
-- **Two plans side by side:** the core plan (`docs/design/README.md`) and the TUI plan
-  (`docs/design/tui-activity.md`, 2026-10-09). When the user asks to proceed or implement,
+- **Three plans side by side:** the core plan (`docs/design/README.md`), the TUI plan
+  (`docs/design/tui-activity.md`, 2026-10-09) and the themes and keybindings plan
+  (`docs/design/themes-keybindings.md`, 2026-11-05). When the user asks to proceed or implement,
   ask which plan and which step first.
 - **TUI work is done by Haiku subagents** (user, 2026-10-09): review, implement and test.
   The main session orchestrates, briefs and merges. The TUI declutter

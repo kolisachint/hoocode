@@ -359,6 +359,9 @@ Each question lists the recommended answer first.
 
 ### Research and code checks
 
+The raw research notes (code facts, every current binding, the surveys of coding-agent and
+editor TUIs, with sources) are in [themes-keybindings/](themes-keybindings/README.md).
+
 The research table and the code facts above were checked on 2026-11-05. The line numbers
 are from that date. They can move.
 
