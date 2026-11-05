@@ -26,7 +26,7 @@ use chrono::{DateTime, Utc};
 use hoocode_code_paths::canonicalize_path;
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
 use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentState};
-use hoocode_code_tui_keybindings::key_text;
+use hoocode_code_tui_keybindings::{key_hint_text, key_text};
 use hoocode_code_tui_theme::{session_color_token, style_input};
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
@@ -174,17 +174,17 @@ impl SessionSelectorHeader {
 
     /// Every key the picker answers to, in hint order (the first four
     /// show; `f1` lists the rest).
-    fn all_hints() -> [(&'static str, &'static str); 9] {
-        [
-            ("↑↓", "move"),
-            ("enter", "open"),
-            ("tab", "scope"),
-            ("esc", "close"),
-            ("alt+o", "sort"),
-            ("alt+n", "named only"),
-            ("alt+p", "show path"),
-            ("alt+r", "rename"),
-            ("alt+x", "delete"),
+    fn all_hints() -> Vec<(String, &'static str)> {
+        vec![
+            ("↑↓".to_string(), "move"),
+            (key_hint_text("tui.select.confirm"), "open"),
+            (key_hint_text("tui.input.tab"), "scope"),
+            (key_hint_text("tui.select.cancel"), "close"),
+            (key_text("app.session.toggleSort"), "sort"),
+            (key_text("app.session.toggleNamedFilter"), "named only"),
+            (key_text("app.session.togglePath"), "show path"),
+            (key_text("app.session.rename"), "rename"),
+            (key_text("app.session.delete"), "delete"),
         ]
     }
 
@@ -214,17 +214,27 @@ impl SessionSelectorHeader {
             };
             return Line::from(vec![Span::styled(message.clone(), style)]);
         }
-        capped_hint_line(&Self::all_hints(), true)
+        let hints = Self::all_hints();
+        capped_hint_line(&as_pairs(&hints), true)
     }
 
     /// The full key list rows (after `f1`); none while it is closed.
     fn help_lines(&self) -> Vec<Line<'static>> {
         if self.help && !self.confirming_delete {
-            help_rows(&Self::all_hints())
+            let hints = Self::all_hints();
+            help_rows(&as_pairs(&hints))
         } else {
             Vec::new()
         }
     }
+}
+
+/// The hint pairs as the hint helpers take them.
+fn as_pairs<'a>(hints: &'a [(String, &'static str)]) -> Vec<(&'a str, &'static str)> {
+    hints
+        .iter()
+        .map(|(key, action)| (key.as_str(), *action))
+        .collect()
 }
 
 // ---- list ------------------------------------------------------------------
@@ -676,27 +686,30 @@ impl SessionList {
             events.push(ListEvent::ToggleScope);
             return events;
         }
-        if kb.matches(data, "app.session.toggleSort") {
+        // Bare letters (K-P4) act only while the query is empty; otherwise they type.
+        let bare = self.search_input.get_value().is_empty();
+        if bare && kb.matches(data, "app.session.toggleSort") {
             events.push(ListEvent::ToggleSort);
             return events;
         }
-        if self
-            .keybindings
-            .matches(data, "app.session.toggleNamedFilter")
+        if bare
+            && self
+                .keybindings
+                .matches(data, "app.session.toggleNamedFilter")
         {
             events.push(ListEvent::ToggleNameFilter);
             return events;
         }
-        if kb.matches(data, "app.session.togglePath") {
+        if bare && kb.matches(data, "app.session.togglePath") {
             self.show_path = !self.show_path;
             events.push(ListEvent::TogglePath(self.show_path));
             return events;
         }
-        if kb.matches(data, "app.session.delete") {
+        if bare && kb.matches(data, "app.session.delete") {
             self.start_delete_confirmation(&mut events);
             return events;
         }
-        if kb.matches(data, "app.session.rename") {
+        if bare && kb.matches(data, "app.session.rename") {
             if let Some(selected) = self.filtered.get(self.cursor.selected()) {
                 events.push(ListEvent::Rename(selected.session.path.clone()));
             }
@@ -714,6 +727,14 @@ impl SessionList {
 
         if self.cursor.handle_query_key(data, &kb) {
             // Navigation: the cursor clamps at both ends.
+        } else if bare && kb.matches(data, "app.list.down") {
+            self.cursor.step(1);
+        } else if bare && kb.matches(data, "app.list.up") {
+            self.cursor.step(-1);
+        } else if bare && kb.matches(data, "app.list.close") {
+            events.push(ListEvent::Cancel);
+        } else if bare && kb.matches(data, "app.list.search") {
+            // The query is always focused: `/` on an empty query has nothing to focus.
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(selected) = self.filtered.get(self.cursor.selected()) {
                 match interrupted_run(&selected.session) {
@@ -1646,7 +1667,15 @@ impl Component for SessionSelectorComponent {
             }
             return;
         }
-        if hoocode_tui_keys::matches_key(data, "f1") {
+        let help_key = hoocode_tui_keys::matches_key(data, "f1")
+            || (self
+                .session_list
+                .borrow()
+                .search_input
+                .get_value()
+                .is_empty()
+                && get_keybindings().matches(data, "app.list.help"));
+        if help_key {
             let mut header = self.header.borrow_mut();
             header.help = !header.help;
             return;

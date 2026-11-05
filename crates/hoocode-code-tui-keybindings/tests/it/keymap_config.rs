@@ -25,7 +25,7 @@ fn grouped_form_loads_leader_timeout_and_sequences() {
             "leader": "ctrl+x",
             "leaderTimeoutMs": 800,
             "bindings": [
-                {"context": "Prompt", "bindings": {"ctrl+x m": "app.model.cycleForward", "ctrl+r": null}}
+                {"context": "Prompt", "bindings": {"ctrl+x m": "app.model.cycleForward", "g": null}}
             ]
         }"#,
     );
@@ -132,26 +132,24 @@ fn null_and_none_unbind_a_key_in_its_context_only() {
     let (_dir, m) = load(
         r#"{
             "bindings": [
-                {"context": "Prompt", "bindings": {"ctrl+r": null}},
+                {"context": "Prompt", "bindings": {"g": null}},
                 {"context": "Scroll", "bindings": {"ctrl+c": "none"}}
             ]
         }"#,
     );
     assert!(m.warnings().is_empty(), "{:?}", m.warnings());
-    // The default keeps ctrl+r for the transcript search. Prompt unbinds it.
-    assert!(m
-        .get_keys("app.scroll.search")
-        .contains(&"ctrl+r".to_string()));
-    assert_eq!(m.action_for_key(Context::Prompt, "ctrl+r"), None);
-    assert!(m.action_for_key(Context::Scroll, "ctrl+r").is_some());
+    // The default keeps g for the top of the transcript. Prompt unbinds it.
+    assert!(m.get_keys("app.scroll.top").contains(&"g".to_string()));
+    assert_eq!(m.action_for_key(Context::Prompt, "g"), None);
+    assert!(m.action_for_key(Context::Scroll, "g").is_some());
     assert_eq!(m.action_for_key(Context::Scroll, "ctrl+c"), None);
 }
 
 #[test]
 fn a_global_unbind_applies_to_every_context() {
-    let (_dir, m) = load(r#"{"bindings": [{"context": "Global", "bindings": {"ctrl+r": null}}]}"#);
-    assert_eq!(m.action_for_key(Context::Prompt, "ctrl+r"), None);
-    assert_eq!(m.action_for_key(Context::Scroll, "ctrl+r"), None);
+    let (_dir, m) = load(r#"{"bindings": [{"context": "Global", "bindings": {"g": null}}]}"#);
+    assert_eq!(m.action_for_key(Context::Prompt, "g"), None);
+    assert_eq!(m.action_for_key(Context::Scroll, "g"), None);
 }
 
 #[test]
@@ -234,11 +232,9 @@ fn a_sequence_must_start_with_the_leader() {
 
 #[test]
 fn an_unknown_context_is_skipped_with_a_warning() {
-    let (_dir, m) = load(r#"{"bindings": [{"context": "Nope", "bindings": {"ctrl+r": null}}]}"#);
+    let (_dir, m) = load(r#"{"bindings": [{"context": "Nope", "bindings": {"g": null}}]}"#);
     assert!(m.warnings().iter().any(|w| w.contains("unknown context")));
-    assert!(m
-        .get_keys("app.scroll.search")
-        .contains(&"ctrl+r".to_string()));
+    assert!(m.get_keys("app.scroll.top").contains(&"g".to_string()));
 }
 
 #[test]
@@ -253,9 +249,7 @@ fn bad_json_does_not_crash_and_gives_the_defaults() {
     assert_eq!(m.leader().id(), "ctrl+x");
     assert!(m.warnings().iter().any(|w| w.contains("not valid JSON")));
     // The defaults still answer.
-    assert!(m
-        .get_keys("app.scroll.search")
-        .contains(&"ctrl+r".to_string()));
+    assert!(m.get_keys("app.scroll.top").contains(&"g".to_string()));
 }
 
 #[test]
@@ -295,15 +289,33 @@ fn a_group_or_binding_of_the_wrong_shape_is_skipped() {
         r#"{"bindings": [
             "not an object",
             {"context": "Prompt", "bindings": ["not", "an", "object"]},
-            {"context": "Prompt", "bindings": {"ctrl+r": 5}},
+            {"context": "Prompt", "bindings": {"g": 5}},
             {"context": "Prompt", "bindings": {"": "app.clear"}}
         ]}"#,
     );
     assert!(
-        m.action_for_key(Context::Prompt, "ctrl+r").is_some(),
+        m.action_for_key(Context::Prompt, "g").is_some(),
         "defaults survive bad groups"
     );
     assert!(m.warnings().len() >= 3, "{:?}", m.warnings());
+}
+
+#[test]
+fn an_alt_key_in_the_file_still_works_on_the_escape_bytes() {
+    // No default has Alt (K-P1), but a file may still bind it. A terminal
+    // without the Kitty protocol sends Alt+m as ESC then m.
+    let (_dir, m) = load(
+        r#"{
+            "app.model.cycleForward": "alt+m",
+            "bindings": [{"context": "Prompt", "bindings": {"alt+x": "app.clear"}}]
+        }"#,
+    );
+    assert!(m.warnings().is_empty(), "{:?}", m.warnings());
+    assert!(m.matches("\x1bm", "app.model.cycleForward"));
+    assert_eq!(
+        m.action_for_key(Context::Prompt, "alt+x").as_deref(),
+        Some("app.clear")
+    );
 }
 
 #[test]

@@ -7,15 +7,19 @@
 
 use std::time::{Duration, Instant};
 
-use hoocode_code_tui_widgets::console::{hints, Console};
+use hoocode_code_tui_keybindings::key_text;
+use hoocode_code_tui_widgets::console::{help_rows, hints, Console};
 use hoocode_tui_components::PickerCursor;
-use hoocode_tui_keys::get_keybindings;
+use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
 use hoocode_tui_ratatui::{Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 
-/// Vi-style moves, on top of the `tui.select.up` and `tui.select.down` bindings.
-const VI_UP: &str = "k";
-const VI_DOWN: &str = "j";
+/// The dialog answers (K-P4): each letter picks the first option whose label
+/// starts with one of its words. `y` yes-like, `n` no-like, `a` "always".
+const YES_WORDS: [&str; 4] = ["Yes", "Trust and start", "Accept", "Answer"];
+const NO_WORDS: [&str; 3] = ["No", "Decline", "Not now"];
+const ALWAYS_WORDS: [&str; 1] = ["Always"];
+const DIALOG_ANSWERS: [&str; 3] = ["app.dialog.yes", "app.dialog.no", "app.dialog.always"];
 /// The newline byte (Enter), accepted as a confirm besides `tui.select.confirm`.
 const NEWLINE: &str = "\n";
 /// The list window: at most this many options draw.
@@ -98,6 +102,8 @@ pub struct ExtensionSelectorComponent {
     base_title: String,
     countdown: Option<CountdownTimer>,
     on_done: Box<dyn FnMut(SelectorOutcome)>,
+    /// `?` shows the keys below the options.
+    help: bool,
 }
 
 impl ExtensionSelectorComponent {
@@ -114,7 +120,62 @@ impl ExtensionSelectorComponent {
             base_title: title.to_string(),
             countdown,
             on_done,
+            help: false,
         }
+    }
+
+    /// The option a dialog letter answers (K-P4), if the options offer one.
+    fn letter_answer(&self, data: &str, kb: &KeybindingsManager) -> Option<usize> {
+        let id = DIALOG_ANSWERS.iter().find(|id| kb.matches(data, id))?;
+        self.letter_answer_for(id)
+    }
+
+    /// The first option the dialog answer `id` names.
+    fn letter_answer_for(&self, id: &str) -> Option<usize> {
+        let words: &[&str] = match id {
+            "app.dialog.yes" => &YES_WORDS,
+            "app.dialog.no" => &NO_WORDS,
+            _ => &ALWAYS_WORDS,
+        };
+        self.options.iter().position(|option| {
+            words
+                .iter()
+                .any(|word| option == word || option.starts_with(word))
+        })
+    }
+
+    /// The keys under the options (`?`): the moves, the answers offered, and the exits.
+    fn help_rows(&self) -> Vec<Line<'static>> {
+        let mut pairs: Vec<(String, String)> = vec![
+            (
+                format!("{}/{}", key_text("app.list.up"), key_text("app.list.down")),
+                "move".to_string(),
+            ),
+            (key_text("tui.select.confirm"), "select".to_string()),
+        ];
+        for (id, label) in [
+            ("app.dialog.yes", "yes"),
+            ("app.dialog.no", "no"),
+            ("app.dialog.always", "always"),
+        ] {
+            if self.letter_answer_for(id).is_some() {
+                pairs.push((key_text(id), label.to_string()));
+            }
+        }
+        pairs.push((
+            format!(
+                "{}/{}",
+                key_text("tui.select.cancel"),
+                key_text("app.list.close")
+            ),
+            "close".to_string(),
+        ));
+        pairs.push((key_text("app.list.help"), "hide keys".to_string()));
+        let refs: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(k, a)| (k.as_str(), a.as_str()))
+            .collect();
+        help_rows(&refs)
     }
 
     /// The console name: the title, with the seconds left while timed.
@@ -169,6 +230,9 @@ impl Component for ExtensionSelectorComponent {
         console.selected = (!self.options.is_empty()).then_some(selected);
         console.max_visible = Some(self.cursor.max_visible());
         console.hint = hints(&[("↑↓", "navigate"), ("enter", "select"), ("esc", "cancel")]);
+        if self.help {
+            console.bottom = self.help_rows();
+        }
         console.render(width as usize)
     }
 
@@ -178,15 +242,24 @@ impl Component for ExtensionSelectorComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        if data == VI_UP || data == VI_DOWN {
-            self.cursor.step(if data == VI_UP { -1 } else { 1 });
+        if kb.matches(data, "app.list.help") {
+            self.help = !self.help;
+        } else if kb.matches(data, "app.list.up") {
+            self.cursor.step(-1);
+        } else if kb.matches(data, "app.list.down") {
+            self.cursor.step(1);
         } else if !self.cursor.handle_key(data, &kb) {
             if kb.matches(data, "tui.select.confirm") || data == NEWLINE {
                 if let Some(selected) = self.options.get(self.cursor.selected()).cloned() {
                     (self.on_done)(SelectorOutcome::Selected(selected));
                 }
-            } else if kb.matches(data, "tui.select.cancel") {
+            } else if kb.matches(data, "tui.select.cancel") || kb.matches(data, "app.list.close") {
                 (self.on_done)(SelectorOutcome::Cancelled);
+            } else if let Some(index) = self.letter_answer(data, &kb) {
+                self.cursor.select(index);
+                if let Some(selected) = self.options.get(index).cloned() {
+                    (self.on_done)(SelectorOutcome::Selected(selected));
+                }
             }
         }
     }

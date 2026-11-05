@@ -82,6 +82,9 @@ mod dialogs;
 mod events;
 mod input;
 mod job_tail;
+mod leader;
+#[cfg(test)]
+mod leader_tests;
 mod loop_command;
 mod mcp;
 mod models;
@@ -447,6 +450,10 @@ struct Mode {
     tips: TipsController,
     /// The transient rows above the prompt (warning, retry, statuses, progress).
     transient: Rc<RefCell<TransientLines>>,
+    /// The leader key at the prompt (Ctrl+X, then a key): see `leader.rs`.
+    leader: leader::LeaderState,
+    /// The transcript's scroll view: the leader opens its search (`leader.rs`).
+    scroll_view: Rc<RefCell<crate::scroll_view::ScrollView>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
@@ -622,6 +629,7 @@ impl Mode {
 
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
+        let leader = leader::LeaderState::new(&keybindings);
 
         // The bundled themes' reference copies, after an upgrade. A failure is
         // a diagnostics warning, never a crash.
@@ -838,7 +846,7 @@ impl Mode {
         // the pinned view (`scroll_view.rs`).
         let prompt_text = editor.clone();
         let busy_session = session.clone();
-        install_scroll_view(
+        let scroll_view = install_scroll_view(
             &mut tui,
             as_component(&prompt_row),
             chat.clone(),
@@ -915,6 +923,8 @@ impl Mode {
             notifications,
             tips,
             transient,
+            leader,
+            scroll_view,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,
@@ -988,7 +998,14 @@ impl Mode {
         // a key in the same batch as an Up or a Down-exit reaches the right place.
         self.refresh_panel_takes_up();
         self.release_stale_panel_focus();
-        self.tui.accept_event(event);
+        // The leader sees a key first: a key it takes never reaches the screen.
+        let taken = match &event {
+            TuiEvent::Input(data, _) => self.leader_takes_key(data),
+            _ => false,
+        };
+        if !taken {
+            self.tui.accept_event(event);
+        }
         self.hand_off_panel_up();
         self.return_panel_focus_if_asked();
         self.show_main();
@@ -1118,7 +1135,11 @@ impl Mode {
             self.tips.deadline(),
             self.editor.borrow().editor.autocomplete_deadline(),
         ];
-        for deadline in deadlines.into_iter().flatten() {
+        for deadline in deadlines
+            .into_iter()
+            .chain(self.leader_wake_times(now))
+            .flatten()
+        {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
         // Wake when a loader's frame falls due, not on a fixed cadence: the
@@ -1398,6 +1419,7 @@ impl Mode {
             }
             self.poll_attached_prompt();
             self.drain_task_panel_events();
+            self.poll_leader();
             loop {
                 let pending: Vec<Action> = self.actions.borrow_mut().drain(..).collect();
                 if pending.is_empty() {

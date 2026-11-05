@@ -1755,6 +1755,22 @@ impl Editor {
         self.focused = focused;
     }
 
+    /// Runs an editor command by its binding id, as its key would
+    /// (`tui.editor.undo`, `tui.editor.redo`, `tui.editor.yankPop`,
+    /// `tui.input.newLine`). The leader's sequences name a command with no
+    /// key of its own. `false` for an id this does not run.
+    pub fn run_command(&mut self, id: &str) -> bool {
+        match id {
+            "tui.editor.undo" => self.undo(),
+            "tui.editor.redo" => self.redo(),
+            "tui.editor.yankPop" => self.yank_pop(),
+            "tui.input.newLine" => self.add_new_line(),
+            _ => return false,
+        }
+        self.request_render();
+        true
+    }
+
     /// `handleInput`, with the keybindings passed explicitly.
     pub fn handle_input_with(&mut self, data: &str, kb: &KeybindingsManager) {
         let mut data = data.to_string();

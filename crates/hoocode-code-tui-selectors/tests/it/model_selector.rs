@@ -9,9 +9,9 @@ use hoocode_code_tui_selectors::scoped_models_selector::{
     ScopedModelsSelectorComponent,
 };
 
-/// Raw input for the picker's effort (tab) and category (alt+j) keys.
+/// Raw input for the picker's effort (tab) and category (c) keys.
 const EFFORT_INPUT: &str = "\t";
-const CATEGORY_INPUT: &str = "\x1bj";
+const CATEGORY_INPUT: &str = "c";
 use hoocode_code_tui_theme::SELECT_CURSOR;
 use hoocode_tui_render::Component;
 use serde_json::json;
@@ -107,7 +107,7 @@ fn propagates_reordered_scoped_models_back_to_the_session_state() {
     let ordered = full_ids(&models);
     let saved = ordered.iter().map(|id| plain(id)).collect();
     let mut selector = ScopedModelsSelectorComponent::new(models, Some(saved));
-    selector.handle_input("\x1b[1;3B");
+    selector.handle_input("\x1b[1;2B");
     assert_eq!(
         selector.take_events(),
         vec![ScopedModelsEvent::Change(Some(vec![
@@ -266,7 +266,7 @@ fn toggle_from_all_enabled_keeps_only_that_model_and_marks_unsaved() {
     let mut selector = ScopedModelsSelectorComponent::new(models, None);
     let rendered = strip(&selector.render(200));
     // "option+s" on macOS, like the pin's formatKeyText.
-    let save = hoocode_code_tui_keybindings::format_key_text("alt+s", false);
+    let save = hoocode_code_tui_keybindings::format_key_text("s", false);
     assert!(rendered.contains(&format!("{save} save to settings")));
     assert!(rendered.contains("all 3 on · this session only"));
     selector.handle_input("\r");
@@ -278,8 +278,8 @@ fn toggle_from_all_enabled_keeps_only_that_model_and_marks_unsaved() {
     assert!(rendered.contains("1 of 3 on · unsaved"));
     let off_row = row_for(&rendered, "faux-2");
     assert!(off_row.contains("off"), "{rendered}");
-    // alt+s saves and clears the mark.
-    selector.handle_input("\x1bs");
+    // s saves and clears the mark.
+    selector.handle_input("s");
     assert_eq!(
         selector.take_events(),
         vec![ScopedModelsEvent::Persist(vec![plain(&ids[0])])]
@@ -291,8 +291,9 @@ fn toggle_from_all_enabled_keeps_only_that_model_and_marks_unsaved() {
 fn ctrl_c_clears_the_search_before_cancelling() {
     let _g = lock();
     let mut selector = ScopedModelsSelectorComponent::new(faux(), None);
-    selector.handle_input("x");
-    selector.handle_input("y");
+    // `z` and `w` are no picker keys. (`x` on an empty query clears every model.)
+    selector.handle_input("z");
+    selector.handle_input("w");
     assert!(strip(&selector.render(100)).contains("No matching models"));
     selector.handle_input("\x03");
     assert!(selector.take_events().is_empty());
@@ -351,7 +352,7 @@ fn picker_saves_effort_and_category_per_entry_not_ids_only() {
     selector.handle_input("\x1b[B");
     selector.handle_input(EFFORT_INPUT);
     selector.handle_input(CATEGORY_INPUT);
-    selector.handle_input("\x1bs");
+    selector.handle_input("s");
     assert_eq!(
         selector.take_events(),
         vec![ScopedModelsEvent::Persist(vec![
@@ -375,7 +376,7 @@ fn saved_effort_is_clamped_to_what_the_model_supports() {
     let saved = vec![entry(&ids[2], Some("xhigh"), None, None)];
     let mut selector = ScopedModelsSelectorComponent::new(models, Some(saved));
     assert!(strip(&selector.render(200)).contains("high"));
-    selector.handle_input("\x1bs");
+    selector.handle_input("s");
     assert_eq!(
         selector.take_events(),
         vec![ScopedModelsEvent::Persist(vec![entry(
@@ -391,7 +392,7 @@ fn saved_effort_is_clamped_to_what_the_model_supports() {
 fn all_enabled_with_no_effort_or_category_saves_as_the_clear() {
     let _g = lock();
     let mut selector = ScopedModelsSelectorComponent::new(faux(), None);
-    selector.handle_input("\x1bs");
+    selector.handle_input("s");
     assert_eq!(
         selector.take_events(),
         vec![ScopedModelsEvent::Persist(Vec::new())]
@@ -405,7 +406,7 @@ fn all_enabled_writes_every_model_once_a_column_is_set() {
     let ids = full_ids(&models);
     let mut selector = ScopedModelsSelectorComponent::new(models, None);
     selector.handle_input(CATEGORY_INPUT);
-    selector.handle_input("\x1bs");
+    selector.handle_input("s");
     match selector.take_events().as_slice() {
         [ScopedModelsEvent::Persist(entries)] => {
             let saved: Vec<&str> = entries.iter().map(|e| e.model.as_str()).collect();
@@ -442,5 +443,34 @@ fn effort_and_category_cycles_step_then_unset() {
             Some("capable"),
             None
         ]
+    );
+}
+
+#[test]
+fn a_letter_types_into_a_query_and_acts_only_while_the_query_is_empty() {
+    // K-P4: `x` is clear-all on an empty query and a typed letter once a query exists.
+    let _g = lock();
+    let mut selector = ScopedModelsSelectorComponent::new(faux(), None);
+    selector.handle_input("z");
+    selector.handle_input("x");
+    assert!(
+        strip(&selector.render(100)).contains("zx"),
+        "x types into the query"
+    );
+    assert!(selector.take_events().is_empty());
+    assert!(
+        !strip(&selector.render(100)).contains("unsaved"),
+        "nothing was cleared"
+    );
+}
+
+#[test]
+fn x_on_an_empty_query_clears_every_model() {
+    let _g = lock();
+    let mut selector = ScopedModelsSelectorComponent::new(faux(), None);
+    selector.handle_input("x");
+    assert!(
+        strip(&selector.render(100)).contains("unsaved"),
+        "clear all marks the picker unsaved"
     );
 }

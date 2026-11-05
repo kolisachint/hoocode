@@ -265,6 +265,16 @@ impl ScrollView {
         ui.set_scroll_search("", true);
     }
 
+    /// `app.scroll.search` from the prompt, as the leader runs it: pin at the
+    /// bottom, so the search works back from the newest thing, and open the
+    /// search. The same steps the live Ctrl+R branch takes.
+    pub fn search_from_bottom(&mut self, ui: &mut Tui) {
+        ui.scroll_to_row(i64::MAX, None);
+        if ui.scroll_pinned() {
+            self.open_search(ui);
+        }
+    }
+
     fn jump(&self, ui: &mut Tui, direction: TurnDirection) {
         jump_to_user_message(
             ui,
@@ -279,7 +289,8 @@ impl ScrollView {
     /// keys move the transcript. Never un-pins, so an open question stays
     /// readable while the reader is up in the history.
     fn handle_picker(&mut self, ui: &mut Tui, data: &str) -> bool {
-        if is_key_release(data) {
+        // Letters are the picker's (K-P4): `g` there is a picker key, not the top.
+        if is_key_release(data) || is_typed_text(data) {
             return false;
         }
         if !scroll_step(ui, data) {
@@ -307,12 +318,7 @@ impl ScrollView {
         } else if matches(data, "app.scroll.nextMessage") {
             self.jump(ui, TurnDirection::Next);
         } else if matches(data, "app.scroll.search") {
-            // Pin first, at the bottom, so the search works back from the
-            // newest thing.
-            ui.scroll_to_row(i64::MAX, None);
-            if ui.scroll_pinned() {
-                self.open_search(ui);
-            }
+            self.search_from_bottom(ui);
         } else {
             return false;
         }
@@ -368,7 +374,11 @@ impl ScrollView {
             ui.commit_scroll_search();
         }
 
-        if matches(data, "app.scroll.search") || matches(data, "app.scroll.searchInView") {
+        // `/` opens the search from the pinned view over an empty prompt (K-P4).
+        let bare_ok = !is_typed_text(data) || (self.editor_empty)();
+        if matches(data, "app.scroll.search")
+            || (bare_ok && matches(data, "app.scroll.searchInView"))
+        {
             self.open_search(ui);
             return true;
         }
@@ -382,24 +392,35 @@ impl ScrollView {
                 ui.scroll_search_step(1);
                 return true;
             }
-            // One escape drops the search, the next leaves the view.
-            if matches(data, "app.scroll.exit") {
+            // One escape drops the search, the next leaves the view. `q` drops it
+            // only over an empty prompt, as the other bare letters do.
+            if matches(data, "app.scroll.exit") && (bare_ok || !is_typed_text(data)) {
                 ui.clear_scroll_search();
                 return true;
             }
         }
 
         // Plain arrows are the prompt's while it holds text: they keep the
-        // cursor and the history, and the pin stays where it is.
-        let plain_line = matches(data, "app.scroll.lineUp") || matches(data, "app.scroll.lineDown");
+        // cursor and the history, and the pin stays where it is. (`j` and `k`
+        // are typed characters, so they are not arrows here.)
+        let plain_line = (matches(data, "app.scroll.lineUp")
+            || matches(data, "app.scroll.lineDown"))
+            && !is_typed_text(data);
         if plain_line && !(self.editor_empty)() {
+            return false;
+        }
+        // A bare letter (j, k, g, G, [, ], q) steps the view only over an empty
+        // prompt (K-P4). Otherwise it goes back to live and types.
+        if is_typed_text(data) && !(self.editor_empty)() {
+            ui.scroll_to_live();
             return false;
         }
         // Exit before the ends, so bindings sharing a key still get out.
         if matches(data, "app.scroll.exit") {
             ui.scroll_to_live();
-            // A running agent takes the escape as its abort, as it does from the tail.
-            return !(self.agent_busy)();
+            // A running agent takes the escape as its abort, as it does from the
+            // tail. `q` is only ever a pager key, so it never reaches the prompt.
+            return !(self.agent_busy)() || is_typed_text(data);
         }
         if scroll_step(ui, data) {
             return true;
@@ -547,9 +568,9 @@ pub fn install_scroll_view(
     is_user_message: IsUserMessage,
     editor_empty: EditorEmpty,
     agent_busy: AgentBusy,
-) {
+) -> Rc<RefCell<ScrollView>> {
     ui.scroll_prompt = Some(editor.clone());
-    let mut view = ScrollView {
+    let view = Rc::new(RefCell::new(ScrollView {
         editor,
         chat,
         body,
@@ -557,8 +578,12 @@ pub fn install_scroll_view(
         editor_empty,
         agent_busy,
         typing: None,
-    };
+    }));
+    // The leader runs the search from outside the input path (`search_from_bottom`),
+    // so the caller keeps a handle to the same view.
+    let shared = view.clone();
     ui.set_input_interceptor(Some(Box::new(move |ui: &mut Tui, data: &str| {
-        view.handle_input(ui, data)
+        view.borrow_mut().handle_input(ui, data)
     })));
+    shared
 }

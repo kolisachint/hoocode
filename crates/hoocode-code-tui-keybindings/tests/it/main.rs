@@ -4,3 +4,4 @@
 mod gold;
 mod keybinding_layout;
 mod keymap_config;
+mod which_key;

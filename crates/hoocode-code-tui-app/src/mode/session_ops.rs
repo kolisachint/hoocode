@@ -767,7 +767,9 @@ impl Mode {
     /// the screen (keybindings, editor, cursor). Startup, a session swap and
     /// /reload all rebuild these from disk, so they repaint alike.
     fn apply_runtime_settings(&mut self) {
-        AppKeybindingsManager::create(None).install();
+        let keybindings = AppKeybindingsManager::create(None);
+        keybindings.install();
+        self.leader = super::leader::LeaderState::new(&keybindings);
         let settings = self.session.settings();
         let (show_hardware_cursor, clear_on_shrink, hide_thinking_block) = (
             settings.show_hardware_cursor(),

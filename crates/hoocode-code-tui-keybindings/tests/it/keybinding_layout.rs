@@ -86,6 +86,11 @@ const SESSION_PICKER_SCOPE: &[&str] = &[
     "app.session.delete",
     "app.session.deleteNoninvasive",
     "app.session.toggleNamedFilter",
+    "app.list.up",
+    "app.list.down",
+    "app.list.search",
+    "app.list.help",
+    "app.list.close",
 ];
 
 const MODELS_PICKER_SCOPE: &[&str] = &[
@@ -98,6 +103,12 @@ const MODELS_PICKER_SCOPE: &[&str] = &[
     "app.models.toggleProvider",
     "app.models.reorderUp",
     "app.models.reorderDown",
+    "app.models.category",
+    "app.list.up",
+    "app.list.down",
+    "app.list.search",
+    "app.list.help",
+    "app.list.close",
 ];
 
 const TREE_SCOPE: &[&str] = &[
@@ -118,9 +129,28 @@ const TREE_SCOPE: &[&str] = &[
     "tui.select.cancel",
     "tui.select.pageUp",
     "tui.select.pageDown",
-    "tui.editor.cursorLeft",
-    "tui.editor.cursorRight",
     "tui.editor.deleteCharBackward",
+    "app.list.up",
+    "app.list.down",
+    "app.list.search",
+    "app.list.help",
+    "app.list.close",
+];
+
+/// The generic selector (approval and confirm dialogs): letters answer while
+/// no reply is typed (K-P4), and the list keys work as in a picker.
+const DIALOG_SCOPE: &[&str] = &[
+    "tui.select.up",
+    "tui.select.down",
+    "tui.select.confirm",
+    "tui.select.cancel",
+    "app.list.up",
+    "app.list.down",
+    "app.list.help",
+    "app.list.close",
+    "app.dialog.yes",
+    "app.dialog.no",
+    "app.dialog.always",
 ];
 
 /// Live while the task panel has focus. It takes the keyboard then, so keys it
@@ -171,6 +201,7 @@ const SCOPES: &[(&str, &[&str])] = &[
     ("session picker", SESSION_PICKER_SCOPE),
     ("models picker", MODELS_PICKER_SCOPE),
     ("session tree", TREE_SCOPE),
+    ("dialog selector", DIALOG_SCOPE),
     ("task panel", PANEL_SCOPE),
     ("attached view", ATTACHED_SCOPE),
     ("options pane", OPTIONS_SCOPE),
@@ -302,18 +333,9 @@ fn gives_every_action_at_least_one_key_a_non_kitty_terminal_can_send() {
             !keys.is_empty() && !keys.iter().any(|k| reachable_without_kitty(k))
         })
         .collect();
-    assert_eq!(
-        unreachable,
-        vec![
-            "tui.input.newLine",
-            "app.mode.cycleBackward",
-            "app.model.cycleBackward",
-            "app.thinking.cycleBackward",
-            "app.view.cycleBackward",
-            "app.tasks.cycleBackward",
-            "app.tree.filter.cycleBackward",
-        ]
-    );
+    // Every default is reachable: a leader sequence starts with Ctrl+X and
+    // its second key is a plain key (a capital is typed as itself).
+    assert_eq!(unreachable, Vec::<&str>::new());
 }
 
 #[test]
@@ -332,66 +354,115 @@ fn binds_no_verb_to_a_bare_shift_letter() {
 }
 
 #[test]
-fn pins_which_actions_a_terminal_must_send_alt_to_reach() {
-    let mut expected: Vec<&str> = vec![
-        "tui.editor.redo",
-        "app.clipboard.copyMessage",
-        "tui.editor.jumpBackward",
-        "tui.editor.deleteWordForward",
-        "tui.editor.yankPop",
-        "app.thinking.cycleForward",
-        "app.thinking.cycleBackward",
-        "app.model.cycleForward",
-        "app.model.cycleBackward",
-        "app.view.cycleForward",
-        "app.view.cycleBackward",
-        "app.tasks.cycleForward",
-        "app.tasks.cycleBackward",
-        "app.editor.external",
-        "app.message.followUp",
-        "app.message.dequeue",
-        "app.input.voiceTranscribe",
-        "app.session.resume",
-        "app.session.changeDirectory",
-        "app.settings.open",
-        "app.hotkeys.open",
-        "app.mode.cycleBackward",
-        "app.tree.editLabel",
-        "app.tree.toggleLabelTimestamp",
-        "app.session.togglePath",
-        "app.session.toggleSort",
-        "app.session.rename",
-        "app.session.toggleNamedFilter",
-        "app.session.delete",
-        "app.models.save",
-        "app.models.enableAll",
-        "app.models.clearAll",
-        "app.models.toggleProvider",
-        "app.models.reorderUp",
-        "app.models.reorderDown",
-        "app.tree.filter.default",
-        "app.tree.filter.noTools",
-        "app.tree.filter.userOnly",
-        "app.tree.filter.labeledOnly",
-        "app.tree.filter.all",
-        "app.tree.filter.cycleForward",
-        "app.tree.filter.cycleBackward",
-    ];
-    // Windows has no ctrl+v to spare: the console pastes with it.
-    if cfg!(windows) {
-        expected.push("app.clipboard.pasteImage");
-    }
+fn binds_no_default_to_an_alt_key() {
+    // No Alt or Option key in any default (K-P1). Alt keys a user writes in
+    // keybindings.json still work (see `keymap_config`).
     let m = manager();
-    let mut alt_dependent: Vec<&str> = ids()
+    let with_alt: Vec<String> = ids()
         .into_iter()
-        .filter(|id| {
-            let keys = m.get_keys(id);
-            !keys.is_empty() && keys.iter().all(|k| has_alt(k))
-        })
+        .filter(|id| m.get_keys(id).iter().any(|k| has_alt(k)))
+        .map(str::to_string)
         .collect();
-    alt_dependent.sort();
-    expected.sort();
-    assert_eq!(alt_dependent, expected);
+    assert_eq!(with_alt, Vec::<String>::new());
+}
+
+#[test]
+fn binds_no_default_to_ctrl_r() {
+    // Ctrl+R is prompt-history search once that action exists. Until then it
+    // is unbound; transcript search is leader `/`.
+    let m = manager();
+    let on_ctrl_r: Vec<&str> = ids()
+        .into_iter()
+        .filter(|id| m.get_keys(id).iter().any(|k| k == "ctrl+r"))
+        .collect();
+    assert_eq!(on_ctrl_r, Vec::<&str>::new());
+}
+
+#[test]
+fn binds_every_leader_default_as_the_leader_then_one_key() {
+    let m = manager();
+    let mut bad = Vec::new();
+    for id in ids() {
+        for key in m.get_keys(id) {
+            if key.contains(' ') {
+                let steps: Vec<&str> = key.split_whitespace().collect();
+                if steps.len() != 2 || steps[0] != "ctrl+x" {
+                    bad.push(format!("{id}: {key}"));
+                }
+            }
+        }
+    }
+    assert_eq!(bad, Vec::<String>::new());
+}
+
+/// The plan's default keymap (docs/design/themes-keybindings.md, "Default
+/// keymap"), for every key except the picker and scroll-mode keys (K-6).
+#[test]
+fn matches_the_plans_default_keymap() {
+    let m = manager();
+    let plan: Vec<(&str, Vec<&str>)> = vec![
+        ("app.interrupt", vec!["escape"]),
+        ("app.clear", vec!["ctrl+c"]),
+        ("app.exit", vec!["ctrl+d"]),
+        (
+            "app.suspend",
+            if cfg!(windows) {
+                vec![]
+            } else {
+                vec!["ctrl+z"]
+            },
+        ),
+        ("app.editor.external", vec!["ctrl+x e"]),
+        ("app.input.voiceTranscribe", vec!["ctrl+x r"]),
+        (
+            "app.clipboard.pasteImage",
+            if cfg!(windows) {
+                vec!["ctrl+x v"]
+            } else {
+                vec!["ctrl+v"]
+            },
+        ),
+        ("app.clipboard.copyMessage", vec!["ctrl+x c"]),
+        ("app.message.followUp", vec!["ctrl+x f"]),
+        ("app.message.dequeue", vec!["ctrl+x d"]),
+        ("app.mode.cycleForward", vec!["shift+tab"]),
+        ("app.mode.cycleBackward", vec!["ctrl+x a"]),
+        ("app.model.cycleForward", vec!["ctrl+x m"]),
+        ("app.model.cycleBackward", vec!["ctrl+x M"]),
+        ("app.thinking.cycleForward", vec!["ctrl+x t"]),
+        ("app.thinking.cycleBackward", vec!["ctrl+x T"]),
+        ("app.view.cycleForward", vec!["ctrl+x o"]),
+        ("app.view.cycleBackward", vec!["ctrl+x O"]),
+        ("app.tools.expand", vec!["ctrl+x p"]),
+        ("app.thinking.toggle", vec!["ctrl+x b"]),
+        ("app.tasks.cycleForward", vec!["ctrl+x l"]),
+        ("app.tasks.cycleBackward", vec!["ctrl+x L"]),
+        ("app.panel.focus", vec!["ctrl+x g"]),
+        ("app.scroll.search", vec!["ctrl+x /"]),
+        ("app.session.resume", vec!["ctrl+x h"]),
+        ("app.session.changeDirectory", vec!["ctrl+x w"]),
+        ("app.settings.open", vec!["ctrl+x s"]),
+        ("app.hotkeys.open", vec!["ctrl+x ?", "ctrl+x k"]),
+        ("app.subagent.attach", vec!["ctrl+x n"]),
+        ("tui.editor.cursorWordLeft", vec!["ctrl+left"]),
+        ("tui.editor.cursorWordRight", vec!["ctrl+right"]),
+        ("tui.editor.jumpBackward", vec![]),
+        ("tui.editor.deleteWordBackward", vec!["ctrl+w"]),
+        ("tui.editor.deleteWordForward", vec!["ctrl+delete"]),
+        ("tui.editor.yankPop", vec!["ctrl+x y"]),
+        ("tui.editor.redo", vec!["ctrl+x z"]),
+        ("tui.editor.undo", vec!["ctrl+-"]),
+        ("tui.input.newLine", vec!["shift+enter", "ctrl+x enter"]),
+    ];
+    let mut wrong = Vec::new();
+    for (id, keys) in plan {
+        let actual = m.get_keys(id);
+        let expected: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
+        if actual != expected {
+            wrong.push(format!("{id}: {actual:?}, the plan says {expected:?}"));
+        }
+    }
+    assert_eq!(wrong, Vec::<String>::new());
 }
 
 #[test]
@@ -477,27 +548,32 @@ const DIALS: &[(&str, &str, &str)] = &[
 ];
 
 #[test]
-fn puts_every_dial_on_alt_letter_back_on_shift_alt_letter() {
+fn puts_every_dial_on_a_leader_letter_and_its_capital_back() {
+    // Agent mode steps with Shift+Tab, and its backward key is the leader's a.
+    // The other dials: the leader and a letter forward, the capital back.
     let m = manager();
-    let re = Regex::new(r"^alt\+[a-z]$").unwrap();
     let mut wrong = Vec::new();
     for (name, forward, backward) in DIALS {
         let forward_key = m.get_keys(forward).first().cloned().unwrap_or_default();
         let backward_key = m.get_keys(backward).first().cloned().unwrap_or_default();
-        // Agent mode's forward key is shift+tab (the Shift+Tab dial); its alt+a
-        // is the second key. Its backward key stays shift+alt+a.
-        if name == &"agent mode" && forward_key == "shift+tab" {
+        if *name == "agent mode" {
+            if forward_key != "shift+tab" || backward_key != "ctrl+x a" {
+                wrong.push(format!(
+                    "{name}: {forward_key} -> {backward_key}, expected shift+tab -> ctrl+x a"
+                ));
+            }
             continue;
         }
-        if !re.is_match(&forward_key) {
+        let Some(letter) = forward_key.strip_prefix("ctrl+x ") else {
             wrong.push(format!(
-                "{name}: forward is {forward_key}, expected alt+<letter>"
+                "{name}: forward is {forward_key}, expected ctrl+x <letter>"
             ));
             continue;
-        }
-        if backward_key != format!("shift+{forward_key}") {
+        };
+        let capital = format!("ctrl+x {}", letter.to_uppercase());
+        if backward_key != capital {
             wrong.push(format!(
-                "{name}: {forward_key} -> {backward_key}, expected shift+{forward_key}"
+                "{name}: {forward_key} -> {backward_key}, expected {capital}"
             ));
         }
     }
@@ -516,21 +592,18 @@ fn gives_each_dial_a_letter_no_other_dial_claims() {
 }
 
 #[test]
-fn leaves_every_dial_reachable_on_a_terminal_that_does_not_send_alt() {
-    let with_slash_command = ["agent mode", "model"];
+fn leaves_every_dial_reachable_without_kitty() {
     let m = manager();
     let stranded: Vec<&str> = DIALS
         .iter()
-        .filter(|(name, forward, _)| {
-            !with_slash_command.contains(name) && m.get_keys(forward).iter().all(|k| has_alt(k))
+        .filter(|(_, forward, _)| {
+            !m.get_keys(forward)
+                .iter()
+                .any(|k| reachable_without_kitty(k))
         })
         .map(|(name, _, _)| *name)
         .collect();
-    // Thinking's only forward key is alt+t now (shift+tab moved to agent mode).
-    assert_eq!(
-        stranded,
-        vec!["thinking level", "tool output", "task ledger"]
-    );
+    assert_eq!(stranded, Vec::<&str>::new());
 }
 
 #[test]
@@ -564,6 +637,8 @@ fn families() -> Vec<(&'static str, Regex)> {
             "Overlays",
             r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
+        ("Lists", r"^app\.list\."),
+        ("Dialogs", r"^app\.dialog\."),
     ]
     .into_iter()
     .map(|(name, re)| (name, Regex::new(re).unwrap()))

@@ -22,21 +22,32 @@ fn format_key_part(part: &str, capitalize: bool) -> String {
     }
 }
 
-/// `formatKeyText`: `a/b` alternatives, `+`-joined chords. A bare
+/// One step of a key (no `/` or space): `+`-joined chords. A bare
+/// single-character key prints exactly as typed.
+fn format_step(step: &str, capitalize: bool) -> String {
+    let parts: Vec<&str> = step.split('+').collect();
+    if parts.len() == 1 && parts[0].encode_utf16().count() == 1 {
+        return parts[0].to_string();
+    }
+    parts
+        .iter()
+        .map(|part| format_key_part(part, capitalize))
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// `formatKeyText`: `a/b` alternatives, `+`-joined chords, and a sequence's
+/// steps separated by a space (`ctrl+x m` reads `Ctrl+X m`). A bare
 /// single-character key prints exactly as typed (an uppercase letter would
 /// name `shift+<letter>`); inside a chord `capitalize` capitalizes each part.
 pub fn format_key_text(key: &str, capitalize: bool) -> String {
     key.split('/')
-        .map(|k| {
-            let parts: Vec<&str> = k.split('+').collect();
-            if parts.len() == 1 && parts[0].encode_utf16().count() == 1 {
-                return parts[0].to_string();
-            }
-            parts
-                .iter()
-                .map(|part| format_key_part(part, capitalize))
+        .map(|alternative| {
+            alternative
+                .split_whitespace()
+                .map(|step| format_step(step, capitalize))
                 .collect::<Vec<_>>()
-                .join("+")
+                .join(" ")
         })
         .collect::<Vec<_>>()
         .join("/")
@@ -57,6 +68,20 @@ pub fn key_text(id: &str) -> String {
 /// `keyDisplayText`: every key bound to `id`, capitalized.
 pub fn key_display_text(id: &str) -> String {
     format_keys(&get_keybindings().get_keys(id), true)
+}
+
+/// The first key bound to `id`, as typed, with `escape` shown as `esc`: the
+/// key a hint names when one key is enough.
+pub fn key_hint_text(id: &str) -> String {
+    let first = get_keybindings()
+        .get_keys(id)
+        .first()
+        .cloned()
+        .unwrap_or_default();
+    match format_key_text(&first, false).as_str() {
+        "escape" => "esc".to_string(),
+        text => text.to_string(),
+    }
 }
 
 /// `keyDisplayLabel`: the taught (first) key only, capitalized.

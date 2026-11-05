@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use hoocode_code_session::SessionTreeNode;
 use hoocode_code_settings::TreeFilterMode;
+use hoocode_code_tui_keybindings::{key_hint_text, key_text};
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
@@ -1153,9 +1154,20 @@ impl TreeList {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
+        // A bare letter (K-P4) acts only while the query is empty; otherwise it types.
+        let letter = data.chars().count() == 1 && data.chars().all(|c| !c.is_control());
+        let live = !letter || self.search_query.is_empty();
         if self.cursor.handle_key(data, &kb) {
             // Navigation: the cursor clamps at both ends.
-        } else if kb.matches(data, "app.tree.foldOrUp") {
+        } else if live && kb.matches(data, "app.list.down") {
+            self.cursor.step(1);
+        } else if live && kb.matches(data, "app.list.up") {
+            self.cursor.step(-1);
+        } else if live && kb.matches(data, "app.list.close") {
+            self.events.push(TreeEvent::Cancel);
+        } else if live && kb.matches(data, "app.list.search") {
+            // The query is always focused: `/` on an empty query has nothing to focus.
+        } else if live && kb.matches(data, "app.tree.foldOrUp") {
             match self.selected_id() {
                 Some(id) if self.is_foldable(&id) && !self.folded.contains(&id) => {
                     self.folded.insert(id);
@@ -1166,7 +1178,7 @@ impl TreeList {
                     self.cursor.select(target);
                 }
             }
-        } else if kb.matches(data, "app.tree.unfoldOrDown") {
+        } else if live && kb.matches(data, "app.tree.unfoldOrDown") {
             match self.selected_id() {
                 Some(id) if self.folded.contains(&id) => {
                     self.folded.remove(&id);
@@ -1177,10 +1189,6 @@ impl TreeList {
                     self.cursor.select(target);
                 }
             }
-        } else if kb.matches(data, "tui.editor.cursorLeft") {
-            self.cursor.page(false);
-        } else if kb.matches(data, "tui.editor.cursorRight") {
-            self.cursor.page(true);
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(id) = self.selected_id() {
                 self.events.push(TreeEvent::Select(id));
@@ -1193,31 +1201,31 @@ impl TreeList {
                 self.folded.clear();
                 self.apply_filter();
             }
-        } else if kb.matches(data, "app.tree.filter.default") {
+        } else if live && kb.matches(data, "app.tree.filter.default") {
             self.set_filter(TreeFilterMode::Default);
-        } else if kb.matches(data, "app.tree.filter.noTools") {
+        } else if live && kb.matches(data, "app.tree.filter.noTools") {
             self.toggle_filter(TreeFilterMode::NoTools);
-        } else if kb.matches(data, "app.tree.filter.userOnly") {
+        } else if live && kb.matches(data, "app.tree.filter.userOnly") {
             self.toggle_filter(TreeFilterMode::UserOnly);
-        } else if kb.matches(data, "app.tree.filter.labeledOnly") {
+        } else if live && kb.matches(data, "app.tree.filter.labeledOnly") {
             self.toggle_filter(TreeFilterMode::LabeledOnly);
-        } else if kb.matches(data, "app.tree.filter.all") {
+        } else if live && kb.matches(data, "app.tree.filter.all") {
             self.toggle_filter(TreeFilterMode::All);
-        } else if kb.matches(data, "app.tree.filter.cycleBackward") {
+        } else if live && kb.matches(data, "app.tree.filter.cycleBackward") {
             self.cycle_filter(false);
-        } else if kb.matches(data, "app.tree.filter.cycleForward") {
+        } else if live && kb.matches(data, "app.tree.filter.cycleForward") {
             self.cycle_filter(true);
         } else if kb.matches(data, "tui.editor.deleteCharBackward") {
             if self.search_query.pop().is_some() {
                 self.folded.clear();
                 self.apply_filter();
             }
-        } else if kb.matches(data, "app.tree.editLabel") {
+        } else if live && kb.matches(data, "app.tree.editLabel") {
             if let Some(f) = self.filtered_nodes.get(self.cursor.selected()) {
                 let node = &self.nodes[f.node];
                 self.label_edit = Some((node.id.clone(), node.label.clone()));
             }
-        } else if kb.matches(data, "app.tree.toggleLabelTimestamp") {
+        } else if live && kb.matches(data, "app.tree.toggleLabelTimestamp") {
             self.show_label_timestamps = !self.show_label_timestamps;
         } else {
             let control = data.chars().any(|c| {
@@ -1242,15 +1250,25 @@ fn entries(count: usize) -> String {
     }
 }
 
-/// The hint foot with literal keys, so the bytes hold on macOS and Linux:
-/// the longest leading run that fits `available`, like the old top row.
-const TREE_HINTS: [(&str, &str); 5] = [
-    ("↑↓", "move"),
-    ("enter", "go here"),
-    ("alt+l", "label"),
-    ("esc", "close"),
-    ("alt+t", "timestamps"),
-];
+/// The hint foot: the keys come from the keymap (K-P5). The longest leading
+/// run that fits shows, like the old top row.
+fn tree_hints() -> Vec<(String, &'static str)> {
+    vec![
+        ("↑↓".to_string(), "move"),
+        (key_hint_text("tui.select.confirm"), "go here"),
+        (key_text("app.tree.editLabel"), "label"),
+        (key_hint_text("tui.select.cancel"), "close"),
+        (key_text("app.tree.toggleLabelTimestamp"), "timestamps"),
+    ]
+}
+
+/// The hint pairs as the hint helpers take them.
+fn as_pairs<'a>(hints: &'a [(String, &'static str)]) -> Vec<(&'a str, &'static str)> {
+    hints
+        .iter()
+        .map(|(key, action)| (key.as_str(), *action))
+        .collect()
+}
 
 /// `LabelInput`: the label editor that replaces the tree while open.
 struct LabelInput {
@@ -1415,9 +1433,11 @@ impl Component for TreeSelectorComponent {
             console.list_width = Some(width * 56 / 100);
             drop(list);
             if self.help {
-                console.bottom.extend(help_rows(&TREE_HINTS));
+                let hints = tree_hints();
+                console.bottom.extend(help_rows(&as_pairs(&hints)));
             }
-            console.hint = capped_hint_line(&TREE_HINTS, true);
+            let hints = tree_hints();
+            console.hint = capped_hint_line(&as_pairs(&hints), true);
         }
         console.render(width)
     }
@@ -1427,7 +1447,10 @@ impl Component for TreeSelectorComponent {
             self.label_input_key(data);
             return;
         }
-        if hoocode_tui_keys::matches_key(data, "f1") {
+        let bare_query_empty = self.list.borrow().search_query.is_empty();
+        let help = hoocode_tui_keys::matches_key(data, "f1")
+            || (bare_query_empty && get_keybindings().matches(data, "app.list.help"));
+        if help {
             self.help = !self.help;
             return;
         }
