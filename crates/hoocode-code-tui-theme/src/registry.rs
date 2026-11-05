@@ -660,6 +660,8 @@ fn clear_theme_warning(name: &str) {
 struct Watcher {
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
+    /// The theme whose file is watched.
+    name: String,
 }
 
 fn state() -> MutexGuard<'static, State> {
@@ -774,9 +776,14 @@ fn notify_change() {
 /// current name is always concrete. On failure nothing changes: the last good
 /// theme stays on screen and the error is returned for the caller to show.
 pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
-    // A new choice replaces the warnings about the old one. A side of an
-    // auto pair that is still missing warns again in the resolve below.
-    state().warnings.clear();
+    // A new choice replaces the warnings about the old one, but not the warning
+    // of the watched file: a choice that fails (a preview) leaves that theme on
+    // screen, and its file is still broken. A side of an auto pair that is still
+    // missing warns again in the resolve below.
+    let watched = watched_theme_name();
+    state()
+        .warnings
+        .retain(|name, _| Some(name.as_str()) == watched.as_deref());
     let name = resolve_auto_theme(requested);
     let theme = match load_theme(&name, None) {
         Ok(theme) => theme,
@@ -785,6 +792,7 @@ pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
             return Err(error);
         }
     };
+    clear_theme_warning(&name);
     {
         let mut s = state();
         s.current_name = Some(name.clone());
@@ -793,6 +801,12 @@ pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
     if enable_watcher {
         start_theme_watcher();
     }
+    // The watcher now follows the theme that loaded, or still follows the old
+    // one when this choice does not start a watcher. Only its warning stays.
+    let watched = watched_theme_name();
+    state()
+        .warnings
+        .retain(|name, _| Some(name.as_str()) == watched.as_deref());
     notify_change();
     Ok(())
 }
@@ -843,6 +857,7 @@ fn start_theme_watcher() {
     }
     let stop = Arc::new(AtomicBool::new(false));
     let thread_stop = Arc::clone(&stop);
+    let name = watched_name.clone();
     let thread = hoocode_runtime::spawn_thread("hoocode-theme-watch", move || {
         let mut files = theme_watch_files(&theme_file);
         let mut last = signatures(&files);
@@ -868,7 +883,12 @@ fn start_theme_watcher() {
             }
         }
     });
-    state().watcher = Some(Watcher { stop, thread });
+    state().watcher = Some(Watcher { stop, thread, name });
+}
+
+/// The name of the theme whose file is watched, if a watcher runs.
+fn watched_theme_name() -> Option<String> {
+    state().watcher.as_ref().map(|w| w.name.clone())
 }
 
 /// The file signatures of `files`, in order.
@@ -945,7 +965,7 @@ fn reload_watched(watched_name: &str, theme_file: &Path) {
 pub fn stop_theme_watcher() {
     // Take the handle out first: the watcher needs the state lock to reload.
     let watcher = state().watcher.take();
-    if let Some(Watcher { stop, thread }) = watcher {
+    if let Some(Watcher { stop, thread, .. }) = watcher {
         stop.store(true, Ordering::Relaxed);
         if thread.thread().id() != std::thread::current().id() {
             let _ = thread.join();

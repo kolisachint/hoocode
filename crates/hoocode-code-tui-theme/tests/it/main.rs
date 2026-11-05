@@ -22,3 +22,4 @@ mod theme_export;
 mod theme_inherits;
 mod theme_picker_list;
 mod theme_token_literals;
+mod theme_warning_watch;
