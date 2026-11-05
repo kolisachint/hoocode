@@ -180,12 +180,12 @@ pub const TUI_KEYBINDINGS: &[(&str, &[&str], &str)] = &[
     ),
     (
         "tui.editor.cursorWordLeft",
-        &["alt+left", "ctrl+left", "alt+b"],
+        &["ctrl+left"],
         "Move cursor word left",
     ),
     (
         "tui.editor.cursorWordRight",
-        &["alt+right", "ctrl+right", "alt+f"],
+        &["ctrl+right"],
         "Move cursor word right",
     ),
     (
@@ -205,7 +205,8 @@ pub const TUI_KEYBINDINGS: &[(&str, &[&str], &str)] = &[
     ),
     (
         "tui.editor.jumpBackward",
-        &["ctrl+alt+]"],
+        // Unbound by default: every default is Ctrl, Shift, a leader key or a plain key (no Alt).
+        &[],
         "Jump backward to character",
     ),
     // Unbound by default: the app gives pageUp/pageDown to the transcript.
@@ -223,12 +224,12 @@ pub const TUI_KEYBINDINGS: &[(&str, &[&str], &str)] = &[
     ),
     (
         "tui.editor.deleteWordBackward",
-        &["ctrl+w", "alt+backspace"],
+        &["ctrl+w"],
         "Delete word backward",
     ),
     (
         "tui.editor.deleteWordForward",
-        &["alt+d", "alt+delete"],
+        &["ctrl+delete"],
         "Delete word forward",
     ),
     (
@@ -242,12 +243,14 @@ pub const TUI_KEYBINDINGS: &[(&str, &[&str], &str)] = &[
         "Delete to line end",
     ),
     ("tui.editor.yank", &["ctrl+y"], "Yank"),
-    ("tui.editor.yankPop", &["alt+y"], "Yank pop"),
+    ("tui.editor.yankPop", &["ctrl+x y"], "Yank pop"),
     ("tui.editor.undo", &["ctrl+-"], "Undo"),
-    // alt+u: `\x1b-` is not a key this parser reads, so alt+- would only
-    // work under the Kitty protocol.
-    ("tui.editor.redo", &["alt+u"], "Redo"),
-    ("tui.input.newLine", &["shift+enter"], "Insert newline"),
+    ("tui.editor.redo", &["ctrl+x z"], "Redo"),
+    (
+        "tui.input.newLine",
+        &["shift+enter", "ctrl+x enter"],
+        "Insert newline",
+    ),
     ("tui.input.submit", &["enter"], "Submit input"),
     ("tui.input.tab", &["tab"], "Tab / autocomplete"),
     ("tui.input.copy", &["ctrl+c"], "Copy selection"),

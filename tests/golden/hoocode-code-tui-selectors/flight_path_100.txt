@@ -3,7 +3,7 @@
    assistant  It wraps text greedily.                     add a width check to wrap_text
  › user       add a width check to wrap_text
  › filter
- ↑↓ move · enter go here · alt+l label · esc close · f1 more
+ ↑↓ move · enter go here · e label · esc close · f1 more
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
 r0 c1-6 fg=#14141c bg=#5cc8bb bold
@@ -35,10 +35,10 @@ r5 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r5 c3-10 fg=#989898 bg=#1e1e2a
 r5 c11-15 fg=#e5e5e7 bg=#1e1e2a
 r5 c16-26 fg=#989898 bg=#1e1e2a
-r5 c27-31 fg=#e5e5e7 bg=#1e1e2a
-r5 c32-40 fg=#989898 bg=#1e1e2a
-r5 c41-43 fg=#e5e5e7 bg=#1e1e2a
-r5 c44-52 fg=#989898 bg=#1e1e2a
-r5 c53-54 fg=#e5e5e7 bg=#1e1e2a
-r5 c55-59 fg=#989898 bg=#1e1e2a
-r5 c60-99 fg=#e5e5e7 bg=#1e1e2a
+r5 c27 fg=#e5e5e7 bg=#1e1e2a
+r5 c28-36 fg=#989898 bg=#1e1e2a
+r5 c37-39 fg=#e5e5e7 bg=#1e1e2a
+r5 c40-48 fg=#989898 bg=#1e1e2a
+r5 c49-50 fg=#e5e5e7 bg=#1e1e2a
+r5 c51-55 fg=#989898 bg=#1e1e2a
+r5 c56-99 fg=#e5e5e7 bg=#1e1e2a

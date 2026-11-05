@@ -70,6 +70,20 @@ pub fn key_display_text(id: &str) -> String {
     format_keys(&get_keybindings().get_keys(id), true)
 }
 
+/// The first key bound to `id`, as typed, with `escape` shown as `esc`: the
+/// key a hint names when one key is enough.
+pub fn key_hint_text(id: &str) -> String {
+    let first = get_keybindings()
+        .get_keys(id)
+        .first()
+        .cloned()
+        .unwrap_or_default();
+    match format_key_text(&first, false).as_str() {
+        "escape" => "esc".to_string(),
+        text => text.to_string(),
+    }
+}
+
 /// `keyDisplayLabel`: the taught (first) key only, capitalized.
 pub fn key_display_label(id: &str) -> String {
     get_keybindings()

@@ -14,7 +14,7 @@
 use hoocode_code_permissions::{is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo};
 use hoocode_code_tui_widgets::pane::{hint_line, input_line, Chip, Pane, PaneStyle};
 use hoocode_tui_components::Input;
-use hoocode_tui_keys::matches_key;
+use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{Line, Span};
 use hoocode_tui_render::Component;
 
@@ -245,6 +245,7 @@ impl Component for ClearanceCard {
             return;
         }
         let count = self.options().len();
+        let kb = get_keybindings();
         match data {
             // Esc alone is no (spec §6.2).
             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),
@@ -259,6 +260,10 @@ impl Component for ClearanceCard {
             "1" => self.choose(0),
             "2" if count >= 2 => self.choose(1),
             "3" if count >= 3 => self.choose(2),
+            // The dialog letters (K-P4): y yes, a always, n no. Only here, with no reply typed.
+            _ if kb.matches(data, "app.dialog.yes") => self.choose(0),
+            _ if kb.matches(data, "app.dialog.always") && count >= 3 => self.choose(1),
+            _ if kb.matches(data, "app.dialog.no") => self.choose(count - 1),
             "\u{7f}" | "\u{8}" => {}
             _ if matches_key(data, "up") => {
                 self.selected = (self.selected + count - 1) % count;

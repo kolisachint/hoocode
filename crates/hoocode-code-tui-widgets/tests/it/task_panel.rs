@@ -22,6 +22,8 @@ static LOCK: Mutex<()> = Mutex::new(());
 fn lock() -> MutexGuard<'static, ()> {
     let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     init_theme(Some("dark"), false);
+    // The app's defaults: the panel's hints name the keys from the keymap (K-P5).
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     task_store().clear();
     guard
 }
@@ -445,7 +447,7 @@ fn the_strip_is_the_first_row_with_every_tab_and_the_hint() {
     let mut panel = TaskPanelComponent::new();
     let strip_row = strip(&render(&mut panel, 120)[0]);
     assert!(
-        strip_row.contains("plan 0/1 · agents 1/1 · ctrl+g"),
+        strip_row.contains("plan 0/1 · agents 1/1 · ctrl+x g"),
         "{strip_row}"
     );
     // Switching the shown tab keeps the same strip.
@@ -535,7 +537,7 @@ fn the_strip_lists_the_tabs_that_have_rows() {
     create_with("find the bug", sub("explore"));
     let two = strip(&render(&mut panel, 120)[0]);
     assert!(
-        two.contains("plan 0/1") && two.contains("agents 0/1") && two.contains("ctrl+g"),
+        two.contains("plan 0/1") && two.contains("agents 0/1") && two.contains("ctrl+x g"),
         "{two}"
     );
     assert!(!two.contains("teams"));
@@ -1462,14 +1464,19 @@ fn escape_first_disarms_a_pending_cancel_and_then_leaves() {
 }
 
 #[test]
-fn ctrl_g_hides_the_panel_and_returns_the_keyboard_to_the_prompt() {
+fn ctrl_g_is_no_longer_the_panel_key_its_show_or_hide_is_leader_g() {
+    // K-4: show or hide moved to the leader (ctrl+x, then g), which the mode
+    // runs from the prompt (`leader_tests.rs`). A focused panel never sees the
+    // leader, so Ctrl+G does nothing here, and Esc still gives the keyboard back.
     let _g = lock();
     create("row a");
     let mut panel = focused();
     render(&mut panel, 120);
     press(&mut panel, CTRL_G);
+    assert!(panel.take_events().is_empty(), "ctrl+g is not a panel key");
+    assert!(!render(&mut panel, 120).is_empty(), "the panel stays shown");
+    press(&mut panel, ESC);
     assert_eq!(panel.take_events(), vec![PanelEvent::Exit]);
-    assert!(render(&mut panel, 120).is_empty(), "the panel is hidden");
 }
 #[test]
 fn losing_focus_clears_a_pending_cancel() {
@@ -1490,9 +1497,9 @@ fn focus_opens_the_flight_plan_console() {
     create("row a");
     let mut panel = focused();
     let lines = plain(&mut panel, 120);
-    // The `Tasks` chip with `/tasks · ctrl+g` after it, then the strip.
+    // The `Tasks` chip with `/tasks · ctrl+x g` after it, then the strip.
     assert!(
-        lines[0].contains("Tasks  /tasks · ctrl+g  plan 0/1"),
+        lines[0].contains("Tasks  /tasks · ctrl+x g  plan 0/1"),
         "{lines:#?}"
     );
     assert!(!lines[0].contains("agents"), "{lines:#?}");
@@ -1966,5 +1973,5 @@ fn up_is_handed_over_only_while_the_panel_is_shown_with_rows() {
     assert!(!panel.can_take_up(), "hidden in outline");
     panel.set_outline(false);
     panel.toggle_shown();
-    assert!(!panel.can_take_up(), "hidden by Ctrl+G");
+    assert!(!panel.can_take_up(), "hidden by the leader g");
 }

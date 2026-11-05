@@ -23,9 +23,7 @@ use hoocode_tui_render::Component;
 /// Cycles the selected row's effort through the model's levels, then unset.
 /// Handled by the picker itself (no `keybindings.rs` entry).
 pub const EFFORT_KEY: &str = "tab";
-/// Cycles the selected row's category: none, cheap, fast, standard, capable.
-/// `alt+j` is not bound elsewhere; `alt+t` (thinking) and `shift+tab` (mode) are not it.
-pub const CATEGORY_KEY: &str = "alt+j";
+// The category cycle is `app.models.category` (a bare letter, K-P4).
 
 const MAX_VISIBLE: usize = 8;
 
@@ -235,7 +233,7 @@ impl State {
             pair(format_key_text(EFFORT_KEY, false), "effort"),
             pair(key_text("app.models.save"), "save to settings"),
             pair("esc".to_string(), "close"),
-            pair(format_key_text(CATEGORY_KEY, false), "category"),
+            pair(key_text("app.models.category"), "category"),
             pair(key_text("app.models.enableAll"), "all on"),
             pair(key_text("app.models.clearAll"), "all off"),
             pair(key_text("app.models.toggleProvider"), "provider"),
@@ -516,14 +514,37 @@ impl Component for ScopedModelsSelectorComponent {
     }
 
     fn handle_input(&mut self, data: &str) {
-        if matches_key(data, "f1") {
+        let kb = get_keybindings();
+        // Bare letters (K-P4) act only while the query is empty; otherwise they type.
+        let bare = self.query().is_empty();
+        if matches_key(data, "f1") || (bare && kb.matches(data, "app.list.help")) {
             self.help = !self.help;
             return;
         }
-        let kb = get_keybindings();
         let navigated = self.state.borrow_mut().cursor.handle_query_key(data, &kb);
         if navigated {
             return;
+        }
+        if bare {
+            let step = if kb.matches(data, "app.list.down") {
+                Some(1)
+            } else if kb.matches(data, "app.list.up") {
+                Some(-1)
+            } else {
+                None
+            };
+            if let Some(delta) = step {
+                self.state.borrow_mut().cursor.step(delta);
+                return;
+            }
+            if kb.matches(data, "app.list.close") {
+                self.events.push(ScopedModelsEvent::Cancel);
+                return;
+            }
+            if kb.matches(data, "app.list.search") {
+                // The query is always focused: `/` on an empty query has nothing to focus.
+                return;
+            }
         }
 
         let reorder_up = kb.matches(data, "app.models.reorderUp");
@@ -573,8 +594,8 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        let enable = kb.matches(data, "app.models.enableAll");
-        if enable || kb.matches(data, "app.models.clearAll") {
+        let enable = bare && kb.matches(data, "app.models.enableAll");
+        if enable || (bare && kb.matches(data, "app.models.clearAll")) {
             let targets = self.search_targets();
             let next = {
                 let state = self.state.borrow();
@@ -588,7 +609,7 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        if kb.matches(data, "app.models.toggleProvider") {
+        if bare && kb.matches(data, "app.models.toggleProvider") {
             let next = {
                 let state = self.state.borrow();
                 state.filtered.get(state.cursor.selected()).map(|item| {
@@ -620,12 +641,12 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        if matches_key(data, CATEGORY_KEY) {
+        if bare && kb.matches(data, "app.models.category") {
             self.edit_selected(|extras, _| extras.category = next_category(extras.category));
             return;
         }
 
-        if kb.matches(data, "app.models.save") {
+        if bare && kb.matches(data, "app.models.save") {
             let entries = self.persisted_entries();
             {
                 let mut state = self.state.borrow_mut();

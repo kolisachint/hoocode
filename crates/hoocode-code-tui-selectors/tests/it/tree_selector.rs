@@ -12,31 +12,33 @@ use crate::support::lock;
 
 /// Raw input for a tree verb, derived from its binding (they have moved
 /// before; spelling the sequence out would keep passing on the old layout).
-fn alt_key(id: &str) -> String {
+/// The bare letter bound to `id` (K-P4): the key is typed as itself.
+fn bare_key(id: &str) -> String {
     // `lock()` installs the default app keybindings.
     let key = get_keybindings()
         .get_keys(id)
         .into_iter()
         .next()
         .unwrap_or_default();
-    let ch = key
-        .strip_prefix("alt+")
-        .filter(|rest| rest.chars().count() == 1)
-        .unwrap_or_else(|| panic!("expected an alt+<char> binding for {id}, got {key}"));
-    format!("\x1b{ch}")
+    assert_eq!(
+        key.chars().count(),
+        1,
+        "expected a bare letter for {id}, got {key}"
+    );
+    key
 }
 
 fn filter_default() -> String {
-    alt_key("app.tree.filter.default")
+    bare_key("app.tree.filter.default")
 }
 fn filter_user_only() -> String {
-    alt_key("app.tree.filter.userOnly")
+    bare_key("app.tree.filter.userOnly")
 }
 fn filter_labeled_only() -> String {
-    alt_key("app.tree.filter.labeledOnly")
+    bare_key("app.tree.filter.labeledOnly")
 }
 fn alt_t() -> String {
-    alt_key("app.tree.toggleLabelTimestamp")
+    bare_key("app.tree.toggleLabelTimestamp")
 }
 
 const TS: &str = "2026-01-01T00:00:00.000Z";
@@ -278,10 +280,8 @@ fn preserves_selection_through_multiple_empty_filter_switches() {
 const UP: &str = "\x1b[A";
 const DOWN: &str = "\x1b[B";
 const HOME: &str = "\x1b[H";
-const CTRL_LEFT: &str = "\x1b[1;5D";
-const CTRL_RIGHT: &str = "\x1b[1;5C";
-const ALT_LEFT: &str = "\x1b[1;3D";
-const ALT_RIGHT: &str = "\x1b[1;3C";
+const LEFT: &str = "\x1b[D";
+const RIGHT: &str = "\x1b[C";
 
 /// user-1 … asst-2, which branches into A (user-3a … asst-4a, active) and
 /// B (user-3b … user-4b).
@@ -310,37 +310,37 @@ fn walk(s: &mut TreeSelectorComponent, steps: &[(&str, &str)]) {
 }
 
 #[test]
-fn ctrl_right_unfolds_a_folded_node_then_jumps_segments_when_unfolded() {
+fn right_unfolds_a_folded_node_then_jumps_segments_when_unfolded() {
     let _g = lock();
     let tree = branching_tree();
     let mut s = selector(&tree, "asst-4a");
     walk(
         &mut s,
         &[
-            (CTRL_LEFT, "user-3a"),
-            (CTRL_LEFT, "user-3a"), // fold
-            (DOWN, "user-3b"),      // children hidden
+            (LEFT, "user-3a"),
+            (LEFT, "user-3a"), // fold
+            (DOWN, "user-3b"), // children hidden
             (UP, "user-3a"),
-            (CTRL_RIGHT, "user-3a"), // unfold
-            (DOWN, "asst-3a"),       // children back
-            (CTRL_LEFT, "user-3a"),
-            (CTRL_RIGHT, "asst-4a"), // segment jump to the leaf
+            (RIGHT, "user-3a"), // unfold
+            (DOWN, "asst-3a"),  // children back
+            (LEFT, "user-3a"),
+            (RIGHT, "asst-4a"), // segment jump to the leaf
         ],
     );
 }
 
 #[test]
-fn alt_left_and_right_are_aliases_for_fold_and_unfold_navigation() {
+fn h_and_l_fold_and_unfold_like_the_arrows() {
     let _g = lock();
     let tree = branching_tree();
     let mut s = selector(&tree, "asst-4a");
     walk(
         &mut s,
         &[
-            (ALT_LEFT, "user-3a"),
-            (ALT_LEFT, "user-3a"),
-            (ALT_RIGHT, "user-3a"),
-            (ALT_RIGHT, "asst-4a"),
+            ("h", "user-3a"),
+            ("h", "user-3a"),
+            ("l", "user-3a"),
+            ("l", "asst-4a"),
         ],
     );
 }
@@ -353,13 +353,13 @@ fn folding_the_root_hides_the_subtree_and_a_nested_fold_survives_unfolding() {
     walk(
         &mut s,
         &[
-            (CTRL_LEFT, "user-3a"),
-            (CTRL_LEFT, "user-3a"),  // fold user-3a
-            (CTRL_LEFT, "user-1"),   // folded → root
-            (CTRL_LEFT, "user-1"),   // fold user-1
-            (DOWN, "user-1"),        // the only visible row
-            (CTRL_RIGHT, "user-1"),  // unfold user-1
-            (CTRL_RIGHT, "user-3a"), // segment jump; user-3a still folded
+            (LEFT, "user-3a"),
+            (LEFT, "user-3a"),  // fold user-3a
+            (LEFT, "user-1"),   // folded → root
+            (LEFT, "user-1"),   // fold user-1
+            (DOWN, "user-1"),   // the only visible row
+            (RIGHT, "user-1"),  // unfold user-1
+            (RIGHT, "user-3a"), // segment jump; user-3a still folded
             (DOWN, "user-3b"),
         ],
     );
@@ -378,10 +378,10 @@ fn folds_and_navigates_on_a_non_active_branch() {
     walk(
         &mut s,
         &[
-            (CTRL_RIGHT, "user-4b"),
-            (CTRL_LEFT, "user-3b"),
-            (CTRL_LEFT, "user-3b"), // fold
-            (CTRL_LEFT, "user-1"),
+            (RIGHT, "user-4b"),
+            (LEFT, "user-3b"),
+            (LEFT, "user-3b"), // fold
+            (LEFT, "user-1"),
         ],
     );
 }
@@ -400,13 +400,13 @@ fn folds_and_navigates_with_multiple_roots() {
     walk(
         &mut s,
         &[
-            (CTRL_LEFT, "user-1"),
-            (CTRL_LEFT, "user-1"), // fold
+            (LEFT, "user-1"),
+            (LEFT, "user-1"), // fold
             (DOWN, "user-2"),
-            (CTRL_RIGHT, "asst-2"),
-            (CTRL_LEFT, "user-2"),
-            (CTRL_LEFT, "user-2"), // fold
-            (CTRL_LEFT, "user-2"), // a folded root stays
+            (RIGHT, "asst-2"),
+            (LEFT, "user-2"),
+            (LEFT, "user-2"), // fold
+            (LEFT, "user-2"), // a folded root stays
         ],
     );
 }
@@ -423,11 +423,7 @@ fn folding_the_root_hides_descendants_behind_filtered_out_entries() {
     let mut s = selector(&tree, "asst-2");
     walk(
         &mut s,
-        &[
-            (CTRL_LEFT, "user-1"),
-            (CTRL_LEFT, "user-1"),
-            (DOWN, "user-1"),
-        ],
+        &[(LEFT, "user-1"), (LEFT, "user-1"), (DOWN, "user-1")],
     );
 }
 
@@ -450,8 +446,8 @@ fn search_resets_fold_state() {
     let _g = lock();
     let tree = branching_tree();
     let mut s = selector(&tree, "asst-4a");
-    press(&mut s, CTRL_LEFT);
-    press(&mut s, CTRL_LEFT); // fold user-3a
+    press(&mut s, LEFT);
+    press(&mut s, LEFT); // fold user-3a
     press(&mut s, DOWN);
     assert_eq!(selected(&s).as_deref(), Some("user-3b"));
 
@@ -468,8 +464,8 @@ fn filter_mode_change_resets_fold_state() {
     let _g = lock();
     let tree = branching_tree();
     let mut s = selector(&tree, "asst-4a");
-    press(&mut s, CTRL_LEFT);
-    press(&mut s, CTRL_LEFT); // fold user-3a
+    press(&mut s, LEFT);
+    press(&mut s, LEFT); // fold user-3a
     press(&mut s, &filter_user_only());
     press(&mut s, &filter_default());
 

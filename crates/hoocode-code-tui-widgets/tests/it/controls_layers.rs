@@ -22,14 +22,25 @@ fn text_at(width: u16, controls: &mut ControlsComponent) -> String {
 fn tab_cycles_the_shown_layer() {
     let _g = lock();
     let mut controls = ControlsComponent::new();
+    // ctrl, then the leader's keys (K-P2), then alt, which has no defaults
+    // (K-P1) and so shows nothing, then plain, then ctrl again.
     assert!(text_at(100, &mut controls).contains("ctrl+a"));
     controls.handle_input("\t");
+    let leader = text_at(100, &mut controls);
+    assert!(
+        leader.contains("ctrl+x m") && !leader.contains("ctrl+a"),
+        "{leader}"
+    );
+    controls.handle_input("\t");
     let alt = text_at(100, &mut controls);
-    assert!(alt.contains("alt+") && !alt.contains("ctrl+a"), "{alt}");
+    assert!(
+        alt.contains("No matching bindings") && !alt.contains("ctrl+x"),
+        "{alt}"
+    );
     controls.handle_input("\t");
     let plain = text_at(100, &mut controls);
     assert!(
-        !plain.contains("ctrl+a") && !plain.contains("alt+"),
+        !plain.contains("ctrl+a") && !plain.contains("ctrl+x"),
         "{plain}"
     );
     controls.handle_input("\t");

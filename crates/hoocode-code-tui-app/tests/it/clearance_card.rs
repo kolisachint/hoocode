@@ -220,16 +220,32 @@ fn number_keys_enter_and_esc_answer() {
 }
 
 #[test]
-fn y_a_n_no_longer_answer() {
+fn y_a_n_answer_while_the_reply_is_empty() {
+    // K-P4: the dialog letters answer while no reply is typed.
     let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+    for (key, expected) in [
+        ("y", ClearanceChoice::Once),
+        ("a", ClearanceChoice::Always),
+        ("n", ClearanceChoice::Deny { reason: None }),
+    ] {
+        let (mut card, answered) = card(shell_info("$ echo hi"));
+        card.handle_input(key);
+        assert_eq!(*answered.borrow(), Some(expected), "key {key:?}");
+    }
+}
+
+#[test]
+fn y_a_n_type_into_a_reply_that_has_text() {
+    let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     let (mut card, answered) = card(shell_info("$ echo hi"));
-    for key in ["y", "a", "n"] {
+    for key in ["w", "a", "y", "n"] {
         card.handle_input(key);
     }
-    // They typed a reply instead.
-    assert_eq!(*answered.borrow(), None);
+    assert_eq!(*answered.borrow(), None, "letters join the reply");
     let rows = rows(&mut card, 100);
-    assert!(rows.iter().any(|row| row.contains("yan")), "{rows:?}");
+    assert!(rows.iter().any(|row| row.contains("› wayn")), "{rows:?}");
 }
 
 #[test]

@@ -1476,12 +1476,13 @@ impl Mode {
         // screen did not change.
         let status = if self.tool_output_view == ToolOutputView::Outline {
             format!(
-                "Thinking blocks: {}. Outline hides them; ctrl+o shows peek.",
+                "Thinking blocks: {}. Outline hides them; {} shows peek.",
                 if self.hide_thinking_block {
                     "hidden"
                 } else {
                     "visible"
-                }
+                },
+                hoocode_code_tui_keybindings::key_hint_text("app.tools.expand"),
             )
         } else if self.hide_thinking_block {
             "Thinking blocks: hidden".to_string()

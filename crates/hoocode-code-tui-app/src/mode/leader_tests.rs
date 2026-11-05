@@ -169,6 +169,74 @@ fn the_which_key_popup_waits_for_its_delay_then_lists_the_keymap() {
     );
 }
 
+/// A mode whose leader has the built-in defaults (no keybindings file).
+fn default_mode() -> Mode {
+    let mut mode = test_mode(None);
+    mode.leader = LeaderState::new(&AppKeybindingsManager::default());
+    mode
+}
+
+#[test]
+fn the_default_keymap_runs_its_leader_actions() {
+    let mut mode = default_mode();
+    let t0 = Instant::now();
+    press(&mut mode, CTRL_X, t0);
+    press(&mut mode, "m", t0);
+    assert_eq!(queued(&mode), vec![Action::ModelForward]);
+    press(&mut mode, CTRL_X, t0);
+    press(&mut mode, "M", t0);
+    assert_eq!(
+        queued(&mode),
+        vec![Action::ModelForward, Action::ModelBackward]
+    );
+}
+
+#[test]
+fn ctrl_x_g_is_the_task_panel_show_or_hide() {
+    // K-4: the task panel's show or hide is leader g (it was Ctrl+G).
+    let mut mode = default_mode();
+    let t0 = Instant::now();
+    press(&mut mode, CTRL_X, t0);
+    press(&mut mode, "g", t0);
+    assert_eq!(queued(&mode), vec![Action::PanelToggle]);
+}
+
+#[test]
+fn ctrl_x_then_enter_inserts_a_newline_in_the_prompt() {
+    let mut mode = default_mode();
+    let t0 = Instant::now();
+    press(&mut mode, "a", t0);
+    press(&mut mode, CTRL_X, t0);
+    press(&mut mode, "\r", t0);
+    assert_eq!(
+        prompt_text(&mode),
+        "a\n",
+        "the leader's enter is the newline"
+    );
+    assert!(queued(&mode).is_empty());
+}
+
+#[test]
+fn ctrl_x_slash_is_swallowed_and_opens_the_transcript_search() {
+    let mut mode = default_mode();
+    let t0 = Instant::now();
+    press(&mut mode, CTRL_X, t0);
+    press(&mut mode, "/", t0);
+    assert!(!mode.leader.is_pending());
+    assert_eq!(prompt_text(&mode), "", "/ is not typed into the prompt");
+    assert!(queued(&mode).is_empty());
+}
+
+#[test]
+fn ctrl_r_is_unbound_by_default_and_types_nothing() {
+    let mut mode = default_mode();
+    let t0 = Instant::now();
+    press(&mut mode, "a", t0);
+    press(&mut mode, "\x12", t0);
+    assert!(queued(&mode).is_empty());
+    assert_eq!(prompt_text(&mode), "a", "Ctrl+R has no default action");
+}
+
 #[test]
 fn a_key_that_is_a_release_is_not_a_leader_press() {
     let mut mode = leader_mode();

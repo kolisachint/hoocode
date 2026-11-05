@@ -126,13 +126,23 @@ impl Mode {
         }
     }
 
-    /// Queues the prompt action for a sequence's binding id. An id the prompt
-    /// does not answer gets a note instead.
+    /// Runs the binding a sequence names: a prompt action (queued), the
+    /// transcript search, or an editor command. An id none of them answers
+    /// gets a note instead.
     fn run_leader_binding(&mut self, id: &str, now: Instant) {
-        match action_for_binding(id) {
-            Some(action) => self.actions.borrow_mut().push(action),
-            None => self.leader.note("not here", now),
+        if let Some(action) = action_for_binding(id) {
+            self.actions.borrow_mut().push(action);
+            return;
         }
+        if id == "app.scroll.search" {
+            let view = self.scroll_view.clone();
+            view.borrow_mut().search_from_bottom(&mut self.tui);
+            return;
+        }
+        if self.editor.borrow_mut().editor.run_command(id) {
+            return;
+        }
+        self.leader.note("not here", now);
     }
 
     /// One pass of the loop on the leader: the timeout, the popup and the

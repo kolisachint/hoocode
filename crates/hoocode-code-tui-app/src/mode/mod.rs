@@ -452,6 +452,8 @@ struct Mode {
     transient: Rc<RefCell<TransientLines>>,
     /// The leader key at the prompt (Ctrl+X, then a key): see `leader.rs`.
     leader: leader::LeaderState,
+    /// The transcript's scroll view: the leader opens its search (`leader.rs`).
+    scroll_view: Rc<RefCell<crate::scroll_view::ScrollView>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
@@ -841,7 +843,7 @@ impl Mode {
         // the pinned view (`scroll_view.rs`).
         let prompt_text = editor.clone();
         let busy_session = session.clone();
-        install_scroll_view(
+        let scroll_view = install_scroll_view(
             &mut tui,
             as_component(&prompt_row),
             chat.clone(),
@@ -919,6 +921,7 @@ impl Mode {
             tips,
             transient,
             leader,
+            scroll_view,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,

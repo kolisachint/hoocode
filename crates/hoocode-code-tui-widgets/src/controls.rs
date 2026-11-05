@@ -44,6 +44,10 @@ fn effective_keys(entry: &KeybindingEntry) -> Vec<String> {
 /// A key name with literal parts (`esc` for escape, lower case), so the
 /// console reads the same on macOS and Linux.
 fn lit_key(key: &str) -> String {
+    // A leader sequence keeps its step as typed: `ctrl+x T` is not `ctrl+x t`.
+    if let Some((lead, step)) = key.split_once(' ') {
+        return format!("{} {step}", lit_key(lead));
+    }
     key.split('+')
         .map(|part| {
             if part.eq_ignore_ascii_case("escape") {
@@ -57,8 +61,17 @@ fn lit_key(key: &str) -> String {
 }
 
 /// The single letter a key names, with its layer: `g` is plain, `ctrl+g` is
-/// ctrl, `alt+m` is alt. Chords with anything else name no cap.
+/// ctrl, `alt+m` is alt, and `ctrl+x m` (a leader sequence, K-P2) is leader
+/// with the step's own character, so `m` and `M` stay apart. Chords with
+/// anything else name no cap.
 fn layer_cap(key: &str) -> Option<(Layer, char)> {
+    if let Some((_, step)) = key.split_once(' ') {
+        let mut chars = step.chars();
+        return match (chars.next(), chars.next()) {
+            (Some(c), None) => Some((Layer::Leader, c)),
+            _ => None,
+        };
+    }
     let lower = key.to_ascii_lowercase();
     let (layer, letter) = match lower.split_once('+') {
         None => {
@@ -90,6 +103,8 @@ enum Layer {
     Plain,
     #[default]
     Ctrl,
+    /// The keys after the leader (`ctrl+x`, then one key).
+    Leader,
     Alt,
 }
 
@@ -98,7 +113,8 @@ impl Layer {
     fn next(self) -> Self {
         match self {
             Layer::Plain => Layer::Ctrl,
-            Layer::Ctrl => Layer::Alt,
+            Layer::Ctrl => Layer::Leader,
+            Layer::Leader => Layer::Alt,
             Layer::Alt => Layer::Plain,
         }
     }
@@ -107,6 +123,7 @@ impl Layer {
         match self {
             Layer::Plain => "plain",
             Layer::Ctrl => "ctrl",
+            Layer::Leader => "leader",
             Layer::Alt => "alt",
         }
     }
@@ -359,7 +376,7 @@ impl ControlsComponent {
     fn tabs(&self) -> Line<'static> {
         let pal = Palette::current();
         let mut spans = Vec::new();
-        for layer in [Layer::Plain, Layer::Ctrl, Layer::Alt] {
+        for layer in [Layer::Plain, Layer::Ctrl, Layer::Leader, Layer::Alt] {
             if !spans.is_empty() {
                 spans.push(Span::raw("   ".to_string()));
             }

@@ -353,7 +353,13 @@ fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool) -> Line<'static>
         spans.push(Span::styled(label, style));
     }
     if hint {
-        spans.push(Span::styled(" · ctrl+g", st.dim_style()));
+        spans.push(Span::styled(
+            format!(
+                " · {}",
+                hoocode_code_tui_keybindings::key_hint_text("app.panel.focus")
+            ),
+            st.dim_style(),
+        ));
     }
     Line::from(spans)
 }
@@ -700,7 +706,10 @@ fn render_flight_plan(
     let row_inner = width.saturating_sub(4);
     let mut pane = if focused {
         let mut pane = Pane::new("Tasks");
-        pane.command = "/tasks · ctrl+g".to_string();
+        pane.command = format!(
+            "/tasks · {}",
+            hoocode_code_tui_keybindings::key_hint_text("app.panel.focus")
+        );
         pane.facts = tab_strip(model, view, false);
         pane.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
         pane.hint = hint_line(&pick_hints(model, selected));
