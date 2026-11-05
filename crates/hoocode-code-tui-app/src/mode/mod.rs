@@ -623,6 +623,9 @@ impl Mode {
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
 
+        // The bundled themes' reference copies, after an upgrade. A failure is
+        // a diagnostics warning, never a crash.
+        hoocode_code_tui_theme::refresh_theme_defaults(VERSION);
         // Themes: the settings' theme (retired names resolve), watched.
         set_registered_themes(Vec::new());
         init_theme(theme_name.as_deref(), true);

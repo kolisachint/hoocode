@@ -18,7 +18,7 @@ use crate::schema::{
 use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, PANE_BG_TOKENS, THEME_BGS};
 
 /// The bundled theme files, by file name (the `readdirSync().sort()` order).
-const BUILTIN_THEME_FILES: [(&str, &str); 2] = [
+pub(crate) const BUILTIN_THEME_FILES: [(&str, &str); 2] = [
     ("dark.json", include_str!("../themes/dark.json")),
     ("light.json", include_str!("../themes/light.json")),
 ];
@@ -586,6 +586,8 @@ struct State {
     watcher: Option<Watcher>,
     /// Problems with themes the user asked for, by the name they asked for.
     warnings: BTreeMap<String, String>,
+    /// Problems that are not one theme's load failure (see [`record_notice`]).
+    notices: BTreeMap<String, String>,
 }
 
 /// Counts new theme warnings, so the screen can show each one once.
@@ -595,7 +597,31 @@ static WARNING_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::Ato
 /// Each says what the screen does instead (keeps the last good theme, or
 /// uses the built-in dark for now). A warning clears when its name loads.
 pub fn theme_warnings() -> Vec<String> {
-    state().warnings.values().cloned().collect()
+    let s = state();
+    s.warnings
+        .values()
+        .chain(s.notices.values())
+        .cloned()
+        .collect()
+}
+
+/// Records a problem that is not a theme's failure to load, such as the
+/// defaults folder that could not be written. It is listed with the theme
+/// warnings until [`clear_notice`] removes it.
+pub(crate) fn record_notice(key: &str, message: String) {
+    {
+        let mut s = state();
+        if s.notices.get(key) == Some(&message) {
+            return;
+        }
+        s.notices.insert(key.to_string(), message);
+    }
+    WARNING_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Removes the notice `key`, once the problem is gone.
+pub(crate) fn clear_notice(key: &str) {
+    state().notices.remove(key);
 }
 
 /// Bumps with every new theme warning (a repeat of the same one does not).
@@ -812,11 +838,12 @@ fn start_theme_watcher() {
     let stop = Arc::new(AtomicBool::new(false));
     let thread_stop = Arc::clone(&stop);
     let thread = hoocode_runtime::spawn_thread("hoocode-theme-watch", move || {
-        let mut last = file_signature(&theme_file);
+        let mut files = theme_watch_files(&theme_file);
+        let mut last = signatures(&files);
         let mut pending: Option<Instant> = None;
         while !thread_stop.load(Ordering::Relaxed) {
             std::thread::sleep(WATCH_POLL);
-            let signature = file_signature(&theme_file);
+            let signature = signatures(&files);
             if signature != last {
                 last = signature;
                 pending = Some(Instant::now());
@@ -826,11 +853,52 @@ fn start_theme_watcher() {
                 if thread_stop.load(Ordering::Relaxed) {
                     break;
                 }
+                // An edit may have changed `inherits`, so the chain is read
+                // again. The snapshot comes before the reload, so an edit made
+                // during the reload triggers another one.
+                files = theme_watch_files(&theme_file);
+                last = signatures(&files);
                 reload_watched(&watched_name, &theme_file);
             }
         }
     });
     state().watcher = Some(Watcher { stop, thread });
+}
+
+/// The file signatures of `files`, in order.
+fn signatures(files: &[PathBuf]) -> Vec<Option<(SystemTime, u64)>> {
+    files.iter().map(|f| file_signature(f)).collect()
+}
+
+/// The files the watcher polls for a custom theme: the file and the user
+/// files its `inherits` chain reads, so
+/// an edit to a base reloads the theme too. Built-in bases never change and
+/// are not listed. The chain stops at a missing file or a repeated one.
+pub fn theme_watch_files(theme_file: &Path) -> Vec<PathBuf> {
+    let dir = theme_file
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let mut files = vec![theme_file.to_path_buf()];
+    let mut content = std::fs::read_to_string(theme_file).ok();
+    while let Some(raw) = content.take() {
+        let Ok(Value::Object(json)) = serde_json::from_str::<Value>(&raw) else {
+            break;
+        };
+        let Some(base) = json.get("inherits").and_then(Value::as_str) else {
+            break;
+        };
+        if is_builtin_theme(base) {
+            break;
+        }
+        let path = dir.join(format!("{base}.json"));
+        if files.contains(&path) || !path.is_file() {
+            break;
+        }
+        content = std::fs::read_to_string(&path).ok();
+        files.push(path);
+    }
+    files
 }
 
 fn reload_watched(watched_name: &str, theme_file: &Path) {

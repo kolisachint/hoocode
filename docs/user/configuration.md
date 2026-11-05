@@ -13,6 +13,7 @@ to move it.
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
 | `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark` and `light`, and your files here (by file name, with the path shown). A theme may set `"inherits": "<name>"` to take the colors it leaves out from a built-in theme or another file here. The `theme` setting also accepts `auto` (follows the terminal background). A file that does not load, or a name that is not a theme, shows a warning under theme diagnostics: a switch keeps the theme on screen, and at startup the built-in `dark` stands in until the setting is fixed. |
+| `~/.hoocode/themes/defaults/` | Reference copies of the built-in themes (`dark.json`, `light.json`) and `theme-schema.json`. hoocode writes them again after each upgrade, so they match the version you run; a copy you edit is replaced at the next upgrade. The folder is not a theme list: `/theme` never shows it. To start a custom theme, copy one up a level to `~/.hoocode/themes/`, rename it, and change what you need. A shorter theme can instead set `"inherits": "dark"` (or `"light"`, or another file in `~/.hoocode/themes/`) and keep only its own colors. For editor completion, set a custom theme's `"$schema"` to the local `theme-schema.json` path. |
 | `~/.hoocode/sessions/` | Saved sessions |
 
 ## Per project

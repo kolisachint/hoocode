@@ -10,6 +10,7 @@
 
 pub mod chalk;
 pub mod color;
+pub mod defaults;
 pub mod registry;
 pub mod schema;
 pub mod theme;
@@ -20,6 +21,7 @@ pub use color::{
     hex_to_rgb, relative_luminance, ColorMode, RawColor, MAGENTA_HUE_MAX, MAGENTA_HUE_MIN,
     MIN_MAGENTA_SATURATION,
 };
+pub use defaults::{defaults_dir, refresh_theme_defaults, write_theme_defaults};
 pub use registry::{
     builtin_theme_source, create_theme, current_theme_name, detect_terminal_background_with,
     get_available_themes, get_available_themes_with_paths, get_resolved_theme_colors,
@@ -27,8 +29,8 @@ pub use registry::{
     load_theme_from_path, load_theme_json, on_theme_change, picker_theme_list,
     picker_theme_list_in, resolve_auto_theme, set_registered_themes, set_theme, set_theme_instance,
     stop_theme_watcher, theme, theme_generation, theme_warning_generation, theme_warnings,
-    try_theme, user_theme_path, ThemeExportColors, ThemeInfo, AUTO_DARK_THEME, AUTO_LIGHT_THEME,
-    AUTO_THEME_POLL_INTERVAL, THEME_SCHEMA_JSON,
+    theme_watch_files, try_theme, user_theme_path, ThemeExportColors, ThemeInfo, AUTO_DARK_THEME,
+    AUTO_LIGHT_THEME, AUTO_THEME_POLL_INTERVAL, THEME_SCHEMA_JSON,
 };
 pub use schema::{parse_theme_json, parse_theme_json_content, ThemeJson, REQUIRED_COLOR_TOKENS};
 pub use theme::{
