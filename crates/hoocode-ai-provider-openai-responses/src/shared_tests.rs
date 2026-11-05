@@ -557,6 +557,136 @@ fn edit_tool() -> Tool {
     }
 }
 
+/// Parallel-call cross-wiring: when a proxy lags an item's completion
+/// behind the next item's start, the stale `output_item.done` must not
+/// overwrite the in-flight call's arguments, or the second call keeps the
+/// first call's arguments for good (one `Read` row per call turns into two
+/// identical rows).
+#[test]
+fn a_lagging_item_done_must_not_rewrite_the_next_call() {
+    let item1 = json!({"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "Read", "arguments": ""});
+    let mut done1 = item1.clone();
+    done1["arguments"] = json!(r#"{"path":"/one"}"#);
+    let item2 = json!({"type": "function_call", "id": "fc_2", "call_id": "call_2", "name": "Shell", "arguments": ""});
+    let mut done2 = item2.clone();
+    done2["arguments"] = json!(r#"{"command":"x"}"#);
+    let (_events, output, result) = process(
+        &responses_model(),
+        &[
+            json!({"type": "response.output_item.added", "item": item1}),
+            json!({"type": "response.function_call_arguments.delta", "delta": r#"{"path":"/one"}"#}),
+            json!({"type": "response.output_item.added", "item": item2}),
+            // The first item's completion lags behind the second item's start.
+            json!({"type": "response.output_item.done", "item": done1}),
+            json!({"type": "response.function_call_arguments.delta", "delta": r#"{"command":"x"}"#}),
+            json!({"type": "response.output_item.done", "item": done2}),
+        ],
+    );
+    assert!(result.is_ok());
+    assert_eq!(output.content.len(), 2);
+    let Content::ToolCall(first) = &output.content[0] else {
+        panic!("first call")
+    };
+    let Content::ToolCall(second) = &output.content[1] else {
+        panic!("second call")
+    };
+    assert_eq!(first.arguments, json!({"path": "/one"}));
+    assert_eq!(
+        second.arguments,
+        json!({"command": "x"}),
+        "stale done rewrote the second call"
+    );
+}
+
+/// The order a buffering proxy emits for parallel calls: every item's add
+/// (and deltas) first, completions paired per item only after the last item
+/// started. Each call keeps its own arguments.
+#[test]
+fn lagging_completions_keep_every_call_s_own_arguments() {
+    let files = ["alpha.md", "beta.md", "gamma.md", "delta.md"];
+    let mut events = Vec::new();
+    for (i, file) in files.iter().enumerate() {
+        events.push(json!({"type": "response.output_item.added", "item": {"type": "function_call", "id": format!("fc_{i}"), "call_id": format!("call_{i}"), "name": "Read", "arguments": ""}}));
+        events.push(json!({"type": "response.function_call_arguments.delta", "item_id": format!("fc_{i}"), "delta": format!(r#"{{"path":"{file}"}}"#)}));
+    }
+    for (i, file) in files.iter().enumerate() {
+        let args = format!(r#"{{"path":"{file}"}}"#);
+        events.push(json!({"type": "response.function_call_arguments.done", "item_id": format!("fc_{i}"), "arguments": args}));
+        let mut done = json!({"type": "function_call", "id": format!("fc_{i}"), "call_id": format!("call_{i}"), "name": "Read"});
+        done["arguments"] = Value::String(args);
+        events.push(json!({"type": "response.output_item.done", "item": done}));
+    }
+    let (_events, output, result) = process(&responses_model(), &events);
+    assert!(result.is_ok());
+    assert_eq!(output.content.len(), 4);
+    for (i, file) in files.iter().enumerate() {
+        let Content::ToolCall(call) = &output.content[i] else {
+            panic!("call {i}")
+        };
+        assert_eq!(call.id, format!("call_{i}|fc_{i}"));
+        assert_eq!(
+            call.arguments,
+            json!({"path": *file}),
+            "call {i} lost its arguments"
+        );
+    }
+}
+
+/// Argument deltas carry their item's id: a delta arriving after the next
+/// item started still lands on its own call.
+#[test]
+fn deltas_route_to_their_own_item() {
+    let item1 = json!({"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "Read", "arguments": ""});
+    let item2 = json!({"type": "function_call", "id": "fc_2", "call_id": "call_2", "name": "Shell", "arguments": ""});
+    let (_events, output, result) = process(
+        &responses_model(),
+        &[
+            json!({"type": "response.output_item.added", "item": item1}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_1", "delta": r#"{"path":"/on"#}),
+            json!({"type": "response.output_item.added", "item": item2}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_1", "delta": r#"e"}"#}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_2", "delta": r#"{"command":"x"}"#}),
+            json!({"type": "response.function_call_arguments.done", "item_id": "fc_1", "arguments": r#"{"path":"/one"}"#}),
+            json!({"type": "response.function_call_arguments.done", "item_id": "fc_2", "arguments": r#"{"command":"x"}"#}),
+            json!({"type": "response.output_item.done", "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "Read", "arguments": r#"{"path":"/one"}"#}}),
+            json!({"type": "response.output_item.done", "item": {"type": "function_call", "id": "fc_2", "call_id": "call_2", "name": "Shell", "arguments": r#"{"command":"x"}"#}}),
+        ],
+    );
+    assert!(result.is_ok());
+    assert_eq!(output.content.len(), 2);
+    let Content::ToolCall(first) = &output.content[0] else {
+        panic!("first call")
+    };
+    let Content::ToolCall(second) = &output.content[1] else {
+        panic!("second call")
+    };
+    assert_eq!(first.arguments, json!({"path": "/one"}));
+    assert_eq!(second.arguments, json!({"command": "x"}));
+}
+
+/// A replayed add for an already open item id reuses its block instead of
+/// pushing the call a second time.
+#[test]
+fn a_replayed_add_reuses_its_block() {
+    let item = json!({"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "Read", "arguments": ""});
+    let (_events, output, result) = process(
+        &responses_model(),
+        &[
+            json!({"type": "response.output_item.added", "item": item.clone()}),
+            json!({"type": "response.output_item.added", "item": item}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_1", "delta": r#"{"path":"/one"}"#}),
+            json!({"type": "response.output_item.done", "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "Read", "arguments": r#"{"path":"/one"}"#}}),
+        ],
+    );
+    assert!(result.is_ok());
+    assert_eq!(output.content.len(), 1);
+    let Content::ToolCall(call) = &output.content[0] else {
+        panic!("call")
+    };
+    assert_eq!(call.id, "call_1|fc_1");
+    assert_eq!(call.arguments, json!({"path": "/one"}));
+}
+
 #[test]
 fn responses_tools_are_strict_and_closed_when_constrained() {
     let tool = &convert_responses_tools(&[edit_tool()], None, true)[0];

@@ -4,7 +4,7 @@
 //!
 //! Port of hoocode `providers/openai-responses-shared.ts` (v0.5.89).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use futures_util::StreamExt;
 use hoocode_ai_stream::{
@@ -321,15 +321,30 @@ pub struct ResponsesStreamOptions {
 /// `resolveServiceTier(responseServiceTier, requestServiceTier)`.
 pub type ResolveServiceTier = fn(Option<&str>, Option<&str>) -> Option<String>;
 
+/// One function-call item's assembly: its content block and the argument
+/// JSON accumulated for it so far.
+struct ToolCallSlot {
+    block: usize,
+    args: String,
+}
+
 /// State of `processResponsesStream`: the message being built, the current
 /// output item (kept up to date with summary/content parts) and block.
+///
+/// Function-call assembly is routed per item id, not through the open block:
+/// proxies may deliver one call's completion after the next call started, and
+/// applying it to the open block rewrites the wrong call's arguments (the
+/// first call's data leaking into the last call of a parallel batch).
+/// Events without an item id keep the legacy open-block behavior.
 pub struct ResponsesStreamState {
     pub output: SharedMessage,
     current_item: Option<Value>,
     /// Content index of the open block.
     current_block: Option<usize>,
-    /// `partialJson` of the open tool-call block.
+    /// `partialJson` of the open tool-call block (legacy path only).
     partial_json: String,
+    /// Open function-call items by item id.
+    tool_calls: HashMap<String, ToolCallSlot>,
 }
 
 impl ResponsesStreamState {
@@ -341,7 +356,13 @@ impl ResponsesStreamState {
             current_item: None,
             current_block: None,
             partial_json: String::new(),
+            tool_calls: HashMap::new(),
         }
+    }
+
+    /// Content index of the open function-call item `key`, if it is open.
+    fn tool_slot_block(&self, key: &str) -> Option<usize> {
+        self.tool_calls.get(key).map(|slot| slot.block)
     }
 
     fn last_index(&self) -> usize {
@@ -462,21 +483,45 @@ impl ResponsesStreamState {
                     }
                     Some("function_call") => {
                         self.current_item = Some(item.clone());
-                        self.output.content.push(Content::ToolCall(ToolCallContent {
-                            id: format!(
-                                "{}|{}",
-                                item["call_id"].as_str().unwrap_or_default(),
-                                item["id"].as_str().unwrap_or_default()
-                            ),
-                            name: item["name"].as_str().unwrap_or_default().to_string(),
-                            arguments: json!({}),
-                            thought_signature: None,
-                        }));
-                        self.partial_json =
-                            item["arguments"].as_str().unwrap_or_default().to_string();
-                        self.current_block = Some(self.last_index());
+                        let key = item["id"].as_str().unwrap_or_default().to_string();
+                        let item_args = item["arguments"].as_str().unwrap_or_default().to_string();
+                        // A replayed add for a known item reuses its block:
+                        // pushing again would render the call twice.
+                        let at = if key.is_empty() {
+                            None
+                        } else {
+                            self.tool_slot_block(&key)
+                        };
+                        let at = match at {
+                            Some(at) => at,
+                            None => {
+                                self.output.content.push(Content::ToolCall(ToolCallContent {
+                                    id: format!(
+                                        "{}|{}",
+                                        item["call_id"].as_str().unwrap_or_default(),
+                                        item["id"].as_str().unwrap_or_default()
+                                    ),
+                                    name: item["name"].as_str().unwrap_or_default().to_string(),
+                                    arguments: json!({}),
+                                    thought_signature: None,
+                                }));
+                                let at = self.last_index();
+                                if !key.is_empty() {
+                                    self.tool_calls.insert(
+                                        key,
+                                        ToolCallSlot {
+                                            block: at,
+                                            args: item_args.clone(),
+                                        },
+                                    );
+                                }
+                                at
+                            }
+                        };
+                        self.partial_json = item_args;
+                        self.current_block = Some(at);
                         sender.push(AssistantMessageEvent::ToolCallStart {
-                            index: self.last_index(),
+                            index: at,
                             partial: self.output.share(),
                         });
                     }
@@ -550,8 +595,27 @@ impl ResponsesStreamState {
                 }
             }
             "response.function_call_arguments.delta" => {
-                if self.item_type() == Some("function_call") && self.block_is("toolCall") {
-                    let delta = event["delta"].as_str().unwrap_or_default();
+                let delta = event["delta"].as_str().unwrap_or_default();
+                let key = event.get("item_id").and_then(Value::as_str).unwrap_or("");
+                let at = if key.is_empty() {
+                    None
+                } else {
+                    self.tool_slot_block(key)
+                };
+                if let Some(at) = at {
+                    if let Some(slot) = self.tool_calls.get_mut(key) {
+                        slot.args.push_str(delta);
+                        let args = parse_arguments(&slot.args);
+                        if let Some(Content::ToolCall(tc)) = self.output.content.get_mut(at) {
+                            tc.arguments = args;
+                        }
+                        sender.push(AssistantMessageEvent::ToolCallDelta {
+                            index: at,
+                            delta: delta.to_string(),
+                            partial: self.output.share(),
+                        });
+                    }
+                } else if self.item_type() == Some("function_call") && self.block_is("toolCall") {
                     self.partial_json.push_str(delta);
                     let args = parse_arguments(&self.partial_json);
                     if let Some(Content::ToolCall(tc)) = self.block() {
@@ -565,8 +629,32 @@ impl ResponsesStreamState {
                 }
             }
             "response.function_call_arguments.done" => {
-                if self.item_type() == Some("function_call") && self.block_is("toolCall") {
-                    let arguments = event["arguments"].as_str().unwrap_or_default().to_string();
+                let arguments = event["arguments"].as_str().unwrap_or_default().to_string();
+                let key = event.get("item_id").and_then(Value::as_str).unwrap_or("");
+                let at = if key.is_empty() {
+                    None
+                } else {
+                    self.tool_slot_block(key)
+                };
+                if let Some(at) = at {
+                    let previous = match self.tool_calls.get_mut(key) {
+                        Some(slot) => std::mem::replace(&mut slot.args, arguments.clone()),
+                        None => String::new(),
+                    };
+                    let args = parse_arguments(&arguments);
+                    if let Some(Content::ToolCall(tc)) = self.output.content.get_mut(at) {
+                        tc.arguments = args;
+                    }
+                    if let Some(delta) = arguments.strip_prefix(previous.as_str()) {
+                        if !delta.is_empty() {
+                            sender.push(AssistantMessageEvent::ToolCallDelta {
+                                index: at,
+                                delta: delta.to_string(),
+                                partial: self.output.share(),
+                            });
+                        }
+                    }
+                } else if self.item_type() == Some("function_call") && self.block_is("toolCall") {
                     let previous = std::mem::replace(&mut self.partial_json, arguments.clone());
                     let args = parse_arguments(&self.partial_json);
                     if let Some(Content::ToolCall(tc)) = self.block() {
@@ -647,22 +735,55 @@ impl ResponsesStreamState {
                         self.current_block = None;
                     }
                     Some("function_call") => {
-                        if self.block_is("toolCall") {
-                            let args = if self.partial_json.is_empty() {
-                                parse_arguments(item["arguments"].as_str().unwrap_or("{}"))
-                            } else {
-                                parse_arguments(&self.partial_json)
-                            };
-                            if let Some(Content::ToolCall(tc)) = self.block() {
-                                tc.arguments = args;
+                        // A completion names its own item: a lagging one must
+                        // not rewrite (and detach) a newer open call.
+                        let key = item["id"].as_str().unwrap_or_default();
+                        let at = if key.is_empty() {
+                            None
+                        } else {
+                            self.tool_slot_block(key)
+                        };
+                        match at {
+                            Some(at) => {
+                                let buffered = self.tool_calls.remove(key).map(|slot| slot.args);
+                                let args = match buffered.as_deref() {
+                                    Some(buf) if !buf.is_empty() => parse_arguments(buf),
+                                    _ => {
+                                        parse_arguments(item["arguments"].as_str().unwrap_or("{}"))
+                                    }
+                                };
+                                if let Some(Content::ToolCall(tc)) = self.output.content.get_mut(at)
+                                {
+                                    tc.arguments = args;
+                                }
+                                if self.current_block == Some(at) {
+                                    self.partial_json.clear();
+                                    self.current_block = None;
+                                }
+                                sender.push(AssistantMessageEvent::ToolCallEnd {
+                                    index: at,
+                                    partial: self.output.share(),
+                                });
+                            }
+                            None => {
+                                if self.block_is("toolCall") {
+                                    let args = if self.partial_json.is_empty() {
+                                        parse_arguments(item["arguments"].as_str().unwrap_or("{}"))
+                                    } else {
+                                        parse_arguments(&self.partial_json)
+                                    };
+                                    if let Some(Content::ToolCall(tc)) = self.block() {
+                                        tc.arguments = args;
+                                    }
+                                }
+                                self.partial_json.clear();
+                                self.current_block = None;
+                                sender.push(AssistantMessageEvent::ToolCallEnd {
+                                    index: self.last_index(),
+                                    partial: self.output.share(),
+                                });
                             }
                         }
-                        self.partial_json.clear();
-                        self.current_block = None;
-                        sender.push(AssistantMessageEvent::ToolCallEnd {
-                            index: self.last_index(),
-                            partial: self.output.share(),
-                        });
                     }
                     _ => {}
                 }
