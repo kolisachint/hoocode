@@ -10,6 +10,7 @@ mod learn_settings_pane;
 mod mission_log;
 mod model_selector;
 mod oauth_selector;
+mod picker_letter_gate;
 mod picker_widths;
 mod platform_settings_pane;
 mod plugin_settings_keyboard;

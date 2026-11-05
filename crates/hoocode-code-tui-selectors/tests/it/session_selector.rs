@@ -229,6 +229,7 @@ fn two_sessions() -> Vec<SessionInfo> {
 fn ctrl_backspace_is_not_delete_with_a_non_empty_query() {
     let _g = lock();
     let mut s = selector(two_sessions(), default_options(), None);
+    press_list(&mut s, "/");
     let mut events = press_list(&mut s, "a");
     events.extend(press_list(&mut s, CTRL_BACKSPACE));
     assert!(confirmation_changes(&events).is_empty());
@@ -253,6 +254,7 @@ fn delete_key_types_into_a_non_empty_query() {
     let _g = lock();
     let (_, delete) = bare_key("app.session.delete");
     let mut s = selector(two_sessions(), default_options(), None);
+    press_list(&mut s, "/");
     let mut events = press_list(&mut s, "a");
     events.extend(press_list(&mut s, &delete));
     assert!(
@@ -558,6 +560,7 @@ fn a_search_matches_the_parent_rows_only() {
     let _g = lock();
     let sessions = parent_and_run(SubagentState::Finished("complete".into()));
     let mut s = selector(sessions, default_options(), None);
+    press_list(&mut s, "/");
     // "scan" is only in the run's own text.
     for ch in "scan".chars() {
         press_list(&mut s, &ch.to_string());
@@ -572,6 +575,7 @@ fn a_search_still_finds_the_parent() {
     let _g = lock();
     let sessions = parent_and_run(SubagentState::Finished("complete".into()));
     let mut s = selector(sessions, default_options(), None);
+    press_list(&mut s, "/");
     for ch in "parent".chars() {
         press_list(&mut s, &ch.to_string());
     }
@@ -736,6 +740,7 @@ fn q_closes_the_list_on_an_empty_query_and_types_into_a_query() {
     let events = press_list(&mut s, "q");
     assert!(events.iter().any(|e| matches!(e, ListEvent::Cancel)));
     let mut s = selector(two_sessions(), default_options(), None);
+    press_list(&mut s, "/");
     press_list(&mut s, "a");
     let events = press_list(&mut s, "q");
     assert!(!events.iter().any(|e| matches!(e, ListEvent::Cancel)));

@@ -38,6 +38,8 @@ crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs | matches_key(da
 crates/hoocode-code-tui-app/src/mode/leader.rs | matches_key(data, "ctrl+c") | key handling: Ctrl+C ends a pending leader, not a hint
 crates/hoocode-code-tui-app/src/mode/leader.rs | matches_key(data, "ctrl+d") | key handling: Ctrl+D ends a pending leader, not a hint
 crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs | matches_key(data, "escape") | key handling: escape cancels, not a hint
+crates/hoocode-code-tui-selectors/src/session_selector.rs | matches_key(data, "escape") | key handling: escape clears the query or closes, not a hint
+crates/hoocode-code-tui-selectors/src/tree_selector.rs | matches_key(data, "escape") | key handling: escape clears the query or closes, not a hint
 crates/hoocode-code-tui-selectors/src/session_selector.rs | matches_key(data, "f1") | key handling: f1 opens help beside the keymap help key
 crates/hoocode-code-tui-selectors/src/tree_selector.rs | matches_key(data, "f1") | key handling: f1 opens help beside the keymap help key
 

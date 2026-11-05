@@ -292,6 +292,7 @@ fn ctrl_c_clears_the_search_before_cancelling() {
     let _g = lock();
     let mut selector = ScopedModelsSelectorComponent::new(faux(), None);
     // `z` and `w` are no picker keys. (`x` on an empty query clears every model.)
+    selector.handle_input("/");
     selector.handle_input("z");
     selector.handle_input("w");
     assert!(strip(&selector.render(100)).contains("No matching models"));
@@ -451,6 +452,7 @@ fn a_letter_types_into_a_query_and_acts_only_while_the_query_is_empty() {
     // K-P4: `x` is clear-all on an empty query and a typed letter once a query exists.
     let _g = lock();
     let mut selector = ScopedModelsSelectorComponent::new(faux(), None);
+    selector.handle_input("/");
     selector.handle_input("z");
     selector.handle_input("x");
     assert!(

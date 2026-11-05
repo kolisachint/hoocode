@@ -22,10 +22,12 @@ use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_tui_components::{Input, PickerCursor};
-use hoocode_tui_keys::get_keybindings;
+use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{bold, italic, Line, Palette, Span};
 use hoocode_tui_render::Component;
 use serde_json::Value;
+
+use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
 
 /// One session entry, flattened out of the tree.
 struct Node {
@@ -246,6 +248,8 @@ pub struct TreeList {
     events: Vec<TreeEvent>,
     /// The entry whose label the owner should open an editor for.
     label_edit: Option<(String, Option<String>)>,
+    /// List mode or typing mode (see [`LetterGate`]).
+    gate: LetterGate,
 }
 
 impl TreeList {
@@ -282,6 +286,7 @@ impl TreeList {
             folded: HashSet::new(),
             events: Vec::new(),
             label_edit: None,
+            gate: LetterGate::default(),
         };
         list.flat_nodes = list.flatten_tree(&roots);
         list.build_active_path();
@@ -333,6 +338,11 @@ impl TreeList {
     }
 
     /// `getSearchQuery`.
+    /// Whether bare letters act as keys now (list mode).
+    fn letters_list(&self) -> bool {
+        self.gate.lists(self.search_query.is_empty())
+    }
+
     pub fn search_query(&self) -> &str {
         &self.search_query
     }
@@ -1154,9 +1164,10 @@ impl TreeList {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        // A bare letter (K-P4) acts only while the query is empty; otherwise it types.
-        let letter = data.chars().count() == 1 && data.chars().all(|c| !c.is_control());
-        let live = !letter || self.search_query.is_empty();
+        // A bare letter acts in list mode only. `/` opens typing mode, where it types.
+        let letter = is_printable(data);
+        let list_mode = self.letters_list();
+        let live = !letter || list_mode;
         if self.cursor.handle_key(data, &kb) {
             // Navigation: the cursor clamps at both ends.
         } else if live && kb.matches(data, "app.list.down") {
@@ -1166,7 +1177,7 @@ impl TreeList {
         } else if live && kb.matches(data, "app.list.close") {
             self.events.push(TreeEvent::Cancel);
         } else if live && kb.matches(data, "app.list.search") {
-            // The query is always focused: `/` on an empty query has nothing to focus.
+            self.gate.start_typing();
         } else if live && kb.matches(data, "app.tree.foldOrUp") {
             match self.selected_id() {
                 Some(id) if self.is_foldable(&id) && !self.folded.contains(&id) => {
@@ -1194,12 +1205,22 @@ impl TreeList {
                 self.events.push(TreeEvent::Select(id));
             }
         } else if kb.matches(data, "tui.select.cancel") {
-            if self.search_query.is_empty() {
-                self.events.push(TreeEvent::Cancel);
+            let query_empty = self.search_query.is_empty();
+            let action = if matches_key(data, "escape") {
+                self.gate.escape(query_empty)
+            } else if query_empty {
+                EscapeAction::Close
             } else {
-                self.search_query.clear();
-                self.folded.clear();
-                self.apply_filter();
+                EscapeAction::ClearQuery
+            };
+            match action {
+                EscapeAction::ClearQuery => {
+                    self.search_query.clear();
+                    self.folded.clear();
+                    self.apply_filter();
+                }
+                EscapeAction::LeaveTyping => {}
+                EscapeAction::Close => self.events.push(TreeEvent::Cancel),
             }
         } else if live && kb.matches(data, "app.tree.filter.default") {
             self.set_filter(TreeFilterMode::Default);
@@ -1227,6 +1248,8 @@ impl TreeList {
             }
         } else if live && kb.matches(data, "app.tree.toggleLabelTimestamp") {
             self.show_label_timestamps = !self.show_label_timestamps;
+        } else if list_mode && letter {
+            // In list mode a printable key with no key of its own does nothing.
         } else {
             let control = data.chars().any(|c| {
                 let code = c as u32;
@@ -1256,8 +1279,9 @@ fn tree_hints() -> Vec<(String, &'static str)> {
     vec![
         (key_pair_hint("tui.select.up", "tui.select.down"), "move"),
         (key_hint_text("tui.select.confirm"), "go here"),
-        (key_text("app.tree.editLabel"), "label"),
+        (key_text("app.list.search"), "search"),
         (key_hint_text("tui.select.cancel"), "close"),
+        (key_text("app.tree.editLabel"), "label"),
         (key_text("app.tree.toggleLabelTimestamp"), "timestamps"),
     ]
 }
@@ -1450,9 +1474,9 @@ impl Component for TreeSelectorComponent {
             self.label_input_key(data);
             return;
         }
-        let bare_query_empty = self.list.borrow().search_query.is_empty();
+        let letters = self.list.borrow().letters_list();
         let help = hoocode_tui_keys::matches_key(data, "f1")
-            || (bare_query_empty && get_keybindings().matches(data, "app.list.help"));
+            || (letters && get_keybindings().matches(data, "app.list.help"));
         if help {
             self.help = !self.help;
             return;

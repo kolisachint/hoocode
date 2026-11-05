@@ -232,6 +232,7 @@ fn types_an_uppercase_letter_into_the_search_instead_of_firing_a_verb() {
     let _g = lock();
     let tree = labeled_pair("TODO ship it");
     let mut s = selector(&tree, "asst-1");
+    press(&mut s, "/");
     for ch in ["T", "L"] {
         press(&mut s, ch);
     }
@@ -451,6 +452,7 @@ fn search_resets_fold_state() {
     press(&mut s, DOWN);
     assert_eq!(selected(&s).as_deref(), Some("user-3b"));
 
+    press(&mut s, "/"); // typing mode
     press(&mut s, "b"); // search resets folds
     press(&mut s, "\x1b"); // clear the search
 

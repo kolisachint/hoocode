@@ -33,12 +33,13 @@ use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_home::shorten_path;
 use hoocode_tui_components::{Input, PickerCursor};
-use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
+use hoocode_tui_keys::{get_keybindings, matches_key, KeybindingsManager};
 use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::js_trim;
 use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
 
+use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
 use crate::session_selector_search::{
     filter_and_sort_sessions, has_session_name, NameFilter, SortMode,
 };
@@ -178,8 +179,9 @@ impl SessionSelectorHeader {
         vec![
             (key_pair_hint("tui.select.up", "tui.select.down"), "move"),
             (key_hint_text("tui.select.confirm"), "open"),
-            (key_hint_text("tui.input.tab"), "scope"),
+            (key_text("app.list.search"), "search"),
             (key_hint_text("tui.select.cancel"), "close"),
+            (key_hint_text("tui.input.tab"), "scope"),
             (key_text("app.session.toggleSort"), "sort"),
             (key_text("app.session.toggleNamedFilter"), "named only"),
             (key_text("app.session.togglePath"), "show path"),
@@ -524,6 +526,8 @@ pub struct SessionList {
     /// An interrupted run whose choice (view or resume) is open.
     choosing: Option<SubagentRunRef>,
     can_resume: bool,
+    /// List mode or typing mode (see [`LetterGate`]).
+    gate: LetterGate,
 }
 
 impl SessionList {
@@ -550,9 +554,15 @@ impl SessionList {
             now: None,
             choosing: None,
             can_resume: false,
+            gate: LetterGate::default(),
         };
         list.filter_sessions("");
         list
+    }
+
+    /// Whether bare letters act as keys now (list mode).
+    fn letters_list(&self) -> bool {
+        self.gate.lists(self.search_input.get_value().is_empty())
     }
 
     /// The path of the highlighted session.
@@ -698,8 +708,9 @@ impl SessionList {
             events.push(ListEvent::ToggleScope);
             return events;
         }
-        // Bare letters (K-P4) act only while the query is empty; otherwise they type.
-        let bare = self.search_input.get_value().is_empty();
+        // Bare letters act in list mode only. `/` opens typing mode, where they type.
+        let query_empty = self.search_input.get_value().is_empty();
+        let bare = self.gate.lists(query_empty);
         if bare && kb.matches(data, "app.session.toggleSort") {
             events.push(ListEvent::ToggleSort);
             return events;
@@ -746,7 +757,7 @@ impl SessionList {
         } else if bare && kb.matches(data, "app.list.close") {
             events.push(ListEvent::Cancel);
         } else if bare && kb.matches(data, "app.list.search") {
-            // The query is always focused: `/` on an empty query has nothing to focus.
+            self.gate.start_typing();
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(selected) = self.filtered.get(self.cursor.selected()) {
                 match interrupted_run(&selected.session) {
@@ -758,7 +769,21 @@ impl SessionList {
                 }
             }
         } else if kb.matches(data, "tui.select.cancel") {
-            events.push(ListEvent::Cancel);
+            if matches_key(data, "escape") {
+                match self.gate.escape(query_empty) {
+                    EscapeAction::ClearQuery => {
+                        self.search_input.set_value("");
+                        let query = self.search_value();
+                        self.filter_sessions(&query);
+                    }
+                    EscapeAction::LeaveTyping => {}
+                    EscapeAction::Close => events.push(ListEvent::Cancel),
+                }
+            } else {
+                events.push(ListEvent::Cancel);
+            }
+        } else if bare && is_printable(data) {
+            // In list mode a printable key with no key of its own does nothing.
         } else {
             self.forward_to_search(data);
         }
@@ -1687,12 +1712,7 @@ impl Component for SessionSelectorComponent {
             return;
         }
         let help_key = hoocode_tui_keys::matches_key(data, "f1")
-            || (self
-                .session_list
-                .borrow()
-                .search_input
-                .get_value()
-                .is_empty()
+            || (self.session_list.borrow().letters_list()
                 && get_keybindings().matches(data, "app.list.help"));
         if help_key {
             let mut header = self.header.borrow_mut();

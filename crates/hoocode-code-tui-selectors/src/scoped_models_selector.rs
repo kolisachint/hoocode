@@ -20,6 +20,8 @@ use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 
+use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
+
 // The effort cycle is the picker's own Tab (`tui.input.tab`): it cycles the
 // selected row's effort through the model's levels, then unset. The category
 // cycle is `app.models.category` (a bare letter, K-P4).
@@ -229,9 +231,10 @@ impl State {
         let pair = |key: String, action: &str| (key, action.to_string());
         vec![
             pair(key_text("tui.select.confirm"), "on / off"),
-            pair(key_hint_text("tui.input.tab"), "effort"),
+            pair(key_text("app.list.search"), "search"),
             pair(key_text("app.models.save"), "save to settings"),
             pair(key_hint_text("tui.select.cancel"), "close"),
+            pair(key_hint_text("tui.input.tab"), "effort"),
             pair(key_text("app.models.category"), "category"),
             pair(key_text("app.models.enableAll"), "all on"),
             pair(key_text("app.models.clearAll"), "all off"),
@@ -310,6 +313,8 @@ pub struct ScopedModelsSelectorComponent {
     focused: bool,
     /// The full key list shows (`f1`).
     help: bool,
+    /// List mode or typing mode (see [`LetterGate`]).
+    gate: LetterGate,
 }
 
 impl ScopedModelsSelectorComponent {
@@ -369,6 +374,7 @@ impl ScopedModelsSelectorComponent {
             events: Vec::new(),
             focused: false,
             help: false,
+            gate: LetterGate::default(),
         }
     }
 
@@ -514,8 +520,9 @@ impl Component for ScopedModelsSelectorComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        // Bare letters (K-P4) act only while the query is empty; otherwise they type.
-        let bare = self.query().is_empty();
+        // Bare letters act in list mode only. `/` opens typing mode, where they type.
+        let query_empty = self.query().is_empty();
+        let bare = self.gate.lists(query_empty);
         if matches_key(data, "f1") || (bare && kb.matches(data, "app.list.help")) {
             self.help = !self.help;
             return;
@@ -541,7 +548,7 @@ impl Component for ScopedModelsSelectorComponent {
                 return;
             }
             if kb.matches(data, "app.list.search") {
-                // The query is always focused: `/` on an empty query has nothing to focus.
+                self.gate.start_typing();
                 return;
             }
         }
@@ -656,7 +663,7 @@ impl Component for ScopedModelsSelectorComponent {
         }
 
         if matches_key(data, "ctrl+c") {
-            if self.query().is_empty() {
+            if query_empty {
                 self.events.push(ScopedModelsEvent::Cancel);
             } else {
                 self.search.borrow_mut().set_value("");
@@ -666,7 +673,19 @@ impl Component for ScopedModelsSelectorComponent {
         }
 
         if matches_key(data, "escape") {
-            self.events.push(ScopedModelsEvent::Cancel);
+            match self.gate.escape(query_empty) {
+                EscapeAction::ClearQuery => {
+                    self.search.borrow_mut().set_value("");
+                    self.refresh();
+                }
+                EscapeAction::LeaveTyping => {}
+                EscapeAction::Close => self.events.push(ScopedModelsEvent::Cancel),
+            }
+            return;
+        }
+
+        // In list mode a printable key with no key of its own does nothing.
+        if bare && is_printable(data) {
             return;
         }
 

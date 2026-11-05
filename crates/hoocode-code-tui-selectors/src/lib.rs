@@ -14,6 +14,7 @@
 pub mod ask_options;
 pub mod config_selector;
 pub mod framed_list;
+mod letter_gate;
 pub mod login_dialog;
 pub mod model_selector;
 pub mod oauth_selector;
