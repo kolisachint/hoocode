@@ -22,6 +22,8 @@ use serde_json::{Map, Value};
 use crate::config::{
     effective_overrides, normalize_key, Context, ContextOverride, KeymapConfig, DEFAULT_LEADER,
 };
+use crate::defaults::context_of;
+use hoocode_tui_keys::KeySequence;
 
 /// One binding: id, default keys, description.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -579,11 +581,14 @@ impl AppKeybindingsManager {
                 }
             }
         }
-        // The default leader sequences follow the configured leader.
-        self.manager = KeybindingsManager::new(
-            keybinding_definitions_for(config.leader.id()),
-            config.flat.clone(),
-        );
+        // The default leader sequences follow the configured leader. The
+        // single keys of the grouped form are folded into each action's keys,
+        // so the screens that ask "is this key bound to X?" see them too.
+        let definitions = keybinding_definitions_for(config.leader.id());
+        let resolved = KeybindingsManager::new(definitions.clone(), config.flat.clone())
+            .get_resolved_bindings();
+        let keys = keys_after_overrides(resolved, &config.overrides, &mut config.warnings);
+        self.manager = KeybindingsManager::new(definitions, keys);
         self.config = config;
     }
 
@@ -725,6 +730,73 @@ impl AppKeybindingsManager {
     pub fn into_manager(self) -> KeybindingsManager {
         self.manager
     }
+}
+
+/// Whether a grouped binding's key is a single key (not a leader sequence and
+/// not a `Leader`-context key, which the leader table handles).
+fn is_single_key(o: &ContextOverride) -> bool {
+    o.context != Context::Leader && !is_multi_step(&o.key)
+}
+
+/// Whether a key text is a sequence of two or more steps.
+fn is_multi_step(key: &str) -> bool {
+    KeySequence::parse(key).is_ok_and(|s| s.steps().len() > 1)
+}
+
+/// The key lists of every action after the file's single-key grouped bindings.
+///
+/// A binding applies in the context of its action: `Global` applies to every
+/// action, and another context applies to the actions defined in it (see
+/// `defaults::context_of`). A binding of `key` to an action adds the key to
+/// that action and takes it from the other actions in the scope. `null` or
+/// `"none"` takes the key from every action in the scope. A binding whose
+/// action runs in another context is skipped with a warning. `Global` entries
+/// are applied first, so a context entry for the same key wins.
+fn keys_after_overrides(
+    mut keys: HashMap<String, Vec<String>>,
+    overrides: &[ContextOverride],
+    warnings: &mut Vec<String>,
+) -> HashMap<String, Vec<String>> {
+    let mut singles: Vec<&ContextOverride> =
+        overrides.iter().filter(|o| is_single_key(o)).collect();
+    singles.sort_by_key(|o| o.context != Context::Global);
+    for o in singles {
+        let key = normalize_key(&o.key);
+        let in_scope = |id: &str| o.context == Context::Global || context_of(id) == o.context;
+        match o.action.as_deref() {
+            None => {
+                for (id, list) in keys.iter_mut() {
+                    if in_scope(id) {
+                        list.retain(|k| normalize_key(k) != key);
+                    }
+                }
+            }
+            Some(action) => {
+                if keybinding(action).is_none() {
+                    // Reported as an unknown action when the file is read.
+                    continue;
+                }
+                if !in_scope(action) {
+                    warnings.push(format!(
+                        "{}: {key} is bound to {action}, which runs in the {} context; skipped",
+                        o.context.name(),
+                        context_of(action).name()
+                    ));
+                    continue;
+                }
+                for (id, list) in keys.iter_mut() {
+                    if id == action {
+                        if !list.iter().any(|k| normalize_key(k) == key) {
+                            list.push(key.clone());
+                        }
+                    } else if in_scope(id) {
+                        list.retain(|k| normalize_key(k) != key);
+                    }
+                }
+            }
+        }
+    }
+    keys
 }
 
 /// The result of `hoocode keybindings check`: the file's problems. `errors`

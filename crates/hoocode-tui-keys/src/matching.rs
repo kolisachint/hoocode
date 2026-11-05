@@ -62,6 +62,63 @@ impl KeySpec {
     }
 }
 
+/// Whether `key_id` names a key hoocode can match: zero or more of the
+/// modifiers `shift`, `ctrl`, `alt` and `super`, then one key name (a named
+/// key, a letter, a digit or a symbol). A misspelled modifier is not read as
+/// a modifier, so `shfit+enter` is refused and not taken for plain Enter.
+pub fn is_known_key_id(key_id: &str) -> bool {
+    let lower = key_id.to_lowercase();
+    let mut parts: Vec<&str> = lower.split('+').collect();
+    let Some(key) = parts.pop() else {
+        return false;
+    };
+    if parts
+        .iter()
+        .any(|m| !matches!(*m, "shift" | "ctrl" | "alt" | "super"))
+    {
+        return false;
+    }
+    let mut chars = key.chars();
+    let single = match (chars.next(), chars.next()) {
+        (Some(c), None) => c.is_ascii_lowercase() || c.is_ascii_digit() || is_symbol_key(c),
+        _ => false,
+    };
+    single
+        || matches!(
+            key,
+            "escape"
+                | "esc"
+                | "space"
+                | "tab"
+                | "enter"
+                | "return"
+                | "backspace"
+                | "insert"
+                | "delete"
+                | "clear"
+                | "home"
+                | "end"
+                | "pageup"
+                | "pagedown"
+                | "up"
+                | "down"
+                | "left"
+                | "right"
+                | "f1"
+                | "f2"
+                | "f3"
+                | "f4"
+                | "f5"
+                | "f6"
+                | "f7"
+                | "f8"
+                | "f9"
+                | "f10"
+                | "f11"
+                | "f12"
+        )
+}
+
 /// Raw 0x08 (BS) is ambiguous: Windows Terminal uses it for Ctrl+Backspace,
 /// other terminals/tmux setups use it for plain Backspace.
 fn matches_raw_backspace(data: &str, expected_modifier: u32) -> bool {

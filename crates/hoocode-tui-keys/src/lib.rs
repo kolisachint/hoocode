@@ -22,7 +22,7 @@ pub use kitty::{
 pub use leader::{
     CancelReason, LeaderError, LeaderKey, LeaderMachine, LeaderOutcome, DEFAULT_LEADER_TIMEOUT,
 };
-pub use matching::{matches_key, KeySpec};
+pub use matching::{is_known_key_id, matches_key, KeySpec};
 pub use parse::parse_key;
 pub use sequence::{KeySequence, KeyStep, SequenceError};
 pub use state::{is_kitty_protocol_active, set_kitty_protocol_active};

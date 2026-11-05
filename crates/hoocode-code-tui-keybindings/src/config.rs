@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::time::Duration;
 
-use hoocode_tui_keys::{KeySequence, LeaderKey, DEFAULT_LEADER_TIMEOUT};
+use hoocode_tui_keys::{is_known_key_id, KeySequence, LeaderKey, DEFAULT_LEADER_TIMEOUT};
 use serde_json::{Map, Value};
 
 /// The leader key when the file does not name one.
@@ -115,6 +115,18 @@ pub fn normalize_key(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A key or sequence as the file writes it, if every step names a key hoocode
+/// can match (see [`is_known_key_id`]). `ctrl+foo` and `shfit+enter` are not
+/// keys, so they are refused here instead of matching something else.
+pub fn parse_key_text(text: &str) -> Option<KeySequence> {
+    KeySequence::parse(text).ok().filter(|sequence| {
+        sequence
+            .steps()
+            .iter()
+            .all(|step| is_known_key_id(step.id()))
+    })
+}
+
 fn default_leader() -> LeaderKey {
     // A constant that is a valid, non-printable key.
     LeaderKey::new(DEFAULT_LEADER).unwrap_or_else(|_| unreachable!("ctrl+x is a valid leader"))
@@ -183,6 +195,11 @@ impl KeymapConfig {
                 .push("\"leader\" must be a key such as \"ctrl+x\"; using ctrl+x".into());
             return;
         };
+        if parse_key_text(text).is_none() {
+            self.warnings
+                .push(format!("leader {text:?} is not a key; using ctrl+x"));
+            return;
+        }
         match LeaderKey::new(text) {
             Ok(leader) if self.allow_key("leader", text) => self.leader = leader,
             Ok(_) => {}
@@ -231,15 +248,26 @@ impl KeymapConfig {
                 continue;
             };
             let mut single = Vec::new();
+            let asked = keys.len();
+            let mut kept = 0;
             for key in keys {
-                if KeySequence::parse(&key).is_err() {
+                if parse_key_text(&key).is_none() {
                     self.warnings
                         .push(format!("{action}: {key:?} is not a key; skipped"));
                 } else if self.is_sequence(&key) {
+                    kept += 1;
                     self.add_sequence(Context::Prompt, &key, Some(action.clone()));
                 } else if self.allow_key(action, &key) {
+                    kept += 1;
                     single.push(key);
                 }
+            }
+            // A list whose every key was skipped keeps the default keys, so a
+            // typo does not leave the action with no key at all.
+            if asked > 0 && kept == 0 {
+                self.warnings
+                    .push(format!("{action}: no usable key; the default keys stay"));
+                continue;
             }
             self.flat.insert(action.clone(), single);
         }
@@ -366,7 +394,7 @@ impl KeymapConfig {
 
     fn add_grouped(&mut self, context: Context, key: &str, action: Option<String>) {
         let key = normalize_key(key);
-        let Ok(sequence) = KeySequence::parse(&key) else {
+        let Some(sequence) = parse_key_text(&key) else {
             self.warnings
                 .push(format!("{}: {key:?} is not a key; skipped", context.name()));
             return;
@@ -403,13 +431,13 @@ impl KeymapConfig {
 
     /// Whether `key` (a whole value) is a multi-step sequence.
     fn is_sequence(&self, key: &str) -> bool {
-        KeySequence::parse(key).is_ok_and(|s| s.steps().len() > 1)
+        parse_key_text(key).is_some_and(|s| s.steps().len() > 1)
     }
 
     /// Whether `key` is only the leader key.
     fn is_leader_step(&self, key: &str) -> bool {
-        KeySequence::parse(key)
-            .is_ok_and(|s| s.steps().len() == 1 && self.is_leader_id(s.steps()[0].id()))
+        parse_key_text(key)
+            .is_some_and(|s| s.steps().len() == 1 && self.is_leader_id(s.steps()[0].id()))
     }
 
     /// Whether a key id names the leader key (case does not matter).
@@ -421,7 +449,7 @@ impl KeymapConfig {
     fn add_sequence(&mut self, context: Context, key: &str, action: Option<String>) {
         let key = normalize_key(key);
         let starts_with_leader =
-            KeySequence::parse(&key).is_ok_and(|s| self.is_leader_id(s.steps()[0].id()));
+            parse_key_text(&key).is_some_and(|s| self.is_leader_id(s.steps()[0].id()));
         if !starts_with_leader {
             self.warnings.push(format!(
                 "{key:?} is a sequence, so it must start with the leader ({}); skipped",

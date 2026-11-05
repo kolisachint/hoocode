@@ -17,9 +17,8 @@ The flat form maps an action to a key, or to a list of keys:
 {"app.model.cycleForward": "ctrl+x m", "app.hotkeys.open": ["ctrl+x ?", "ctrl+x k"]}
 ```
 
-The grouped form lists keys by context. Leader sequences in it work. A single
-key in the grouped form is checked, but the screen does not apply it yet, so use
-the flat form for single keys. A `null` or `"none"` unbinds a key:
+The grouped form lists keys by context. Single keys and leader sequences both
+work in it. A `null` or `"none"` unbinds a key in that context:
 
 ```json
 {
@@ -34,6 +33,15 @@ the flat form for single keys. A `null` or `"none"` unbinds a key:
 Contexts are `Global`, `Prompt`, `Leader`, `Scroll`, `Picker`, `Panel`, `Dialog`,
 `Tree` and `Models`. A key is written as `"shift+enter"`, and a space means a
 sequence, as in `"ctrl+x m"`.
+
+A binding applies where its action runs. `"u": "app.scroll.lineDown"` is a
+`Scroll` binding, and it is skipped with a message if you write it under
+`Prompt`. Each action's context is the one `hoocode keybindings --defaults`
+groups it under. `Global` applies everywhere. In a context, a key bound to an
+action takes that key from the other actions of the same context, so
+`{"context": "Dialog", "bindings": {"y": "app.dialog.no"}}` makes `y` answer no
+and not yes. A `null` takes the key away from every action of its context: the
+`Scroll` `j` above no longer scrolls, and the picker's `j` still moves down.
 
 ## The leader
 
@@ -57,6 +65,10 @@ it: a bad part is skipped, and the rest applies. The problems it reports:
 
 - a file that is not JSON, or a value that is not a key or an action;
 - an action id that does not exist;
+- a key name hoocode does not know, such as `"ctrl+foo"` or `"shfit+enter"`
+  (a misspelled modifier is not read as the plain key). In a flat list, the other
+  keys still apply, and when every key of an action is refused, its default keys stay;
+- a binding whose action runs in another context (see above);
 - a key that is bound twice in the same context with different actions (the first is skipped);
 - a key that is listed for two actions in the flat form (both are kept, and the first id in sorted order runs);
 - a reserved key, as above.

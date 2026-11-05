@@ -120,9 +120,10 @@ fn the_same_key_in_two_contexts_is_not_a_duplicate() {
     let (_dir, m) = load(
         r#"{"bindings": [
             {"context": "Prompt", "bindings": {"ctrl+y": "app.model.cycleForward"}},
-            {"context": "Scroll", "bindings": {"ctrl+y": "app.model.cycleBackward"}}
+            {"context": "Scroll", "bindings": {"ctrl+y": "app.scroll.lineDown"}}
         ]}"#,
     );
+    // Each action runs in its own context, so both bindings are kept.
     assert!(m.warnings().is_empty(), "{:?}", m.warnings());
 }
 
