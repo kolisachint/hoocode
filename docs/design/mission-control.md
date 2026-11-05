@@ -35,8 +35,8 @@ Superseded:
 | Footer (C14) | Today's two-row footer | Replaced by the HUD (one row) and the comms foot (view and tokens) |
 | Always-on chrome rows | "No new always-on chrome rows." Footer 2 rows and prompt frame 3 rows | Four rows: HUD 1 and comms 3. One row fewer than today |
 | Notice row (C9) | One row above the prompt frame | Gone. Notices are transmissions: a round toast at top right |
-| Task panel (C10) | Plan line above the notice row. `ctrl+g` panel in a blue frame | The plan is a row in the trajectory. `ctrl+g` opens the flight plan console |
-| Thinking (C13) | Folded: ` ✻ thought for 4s · ctrl+t` | A live Think row in the `··` slot while running (header only). Folds to `·· ● Think  ✻ thought 4s · ctrl+t` when done. `ctrl+t` expands the text (Q4) |
+| Task panel (C10) | Plan line above the notice row. `ctrl+x g` panel in a blue frame | The plan is a row in the trajectory. `ctrl+x g` opens the flight plan console |
+| Thinking (C13) | Folded: ` ✻ thought for 4s · ctrl+x b` | A live Think row in the `··` slot while running (header only). Folds to `·· ● Think  ✻ thought 4s · ctrl+x b` when done. `ctrl+x b` expands the text (Q4) |
 | Radar (C21) | One row per call (peek headers), runs folded into counts | One row per mission: steps, hits, time, credits. Only hits, holds and live calls get a row of their own |
 | Prompt glyph | `❯` | `▸` (spec §3.2) |
 | Colours | Fixed hex: done `#b5bd68`, failed `#d58181`, now `#5cc8bb`, needs you `#ffff00`, keys `#6e93ff`, prompt frame `#757575` | Deep-space tokens (spec §2.3): `--ok #7ee081`, `--err #ff5c7a`, `--acc #5ce1e6`, `--warn #ffb547`, `--you #9b8cff`, `--faint #3a4462`, `--dim #7d87a6` (Q5) |
@@ -76,7 +76,7 @@ Compressed from spec §1.3 to the words that show in the chrome. The full map is
 | hangar, docking, mission log | `/model`, `/login`, `/resume` |
 | jettison, stage separation, flight path | `/compact`, `/fork`, `/tree` |
 | scan, rewind | `ctrl+r` searches the transcript. PgUp, PgDn or the wheel rewinds, with a `◂◂ REWIND` bar |
-| flight plan | The mission's waypoints, `FLIGHT PLAN ●●◐○○ 2/5` in the trajectory. `ctrl+g` or `/plan` opens its console |
+| flight plan | The mission's waypoints, `FLIGHT PLAN ●●◐○○ 2/5` in the trajectory. `ctrl+x g` or `/plan` opens its console |
 | BUILD, PLAN | Modes. BUILD may change files and asks clearance for Shell. PLAN changes nothing. shift+tab toggles |
 | end of shift | `/quit`, or ctrl+c twice |
 
@@ -130,7 +130,7 @@ Right, in order: `◈ N agent` (violet, while agents run), `⌁ N sat` (accent, 
 - A failed step gets the `HIT` chip in place of its success stats.
 - A new file gets the `NEW` chip.
 - Edits show only the changed lines, with `+1 −1` on the header.
-- Thinking: a Think row in the `··` slot, header only (Q4). It takes no step number. While it runs it reads `·· ◐ Think  ✻ 4s`. When done it reads `·· ● Think  ✻ thought 4s · ctrl+t`. `ctrl+t` shows the text, dim italic, on the `┊` rail.
+- Thinking: a Think row in the `··` slot, header only (Q4). It takes no step number. While it runs it reads `·· ◐ Think  ✻ 4s`. When done it reads `·· ● Think  ✻ thought 4s · ctrl+x b`. `ctrl+x b` shows the text, dim italic, on the `┊` rail.
 - Skill findings use `▲` in warn.
 - A satellite: `⌁ sat job-1 · in orbit` on its step row.
 - The landing line ends every mission: `● LANDED · 2 steps · 1 hit · 0.5s · 0.8k tokens · $0.002`.
@@ -165,7 +165,7 @@ Superseded by [radar-r3.md](radar-r3.md) (2026-10-29): grouped missions with a t
 - A thick (heavy) block that replaces the comms frame. Title is the console name with a count.
 - Rows: `›` marks the selected row, on the selection band. Optional query row `▸ text`.
 - Hint row last.
-- Consoles: commands, `@` files, hangar (`/model`), settings (`/settings`), hull (`/theme`), mission log (`/resume`), flight path (`/tree`), stage separation (`/fork`), controls (`/hotkeys`, a drawn keyboard), docking (`/login`, with a real QR code), flight plan (`ctrl+g`).
+- Consoles: commands, `@` files, hangar (`/model`), settings (`/settings`), hull (`/theme`), mission log (`/resume`), flight path (`/tree`), stage separation (`/fork`), controls (`/hotkeys`, a drawn keyboard), docking (`/login`, with a real QR code), flight plan (`ctrl+x g`).
 - Page-only screens for commands the app already has get this look. No new commands are added.
 
 ### Toasts (spec §5.3)
@@ -286,7 +286,7 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with the leader (ctrl+x
 - M1e automated: `tui-terminal/tests/it/crash_restore.rs` runs a child process. A UI-thread panic writes the restore sequence (`?1049l` and the rest) to stdout. SIGTERM restores and exits 143. `tui-render` has an ignored timing test, `perf_long_transcript_frame_time`.
 - M1e fixes found by these checks: SIGTERM and SIGHUP had no handler, so a TUI killed by SIGTERM left the alternate screen on (the normal screen was not restored). Now `interrupt::install_terminate_restore` (installed from `ProcessTerminal::start`) restores and exits. Full-screen compose strips the cursor marker only on the drawn rows, not on the whole transcript, while live (5,000 lines: 2.8 ms to 1.3 ms per frame in a debug build).
 - Mouse: with reporting on (the default), a plain drag does not select text. Selection is shift+drag, a terminal behaviour the app does not change. `/copy` copies the last reply with no selection.
-- Review fixes on M1 (2026-10-17): `/new`, `/resume` and the thinking toggle go live; ctrl+o keeps the pinned message on top; plain arrows belong to the prompt while it holds text; Esc during an agent run also aborts it; `↓ N new` counts only growth since the last rebuild or resize; the HUD refreshes on model switch; `HOOCODE_FULLSCREEN` reads 0/false/no/off and 1/true/yes/on (`hoocode_code_paths::parse_env_bool`). The repaint check after stray stderr was removed: every interactive write now goes through the sink, so it could never fire.
+- Review fixes on M1 (2026-10-17): `/new`, `/resume` and the thinking toggle go live; ctrl+o keeps the pinned message on top (the key is gone: PgUp now pins the view); plain arrows belong to the prompt while it holds text; Esc during an agent run also aborts it; `↓ N new` counts only growth since the last rebuild or resize; the HUD refreshes on model switch; `HOOCODE_FULLSCREEN` reads 0/false/no/off and 1/true/yes/on (`hoocode_code_paths::parse_env_bool`). The repaint check after stray stderr was removed: every interactive write now goes through the sink, so it could never fire.
 - M1e goldens: the two scrollback checks now read the visible screen (`message-queue.json` `delivered`, `subagent-task.json` `screen`; the answers are on screen). All 11 screen goldens are accepted after review: the HUD and gap rows, the tail view (the header scrolls off when the transcript is longer than the body), no flex spacer (`screen_fill`) in full-screen, and the footer path without its leading ellipsis. Two platform labels are normalized (`alt`/`Option`, `hints.rs`), so the goldens hold on macOS and Linux. The U0 rounding fix shows in `attached-running` (`4h00m left`, not `1h60m`); that golden was stale before M1.
 - Frame timing (debug build, `/perf` on a 2,000-line answer): frame build p50 about 27 to 33 ms in both modes, from transcript component rendering. Full-screen adds about 0.5 ms per frame at 5,000 lines in the harness, and the composition is not the bottleneck.
 
@@ -582,14 +582,14 @@ The user answered each question on 2026-10-17. The answer is in bold under each 
 
 **Answer: (a). The order is M0 (done), then tui-surfaces Phase U0 (steps U0.1 to U0.10, by Haiku subagents), then M1 onward.**
 
-### 4. Thinking: live Think row, or folded with `ctrl+t`?
+### 4. Thinking: live Think row, or folded with `ctrl+x b`?
 
 | Option | Trade-off |
 |---|---|
-| (a) recommended: a live Think row while running (`··`, `✻ 4s`). Folds to `✻ thought 4s` when done. `ctrl+t` still expands | Changes decision 5 of 2026-10-17 for the running state only. Matches spec a2 and r11 |
+| (a) recommended: a live Think row while running (`··`, `✻ 4s`). Folds to `✻ thought 4s` when done. `ctrl+x b` still expands | Changes decision 5 of 2026-10-17 for the running state only. Matches spec a2 and r11 |
 | (b) keep decision 5: folded from the start, no live row | No live thinking row in the trajectory. Spec a2 is not built as drawn |
 
-**Answer: Thinking is folded by default** (this keeps decision 5). While it runs, one Think row sits in the `··` slot, header only: `·· ◐ Think  ✻ 4s`, with no gist line. When done, it folds to `·· ● Think  ✻ thought 4s · ctrl+t`. `ctrl+t` expands it to show the text, dim italic, on the `┊` rail. Radar shows `✻ thought 3s`.
+**Answer: Thinking is folded by default** (this keeps decision 5). While it runs, one Think row sits in the `··` slot, header only: `·· ◐ Think  ✻ 4s`, with no gist line. When done, it folds to `·· ● Think  ✻ thought 4s · ctrl+x b`. `ctrl+x b` expands it to show the text, dim italic, on the `┊` rail. Radar shows `✻ thought 3s`.
 
 ### 5. Colours
 

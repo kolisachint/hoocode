@@ -18,7 +18,7 @@ then shows **SKIP PERMISSIONS**).
 
 | Type | What it does |
 |---|---|
-| `/model` | Pick a model (Ctrl+P cycles through your favourites) |
+| `/model` | Pick a model (Ctrl+X, then m, cycles through your favourites) |
 | `/mode` | Switch between ask, plan, build and debug (or press Shift+Tab) |
 | `/resume` | Reopen an earlier session in this folder |
 | `@path/to/file` | Attach a file to your message |

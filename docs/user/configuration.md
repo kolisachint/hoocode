@@ -77,7 +77,7 @@ The screen has the transcript, one prompt row (` › `) and a status line under 
 holds the view, session, model, context use, cost and what hoocode is doing now. There
 is no header, logo or frame; dialogs open as panes in the prompt's place.
 
-- **Views** (`alt+o` cycles, `shift+alt+o` goes back): `outline` shows one recap row per
+- **Views** (`ctrl+x o` cycles, `ctrl+x O` goes back): `outline` shows one recap row per
   turn, `peek` (the default) shows each call on one row with its facts, `full` shows
   every body. The old name `radar` still works as `outline` in `toolOutputView`.
 - **Themes**: `dark`, `dusk`, `high-contrast`, `light` and `paper`, and `auto` follows the terminal background and

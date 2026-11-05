@@ -1,7 +1,8 @@
 # Themes and keybindings (design, 2026-11-05)
 
-Status: **decided with the user 2026-11-05. Building (T and K in parallel) from 2026-11-05.** Two parts that can be
-built on their own: **T** (themes) and **K** (keybindings). This is the third plan,
+Status: **decided with the user 2026-11-05. Built 2026-11-05: T-1 to T-6 and K-0 to K-10.**
+The deviations from this plan, as built, are listed under "Built deviations" below.
+Two parts that can be built on their own: **T** (themes) and **K** (keybindings). This is the third plan,
 next to the core plan and the TUI plan ([README](README.md)). TUI work is done by
 Haiku subagents. The main session orchestrates, briefs and merges.
 
@@ -373,6 +374,28 @@ then K-3, K-6, K-7, K-8, K-9, K-10.
 
 Every step runs `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`
 and `cargo nextest run -p <touched crates>` (CLAUDE.md). TUI steps are done by Haiku subagents.
+
+## Built deviations (2026-11-05)
+
+What was built differs from the text above in these places. The user pages
+(`docs/user/keybindings.md`) and `docs/maps/ui.md` say what the build does.
+
+- **Leader only at the prompt.** Ctrl+X starts a sequence only when the prompt has
+  focus. A picker, pane or the task panel above it takes the key instead.
+- **`q` closes lists, not dialogs.** In a picker or list with an empty query, `q`
+  closes it, as Esc does, and it leaves the pinned transcript view. The dialog
+  answers are `y`, `a` and `n` (while no reply is typed); `q` does not answer a dialog.
+- **Picker help is `f1` first.** `app.list.help` lists `f1` before `?`. `?` types
+  while a query is typed, so the "more" hint shows `f1`. The gold test records it.
+- **A grouped binding applies where its action runs.** `"u": "app.scroll.lineDown"`
+  is a Scroll binding. Written under another context, it is skipped with a warning.
+  A `null` in a context takes the key away from that context's actions only.
+- **Some hint keys are fixed, not keymap ids.** Space (the second toggle in
+  settings and config), `k` and `l` on the end-of-shift card, `v` and `r` on the
+  interrupted-run row, and `e` on the approval card are written as they are typed.
+  They are not in the keymap, so the K-9 lint does not cover them as key names.
+- **Scroll indicator names.** The keymap's own names show: `pageUp/pageDown`, not
+  `PgUp/PgDn`, and `↑↓` is kept for the bare arrows.
 
 ## Not doing
 
