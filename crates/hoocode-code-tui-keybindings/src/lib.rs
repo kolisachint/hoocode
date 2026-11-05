@@ -1,9 +1,11 @@
 //! The coding agent's keyboard map: app keybindings, `keybindings.json` loading
 //! and key text for hint lines.
 
+pub mod config;
 pub mod hints;
 pub mod keybindings;
 
+pub use config::{normalize_key, Context, ContextOverride, KeymapConfig};
 pub use hints::{
     app_key_label, format_key_text, key_display_label, key_display_text, key_hint, key_text,
     matches_app_key, raw_key_hint,
