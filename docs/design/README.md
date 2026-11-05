@@ -36,10 +36,11 @@ To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) 
   `embeddingsearchtools`, `voicetools`, `hooteams`, `drawio-canvas`) are MIT and
   fair to use.
 
-## Two plans, side by side
+## Three plans, side by side
 
-There are two plans: the **core plan** (below) and the **TUI plan**
-([tui-activity.md](tui-activity.md), agreed 2026-10-09). Neither is ahead of the other.
+There are three plans: the **core plan** (below), the **TUI plan**
+([tui-activity.md](tui-activity.md), agreed 2026-10-09) and the **themes and keybindings plan**
+([themes-keybindings.md](themes-keybindings.md), decided 2026-11-05). None is ahead of the others.
 **When the user asks to proceed or to start implementing, ask which plan and which step
 first.** Don't pick one yourself.
 
@@ -47,6 +48,7 @@ first.** Don't pick one yourself.
 |---|---|---|---|
 | Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
 | TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell · U surfaces ([tui-surfaces.md](tui-surfaces.md), agreed 2026-10-17) · Mission Control ([mission-control.md](mission-control.md), design 2026-10-17, after U). All work by Haiku subagents | T0 done 2026-10-09; T3, T4 and T5 done 2026-10-15 (T5.3 closed T1.3 too) |
+| Themes and keybindings | [themes-keybindings.md](themes-keybindings.md) | T themes T-1 to T-6 (S or M each) · K keybindings K-0 to K-10 (leader key, bare-letter lists, Alt removed from defaults). Decided 2026-11-05, not built. TUI work by Haiku subagents | Not started. Ask which part (T or K) and which step first. Start with T-1 or K-0 |
 
 **TUI declutter (2026-11-03):** [tui-declutter.md](tui-declutter.md) replaces the Mission
 Control look with a plain, minimal one. **Built 2026-11-04** (WP1–WP10, PR #174): plain words, status line, panes, `outline` view, dark/light themes only. `scripts/ci/plain_words.sh` keeps the old space words out of the TUI text.
