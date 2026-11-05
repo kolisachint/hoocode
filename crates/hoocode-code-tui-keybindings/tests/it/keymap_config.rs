@@ -351,3 +351,22 @@ fn the_config_parser_works_without_a_file() {
     assert_eq!(config.leader.id(), "ctrl+g");
     assert_eq!(config.leader_timeout, Duration::from_millis(900));
 }
+
+#[test]
+fn the_documented_alt_keys_load_without_warnings() {
+    // The example in docs/user/keybindings.md (Terminals, Option as Meta).
+    let (_dir, m) = load(
+        r#"{
+          "tui.editor.cursorWordLeft": ["ctrl+left", "alt+b"],
+          "tui.editor.cursorWordRight": ["ctrl+right", "alt+f"],
+          "tui.editor.deleteWordBackward": ["ctrl+w", "alt+backspace"]
+        }"#,
+    );
+    assert!(m.warnings().is_empty(), "{:?}", m.warnings());
+    assert!(m
+        .get_keys("tui.editor.cursorWordLeft")
+        .contains(&"alt+b".to_string()));
+    assert!(m
+        .get_keys("tui.editor.cursorWordLeft")
+        .contains(&"ctrl+left".to_string()));
+}

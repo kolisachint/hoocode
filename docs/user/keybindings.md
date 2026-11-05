@@ -32,7 +32,8 @@ work in it. A `null` or `"none"` unbinds a key in that context:
 
 Contexts are `Global`, `Prompt`, `Leader`, `Scroll`, `Picker`, `Panel`, `Dialog`,
 `Tree` and `Models`. A key is written as `"shift+enter"`, and a space means a
-sequence, as in `"ctrl+x m"`.
+sequence, as in `"ctrl+x m"`. A single capital letter is Shift plus that letter:
+`"G"` is the same key as `"shift+g"`, the one that types a capital G.
 
 A binding applies where its action runs. `"u": "app.scroll.lineDown"` is a
 `Scroll` binding, and it is skipped with a message if you write it under
@@ -43,11 +44,36 @@ action takes that key from the other actions of the same context, so
 and not yes. A `null` takes the key away from every action of its context: the
 `Scroll` `j` above no longer scrolls, and the picker's `j` still moves down.
 
+`Global` applies everywhere, with one difference. A `Global` binding to an action
+takes the key only from the other `Global` actions (today, only `app.interrupt`).
+So `{"context": "Global", "bindings": {"escape": "app.interrupt"}}` keeps Esc in the
+pickers, the pinned view and the task panel. A `Global` `null` still removes the
+key in every context.
+
+## Which binding wins
+
+- The flat form sets an action's keys. Its list replaces the action's defaults.
+  A flat key has no context, so it works in every context the action runs in.
+- The grouped form is applied after the flat form. In a context, a grouped key
+  wins over a flat key for the same key: it moves the key to its action and takes
+  it from the other actions of that context. A grouped `null` removes it there.
+- A flat key that another app action uses by default, in the same context (or in
+  `Global`), is kept by both, and hoocode warns and names both. To give the key to
+  one action only, bind it in the grouped form, or set the other action's keys in
+  the flat form.
+
 ## The leader
 
 Leader keys start with the leader (`ctrl+x` by default), then one key. Set another
 leader with `"leader"`. Its timeout is `"leaderTimeoutMs"`. In the `Leader`
 context, write the key after the leader alone: `{"context": "Leader", "bindings": {"m": "..."}}`.
+
+The leader is one key. A sequence, or Esc, Enter, Tab or Backspace, is refused and
+`ctrl+x` is used instead. A leader that is also the default key of an action
+starts the leader first, so that key can no longer reach the action, and hoocode warns. The key after
+the leader is checked against the reserved keys too: `ctrl+x ctrl+c` is refused.
+A flat binding of the leader key by itself is skipped with a message: bind a
+sequence after the leader instead, such as `"ctrl+x m"`.
 
 ## Keys hoocode keeps
 
@@ -71,10 +97,39 @@ it: a bad part is skipped, and the rest applies. The problems it reports:
 - a binding whose action runs in another context (see above);
 - a key that is bound twice in the same context with different actions (the first is skipped);
 - a key that is listed for two actions in the flat form (both are kept, and the first id in sorted order runs);
-- a reserved key, as above.
+- a flat key that another app action uses by default, in the same context (both keep it);
+- a leader that is refused, or that is also a default key;
+- a reserved key, as above, also after the leader.
 
 `/hotkeys` lists the problems under the key groups. Startup and `/reload` show a
 one-line count.
+
+## Terminals
+
+Some keys depend on the terminal. These are the usual cases.
+
+- **Shift+Enter** (the newline key, `tui.input.newLine`) reaches hoocode only in a
+  terminal that uses the kitty keyboard protocol or xterm's modifyOtherKeys. In any
+  other terminal Shift+Enter sends the same bytes as Enter, which sends the message.
+  `ctrl+x enter` is a newline everywhere.
+- **tmux** passes Shift+Enter and other modified keys only with `set -g extended-keys on`
+  in `~/.tmux.conf`. Reload the file with `tmux source-file ~/.tmux.conf`.
+- **macOS Terminal.app** does not send Shift+Enter. Use `ctrl+x enter` for a newline.
+- **VS Code's terminal** may take Ctrl+X for its own commands, so the leader does
+  nothing there. Set another leader, for example `{"leader": "ctrl+g"}`.
+- **Option as Meta** (Terminal.app's and iTerm2's setting that makes Option send
+  Alt): hoocode's defaults no longer use Alt keys, so Alt word motions are gone.
+  Word motions are Ctrl+Left and Ctrl+Right, delete a word backward with Ctrl+W, and
+  forward with Ctrl+Delete. To get the Alt keys back, add them to the flat form. An
+  action keeps its defaults and gains the Alt keys:
+
+```json
+{
+  "tui.editor.cursorWordLeft": ["ctrl+left", "alt+b"],
+  "tui.editor.cursorWordRight": ["ctrl+right", "alt+f"],
+  "tui.editor.deleteWordBackward": ["ctrl+w", "alt+backspace"]
+}
+```
 
 ## Commands
 
