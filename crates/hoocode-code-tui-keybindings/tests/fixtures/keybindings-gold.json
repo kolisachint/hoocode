@@ -311,6 +311,13 @@
    "Restore queued messages"
   ],
   [
+   "app.history.search",
+   [
+    "ctrl+r"
+   ],
+   "Search prompt history (reverse, incremental)"
+  ],
+  [
    "app.mode.cycleForward",
    [
     "shift+tab"

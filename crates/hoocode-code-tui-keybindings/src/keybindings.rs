@@ -77,7 +77,12 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.message.dequeue",
             &["ctrl+x d"],
-            "Restore queued messages",
+            "Take back the last queued message",
+        ),
+        entry(
+            "app.history.search",
+            &["ctrl+r"],
+            "Search prompt history (reverse, incremental)",
         ),
         // ── Steer — what the agent is before it runs
         entry(

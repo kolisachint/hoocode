@@ -80,6 +80,8 @@ impl Mode {
                 StreamingBehavior::FollowUp => follow_up.push(text.clone()),
             }
         }
+        self.queue_recallable
+            .set(!steering.is_empty() || !follow_up.is_empty());
         *self.queue_snapshot.borrow_mut() = (steering, follow_up);
         self.dirty.set(true);
     }
@@ -213,12 +215,38 @@ impl Mode {
         }
     }
 
-    /// `handleDequeue`.
+    /// Takes the newest queued message back into the prompt, ahead of what is
+    /// typed. The session's queue goes first, then a held compaction message.
+    /// `false` when nothing is queued.
+    pub(super) fn take_back_last_queued(&mut self) -> bool {
+        let text = match self.session.take_last_queued() {
+            Some(text) => text,
+            None => match self.compaction_queue.pop() {
+                Some((text, _)) => text,
+                None => return false,
+            },
+        };
+        self.return_to_editor(&text);
+        self.update_pending_messages_display();
+        true
+    }
+
+    /// `handleDequeue` (`app.message.dequeue`, leader `d`): the last queued message
+    /// back to the prompt.
     pub(super) fn handle_dequeue(&mut self) {
-        match self.restore_queued_messages_to_editor(false) {
-            0 => self.show_status("No queued messages to restore"),
-            1 => self.show_status("Restored 1 queued message to editor"),
-            n => self.show_status(&format!("Restored {n} queued messages to editor")),
+        if self.take_back_last_queued() {
+            self.show_status("Restored 1 queued message to editor");
+        } else {
+            self.show_status("No queued messages to restore");
+        }
+    }
+
+    /// Up on an empty prompt with messages queued (`Action::RecallQueued`). With
+    /// nothing left to take back (the flag was stale), the key is the editor's, so
+    /// Up still walks the history.
+    pub(super) fn recall_queued_or_history(&mut self, data: &str) {
+        if !self.take_back_last_queued() {
+            self.editor.borrow_mut().editor.handle_input(data);
         }
     }
 }

@@ -80,6 +80,9 @@ mod clipboard;
 mod commands;
 mod dialogs;
 mod events;
+mod history_search;
+#[cfg(test)]
+mod history_search_tests;
 mod input;
 mod job_tail;
 mod leader;
@@ -452,6 +455,12 @@ struct Mode {
     transient: Rc<RefCell<TransientLines>>,
     /// The leader key at the prompt (Ctrl+X, then a key): see `leader.rs`.
     leader: leader::LeaderState,
+    /// The open Ctrl+R history search, if any (`history_search.rs`).
+    history_search: Option<history_search::HistorySearch>,
+    /// Mirrors `history_search.is_some()` for `CustomEditor`, which routes keys.
+    history_search_active: Rc<Cell<bool>>,
+    /// Messages are queued: `CustomEditor` lets Up take the last one back.
+    queue_recallable: Rc<Cell<bool>>,
     /// The transcript's scroll view: the leader opens its search (`leader.rs`).
     scroll_view: Rc<RefCell<crate::scroll_view::ScrollView>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
@@ -680,10 +689,14 @@ impl Mode {
                 .push(Action::AutocompleteVisibility(visible))
         }));
         let panel_takes_up = Rc::new(Cell::new(false));
+        let history_search_active = Rc::new(Cell::new(false));
+        let queue_recallable = Rc::new(Cell::new(false));
         let editor = handle(CustomEditor {
             editor,
             actions: actions.clone(),
             panel_takes_up: panel_takes_up.clone(),
+            search_active: history_search_active.clone(),
+            queue_recallable: queue_recallable.clone(),
         });
 
         let footer_data = FooterDataProvider::new(session.cwd());
@@ -961,6 +974,9 @@ impl Mode {
             compaction_queue: Vec::new(),
             task_panel,
             panel_takes_up,
+            history_search: None,
+            history_search_active,
+            queue_recallable,
             task_store_subscription: None,
             previous_cwd: Rc::new(RefCell::new(None)),
             restarted_input: None,

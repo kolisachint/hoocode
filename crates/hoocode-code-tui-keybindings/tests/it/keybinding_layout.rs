@@ -61,6 +61,7 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.input.voiceTranscribe",
     "app.message.followUp",
     "app.message.dequeue",
+    "app.history.search",
     "app.clipboard.copyMessage",
     "app.clipboard.pasteImage",
     "app.session.new",
@@ -367,15 +368,14 @@ fn binds_no_default_to_an_alt_key() {
 }
 
 #[test]
-fn binds_no_default_to_ctrl_r() {
-    // Ctrl+R is prompt-history search once that action exists. Until then it
-    // is unbound; transcript search is leader `/`.
+fn binds_ctrl_r_only_to_prompt_history_search() {
+    // Ctrl+R is prompt-history search (K-7). Transcript search is leader `/`.
     let m = manager();
     let on_ctrl_r: Vec<&str> = ids()
         .into_iter()
         .filter(|id| m.get_keys(id).iter().any(|k| k == "ctrl+r"))
         .collect();
-    assert_eq!(on_ctrl_r, Vec::<&str>::new());
+    assert_eq!(on_ctrl_r, vec!["app.history.search"]);
 }
 
 #[test]
@@ -425,6 +425,7 @@ fn matches_the_plans_default_keymap() {
         ("app.clipboard.copyMessage", vec!["ctrl+x c"]),
         ("app.message.followUp", vec!["ctrl+x f"]),
         ("app.message.dequeue", vec!["ctrl+x d"]),
+        ("app.history.search", vec!["ctrl+r"]),
         ("app.mode.cycleForward", vec!["shift+tab"]),
         ("app.mode.cycleBackward", vec!["ctrl+x a"]),
         ("app.model.cycleForward", vec!["ctrl+x m"]),
@@ -629,6 +630,7 @@ fn families() -> Vec<(&'static str, Regex)> {
     [
         ("Flow", r"^app\.(interrupt|clear|exit|suspend)$"),
         ("Compose", r"^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)"),
+        ("Recall", r"^app\.history\."),
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),
         ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|panel\.focus$)"),
         ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|shiftLineUp|shiftLineDown|search)$"),

@@ -411,6 +411,11 @@ impl Editor {
         self.autocomplete_provider = Some(provider);
     }
 
+    /// The prompt history, newest first (what Up walks through).
+    pub fn history(&self) -> &[String] {
+        &self.history
+    }
+
     /// Add a prompt to history for up/down navigation (after submission).
     pub fn add_to_history(&mut self, text: &str) {
         let trimmed = js_trim(text);

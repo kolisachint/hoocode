@@ -93,6 +93,8 @@ pub struct TransientLines {
     /// The auto-retry notice while the session retries a transient failure
     /// (`retrying · attempt 2 of 6 · …`).
     retry_notice: Option<String>,
+    /// The prompt-history search's two rows (`history_search.rs`), while it is open.
+    history_search: Option<(String, String)>,
 }
 
 impl TransientLines {
@@ -102,6 +104,7 @@ impl TransientLines {
             leader: None,
             notice: None,
             retry_notice: None,
+            history_search: None,
         }
     }
 
@@ -125,6 +128,11 @@ impl TransientLines {
         self.retry_notice = notice;
     }
 
+    /// Sets or clears the history search's rows: the query and match, then the keys.
+    pub fn set_history_search(&mut self, rows: Option<(String, String)>) {
+        self.history_search = rows;
+    }
+
     /// The rows at `width`.
     pub fn lines(&self, width: usize) -> Vec<String> {
         let pal = Palette::current();
@@ -136,6 +144,10 @@ impl TransientLines {
             )
         };
         let mut lines = Vec::new();
+        if let Some((shown, hints)) = &self.history_search {
+            lines.push(cut(&paint(pal.dim(), shown), "…"));
+            lines.push(cut(&paint(pal.dim(), hints), "…"));
+        }
         if let Some(leader) = &self.leader {
             lines.push(cut(&paint(pal.dim(), &leader.text), "…"));
             for row in which_key_rows(&leader.which_key, width) {

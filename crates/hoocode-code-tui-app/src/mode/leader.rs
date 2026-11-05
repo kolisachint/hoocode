@@ -108,6 +108,11 @@ impl Mode {
         }
         if !self.prompt_has_focus() {
             self.leader.machine.reset();
+            self.cancel_history_search();
+            return false;
+        }
+        // The history search owns every key at the prompt, Ctrl+X included.
+        if self.history_search.is_some() {
             return false;
         }
         self.leader.note = None;

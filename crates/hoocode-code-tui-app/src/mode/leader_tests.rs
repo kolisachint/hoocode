@@ -228,13 +228,18 @@ fn ctrl_x_slash_is_swallowed_and_opens_the_transcript_search() {
 }
 
 #[test]
-fn ctrl_r_is_unbound_by_default_and_types_nothing() {
+fn ctrl_r_opens_the_history_search_and_types_nothing() {
+    // K-7: Ctrl+R is the prompt-history search. Transcript search is leader `/`.
     let mut mode = default_mode();
     let t0 = Instant::now();
     press(&mut mode, "a", t0);
     press(&mut mode, "\x12", t0);
-    assert!(queued(&mode).is_empty());
-    assert_eq!(prompt_text(&mode), "a", "Ctrl+R has no default action");
+    assert_eq!(queued(&mode), vec![Action::HistorySearchOpen]);
+    assert_eq!(
+        prompt_text(&mode),
+        "a",
+        "Ctrl+R types nothing into the prompt"
+    );
 }
 
 #[test]

@@ -29,6 +29,11 @@ fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() 
             "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)",
             "Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)",
         ),
+        (
+            "app.message.dequeue",
+            "Restore queued messages",
+            "Take back the last queued message",
+        ),
     ];
     let gold = gold();
     let mut expected: Vec<(String, Vec<String>, String)> = gold["table"]

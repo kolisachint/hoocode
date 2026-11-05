@@ -85,8 +85,15 @@ pub(super) enum Action {
     ForkOpen,
     /// `app.message.followUp`: queue the prompt as a follow-up.
     FollowUp,
-    /// `app.message.dequeue`: every queued message back to the prompt.
+    /// `app.message.dequeue`: the last queued message back to the prompt.
     Dequeue,
+    /// Up on an empty prompt while messages are queued: the last one back to
+    /// the prompt; with none left, the key goes to the editor (history). The raw input.
+    RecallQueued(String),
+    /// `app.history.search` (Ctrl+R): opens the reverse history search.
+    HistorySearchOpen,
+    /// A key while the history search is open (`history_search.rs`).
+    HistorySearchKey(String),
     /// `app.tasks.cycleForward` / `cycleBackward`: step the task panel tab.
     TasksForward,
     TasksBackward,
@@ -100,13 +107,14 @@ pub(super) enum Action {
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 27] = [
+const EDITOR_ACTIONS: [(&str, Action); 28] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
     ("app.panel.focus", Action::PanelToggle),
     ("app.subagent.attach", Action::SubagentAttach),
     ("app.message.followUp", Action::FollowUp),
     ("app.message.dequeue", Action::Dequeue),
+    ("app.history.search", Action::HistorySearchOpen),
     (
         "app.session.changeDirectory",
         Action::ChangeDirectoryPrefill,
@@ -156,6 +164,10 @@ pub(super) struct CustomEditor {
     /// rows, not pinned). Up on the first line is handed over only when set;
     /// otherwise the editor moves its cursor as usual.
     pub(super) panel_takes_up: Rc<Cell<bool>>,
+    /// The history search is open: every key goes to it, not to the editor.
+    pub(super) search_active: Rc<Cell<bool>>,
+    /// Messages are queued, so Up on an empty prompt takes the last one back.
+    pub(super) queue_recallable: Rc<Cell<bool>>,
 }
 
 /// The `@file` finder: `hoocode_code_tools::file_finder` (fd's rules, in
@@ -172,7 +184,7 @@ pub fn at_file_finder() -> FileFinder {
     })
 }
 
-fn is_plain_text(data: &str) -> bool {
+pub(super) fn is_plain_text(data: &str) -> bool {
     !data.is_empty() && data.chars().all(|c| (c as u32) >= 32 && c as u32 != 127)
 }
 
@@ -182,6 +194,12 @@ impl Component for CustomEditor {
     }
 
     fn handle_input(&mut self, data: &str) {
+        if self.search_active.get() {
+            self.actions
+                .borrow_mut()
+                .push(Action::HistorySearchKey(data.to_string()));
+            return;
+        }
         if is_plain_text(data) {
             self.editor.handle_input(data);
             return;
@@ -201,6 +219,18 @@ impl Component for CustomEditor {
         }
         if kb.matches(data, "app.exit") && self.editor.get_text().is_empty() {
             self.actions.borrow_mut().push(Action::Exit);
+            return;
+        }
+        // Up on an empty prompt takes the last queued message back, before the
+        // task panel and the history (K-7).
+        if kb.matches(data, "tui.editor.cursorUp")
+            && self.queue_recallable.get()
+            && self.editor.get_text().is_empty()
+            && !self.editor.is_showing_autocomplete()
+        {
+            self.actions
+                .borrow_mut()
+                .push(Action::RecallQueued(data.to_string()));
             return;
         }
         // Up on the first visual line leaves the prompt for the task panel, when
@@ -630,10 +660,11 @@ impl Mode {
             self.queue_compaction_message(text, StreamingBehavior::Steer);
             return;
         }
-        // Typed while the agent works: steers the current run.
+        // Enter while a turn runs queues the message as a follow-up (K-7: the
+        // old Alt+Enter), and it is sent after the turn.
         if self.session.is_streaming() {
             self.editor.borrow_mut().editor.add_to_history(&text);
-            self.queue_prompt(text, StreamingBehavior::Steer);
+            self.queue_prompt(text, StreamingBehavior::FollowUp);
             return;
         }
         // Typed in the gap before the prompt in flight begins its turn: queued
@@ -974,6 +1005,9 @@ impl Mode {
             Action::ForkOpen => self.show_user_message_selector(),
             Action::FollowUp => self.handle_follow_up(),
             Action::Dequeue => self.handle_dequeue(),
+            Action::RecallQueued(data) => self.recall_queued_or_history(&data),
+            Action::HistorySearchOpen => self.open_history_search(),
+            Action::HistorySearchKey(data) => self.history_search_key(&data),
             Action::TasksForward | Action::TasksBackward => {
                 let forward = action == Action::TasksForward;
                 let view = self.task_panel.borrow_mut().cycle_view(forward);
@@ -1030,6 +1064,8 @@ mod tests {
             ),
             actions: Rc::new(RefCell::new(Vec::new())),
             panel_takes_up: Rc::new(Cell::new(true)),
+            search_active: Rc::new(Cell::new(false)),
+            queue_recallable: Rc::new(Cell::new(false)),
         }
     }
 

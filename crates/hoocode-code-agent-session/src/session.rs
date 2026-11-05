@@ -1928,6 +1928,27 @@ impl AgentSession {
         cleared
     }
 
+    /// Takes back the newest queued message: the last follow-up, else the last
+    /// steering message. The rest of the queue is untouched. `None` when nothing
+    /// is queued.
+    pub fn take_last_queued(&self) -> Option<String> {
+        let (text, from_follow_up) = {
+            let mut state = lock(&self.inner.state);
+            if let Some(text) = state.follow_up_messages.pop() {
+                (text, true)
+            } else {
+                (state.steering_messages.pop()?, false)
+            }
+        };
+        if from_follow_up {
+            self.inner.agent.pop_last_follow_up();
+        } else {
+            self.inner.agent.pop_last_steer();
+        }
+        self.emit_queue_update();
+        Some(text)
+    }
+
     /// Steering plus follow-up messages still queued.
     pub fn pending_message_count(&self) -> usize {
         let state = lock(&self.inner.state);
