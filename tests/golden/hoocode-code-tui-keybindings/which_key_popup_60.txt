@@ -1,0 +1,11 @@
+ /  Search the transcript    e  Open external editor
+ b  Toggle thinking blocks   m  Cycle to next model
+--- styles ---
+r0 c1 fg=#5cc8bb
+r0 c4-25 fg=#989898
+r0 c29 fg=#5cc8bb
+r0 c32-51 fg=#989898
+r1 c1 fg=#5cc8bb
+r1 c4-25 fg=#989898
+r1 c29 fg=#5cc8bb
+r1 c32-50 fg=#989898

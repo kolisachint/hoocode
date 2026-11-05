@@ -19,7 +19,9 @@ use hoocode_tui_keys::{
 };
 use serde_json::{Map, Value};
 
-use crate::config::{effective_overrides, normalize_key, Context, ContextOverride, KeymapConfig};
+use crate::config::{
+    effective_overrides, normalize_key, Context, ContextOverride, KeymapConfig, DEFAULT_LEADER,
+};
 
 /// One binding: id, default keys, description.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -398,15 +400,46 @@ pub fn keybinding(id: &str) -> Option<KeybindingEntry> {
 
 /// [`keybindings`] as the TUI manager's definition map.
 pub fn keybinding_definitions() -> HashMap<String, KeybindingDefinition> {
+    keybinding_definitions_for(DEFAULT_LEADER)
+}
+
+/// The definition map with the default leader sequences written with `leader`
+/// (`"ctrl+x m"` becomes `"<leader> m"`). Other keys are unchanged.
+pub fn keybinding_definitions_for(leader: &str) -> HashMap<String, KeybindingDefinition> {
     table()
         .iter()
         .map(|e| {
+            let keys: Vec<String> = e
+                .default_keys
+                .iter()
+                .map(|key| with_leader(key, leader))
+                .collect();
+            let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
             (
                 e.id.to_string(),
-                KeybindingDefinition::new(&e.default_keys, e.description),
+                KeybindingDefinition::new(&refs, e.description),
             )
         })
         .collect()
+}
+
+/// Swaps the default leader in a default key for `leader`. A key that does not
+/// start with the default leader is returned as it is.
+fn with_leader(key: &str, leader: &str) -> String {
+    match key.strip_prefix(DEFAULT_LEADER) {
+        Some(rest) if rest.starts_with(' ') => format!("{leader}{rest}"),
+        _ => key.to_string(),
+    }
+}
+
+/// One leader sequence that applies in a context: the key typed after the
+/// leader, the action it runs, and the action's description.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderEntry {
+    /// The keys after the leader, for example `"m"`.
+    pub key: String,
+    pub action: String,
+    pub description: String,
 }
 
 /// `toKeybindingsConfig`: keep string and string-array bindings; a string
@@ -475,6 +508,14 @@ impl AppKeybindingsManager {
         }
     }
 
+    /// The manager for a parsed `keybindings.json`, with no file on disk. For
+    /// tests and tools that hold the text already.
+    pub fn from_json_str(text: &str) -> Self {
+        let mut manager = Self::new(HashMap::new(), None);
+        manager.apply(Some(KeymapConfig::from_json_str(text)));
+        manager
+    }
+
     /// `KeybindingsManager.create`: load `<agent_dir>/keybindings.json`.
     /// A missing file gives the defaults. A bad file gives the defaults and a warning.
     pub fn create(agent_dir: Option<&Path>) -> Self {
@@ -514,7 +555,11 @@ impl AppKeybindingsManager {
                 }
             }
         }
-        self.manager.set_user_bindings(config.flat.clone());
+        // The default leader sequences follow the configured leader.
+        self.manager = KeybindingsManager::new(
+            keybinding_definitions_for(config.leader.id()),
+            config.flat.clone(),
+        );
         self.config = config;
     }
 
@@ -561,14 +606,21 @@ impl AppKeybindingsManager {
         ids.first().map(|id| (*id).clone())
     }
 
-    /// A leader state machine for `context`. It binds every multi-step
-    /// sequence that applies there: `Global`, the `Leader` context (written
-    /// after the leader), and `context` itself. Unbound sequences are left out.
-    pub fn leader_machine(&self, context: Context) -> LeaderMachine {
-        let mut machine =
-            LeaderMachine::new(self.config.leader.clone(), self.config.leader_timeout);
+    /// The leader sequences that apply in `context`: the defaults, then the
+    /// file's entries for `Global`, `Leader` (written after the leader) and
+    /// `context`. A later entry for the same key wins, and `null` removes it.
+    /// Maps each full key (`"ctrl+x m"`) to its action.
+    pub fn leader_table(&self, context: Context) -> BTreeMap<String, String> {
         let leader = self.config.leader.id();
         let mut table: BTreeMap<String, Option<String>> = BTreeMap::new();
+        for (id, keys) in self.manager.get_resolved_bindings() {
+            for key in keys {
+                let key = normalize_key(&key);
+                if is_leader_sequence(&key, leader) {
+                    table.insert(key, Some(id.clone()));
+                }
+            }
+        }
         for o in &self.config.overrides {
             let full = match o.context {
                 Context::Global => o.key.clone(),
@@ -578,13 +630,44 @@ impl AppKeybindingsManager {
             };
             table.insert(full, o.action.clone());
         }
-        for (key, action) in table {
-            let Some(action) = action else { continue };
-            if key.split_whitespace().count() > 1 {
-                // The parser checked that each sequence starts with the leader
-                // and uses no reserved step, so bind cannot fail here.
-                let _ = machine.bind(&key, &action);
-            }
+        table
+            .into_iter()
+            .filter_map(|(key, action)| action.map(|action| (key, action)))
+            .collect()
+    }
+
+    /// The leader sequences in the prompt, as the which-key popup lists them:
+    /// the key after the leader, the action, and its description. Sorted by key.
+    pub fn leader_entries(&self) -> Vec<LeaderEntry> {
+        let leader_len = self.config.leader.id().len();
+        self.leader_table(Context::Prompt)
+            .into_iter()
+            .map(|(full, action)| {
+                let key = full
+                    .get(leader_len..)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let description = keybinding(&action)
+                    .map(|e| e.description.to_string())
+                    .unwrap_or_else(|| action.clone());
+                LeaderEntry {
+                    key,
+                    action,
+                    description,
+                }
+            })
+            .collect()
+    }
+
+    /// A leader state machine for `context`, bound to [`Self::leader_table`].
+    pub fn leader_machine(&self, context: Context) -> LeaderMachine {
+        let mut machine =
+            LeaderMachine::new(self.config.leader.clone(), self.config.leader_timeout);
+        for (key, action) in self.leader_table(context) {
+            // Each key starts with the leader and uses no reserved step (the
+            // file parser checked that), so bind cannot fail here.
+            let _ = machine.bind(&key, &action);
         }
         machine
     }
@@ -597,6 +680,15 @@ impl AppKeybindingsManager {
     pub fn into_manager(self) -> KeybindingsManager {
         self.manager
     }
+}
+
+/// Whether a whole key is a sequence that starts with `leader`.
+fn is_leader_sequence(key: &str, leader: &str) -> bool {
+    let mut steps = key.split_whitespace();
+    steps
+        .next()
+        .is_some_and(|first| first.eq_ignore_ascii_case(leader))
+        && steps.next().is_some()
 }
 
 impl Default for AppKeybindingsManager {

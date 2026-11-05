@@ -4,6 +4,7 @@
 //! footer that used to carry them is gone (declutter: the status line under
 //! the prompt holds the session facts).
 
+use hoocode_code_tui_keybindings::{which_key_rows, LeaderEntry};
 use hoocode_tui_ratatui::{paint, Palette};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
@@ -72,10 +73,21 @@ fn render_startup_line(entry: &StartupProgress) -> String {
     }
 }
 
-/// The transient rows: the warning, then the retry notice, then extension
-/// statuses, then startup progress. Indent 1, at most `width` cells each.
+/// The leader's rows: the footer text (`Ctrl+X …`, or a note such as `no
+/// binding`), and the which-key popup once the leader has waited.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderLine {
+    pub text: String,
+    /// Empty until the popup is due.
+    pub which_key: Vec<LeaderEntry>,
+}
+
+/// The transient rows: the leader, the warning, then the retry notice, then
+/// extension statuses, then startup progress. Indent 1, at most `width` cells each.
 pub struct TransientLines {
     data: FooterDataProvider,
+    /// The leader's footer row and popup, while the leader is pending or has a note.
+    leader: Option<LeaderLine>,
     /// A warning (memory shedding, UI stall).
     notice: Option<String>,
     /// The auto-retry notice while the session retries a transient failure
@@ -87,9 +99,20 @@ impl TransientLines {
     pub fn new(data: FooterDataProvider) -> Self {
         Self {
             data,
+            leader: None,
             notice: None,
             retry_notice: None,
         }
+    }
+
+    /// The leader's rows now, if any.
+    pub fn leader(&self) -> Option<&LeaderLine> {
+        self.leader.as_ref()
+    }
+
+    /// Sets or clears the leader's rows. `None` removes them.
+    pub fn set_leader(&mut self, leader: Option<LeaderLine>) {
+        self.leader = leader;
     }
 
     /// Sets or clears the warning. `None` removes it.
@@ -113,6 +136,17 @@ impl TransientLines {
             )
         };
         let mut lines = Vec::new();
+        if let Some(leader) = &self.leader {
+            lines.push(cut(&paint(pal.dim(), &leader.text), "…"));
+            for row in which_key_rows(&leader.which_key, width) {
+                lines.push(truncate_to_width(
+                    &row,
+                    width,
+                    &paint(pal.dim(), "…"),
+                    false,
+                ));
+            }
+        }
         if let Some(notice) = &self.notice {
             lines.push(cut(&paint(pal.warn(), notice), "…"));
         }

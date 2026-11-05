@@ -98,6 +98,8 @@ struct Pending {
     depth: usize,
     /// Indices of the bindings that still match every step so far.
     candidates: Vec<usize>,
+    /// When the leader was pressed (the which-key popup waits from here).
+    started: Instant,
     deadline: Instant,
 }
 
@@ -178,6 +180,11 @@ impl LeaderMachine {
         self.pending.as_ref().map(|p| p.deadline)
     }
 
+    /// When the leader was pressed, if a sequence is pending.
+    pub fn pending_since(&self) -> Option<Instant> {
+        self.pending.as_ref().map(|p| p.started)
+    }
+
     /// Feeds one key press. `now` is the time it arrived.
     pub fn handle(&mut self, now: Instant, data: &str) -> LeaderOutcome {
         if self.pending.as_ref().is_some_and(|p| now >= p.deadline) {
@@ -190,6 +197,7 @@ impl LeaderMachine {
                     self.pending = Some(Pending {
                         depth: 1,
                         candidates: (0..self.bindings.len()).collect(),
+                        started: now,
                         deadline: now + self.timeout,
                     });
                     LeaderOutcome::Pending
@@ -249,6 +257,7 @@ impl LeaderMachine {
         self.pending = Some(Pending {
             depth,
             candidates,
+            started: pending.started,
             deadline: now + self.timeout,
         });
         LeaderOutcome::Pending

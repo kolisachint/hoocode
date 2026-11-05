@@ -36,6 +36,23 @@ fn ms(t0: Instant, millis: u64) -> Instant {
 }
 
 #[test]
+fn pending_since_is_the_time_the_leader_was_pressed() {
+    let _g = legacy();
+    let (mut m, t0) = machine();
+    assert_eq!(m.pending_since(), None);
+    m.handle(t0, CTRL_X);
+    assert_eq!(m.pending_since(), Some(t0));
+    // A key that extends the sequence keeps the original start.
+    m.handle(ms(t0, 100), "g");
+    assert_eq!(m.pending_since(), Some(t0));
+    assert_eq!(
+        m.deadline(),
+        Some(ms(t0, 100) + DEFAULT_LEADER_TIMEOUT),
+        "the timeout restarts at each key"
+    );
+}
+
+#[test]
 fn default_timeout_is_1500_ms() {
     assert_eq!(DEFAULT_LEADER_TIMEOUT, Duration::from_millis(1500));
 }

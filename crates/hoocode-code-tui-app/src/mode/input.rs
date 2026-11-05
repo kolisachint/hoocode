@@ -133,6 +133,20 @@ const EDITOR_ACTIONS: [(&str, Action); 27] = [
     ("app.mode.cycleBackward", Action::ModeBackward),
 ];
 
+/// Prompt bindings that also match on a key press and are not in the table above.
+const EXTRA_ACTIONS: [(&str, Action); 1] =
+    [("app.thinking.cycleBackward", Action::ThinkingBackward)];
+
+/// The prompt action a binding id runs, if the prompt answers it. The leader
+/// uses this for the keys typed after it.
+pub(super) fn action_for_binding(id: &str) -> Option<Action> {
+    EDITOR_ACTIONS
+        .iter()
+        .chain(EXTRA_ACTIONS.iter())
+        .find(|(bound, _)| *bound == id)
+        .map(|(_, action)| action.clone())
+}
+
 /// The prompt editor with the app's key dispatch in front of it
 /// (`CustomEditor`).
 pub(super) struct CustomEditor {
@@ -202,8 +216,7 @@ impl Component for CustomEditor {
                 .push(Action::PanelUp(data.to_string()));
             return;
         }
-        let extra = [("app.thinking.cycleBackward", Action::ThinkingBackward)];
-        for (id, action) in EDITOR_ACTIONS.iter().chain(extra.iter()) {
+        for (id, action) in EDITOR_ACTIONS.iter().chain(EXTRA_ACTIONS.iter()) {
             if kb.matches(data, id) {
                 self.actions.borrow_mut().push(action.clone());
                 return;

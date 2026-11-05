@@ -22,21 +22,32 @@ fn format_key_part(part: &str, capitalize: bool) -> String {
     }
 }
 
-/// `formatKeyText`: `a/b` alternatives, `+`-joined chords. A bare
+/// One step of a key (no `/` or space): `+`-joined chords. A bare
+/// single-character key prints exactly as typed.
+fn format_step(step: &str, capitalize: bool) -> String {
+    let parts: Vec<&str> = step.split('+').collect();
+    if parts.len() == 1 && parts[0].encode_utf16().count() == 1 {
+        return parts[0].to_string();
+    }
+    parts
+        .iter()
+        .map(|part| format_key_part(part, capitalize))
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// `formatKeyText`: `a/b` alternatives, `+`-joined chords, and a sequence's
+/// steps separated by a space (`ctrl+x m` reads `Ctrl+X m`). A bare
 /// single-character key prints exactly as typed (an uppercase letter would
 /// name `shift+<letter>`); inside a chord `capitalize` capitalizes each part.
 pub fn format_key_text(key: &str, capitalize: bool) -> String {
     key.split('/')
-        .map(|k| {
-            let parts: Vec<&str> = k.split('+').collect();
-            if parts.len() == 1 && parts[0].encode_utf16().count() == 1 {
-                return parts[0].to_string();
-            }
-            parts
-                .iter()
-                .map(|part| format_key_part(part, capitalize))
+        .map(|alternative| {
+            alternative
+                .split_whitespace()
+                .map(|step| format_step(step, capitalize))
                 .collect::<Vec<_>>()
-                .join("+")
+                .join(" ")
         })
         .collect::<Vec<_>>()
         .join("/")
