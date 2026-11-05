@@ -158,18 +158,23 @@ pub fn prompt_for_missing_session_cwd(
     let outcome: Rc<RefCell<Option<Option<String>>>> = Rc::default();
     let sink = outcome.clone();
     let fallback = issue.fallback_cwd.clone();
-    let selector = Rc::new(RefCell::new(ExtensionSelectorComponent::new(
-        &format_missing_session_cwd_prompt(issue),
-        vec!["Continue".to_string(), "Cancel".to_string()],
-        None,
-        Box::new(move |choice| {
-            let answer = match choice {
-                SelectorOutcome::Selected(option) if option == "Continue" => Some(fallback.clone()),
-                _ => None,
-            };
-            sink.borrow_mut().get_or_insert(answer);
-        }),
-    )));
+    let selector = Rc::new(RefCell::new(
+        ExtensionSelectorComponent::new(
+            &format_missing_session_cwd_prompt(issue),
+            vec!["Continue".to_string(), "Cancel".to_string()],
+            None,
+            Box::new(move |choice| {
+                let answer = match choice {
+                    SelectorOutcome::Selected(option) if option == "Continue" => {
+                        Some(fallback.clone())
+                    }
+                    _ => None,
+                };
+                sink.borrow_mut().get_or_insert(answer);
+            }),
+        )
+        .as_dialog(),
+    ));
     run_standalone(selector, tui, outcome, |s| s.poll()).flatten()
 }
 

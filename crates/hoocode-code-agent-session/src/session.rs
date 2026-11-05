@@ -1932,21 +1932,31 @@ impl AgentSession {
     /// steering message. The rest of the queue is untouched. `None` when nothing
     /// is queued.
     pub fn take_last_queued(&self) -> Option<String> {
-        let (text, from_follow_up) = {
-            let mut state = lock(&self.inner.state);
-            if let Some(text) = state.follow_up_messages.pop() {
-                (text, true)
-            } else {
-                (state.steering_messages.pop()?, false)
-            }
-        };
-        if from_follow_up {
-            self.inner.agent.pop_last_follow_up();
-        } else {
-            self.inner.agent.pop_last_steer();
+        let mut state = lock(&self.inner.state);
+        let from_follow_up = !state.follow_up_messages.is_empty();
+        if !from_follow_up && state.steering_messages.is_empty() {
+            return None;
         }
+        // The agent's queue decides. It is popped first, under the state lock,
+        // and the text comes back only if it gave up a message. A message it has
+        // already taken into a turn is not also returned to the editor.
+        let agent_gave_up = if from_follow_up {
+            self.inner.agent.pop_last_follow_up().is_some()
+        } else {
+            self.inner.agent.pop_last_steer().is_some()
+        };
+        let text = if from_follow_up {
+            state.follow_up_messages.pop()
+        } else {
+            state.steering_messages.pop()
+        };
+        drop(state);
         self.emit_queue_update();
-        Some(text)
+        if agent_gave_up {
+            text
+        } else {
+            None
+        }
     }
 
     /// Steering plus follow-up messages still queued.

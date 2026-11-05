@@ -357,7 +357,7 @@ impl Mode {
             cwd_fallback,
             choice,
         });
-        self.show_selector(title, vec!["Yes".into(), "No".into()], answer);
+        self.show_dialog_selector(title, vec!["Yes".into(), "No".into()], answer);
     }
 
     /// `runtimeHost.importFromJsonl`; a stored cwd that is gone asks first.
@@ -688,7 +688,7 @@ impl Mode {
                     fallback: issue.fallback_cwd,
                     choice,
                 });
-                self.show_selector(&title, vec!["Yes".into(), "No".into()], answer);
+                self.show_dialog_selector(&title, vec!["Yes".into(), "No".into()], answer);
             }
             Err(error) => {
                 // `handleFatalRuntimeError`.

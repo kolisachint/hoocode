@@ -146,6 +146,17 @@ fn enter_puts_the_match_in_the_prompt_for_editing_and_does_not_submit() {
 }
 
 #[test]
+fn enter_replaces_a_draft_with_the_match() {
+    // Accepting a match puts it in the prompt in place of the draft, not beside it.
+    let mut mode = mode_with_history();
+    mode.editor.borrow_mut().editor.set_text("draft");
+    press(&mut mode, CTRL_R);
+    type_text(&mut mode, "beta");
+    press(&mut mode, ENTER);
+    assert_eq!(prompt_text(&mode), "beta two");
+}
+
+#[test]
 fn escape_cancels_and_leaves_the_prompt_as_it_was() {
     let mut mode = mode_with_history();
     mode.editor.borrow_mut().editor.set_text("draft");

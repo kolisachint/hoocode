@@ -143,7 +143,8 @@ impl Mode {
         match step {
             Step::Continue => self.history_search = Some(search),
             Step::Cancel => {}
-            Step::Accept(text) => self.return_to_editor(&text),
+            // The match replaces the prompt: a draft is not joined to it.
+            Step::Accept(text) => self.editor.borrow_mut().editor.set_text(&text),
             Step::AcceptNothing => self.show_status("No matching prompt in history"),
         }
         self.sync_history_search();

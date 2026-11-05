@@ -246,3 +246,52 @@ fn question_mark_shows_the_keys_under_the_options() {
     s.handle_input("?");
     assert!(!plain(s.render(70)).join("\n").contains("hide keys"));
 }
+
+#[test]
+fn a_letter_answers_a_whole_label_or_its_first_word_never_a_prefix() {
+    // `None` is not `No`, and `Yesterday` is not `Yes`.
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, outcomes) = selector(&["None", "Yesterday"]);
+    s.handle_input("n");
+    s.handle_input("y");
+    assert!(outcomes.borrow().is_empty(), "a prefix is not an answer");
+
+    let (mut s, outcomes) = selector(&["None", "No thanks"]);
+    s.handle_input("n");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("No thanks".to_string())]
+    );
+}
+
+#[test]
+fn a_letter_answer_ignores_case() {
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (mut s, outcomes) = selector(&["yes", "NO"]);
+    s.handle_input("y");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("yes".to_string())]
+    );
+    let (mut s, outcomes) = selector(&["yes", "NO"]);
+    s.handle_input("n");
+    assert_eq!(
+        *outcomes.borrow(),
+        vec![SelectorOutcome::Selected("NO".to_string())]
+    );
+}
+
+#[test]
+fn q_does_not_answer_a_dialog_but_esc_does() {
+    // A permission or a yes/no question: a stray q does not decide it.
+    let _g = lock(Some("dark"));
+    with_app_keys();
+    let (s, outcomes) = selector(&["Yes", "No"]);
+    let mut s = s.as_dialog();
+    s.handle_input("q");
+    assert!(outcomes.borrow().is_empty(), "q is not a dialog key");
+    s.handle_input("\x1b");
+    assert_eq!(*outcomes.borrow(), vec![SelectorOutcome::Cancelled]);
+}

@@ -220,7 +220,15 @@ impl Mode {
     /// `false` when nothing is queued.
     pub(super) fn take_back_last_queued(&mut self) -> bool {
         let text = match self.session.take_last_queued() {
-            Some(text) => text,
+            Some(text) => {
+                // A queue left empty by the take-back will not run a scheduled
+                // prompt that waited in it (as `restore_queued_messages_to_editor`).
+                if self.session.pending_message_count() == 0 {
+                    self.scheduled_runs
+                        .drop_waiting(task_store(), &chrono::Local::now());
+                }
+                text
+            }
             None => match self.compaction_queue.pop() {
                 Some((text, _)) => text,
                 None => return false,

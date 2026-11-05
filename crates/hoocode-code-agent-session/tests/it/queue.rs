@@ -398,3 +398,25 @@ impl hoocode_code_agent_session::ExtensionHooks for TestCommands {
         name == "testcmd"
     }
 }
+
+/// Take-back returns a message only when the agent gives it up. A message the
+/// agent has already taken into a turn is not also returned to the editor.
+#[tokio::test(flavor = "multi_thread")]
+async fn take_back_does_not_return_a_message_the_agent_already_took() {
+    let h = Harness::new(HarnessOptions::default());
+    h.session.follow_up("queued", &[]).unwrap();
+    // The agent takes the message into its turn: its queue no longer holds it.
+    h.session.agent().clear_follow_up_queue();
+    assert_eq!(h.session.take_last_queued(), None, "already in a turn");
+    assert_eq!(h.session.pending_message_count(), 0, "and no longer queued");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn take_back_returns_the_newest_queued_message_and_keeps_the_rest() {
+    let h = Harness::new(HarnessOptions::default());
+    h.session.follow_up("first", &[]).unwrap();
+    h.session.follow_up("second", &[]).unwrap();
+    assert_eq!(h.session.take_last_queued().as_deref(), Some("second"));
+    assert_eq!(h.session.get_follow_up_messages(), ["first"]);
+    assert!(h.session.agent().has_queued_messages());
+}

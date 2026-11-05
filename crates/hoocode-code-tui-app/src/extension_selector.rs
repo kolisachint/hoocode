@@ -15,7 +15,9 @@ use hoocode_tui_ratatui::{Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 
 /// The dialog answers (K-P4): each letter picks the first option whose label
-/// starts with one of its words. `y` yes-like, `n` no-like, `a` "always".
+/// is one of its words, or starts with a one-word one (case does not matter).
+/// `y` yes-like, `n` no-like, `a` "always". A prefix does not count: `None`
+/// is not `No`, and `Yesterday` is not `Yes`.
 const YES_WORDS: [&str; 4] = ["Yes", "Trust and start", "Accept", "Answer"];
 const NO_WORDS: [&str; 3] = ["No", "Decline", "Not now"];
 const ALWAYS_WORDS: [&str; 1] = ["Always"];
@@ -81,6 +83,19 @@ pub enum SelectorOutcome {
     Cancelled,
 }
 
+/// Whether an option label answers the dialog word `word`: the label is the
+/// word, or its first word is (a trailing mark such as `,` does not count).
+/// Case does not matter.
+fn label_is_answer(label: &str, word: &str) -> bool {
+    let label = label.trim();
+    if label.eq_ignore_ascii_case(word) {
+        return true;
+    }
+    let first = label.split_whitespace().next().unwrap_or_default();
+    let first = first.trim_end_matches(|c: char| !c.is_alphanumeric());
+    !word.contains(' ') && first.eq_ignore_ascii_case(word)
+}
+
 /// One option row (content only; the console adds the `›` marker or gutter
 /// and the selection band): the option text, accent on the selected row.
 fn option_row(option: &str, selected: bool) -> Line<'static> {
@@ -104,6 +119,9 @@ pub struct ExtensionSelectorComponent {
     on_done: Box<dyn FnMut(SelectorOutcome)>,
     /// `?` shows the keys below the options.
     help: bool,
+    /// `q` closes. A list closes on it; a dialog (a permission or a yes/no
+    /// question) does not, so a stray `q` cannot answer it. Esc still closes.
+    q_closes: bool,
 }
 
 impl ExtensionSelectorComponent {
@@ -121,7 +139,14 @@ impl ExtensionSelectorComponent {
             countdown,
             on_done,
             help: false,
+            q_closes: true,
         }
+    }
+
+    /// Makes this a dialog: `q` no longer closes it (Esc still does).
+    pub fn as_dialog(mut self) -> Self {
+        self.q_closes = false;
+        self
     }
 
     /// The option a dialog letter answers (K-P4), if the options offer one.
@@ -137,11 +162,9 @@ impl ExtensionSelectorComponent {
             "app.dialog.no" => &NO_WORDS,
             _ => &ALWAYS_WORDS,
         };
-        self.options.iter().position(|option| {
-            words
-                .iter()
-                .any(|word| option == word || option.starts_with(word))
-        })
+        self.options
+            .iter()
+            .position(|option| words.iter().any(|word| label_is_answer(option, word)))
     }
 
     /// The keys under the options (`?`): the moves, the answers offered, and the exits.
@@ -162,14 +185,16 @@ impl ExtensionSelectorComponent {
                 pairs.push((key_text(id), label.to_string()));
             }
         }
-        pairs.push((
+        let close = if self.q_closes {
             format!(
                 "{}/{}",
                 key_text("tui.select.cancel"),
                 key_text("app.list.close")
-            ),
-            "close".to_string(),
-        ));
+            )
+        } else {
+            key_text("tui.select.cancel")
+        };
+        pairs.push((close, "close".to_string()));
         pairs.push((key_text("app.list.help"), "hide keys".to_string()));
         let refs: Vec<(&str, &str)> = pairs
             .iter()
@@ -260,7 +285,9 @@ impl Component for ExtensionSelectorComponent {
                 if let Some(selected) = self.options.get(self.cursor.selected()).cloned() {
                     (self.on_done)(SelectorOutcome::Selected(selected));
                 }
-            } else if kb.matches(data, "tui.select.cancel") || kb.matches(data, "app.list.close") {
+            } else if kb.matches(data, "tui.select.cancel")
+                || (self.q_closes && kb.matches(data, "app.list.close"))
+            {
                 (self.on_done)(SelectorOutcome::Cancelled);
             } else if let Some(index) = self.letter_answer(data, &kb) {
                 self.cursor.select(index);
