@@ -214,12 +214,49 @@ accepts, `/` searches, `?` shows keys, `q` or Esc closes.
 - Model picker: `s` save, `a` enable all, `x` clear all, `g` provider, Shift+Up/Down reorder (was Alt+Up/Down).
 - Tree: `h`/`l` or left/right fold, `e` edit label (was Alt+L), `t` timestamps, `1`-`5` filters, `c` filter cycle.
 
-**Approval and confirm dialogs:** not listed yet. Step K-0 lists them. Target keys: `y` yes,
-`n` no, `a` always, Enter default, Esc deny.
+**Approval and confirm dialogs** (listed 2026-11-05 from the code; line numbers as of that date).
+Target keys: `y` yes, `n` no, `a` always, Enter default, Esc deny. Bare letters fire only
+when no text field holds text (K-P4). Where a reply field is always open, the letter fires
+only while the reply is empty, the same gate the clearance card uses for `e` today. Open
+question 4 decides this.
 
-**Mission Control keys** (`docs/design/mission-control.md:420-430`) are already Ctrl or
-PgUp only. Review them against K-P3 in K-0. Fix the Alt mentions at
-`mission-control.md:210` and `:285`.
+| Surface | Current key | Target key | file:line |
+|---|---|---|---|
+| Tool clearance card (yes, always, no) | Enter picks the highlighted row (yes at the start). `1` `2` `3` pick. `↑` `↓` move. Esc = no. `e` edits the command first. Letters type into the reply | `y` yes, `a` always, `n` no. Enter default, Esc no. `1` `2` `3` stay as aliases. `e` stays | `clearance_card.rs:125-136` (labels), `:193-202` (`choose`), `:210` (handler), `:250-267` (keys) |
+| Tool clearance card, reply typed | Enter sends the reply as the denial. Esc clears the reply (a second Esc denies). Letters type | No change. Letters type while the reply holds text | `clearance_card.rs:231-243` |
+| End-of-shift card (quit) | Enter ends the shift. Esc stays | No change (Enter default, Esc stay) | `end_shift.rs:81-87` (keys `:83-84`) |
+| End-of-shift jobs card | Enter or `k` kills all. `l` leaves them running. Esc stays | Enter kills all (default). `k` and `l` stay, since they name the action. Open question 4 | `end_shift.rs:229-236` (keys `:232-234`) |
+| Yes/No lists on the generic selector: import confirm, missing-cwd confirm, extension and permission gate prompts | `↑` `↓` and `j` `k` move. Enter picks. Esc or Ctrl+C cancels. No letter answers | `y` = first "Yes", `n` = "No", `a` = "Always" when offered. Enter default, Esc deny | `extension_selector.rs:179-192` (shared selector); `mode/dialogs.rs:127-146` (gate); `mode/session_ops.rs:352-359` (import), `:690` (missing cwd); `dialog_bridge.rs:142` (permission gate select) |
+| MCP trust prompt ("Trust and start", "Not now") | Generic selector: Enter picks row 1. Esc cancels | `y` = Trust and start, `n` = Not now. Enter default, Esc deny | `mode/mcp.rs:8-10` (labels), `:81` (`ui.select`) |
+| MCP elicitation (URL: Accept, Decline, Cancel; form: Answer, Decline, Cancel) | Generic selector: Enter picks row 1. Esc cancels | `y` = Accept or Answer, `n` = Decline, Esc = Cancel. Enter default | `mcp_elicitation.rs:50-83` (choices at `:56`, `:67`) |
+| Ask-user question card (AskUserQuestion) | Enter or Tab confirms. `→` next. Esc skips. `1`-`9` answer at once. Letters type into the custom answer when the row allows it | No `y` or `n`: the card has a text row, and letters are its text. Enter default, Esc skip, digits stay | `ask_options.rs:273` (handler), `:292-293` (confirm), `:298-299` (cancel), `:313` (letters), `:324-330` (digits) |
+
+Not an approval, noted in passing: the session picker's delete (`app.session.delete`,
+`alt+x`, `keybindings.rs:291`) has no confirm step in the code.
+
+**Mission Control keys** (`docs/design/mission-control.md`, keys table at `:420-430`, plus keys named
+elsewhere in that doc). Review against K-P3 (Ctrl only for interrupt or clear, exit, suspend,
+paste, history search, line editing, leader):
+
+| Key | Today (Mission Control) | K-P3 check | Target | Where |
+|---|---|---|---|---|
+| PgUp, PgDn | Page the transcript, pinning at the prompt | Not Ctrl. Keep | Keep | `:424` |
+| Shift+↑, Shift+↓ | Aliases of PgUp and PgDn (M1d) | Not Ctrl. Keep | Keep | `:437` |
+| Mouse wheel, scrollbar click | Scroll, pin, return to live | Not a key. Keep | Keep | `tui.rs:141`, `:1068`, `:527` (mission-control.md Keys, scroll rows) |
+| Ctrl+Home, Ctrl+End | Top, and live | Ctrl not on the list | Scroll mode `g` / `G` (plan, Scroll mode) | `:425` |
+| Ctrl+R | Transcript search (SCAN), pins at the bottom | Ctrl+R is for prompt history only | Leader `/` (plan: Ctrl+R moves to leader `/`) | `:78`, `:93`, `:426` |
+| Ctrl+Up, Ctrl+Down | Previous and next user message | Ctrl not on the list | Scroll mode `[` / `]` | `:427` |
+| ↑, ↓ (pinned) | One line. At the live prompt: input history | Arrows allowed (K-P4) | Keep | `:206-213` in code, `:428` |
+| Esc | Leave the pinned view. Clears search first. Aborts a run | Esc allowed | Keep | `:429` |
+| `/`, `n`, `p` | Search in the pinned view; next and previous match | Bare letters, scroll mode (K-P4) | Keep | `:430` |
+| Ctrl+G | Flight plan console (task panel) | Ctrl not on the list | Leader `g` (task panel show or hide). Assumes the flight plan console is the task panel | `:38`, `:79` |
+| Ctrl+T | Expand thinking text | Ctrl not on the list | Leader `b` (show or hide thinking blocks) | `:39`, `:133` |
+| Shift+Tab | BUILD and PLAN toggle | Keep (plan: Shift+Tab cycles mode) | Keep | `:80` |
+| Ctrl+C, twice | End of shift (`/quit` too) | Clear or exit. Keep | Keep | `:81` |
+| Ctrl+Z | Suspend (M1e check) | Suspend. Keep | Keep | `:285`, `:460` |
+| Alt+e | External editor (M1e check) | Alt is out of defaults (K-P1) | Leader `e` (ctrl+x, then e) | `:285` (fixed in this commit) |
+
+The Alt mentions at `mission-control.md:210` and `:285` now name the leader keys.
 
 ### Leader behaviour
 
