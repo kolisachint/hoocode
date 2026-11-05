@@ -207,7 +207,7 @@ Superseded by [radar-r3.md](radar-r3.md) (2026-10-29): grouped missions with a t
 
 ### Keys
 
-Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today's bindings are checked against §6 at M1, and any clash comes back to the user.
+Spec §6.1 and §6.2 are the reference. Letter keys work with the leader (ctrl+x, then the letter) or, in lists, as bare letters (themes-keybindings.md, K-P1 to K-P4). No Alt key is in the defaults. Today's bindings are checked against §6 at M1, and any clash comes back to the user.
 
 ## ratatui architecture (decided by the orchestrator)
 
@@ -282,7 +282,7 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 **As built (M1a to M1e, 2026-10-17).** Full-screen is on by default; `HOOCODE_FULLSCREEN=0` turns it off for a run.
 
 - M1a: row arithmetic in `tui-render/src/fullscreen.rs` (commit cfe54c4). M1b: full-screen mode in `Tui` (cfe54c4), with review fixes (174ebc2). M1c: HUD row, gap, tree and setting (2ae76b9). M1d: scroll on the body, `N new`, shift+arrows, jump to user message in the body (7f58fed). M1e: lifecycle and checks (the M1e commit).
-- M1e checks, by hand under tmux with the mock LLM (the real binary): ctrl+z, then `fg`, returns to the normal screen while stopped and re-enters the alternate screen with a repaint. Alt+e (the external editor, `$EDITOR`) and `!echo` (bash mode, which runs inline and never leaves the screen) keep the alternate screen. Ctrl+C twice exits and restores; the tty is back in cooked mode. SIGTERM restored only after the fix in M1e (see the gaps below).
+- M1e checks, by hand under tmux with the mock LLM (the real binary): ctrl+z, then `fg`, returns to the normal screen while stopped and re-enters the alternate screen with a repaint. leader e, i.e. ctrl+x then e (the external editor, `$EDITOR`) and `!echo` (bash mode, which runs inline and never leaves the screen) keep the alternate screen. Ctrl+C twice exits and restores; the tty is back in cooked mode. SIGTERM restored only after the fix in M1e (see the gaps below).
 - M1e automated: `tui-terminal/tests/it/crash_restore.rs` runs a child process. A UI-thread panic writes the restore sequence (`?1049l` and the rest) to stdout. SIGTERM restores and exits 143. `tui-render` has an ignored timing test, `perf_long_transcript_frame_time`.
 - M1e fixes found by these checks: SIGTERM and SIGHUP had no handler, so a TUI killed by SIGTERM left the alternate screen on (the normal screen was not restored). Now `interrupt::install_terminate_restore` (installed from `ProcessTerminal::start`) restores and exits. Full-screen compose strips the cursor marker only on the drawn rows, not on the whole transcript, while live (5,000 lines: 2.8 ms to 1.3 ms per frame in a debug build).
 - Mouse: with reporting on (the default), a plain drag does not select text. Selection is shift+drag, a terminal behaviour the app does not change. `/copy` copies the last reply with no selection.

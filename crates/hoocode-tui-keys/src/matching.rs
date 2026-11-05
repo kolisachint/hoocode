@@ -49,6 +49,17 @@ impl KeySpec {
     pub fn matches(&self, data: &str) -> bool {
         matches_spec(data, &self.key, self.modifier)
     }
+
+    /// Whether this key types a character: a single-character key (a letter,
+    /// digit or symbol) or space, with no Ctrl, Alt or Super. Shift alone
+    /// still types, so `shift+a` is printable.
+    pub fn is_printable(&self) -> bool {
+        let non_text = modifiers::CTRL | modifiers::ALT | modifiers::SUPER;
+        if self.modifier & non_text != 0 {
+            return false;
+        }
+        self.key == "space" || self.key.chars().count() == 1
+    }
 }
 
 /// Raw 0x08 (BS) is ambiguous: Windows Terminal uses it for Ctrl+Backspace,

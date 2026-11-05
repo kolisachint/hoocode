@@ -8,13 +8,18 @@
 //! `keybinding_layout` tests; the rationale for each key is in hoocode's
 //! `core/keybindings.ts`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::Duration;
 
-use hoocode_tui_keys::{KeybindingDefinition, KeybindingsManager, TUI_KEYBINDINGS};
+use hoocode_tui_keys::{
+    KeybindingDefinition, KeybindingsManager, LeaderKey, LeaderMachine, TUI_KEYBINDINGS,
+};
 use serde_json::{Map, Value};
+
+use crate::config::{effective_overrides, normalize_key, Context, ContextOverride, KeymapConfig};
 
 /// One binding: id, default keys, description.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -451,27 +456,14 @@ pub fn order_keybindings_config(config: &Map<String, Value>) -> Map<String, Valu
     ordered
 }
 
-fn load_raw_config(path: &Path) -> Option<Map<String, Value>> {
-    let content = std::fs::read_to_string(path).ok()?;
-    match serde_json::from_str::<Value>(&content).ok()? {
-        Value::Object(map) => Some(map),
-        _ => None,
-    }
-}
-
-fn load_from_file(path: &Path) -> HashMap<String, Vec<String>> {
-    let Some(raw) = load_raw_config(path) else {
-        return HashMap::new();
-    };
-    to_keybindings_config(&Value::Object(raw))
-}
-
 /// The app's keybindings manager: the TUI manager over [`keybindings`], plus
-/// the `keybindings.json` it was loaded from.
+/// the parsed `keybindings.json` it was loaded from (leader, timeout, context
+/// bindings and warnings).
 #[derive(Debug, Clone)]
 pub struct AppKeybindingsManager {
     manager: KeybindingsManager,
     config_path: Option<PathBuf>,
+    config: KeymapConfig,
 }
 
 impl AppKeybindingsManager {
@@ -479,29 +471,122 @@ impl AppKeybindingsManager {
         Self {
             manager: KeybindingsManager::new(keybinding_definitions(), user_bindings),
             config_path,
+            config: KeymapConfig::defaults(),
         }
     }
 
-    /// `KeybindingsManager.create`: load `<agent_dir>/keybindings.json`
+    /// `KeybindingsManager.create`: load `<agent_dir>/keybindings.json`.
+    /// A missing file gives the defaults. A bad file gives the defaults and a warning.
     pub fn create(agent_dir: Option<&Path>) -> Self {
         let agent_dir = agent_dir
             .map(Path::to_path_buf)
             .unwrap_or_else(hoocode_code_paths::agent_dir);
         let config_path = agent_dir.join("keybindings.json");
-        let user_bindings = load_from_file(&config_path);
-        Self::new(user_bindings, Some(config_path))
+        let mut manager = Self::new(HashMap::new(), Some(config_path.clone()));
+        manager.apply(KeymapConfig::load(&config_path));
+        manager
     }
 
-    /// Re-read the config file.
+    /// Re-read the config file. A file that is now missing gives the defaults.
     pub fn reload(&mut self) {
-        if let Some(path) = &self.config_path {
-            let bindings = load_from_file(path);
-            self.manager.set_user_bindings(bindings);
+        if let Some(path) = self.config_path.clone() {
+            self.apply(KeymapConfig::load(&path));
         }
+    }
+
+    /// Takes a parsed file (`None`: no file, so the defaults).
+    fn apply(&mut self, loaded: Option<KeymapConfig>) {
+        let mut config = loaded.unwrap_or_else(KeymapConfig::defaults);
+        for action in config.flat.keys() {
+            if keybinding(action).is_none() {
+                config
+                    .warnings
+                    .push(format!("unknown action {action:?}; skipped"));
+            }
+        }
+        for o in &config.overrides {
+            if let Some(action) = &o.action {
+                if keybinding(action).is_none() {
+                    config.warnings.push(format!(
+                        "{}: unknown action {action:?}; skipped",
+                        o.context.name()
+                    ));
+                }
+            }
+        }
+        self.manager.set_user_bindings(config.flat.clone());
+        self.config = config;
     }
 
     pub fn config_path(&self) -> Option<&Path> {
         self.config_path.as_deref()
+    }
+
+    /// The leader key (`ctrl+x` unless the file names another).
+    pub fn leader(&self) -> &LeaderKey {
+        &self.config.leader
+    }
+
+    /// How long a pending leader waits for its next key.
+    pub fn leader_timeout(&self) -> Duration {
+        self.config.leader_timeout
+    }
+
+    /// Problems found in the file. Each names what was skipped.
+    pub fn warnings(&self) -> &[String] {
+        &self.config.warnings
+    }
+
+    /// The grouped form's bindings, and the flat form's sequences, as read.
+    pub fn overrides(&self) -> &[ContextOverride] {
+        &self.config.overrides
+    }
+
+    /// The action bound to `key` in `context`, or `None` when the key is
+    /// unbound there. A key the file sets in this context (or in `Global`)
+    /// wins. Any other key uses the flat bindings, defaults included. If
+    /// several actions share a key, the first id in sorted order wins.
+    pub fn action_for_key(&self, context: Context, key: &str) -> Option<String> {
+        let key = normalize_key(key);
+        if let Some(action) = effective_overrides(&self.config.overrides, context).get(&key) {
+            return action.clone();
+        }
+        let resolved = self.manager.get_resolved_bindings();
+        let mut ids: Vec<&String> = resolved
+            .iter()
+            .filter(|(_, keys)| keys.iter().any(|k| normalize_key(k) == key))
+            .map(|(id, _)| id)
+            .collect();
+        ids.sort();
+        ids.first().map(|id| (*id).clone())
+    }
+
+    /// A leader state machine for `context`. It binds every multi-step
+    /// sequence that applies there: `Global`, the `Leader` context (written
+    /// after the leader), and `context` itself. Unbound sequences are left out.
+    pub fn leader_machine(&self, context: Context) -> LeaderMachine {
+        let mut machine =
+            LeaderMachine::new(self.config.leader.clone(), self.config.leader_timeout);
+        let leader = self.config.leader.id();
+        let mut table: BTreeMap<String, Option<String>> = BTreeMap::new();
+        for o in &self.config.overrides {
+            let full = match o.context {
+                Context::Global => o.key.clone(),
+                Context::Leader => normalize_key(&format!("{leader} {}", o.key)),
+                _ if o.context == context => o.key.clone(),
+                _ => continue,
+            };
+            table.insert(full, o.action.clone());
+        }
+        for (key, action) in table {
+            let Some(action) = action else { continue };
+            if key.split_whitespace().count() > 1 {
+                // The parser checked that each sequence starts with the leader
+                // and uses no reserved step, so bind cannot fail here.
+                let _ = machine.bind(&key, &action);
+            }
+        }
+        machine
     }
 
     /// Install as the manager library components consult.

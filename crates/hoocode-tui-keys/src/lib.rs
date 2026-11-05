@@ -5,8 +5,10 @@
 mod constants;
 mod keybindings;
 mod kitty;
+mod leader;
 mod matching;
 mod parse;
+mod sequence;
 mod state;
 
 pub use keybindings::{
@@ -17,6 +19,10 @@ pub use kitty::{
     decode_kitty_printable, decode_modify_other_keys_printable, decode_printable_key,
     is_key_release, parse_kitty_sequence, ParsedKittySequence,
 };
+pub use leader::{
+    CancelReason, LeaderError, LeaderKey, LeaderMachine, LeaderOutcome, DEFAULT_LEADER_TIMEOUT,
+};
 pub use matching::{matches_key, KeySpec};
 pub use parse::parse_key;
+pub use sequence::{KeySequence, KeyStep, SequenceError};
 pub use state::{is_kitty_protocol_active, set_kitty_protocol_active};
