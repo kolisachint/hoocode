@@ -22,6 +22,20 @@ use serde_json::{Map, Value};
 /// The leader key when the file does not name one.
 pub const DEFAULT_LEADER: &str = "ctrl+x";
 
+/// Keys no binding may take: the terminal's own control keys that hoocode
+/// relies on. A binding to one, or a leader that is one, is skipped with an error.
+pub const RESERVED_KEYS: [&str; 7] = [
+    "ctrl+c", "ctrl+d", "ctrl+z", "ctrl+m", "ctrl+i", "ctrl+[", "ctrl+h",
+];
+
+/// Keys the terminal or the shell often takes (flow control, the NUL of
+/// Ctrl+Space). They can be bound, with a caution that they may never arrive.
+pub const WARNED_KEYS: [&str; 4] = ["ctrl+s", "ctrl+q", "ctrl+b", "ctrl+space"];
+
+/// Top-level keys starting with `$` are comments for a reader (the defaults
+/// file's `$comment` and `$reserved`). The loader ignores them.
+const COMMENT_PREFIX: char = '$';
+
 /// A scope in which bindings apply. A binding in `Global` applies everywhere.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Context {
@@ -92,6 +106,8 @@ pub struct KeymapConfig {
     pub overrides: Vec<ContextOverride>,
     /// Problems found while reading the file. Each one names what was skipped.
     pub warnings: Vec<String>,
+    /// Bindings that are kept but may not work: a warned key (see [`WARNED_KEYS`]).
+    pub cautions: Vec<String>,
 }
 
 /// Collapses runs of whitespace, so `"ctrl+x  m"` and `"ctrl+x m"` are one key.
@@ -113,6 +129,7 @@ impl KeymapConfig {
             flat: HashMap::new(),
             overrides: Vec::new(),
             warnings: Vec::new(),
+            cautions: Vec::new(),
         }
     }
 
@@ -167,7 +184,8 @@ impl KeymapConfig {
             return;
         };
         match LeaderKey::new(text) {
-            Ok(leader) => self.leader = leader,
+            Ok(leader) if self.allow_key("leader", text) => self.leader = leader,
+            Ok(_) => {}
             Err(err) => self
                 .warnings
                 .push(format!("leader rejected ({err}); using ctrl+x")),
@@ -186,10 +204,12 @@ impl KeymapConfig {
         }
     }
 
-    /// The flat form: every top-level key except the reserved ones.
+    /// The flat form: every top-level key except the reserved ones and comments.
     fn read_flat(&mut self, map: &Map<String, Value>) {
         for (action, value) in map {
-            if matches!(action.as_str(), "leader" | "leaderTimeoutMs" | "bindings") {
+            if matches!(action.as_str(), "leader" | "leaderTimeoutMs" | "bindings")
+                || action.starts_with(COMMENT_PREFIX)
+            {
                 continue;
             }
             let keys = match value {
@@ -212,14 +232,82 @@ impl KeymapConfig {
             };
             let mut single = Vec::new();
             for key in keys {
-                if self.is_sequence(&key) {
+                if KeySequence::parse(&key).is_err() {
+                    self.warnings
+                        .push(format!("{action}: {key:?} is not a key; skipped"));
+                } else if self.is_sequence(&key) {
                     self.add_sequence(Context::Prompt, &key, Some(action.clone()));
-                } else {
+                } else if self.allow_key(action, &key) {
                     single.push(key);
                 }
             }
             self.flat.insert(action.clone(), single);
         }
+        self.check_flat_conflicts();
+    }
+
+    /// A key listed for two actions in the flat form. Both are kept, and the
+    /// first id in sorted order runs when the key is pressed. Reported once per key.
+    fn check_flat_conflicts(&mut self) {
+        let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (action, keys) in &self.flat {
+            for key in keys {
+                owners
+                    .entry(normalize_key(key).to_lowercase())
+                    .or_default()
+                    .push(action.clone());
+            }
+        }
+        for (key, mut actions) in owners {
+            if actions.len() > 1 {
+                actions.sort();
+                self.warnings.push(format!(
+                    "{key}: listed for {} in the file; the first id in sorted order runs",
+                    actions.join(" and ")
+                ));
+            }
+        }
+    }
+
+    /// Whether a single key may be bound, for the file's `label` (a context or
+    /// an action). A reserved key is skipped with an error. A warned key is kept
+    /// with a caution.
+    fn allow_key(&mut self, label: &str, key: &str) -> bool {
+        let lower = normalize_key(key).to_lowercase();
+        if RESERVED_KEYS.contains(&lower.as_str()) {
+            self.warnings.push(format!(
+                "{label}: {key} is reserved and cannot be rebound; skipped"
+            ));
+            return false;
+        }
+        if WARNED_KEYS.contains(&lower.as_str()) {
+            self.cautions.push(format!(
+                "{label}: {key} is often taken by the terminal or the shell, so it may never reach hoocode"
+            ));
+        }
+        true
+    }
+
+    /// Adds a binding in a context. A second binding of the same key in the same
+    /// context replaces the first, with an error when the actions differ.
+    fn push_override(&mut self, new: ContextOverride) {
+        if let Some(pos) = self
+            .overrides
+            .iter()
+            .position(|o| o.context == new.context && o.key == new.key)
+        {
+            let earlier = self.overrides.remove(pos);
+            if earlier.action != new.action {
+                self.warnings.push(format!(
+                    "{}: {} is bound twice in the file ({} and {}); the first is skipped",
+                    new.context.name(),
+                    new.key,
+                    action_text(&earlier.action),
+                    action_text(&new.action),
+                ));
+            }
+        }
+        self.overrides.push(new);
     }
 
     /// The grouped form: `"bindings": [{"context": ..., "bindings": {...}}]`.
@@ -292,15 +380,20 @@ impl KeymapConfig {
                 ));
                 return;
             }
-            self.overrides.push(ContextOverride {
+            self.push_override(ContextOverride {
                 context,
                 key,
                 action,
             });
         } else if is_sequence {
             self.add_sequence(context, &key, action);
-        } else {
-            self.overrides.push(ContextOverride {
+        } else if self.is_leader_step(&key) {
+            self.warnings.push(format!(
+                "{}: {key:?} is the leader key; bind a sequence after it, e.g. \"{key} m\"; skipped",
+                context.name()
+            ));
+        } else if self.allow_key(context.name(), &key) {
+            self.push_override(ContextOverride {
                 context,
                 key,
                 action,
@@ -336,12 +429,17 @@ impl KeymapConfig {
             ));
             return;
         }
-        self.overrides.push(ContextOverride {
+        self.push_override(ContextOverride {
             context,
             key,
             action,
         });
     }
+}
+
+/// The action a binding names, for a message: `nothing (unbound)` for `null`.
+fn action_text(action: &Option<String>) -> &str {
+    action.as_deref().unwrap_or("nothing (unbound)")
 }
 
 /// The effective per-key table for one context: `Global` first, then the

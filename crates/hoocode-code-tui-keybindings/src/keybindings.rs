@@ -606,6 +606,27 @@ impl AppKeybindingsManager {
         &self.config.warnings
     }
 
+    /// Bindings kept but cautioned about: a key the terminal or the shell often takes.
+    pub fn cautions(&self) -> &[String] {
+        &self.config.cautions
+    }
+
+    /// Every key the file lists (flat values, grouped keys, leader sequences),
+    /// sorted and without repeats. The Alt notice reads it.
+    pub fn bound_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self
+            .config
+            .flat
+            .values()
+            .flatten()
+            .cloned()
+            .chain(self.config.overrides.iter().map(|o| o.key.clone()))
+            .collect();
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
     /// The grouped form's bindings, and the flat form's sequences, as read.
     pub fn overrides(&self) -> &[ContextOverride] {
         &self.config.overrides
@@ -703,6 +724,30 @@ impl AppKeybindingsManager {
 
     pub fn into_manager(self) -> KeybindingsManager {
         self.manager
+    }
+}
+
+/// The result of `hoocode keybindings check`: the file's problems. `errors`
+/// are bindings skipped or ignored, and `cautions` are bindings kept that may not work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckReport {
+    /// The file that was read (`<agent dir>/keybindings.json`).
+    pub path: PathBuf,
+    /// Whether the file exists. A missing file is fine: the defaults apply.
+    pub exists: bool,
+    pub errors: Vec<String>,
+    pub cautions: Vec<String>,
+}
+
+/// Reads `<agent_dir>/keybindings.json` and reports what it found. Never fails.
+pub fn check_file(agent_dir: &Path) -> CheckReport {
+    let manager = AppKeybindingsManager::create(Some(agent_dir));
+    let path = agent_dir.join("keybindings.json");
+    CheckReport {
+        exists: path.is_file(),
+        path,
+        errors: manager.warnings().to_vec(),
+        cautions: manager.cautions().to_vec(),
     }
 }
 

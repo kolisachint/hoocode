@@ -193,6 +193,9 @@ impl Mode {
     /// a rebound key repaints it.
     pub(super) fn handle_hotkeys_command(&mut self) {
         let controls = handle(ControlsComponent::new());
+        controls
+            .borrow_mut()
+            .set_problems(self.keybinding_problems.clone());
         self.set_picker(
             ActivePicker::Controls(controls.clone()),
             as_component(&controls),

@@ -55,3 +55,19 @@ fn controls_100() {
 fn controls_80() {
     check("controls_80", 80);
 }
+
+#[test]
+fn keybinding_problems_are_listed_under_the_groups_and_hidden_when_none() {
+    let _g = lock();
+    let mut controls = ControlsComponent::new();
+    controls.set_problems(vec![
+        "error: ctrl+c is reserved and cannot be rebound".into()
+    ]);
+    let rendered = render_golden(&mut controls, 100);
+    let text = rendered.split("--- styles ---").next().unwrap_or_default();
+    assert!(text.contains("keybindings.json · 1 problem"), "{text}");
+    assert!(text.contains("ctrl+c is reserved"), "{text}");
+    controls.set_problems(Vec::new());
+    let rendered = render_golden(&mut controls, 100);
+    assert!(!rendered.contains("keybindings.json ·"), "{rendered}");
+}

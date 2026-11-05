@@ -133,7 +133,7 @@ fn null_and_none_unbind_a_key_in_its_context_only() {
         r#"{
             "bindings": [
                 {"context": "Prompt", "bindings": {"g": null}},
-                {"context": "Scroll", "bindings": {"ctrl+c": "none"}}
+                {"context": "Scroll", "bindings": {"j": "none"}}
             ]
         }"#,
     );
@@ -142,7 +142,7 @@ fn null_and_none_unbind_a_key_in_its_context_only() {
     assert!(m.get_keys("app.scroll.top").contains(&"g".to_string()));
     assert_eq!(m.action_for_key(Context::Prompt, "g"), None);
     assert!(m.action_for_key(Context::Scroll, "g").is_some());
-    assert_eq!(m.action_for_key(Context::Scroll, "ctrl+c"), None);
+    assert_eq!(m.action_for_key(Context::Scroll, "j"), None);
 }
 
 #[test]

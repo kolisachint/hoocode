@@ -300,6 +300,7 @@ impl Mode {
         if let Some(error) = self.session.model_registry().error() {
             self.show_error(&format!("models.json error: {error}"));
         }
+        self.show_keybinding_problems();
         self.show_status("Reloaded keybindings, skills, prompts, themes");
     }
 
@@ -770,6 +771,7 @@ impl Mode {
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
         self.leader = super::leader::LeaderState::new(&keybindings);
+        self.keybinding_problems = super::keymap_notices::problem_lines(&keybindings);
         let settings = self.session.settings();
         let (show_hardware_cursor, clear_on_shrink, hide_thinking_block) = (
             settings.show_hardware_cursor(),

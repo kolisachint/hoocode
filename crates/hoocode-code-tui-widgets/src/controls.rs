@@ -353,6 +353,8 @@ pub struct ControlsComponent {
     search: Rc<RefCell<Input>>,
     events: Vec<ControlsEvent>,
     focused: bool,
+    /// Problems in `keybindings.json` (errors, then cautions), shown under the groups.
+    problems: Vec<String>,
 }
 
 impl ControlsComponent {
@@ -364,7 +366,13 @@ impl ControlsComponent {
             search: Rc::new(RefCell::new(search)),
             events: Vec::new(),
             focused: false,
+            problems: Vec::new(),
         }
+    }
+
+    /// Replaces the problems shown under the groups. An empty list hides the section.
+    pub fn set_problems(&mut self, problems: Vec<String>) {
+        self.problems = problems;
     }
 
     /// The events the app has not collected yet.
@@ -422,6 +430,23 @@ impl Component for ControlsComponent {
                 "No matching bindings".to_string(),
                 Palette::current().dim(),
             )])];
+        }
+        if !self.problems.is_empty() {
+            let count = self.problems.len();
+            let noun = if count == 1 { "problem" } else { "problems" };
+            console.top.push(Line::from(vec![Span::styled(
+                format!("keybindings.json · {count} {noun}"),
+                Palette::current().warn(),
+            )]));
+            for problem in &self.problems {
+                console.top.push(Line::from(truncate_spans(
+                    vec![Span::styled(
+                        format!("  {problem}"),
+                        Palette::current().dim(),
+                    )],
+                    width,
+                )));
+            }
         }
         // The hint row only promises what the pane does.
         console.hint = hints(&[("tab", "layer"), ("esc", "close")]);

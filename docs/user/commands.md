@@ -13,6 +13,7 @@ covers the ones most people need.
 |---|---|
 | `hoocode config` | Turn skills, prompts and other resources on or off |
 | `hoocode update` | Print the command that updates hoocode |
+| `hoocode keybindings` | Print the default keys (`--defaults`), check `keybindings.json` (`check`), or show the bytes a key press sends (`--read`). See [Keybindings](keybindings.md) |
 | `hoocode app-server [--listen URL]` | Serve this folder's sessions over the app-server protocol |
 
 For managing plugins without starting a session:

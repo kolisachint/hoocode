@@ -1,4 +1,4 @@
-  Keys  ?   plain   ctrl   leader   alt  123 bindings · 26 shown
+  Keys  ?   plain   ctrl   leader   alt  124 bindings · 26 shown
  prompt
  ctrl+x c  Copy the agent's last message to the clipboard    ctrl+x y  Yank pop    ctrl+x z  Redo
  transcript
@@ -14,7 +14,7 @@
  ctrl+x M  Cycle to previous model
  ctrl+x O  Cycle tool output view backward
  ctrl+x a  Cycle agent mode backward
- ctrl+x d  Restore queued messages
+ ctrl+x d  Take back the last queued message
  ctrl+x e  Open external editor
  ctrl+x f  Queue follow-up message
  ctrl+x g  Show or hide the task panel
@@ -94,8 +94,8 @@ r15 c0-8 fg=#e5e5e7 bg=#1e1e2a
 r15 c9-35 fg=#989898 bg=#1e1e2a
 r15 c36-99 fg=#e5e5e7 bg=#1e1e2a
 r16 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r16 c9-33 fg=#989898 bg=#1e1e2a
-r16 c34-99 fg=#e5e5e7 bg=#1e1e2a
+r16 c9-43 fg=#989898 bg=#1e1e2a
+r16 c44-99 fg=#e5e5e7 bg=#1e1e2a
 r17 c0-8 fg=#e5e5e7 bg=#1e1e2a
 r17 c9-30 fg=#989898 bg=#1e1e2a
 r17 c31-99 fg=#e5e5e7 bg=#1e1e2a

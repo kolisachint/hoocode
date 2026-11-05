@@ -85,6 +85,7 @@ mod history_search;
 mod history_search_tests;
 mod input;
 mod job_tail;
+mod keymap_notices;
 mod leader;
 #[cfg(test)]
 mod leader_tests;
@@ -455,6 +456,8 @@ struct Mode {
     transient: Rc<RefCell<TransientLines>>,
     /// The leader key at the prompt (Ctrl+X, then a key): see `leader.rs`.
     leader: leader::LeaderState,
+    /// Problems in `keybindings.json` (errors, then cautions), listed by `/hotkeys`.
+    keybinding_problems: Vec<String>,
     /// The open Ctrl+R history search, if any (`history_search.rs`).
     history_search: Option<history_search::HistorySearch>,
     /// Mirrors `history_search.is_some()` for `CustomEditor`, which routes keys.
@@ -639,6 +642,7 @@ impl Mode {
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
         let leader = leader::LeaderState::new(&keybindings);
+        let keybinding_problems = keymap_notices::problem_lines(&keybindings);
 
         // The bundled themes' reference copies, after an upgrade. A failure is
         // a diagnostics warning, never a crash.
@@ -975,6 +979,7 @@ impl Mode {
             task_panel,
             panel_takes_up,
             history_search: None,
+            keybinding_problems,
             history_search_active,
             queue_recallable,
             task_store_subscription: None,
@@ -1294,6 +1299,7 @@ impl Mode {
         };
         self.render_resources();
         self.show_startup_notices(changelog);
+        self.show_keymap_startup_notes();
         // Messages after the resource listing, as the pin orders them.
         self.render_initial_messages();
         if self.footer_data.get_skip_permissions() {
