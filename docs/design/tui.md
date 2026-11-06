@@ -318,6 +318,158 @@ Dialogs and notices have no golden pin yet. Their mockup text is the only copy (
 - One step per commit. The commit updates `docs/maps/ui.md` and `docs/maps/packages.md` when a crate, screen or command changes. It updates `docs/user/` when a flag, command, key or path changes.
 - Done bar: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run -p <crates>`. Errors use the hand-written enums.
 
+## Proposed: single view (UI-21, UI-22)
+
+Proposed 2026-11-06, pending the decisions below. Mockup: `docs/assets/mockups/tui-single-view.html` (open in a browser; Dark and Light, and 40, 60, 80 and 120 column controls). Nothing here is built or decided. The rules above hold until the user decides, and no row is added to Decisions yet.
+
+### Interaction model
+
+- One transcript mode. Each tool call is one row, collapsed. A click on the header, or Enter on a focused row, shows the full output. A second click hides it. No outline, peek or full, and no view name.
+- Each block has an `expanded` flag. It starts false, lives in memory and is not saved, so a resumed session opens collapsed. It survives resize, theme change and rewrap.
+- Live: a click pins the view first, with the header on the same screen row, then toggles. `↓ N new` counts rows that arrive below. While a turn runs the hint is `G live`, because `esc` there also stops the turn.
+
+| Key | Where | Action |
+|---|---|---|
+| `enter` | pinned, a block focused | Toggle it. With no focus, unchanged |
+| `{` `}` | pinned, empty prompt | Focus the previous or next block |
+| `ctrl+x u` | prompt | Focus the newest block and pin the view |
+| `ctrl+x o` | prompt | Expand every block. If all are open, collapse all |
+| `y` | block focused | Copy the raw output (never the rendered rows) |
+| `esc` | block focused | Clear the focus only. Never stops a turn |
+| `G` | pinned | Back to live, focus cleared |
+
+- Mouse: a press and release on the same header cell toggles it. Body cells do nothing. A link opens. The scrollbar column pages. Capture stays `?1000h ?1006h`. Full-screen only.
+
+### Row format
+
+`<gutter><mark> <Tool> <target>  <facts>`, on one line, never wrapped.
+
+- Column 0 is the gutter: a space, or `›` in accent when focused. Column 1 is the mark. The tool name is at column 3.
+- The tool name is bold ink. The target is ink. Facts are dim, joined with ` · `. Red only on the failed mark and `exit N`. Green on the done mark and `+n`.
+- Focus: the `paneSel` fill across the row, plus `›`. Mono: `›` and reverse video.
+- An expanded header looks the same as a collapsed one. Only the body under it differs.
+
+| State | Mark | Colour (dark / light) | Facts |
+|---|---|---|---|
+| Running | `◉` | accent `#5cc8bb` / `#00625c` | Elapsed only |
+| Done | `●` | ok `#b5bd68` / `#0a6b27` | Primary, then secondary |
+| Failed | `⊗` | err `#d58181` / `#b8111e` | `exit N` (red), reason (dim), secondary |
+| Stopped by the user | `⊗` | dim | `stopped` |
+
+### Per-tool rows
+
+| Tool | Collapsed row | Primary facts | Expanded body |
+|---|---|---|---|
+| Read | `● Read <path>  1451 lines` | Lines (or `lines 40–80`) | Numbered lines, head first |
+| Edit | `● Edit <path>  +2 −2` | `+n −n` | The diff, head first |
+| Write | `● Write <path>  +48` | `+n` | The content, head first |
+| Shell | `● Shell <command>  exit 0 · 40 lines · 8.2s` | `exit N` | Output, tail first |
+| CodeSearch | `● CodeSearch "<query>"  14 hits · 3 files` | Hits | The listing |
+| WebFetch, WebSearch | `● WebFetch <url>  ~8.1k tokens · 12 sections` | `~N tokens` | The result text |
+| Agent | `● Agent explore · <desc>  3 calls · 1 failed · 12s` | Calls, failed (if any) | One line per child call |
+| MCP, plugin, unrendered | `● mcp__docs__search "<args>"  12 lines` | Lines | The output, head first |
+| `!` user shell | `● ! git status  exit 0` | `exit N` | Output, tail first |
+| TodoWrite | `● TodoWrite  5 items · 2 done` | Counts | Not a toggle (the plan is in the task panel) |
+| Background job launch | `● Shell sleep 60  background job-1` | `background <id>` | Output so far |
+
+- A collapsed row that hides output carries the hidden size as a fact (`1451 lines`, `~8.1k tokens`). That is how "there is more" reads on the row.
+- Children of an Agent row are plain lines at indent 3, not buttons. A failed child shows `⊗` and its reason dim. Nested expansion is Later.
+
+### Cut order (tool rows)
+
+Each step runs only while the row is still too wide.
+
+1. Drop secondary facts whole, right to left. Shell facts are ordered `exit N · size · duration`, so the duration goes first.
+2. Shorten the target to its minimum. A path drops leading directories and keeps the whole file name. A URL keeps the host. A command or query cuts at a word, at 12 columns or more.
+3. Failed rows: cut the reason at a word, keeping at least 12 columns.
+4. Failed rows: if 12 columns do not fit, drop the reason. The target takes the space back. `⊗` and `exit N` still say what happened.
+5. Primary facts never drop. At 40 columns a very long file name is cut in the middle and keeps its extension (`tool_ch…ain.rs`).
+
+Width ladder, the same rows at each width:
+
+```
+Read            40 ┆ ● Read …/src/tool_chain.rs  1451 lines
+                80 ┆ ● Read crates/hoocode-code-tui-widgets/src/tool_chain.rs  1451 lines
+Shell failed    40 ┆ ⊗ Shell cargo test -p…  exit 1
+                60 ┆ ⊗ Shell cargo test -p…  exit 1 · error: could not compile…
+                80 ┆ ⊗ Shell cargo test -p…  exit 1 · error: could not compile `hoocode-parser`
+Shell done      80 ┆ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 40 lines · 8.2s
+Compaction      40 ┆ Compacted turns 1–3 · saved 9,300
+```
+
+Other rows keep "labels cut first, stats never dropped". Compaction's label is `Compacted turns 1–3`, its primary fact is `saved N`, and the token range is secondary.
+
+### Running, failed and stopped
+
+- A failed call settles collapsed and never opens itself. A running Shell, collapsed, shows one dim tail line at column 4 (Decision 4). A stopped call is dim `⊗` with `stopped`.
+
+### Blocks that toggle besides tool calls
+
+- Thinking (collapsed: today's dim italic line), compaction and other summaries, skill block, background-run notice and startup details. `ctrl+x b` still hides all thinking.
+- Not toggles: user messages, assistant prose, TodoWrite, the turn-end line and notices.
+
+### Pane grammar (summary)
+
+The pane rules are in "Panes and dialogs" above. The proposal changes them as follows.
+
+- Title chip: the noun in bold accent, yellow only when blocking. Rows indent 3. Selected row: `paneSel` fill, accent `›`, no bold. Only the glyph is coloured.
+- Detail: a fixed column at 100 or more (`SPLIT_MIN_WIDTH`), stacked from 60 to 99, at most 3 rows then `…` under 60.
+- Hint row: `key verb`, at most 4 items, `enter` and `esc` never drop. Yellow only for blocking. No clicks in panes in v1 (Decision 8).
+
+### Tokens and contrast
+
+No new tokens. Every pair in the mockup is at least 4.5:1 (WCAG, from `crates/hoocode-code-tui-theme/themes/dark.json` and `light.json`). The tightest are dim and red on the dark selection (4.59:1), and green on the light selection (4.64:1). Do not lighten dim or darken `paneSel`. Light has one grey, so facts are told apart by position: two spaces after the target, and the body at column 4.
+
+### What it would remove
+
+- The setting `toolOutputView` (`crates/hoocode-code-settings/src/types.rs:98-101`), the Settings View leaf (the Tool output row stays, Decision 7), and leader `o`, `O` and `p` as view keys. `o` becomes expand-all.
+- `tool_output_view.rs`, `peek_fold`, per-tool `Fold`, the outline branches, `tool_chain_summary.rs`, most of `outline.rs`, the view name in the status line, and failed-body auto-show.
+- About 95 golden files, regenerated only after a text-grid review. Docs in the same commit: `docs/user/configuration.md`, `docs/user/keybindings.md`, this page, and `docs/maps/ui.md`.
+
+### Rules it would change
+
+Line numbers are for this file as it stands on this branch.
+
+| Line | Today | Would become |
+|---|---|---|
+| 10 | "Status line: view, session, model, context %…" | The word "view" goes |
+| 20 | "Stats are never dropped. Labels are cut first…" | Kept, except tool rows follow the cut order |
+| 41–53 | Three views (`outline`, `peek`, `full`) and their table | One mode |
+| 61, 69 | The view name on the right of the working line and "always first on the right" | Deleted |
+| 80 | Selected row "… with ` › ` and bold" | ` › `, not bold |
+| 88 | Running jobs `◉` yellow | `◉` in accent |
+| 99 | "A warning's first row is yellow bold." | Ink bold |
+| 129 | Yellow "(working, needs you)" | Yellow for blocking only. Principle 17 already says this, so the palette row contradicts it today |
+| 196–197 | `o` / `O` view next and previous; `p` step view | `o` expands or collapses all; `u` focuses the newest block |
+| 206 | Scroll mode keys | Add `{` `}` focus, `enter` open, `y` copy |
+| 288 | "Mouse: wheel scrolls…" | Add: a click on a block's header toggles it |
+| 336 | 2026-11-04 Views row | Superseded, if the proposal is taken |
+| 339 | 2026-11-04 "one dim line or hidden" for thinking | Superseded, if the proposal is taken |
+
+### Frozen rows (found by reading, confirm with a failing test first)
+
+Blocks older than the newest 50 are frozen (`LIVE_TOOL_WINDOW`, `crates/hoocode-code-tui-app/src/mode/mod.rs:159`, applied in `trim_transcript_memory`, `mode/transcript.rs:1362`). On the next render, `step_parts` (`crates/hoocode-code-tui-widgets/src/tool_chain.rs:374`) calls `capture_frozen`, which calls `release_heavy_state` (`tool_execution.rs:1520`) and sets `result` to `None`. The `mark()`, `facts()` and `is_error()` reads at `tool_chain.rs:383-389` then see no result. A done row draws a dim running `●`. A failed row loses its red `⊗`, `exit N` and failure state. This happens on every render, and today's peek view is affected too.
+
+A second defect: `ToolExecutionComponent::invalidate` returns early for frozen blocks (`tool_execution.rs:1458-1462`), so a theme change leaves them in the old colours.
+
+Proposed fix: `freeze()` saves an unstyled row snapshot (mark, target, primary facts, secondary facts, failure). The header is built from it on each render with the current palette. The first test (P0) freezes a done Edit, a failed Shell and a Read in one chain, renders twice, and asserts a green `●`, red `⊗`, `+2 −2`, `exit 1` and `1451 lines`.
+
+### Decisions needed
+
+None of these is decided. The default is what the mockup draws. When the user decides, each answer becomes a dated row in the Decisions table below.
+
+| # | Decision | Default (mockup) | Alternative |
+|---|---|---|---|
+| 1 | Remove the outline, peek and full dial | One mode. The dial goes in P5 | Keep the dial beside the toggles |
+| 2 | Width rule for tool rows (overturns "stats are never dropped") | Cut order: secondary facts drop first, the target never drops | Keep every fact and cut the target mid-word if needed |
+| 3 | Failed row reason colour | Dim. Red only on `⊗` and `exit N` | Ink |
+| 4 | Running Shell while collapsed | One dim tail line, gone on settle | Header only |
+| 5 | Expand-all scope (`ctrl+x o`) | Every block in the transcript | The current turn only |
+| 6 | A click while live | Pins the view; the header keeps its row | Stays live; the row may move |
+| 7 | Settings Tool output row | Kept: `800 lines · 32 KB`; View leaf removed | Removed; the caps live only in `settings.json` |
+| 8 | Clicks in panes | None in v1 | Click selects; a second click picks |
+| 9 | Yellow | Blocking only | Keep yellow for working `◉` |
+
 ## Decisions
 
 | Date | Decision |
@@ -374,6 +526,7 @@ Dialogs and notices have no golden pin yet. Their mockup text is the only copy (
 | UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
+| UI-21, UI-22 | Proposed single view: one row per tool call, click or Enter to expand, one pane grammar, yellow only for blocking. See "Proposed: single view" above. | L | The 9 decisions in "Decisions needed" (above) | Not decided. Phases P0 to P6 are in the roadmap. P0 starts with the frozen-row test. The Decisions table has no rows for it yet. |
 
 ## Not doing
 
