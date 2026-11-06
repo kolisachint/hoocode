@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-06): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 109 open items: 43 next, 20 need a user decision, 46 deferred behind a trigger or gate.
+Status (2026-11-06): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 111 open items: 45 next, 20 need a user decision, 46 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
@@ -76,6 +76,8 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 40. [UI-8](tui.md#open) Add `dusk`, `high-contrast` and `paper` to the contrast test (S)
 41. [UI-9](tui.md#open) Fix docs drift in maps and user pages (S)
 42. [UI-20](tui.md#open) Rename the `*_ts*.rs` test files (S, optional)
+43. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
+44. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
 
 ## Needs a user decision
 

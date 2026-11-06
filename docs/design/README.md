@@ -1,6 +1,6 @@
 # Design docs
 
-Status (2026-11-06): Start here. Six area docs, one plan. Engineering rules below are in force. Open items: EN-1 to EN-13.
+Status (2026-11-06): Start here. Six area docs, one plan. Engineering rules below are in force. Open items: EN-1 to EN-15.
 
 ## What hoocode is and how these docs work
 
@@ -65,7 +65,7 @@ Sizes: S is about a session, M a few, L many. Open IDs use the area prefix (EN- 
 
 ## Engineering
 
-Status (2026-11-06): Built: the done bar, the CI jobs and guards, the release pipeline and four shipped channels. Open: EN-1 to EN-13 below.
+Status (2026-11-06): Built: the done bar, the CI jobs and guards, the release pipeline and four shipped channels. Open: EN-1 to EN-15 below.
 
 ### Principles
 
@@ -205,6 +205,8 @@ Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (
 | EN-11 | Windows build | M | User asks for Windows | Add `x86_64-pc-windows-msvc` to `binaries.yml`, a `.zip`, an `install.ps1` and a `win32-x64` npm package. The old Windows leg was the slowest part of a release |
 | EN-12 | macOS signing | M | Users hit the browser warning, and the user has an Apple Developer ID | `codesign` and `notarytool` in `binaries.yml`. Only browser downloads are quarantined; curl, npm and `gh` downloads run without it |
 | EN-13 | Subagent fast evals on PRs | S | User decides | Today they run nightly and by hand only. Run them on PRs that touch `hoocode-code-subagents` |
+| EN-14 | Point code comments and config at the six new design docs | S | None | 93 files under `crates/`, `scripts/` and `clippy.toml` still name removed docs (`concurrency.md`, `reliability.md`, `plugins.md`, `mcp.md`, `tui-*`, `themes-keybindings*`, `decisions-*`, `archive/`, `migration/tui-parity`). Find them with `grep -rnE "docs/design/[a-z0-9-]+\.md\|archive/\|migration/tui-parity" crates scripts clippy.toml`. Map: concurrency, reliability, performance, perf-short-sessions to `runtime.md`; mcp, plugins, extension-runtime, web-tools, semantic-search, scheduler-and-loop, extras, scoped-models, rpc-approvals, app-server to `agent.md`; subagent-* to `subagents.md`; tui-*, mission-control, themes-keybindings*, footer, radar to `tui.md`; build-speed, distribution, naming-and-paths to `README.md`. Comment text only, no behaviour change. Also fix the reversed comment at `code-tui-widgets/tests/it/tool_rows.rs:3` and the dead `TOOL_NAMES` comment at `code-tui-selectors/src/settings_selector.rs:650` |
+| EN-15 | Drop dead `archive/` entries from `scripts/ci/no_cortex.sh` | S | None | Remove the four `:(exclude)archive/...` allowlist lines and the stale "staged (not yet applied)" header line. The guard passes without them |
 
 ### Not doing
 
