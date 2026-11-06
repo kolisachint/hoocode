@@ -4,6 +4,8 @@ Agreed with the user on 2026-10-29. Two items are approved to build later, in a 
 session. Two are investigations with decision gates. The long-session items are deferred.
 Where [decisions-2026-10-29.md](decisions-2026-10-29.md) disagrees, that page wins.
 
+> Current status of every item lives in [performance.md](performance.md) (2026-11-06).
+
 ## Goal
 
 Make the common session lean and quiet: 10 to 15 turns. At that length the parent is
