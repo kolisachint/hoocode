@@ -1,8 +1,0 @@
-«»
-«fg=#0a6b27» ● «fg=#555864;bold»Edit«fg=#555864» src/wrap.rs«»  «fg=#555864»+4 −1«»
-«fg=#0a6b27» ● «fg=#555864;bold»Shell«fg=#555864» cargo test -p wrap«»  «fg=#555864»exit 0 · 2.4s«»
-«fg=#555864» Width is checked now; the two wrap tests pass.«»
-«»
-«»  «fg=#2b2f36;bg=#c3dcdc;bold» /session  «fg=#2b2f36;bg=#c3dcdc»session info and stats «»                                                                «»
-«fg=#00625c;bg=#dadbe6» › «fg=#2b2f36;bg=#dadbe6»/sessio«bg=#dadbe6»                                                                                          «»
-«fg=#0a6b27» ● «fg=#555864»done · 11s · 23k tokens«»             «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

@@ -9,4 +9,4 @@ describing it. Entries are `{kind, name, description, source}` with kind `skill`
 - `producers.rs`: builds entries from the loaded skills, subagent definitions and
   loaded plugins.
 
-Design: [semantic-search.md](../../docs/design/semantic-search.md) (Part A).
+Design: [agent.md](../../docs/design/agent.md) (DocSearch).

@@ -1,10 +1,10 @@
 # Package map
 
 What each crate does, who uses it, and where to make a change. Snapshot of 2026-10-08, after the deletions in
-[decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md): 68 crates (65 after the deletions, plus `runtime`, added in Concurrency phase 1, and `agent-mcp` and `code-mcp`, the MCP client and its discovery and trust ([mcp.md](../design/mcp.md)); 76 before; see
+the 2026-10-08 crate decision: 68 crates (65 after the deletions, plus `runtime`, added in Concurrency phase 1, and `agent-mcp` and `code-mcp`, the MCP client and its discovery and trust ([agent.md](../design/agent.md)); 76 before; see
 [Deleted](#deleted-2026-10-08)). In step 0 the crates
 become `hoocode-*` and the binary `hoocode`
-([naming-and-paths.md](../../archive/docs/naming-and-paths.md)); this page is regenerated
+([design README](../design/README.md), Engineering); this page is regenerated
 then. The UI side is mapped in [ui.md](ui.md).
 
 **Keep this current.** Add, delete or rename a crate → update this page in the same
@@ -45,14 +45,14 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | The home directory, and `~` in shown paths (one policy, decision 28) | `home` (`hoocode-home`): `home_dir`, `shorten_path` |
 | The system prompt | `code-prompts` (`system_prompt.rs`) |
 | A built-in tool | `code-tool-bash`, `code-tools-fs`, `code-tool-search`, `code-tools-optin`; registration in `code-tools` |
-| The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `mode/events.rs` `tick_scheduler`; the Schedule rows of the task panel: `rows.rs` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
+| The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `mode/events.rs` `tick_scheduler`; the Schedule rows of the task panel: `rows.rs` ([agent.md](../design/agent.md)) |
 | How a tool looks in the transcript | `code-tui-widgets/src/tools/` ([ui.md](ui.md)) |
 | How a dialog, picker or card pane looks (title chip, rows, input row, hint row, split list \| detail, monochrome borders, pane colours) | `code-tui-widgets/src/pane.rs` (`Pane`, `PaneStyle`); pickers map onto it through `console.rs` (`Console`), cards through `card_frame.rs` (`render_card`) ([ui.md](ui.md#pickers-and-dialogs)) |
 | A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/mode/commands.rs` `run_builtin_command` |
 | Screen goldens: the scenarios, the mock LLM | `scripts/tui/` (`goldens.py`, `mockllm.py`, `scenarios/`); component goldens use the `tui-render` feature `golden` ([ui.md](ui.md)) |
 | Transcript render cache: a `Container` keeps each child's lines under the child's `render_stamp` (a stamp changes with every `&mut` mutator; none while a clock or registry is read) and draws only changed children; debug builds redraw each hit and assert equality (`HOOCODE_RENDER_CACHE_CHECK=0` off). Theme changes bump `bump_render_epoch` | `tui-render` (`component.rs`: `Component::render_stamp`, `Container`, `Rendered`); stamps in `tui-components` (`Spacer`, `Text`) and `code-tui-widgets` (`AssistantMessageComponent`, `ToolChainComponent`, `ToolExecutionComponent`, `MissionHeader`, `LandingLine`, `PeekOnly`); epoch bump in `code-tui-theme` (`registry.rs`); a resumed history freezes all but the newest `LIVE_TOOL_WINDOW` blocks (`mode/transcript.rs`, `render_session_context`) |
-| Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH, SIGTERM and SIGHUP | `tui-terminal` (`output.rs`, `interrupt.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`: `watch_sigwinch`, `watch_terminate`); [concurrency.md](../design/concurrency.md) Phase 2 |
-| Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat, the panic hook (restore, flush, log, chain) | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`, `panic_hook.rs`); the UI beats and sets the hook in `code-tui-app` `run`; the panic hook is installed in `code-tui-app` `mode/mod.rs` `install_panic_hook`; [concurrency.md](../design/concurrency.md) Phase 2 |
+| Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH, SIGTERM and SIGHUP | `tui-terminal` (`output.rs`, `interrupt.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`: `watch_sigwinch`, `watch_terminate`); [runtime.md](../design/runtime.md) Phase 2 |
+| Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat, the panic hook (restore, flush, log, chain) | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`, `panic_hook.rs`); the UI beats and sets the hook in `code-tui-app` `run`; the panic hook is installed in `code-tui-app` `mode/mod.rs` `install_panic_hook`; [runtime.md](../design/runtime.md) Phase 2 |
 | Herdr support: inside a Herdr pane (`HERDR_ENV=1` + `HERDR_PANE_ID`, `HERDR_BIN_PATH`, `HERDR_SOCKET_PATH`), the interactive mode reports `working` / `idle` / `blocked`, the resume command (`hoocode --session <id>` for a file in the launch cwd's default session dir, else the absolute path) and a release on quit through `"$HERDR_BIN_PATH" pane report-agent` / `release-agent`; never in print, RPC or subagent runs, not on SIGTERM/SIGHUP (Herdr keeps the resume command) | `code-tui-app/src/herdr.rs` (pure env/argv/seq/dedupe core, `Reporter`, `CliTransport` thread that sends only the latest report, in a new session, 2 s kill; the release goes through it, cuts a report in flight short and waits 500 ms; only a user quit releases); polled once per loop pass by `sync_herdr` in `mode/events.rs`, created and released in `mode/mod.rs` `run`; tests `tests/it/herdr.rs` (fake CLI script) |
 | Shell pipes read by async tasks on `hoocode-io` (no thread per pipe) | `code-tool-bash` (`operations.rs`) |
 | Background shell jobs: `Shell` with `run_in_background`, the job registry and its logs, `ShellOutput`, `ShellKill` (`enableBackgroundShell`, on by default; never in a subagent) | `code-tool-bash` (`jobs.rs`, `job_tools.rs`; each job is a Shell-tab row, `set_task_rows`, T5.3; a job's stdout and stderr are its log file, with no pipe); the session's registry is built in `code-cli` `runtime.rs` (`background_job_registry`); completion notices reach the model in `code-agent-session` `services.rs` (`transform_context`, `JobNotices`); an idle agent is woken by `AgentSession::job_wake_pending` (`session.rs`; the generic `JOB_WAKE_MESSAGE`), called by the TUI's `tick_job_wake` (`code-tui-app` `mode/events.rs`); `ShellOutput` takes `wait`/`timeout_ms` (`JobRegistry::wait_for_exit`), and a subagent handle or `job-N` id given to the wrong output tool is refused (`job_tools.rs`, `code-subagents` `tools.rs`) |
@@ -60,22 +60,22 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Resume after a stop hoocode did not ask for (SIGTTIN/SIGTTOU or an outside SIGTSTP, then `fg`): raw mode, Kitty flags and a full redraw come back | `runtime` (`signals.rs`: `watch_sigcont`), `code-tui-app` (`suspend.rs`: `note_sigcont`, `resume_after_external_stop`; `mode/commands.rs`: `tick_external_resume`; watch installed in `mode/mod.rs` `run`) |
 | Turn logic, parallel tool calls; background tool runs (a run idling on them wakes on a queued message, `message_queued`, set by `agent-core` `steer`/`follow_up`) | `agent-loop` |
 | Session file format | `agent-session` (entries, storage), `code-session` (manager) |
-| Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([concurrency.md](../design/concurrency.md) Phase 3) |
+| Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([runtime.md](../design/runtime.md) Phase 3) |
 | Compaction | `agent-compaction` |
 | Subagents | `code-subagents` (see `docs/design/subagents.md`); a run's live activity for the UI (coalesced text deltas, the bounded tail, Agent call to run lookup) in `live.rs` ([tui-activity.md](../design/tui-activity.md) T3.1); a child with no screen asks its parent to clear a gated call over its pipes (`clearance_request` on stdout, `clearance_response` on stdin; the child's `ChildRelay`, the pool's relay hook, `instance::set_clearance_relay`) in `clearance.rs` |
-| MCP client: connect to a server, list and call its tools, progress, caps, tool names, OAuth | `agent-mcp` (`hoocode-agent-mcp`; the only crate that depends on `rmcp`; `oauth.rs`; see [mcp.md](../design/mcp.md)) |
+| MCP client: connect to a server, list and call its tools, progress, caps, tool names, OAuth | `agent-mcp` (`hoocode-agent-mcp`; the only crate that depends on `rmcp`; `oauth.rs`; see [agent.md](../design/agent.md)) |
 | MCP servers in a session: start the trusted ones in the background, `mcp_<server>_<tool>` tool definitions, shutdown | `code-agent-session` `mcp.rs` (`McpHub`); attached in `code-cli` `runtime.rs` (`attach_mcp`, `mcp_wanted`); synced at each turn in `session.rs`; the MCP rows of the task panel (server state, in-flight calls, login and abort): `mcp_rows.rs` |
 | A model provider | `ai-provider-<name>`, registered in `ai-registry` |
 | A login flow | `ai-oauth-<name>`, stored by `code-auth` |
 | The model list | `ai-models-catalog` (`data/models.json`, generated from models.dev by `hoocode-models-sync`; hand rules in `data/overrides.json`), `code-models` (models.json) |
 | Settings keys | `code-settings` |
 | Config paths, env prefixes | `code-paths` |
-| MCP server discovery, `mcp.json` precedence, folder and plugin trust, `/mcp` states | `code-mcp` (`config.rs`, `trust.rs`, `discover.rs`); design in [mcp.md](../design/mcp.md) |
+| MCP server discovery, `mcp.json` precedence, folder and plugin trust, `/mcp` states | `code-mcp` (`config.rs`, `trust.rs`, `discover.rs`); design in [agent.md](../design/agent.md) |
 | Permissions and modes | `code-permissions`, `code-modes` |
 | Themes (`dark`, `dusk`, `high-contrast`, `light`, `paper`, `auto`; pane/chip tokens); `themes/defaults/` copies written after an upgrade | `code-tui-theme` (`defaults.rs`, `refresh_theme_defaults`, called at interactive startup in `code-tui-app/src/mode/mod.rs`) |
 | Screen frame: start header, prompt row, status line (scroll and search bars included), transient rows | `code-tui-app` (`start_header.rs`, `prompt_row.rs`, `status_line.rs`, `transient_lines.rs`, wired in `mode/mod.rs` and `mode/chrome.rs`); the pinned status row goes in place of the bottom's last row via `tui-render` `Tui::set_scroll_status_in_bottom` |
 | Key bindings | `code-tui-keybindings` (app), `tui-keys` (parsing) |
-| Threads, the io runtime, `run_blocking`, channel caps, parallel-tool cap, the ordered shutdown (`run_ordered`, timed steps) | `runtime` (`runtime.rs`, `threads.rs`, `limits.rs`, `shutdown.rs`; the exit path's steps are in `code-tui-app` `mode/shutdown.rs`); the only crate that builds runtimes, threads or channels ([concurrency.md](../design/concurrency.md)) |
+| Threads, the io runtime, `run_blocking`, channel caps, parallel-tool cap, the ordered shutdown (`run_ordered`, timed steps) | `runtime` (`runtime.rs`, `threads.rs`, `limits.rs`, `shutdown.rs`; the exit path's steps are in `code-tui-app` `mode/shutdown.rs`); the only crate that builds runtimes, threads or channels ([runtime.md](../design/runtime.md)) |
 | `performance.*` settings | `code-settings` (`manager.rs` getters), caps in `runtime` (`limits.rs`) |
 
 ## All crates
@@ -202,13 +202,13 @@ in those tables; the generator keeps each crate's Status by name.
 ## Deleted 2026-10-08
 
 Ten crates were removed, as agreed in
-[decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md). Azure was dropped
+the 2026-10-08 crate decision. Azure was dropped
 later the same day (65 crates), so `ai-provider-azure` is listed below too.
 
 | Crate | Why | What moved or is left |
 |---|---|---|
 | 5 umbrellas: `hoocode`, `agent`, `ai`, `code`, `tui` | Only for crates.io, which is dropped | `ai`'s tests moved to `ai-registry` (below); `ai`'s `oauth_providers` test was dropped, as it only tested the umbrella's own install wrapper |
-| `agent-mcp` | **Kept 2026-10-14, not deleted.** It is the home of the MCP client that [mcp.md](../design/mcp.md) (card 9.1) rebuilds on rmcp | See [decisions-2026-10-14.md](../design/decisions-2026-10-14.md) |
+| `agent-mcp` | **Kept 2026-10-14, not deleted.** It is the home of the MCP client that [agent.md](../design/agent.md) builds on rmcp | See [README.md](../design/README.md) Engineering decisions |
 | `agent-orchestrator`, `agent-tools` | hoocode SDK ports the product never calls; `code-agent-session` does the job | Nothing |
 | `ai-images` | No tool or command generates images | Not done: `ai-models-catalog`'s `IMAGE_MODELS_JSON` and `data/image-models.json` still exist and are maintained by hand (models.dev lists no image models). A follow-up. |
 | `code-extensions` | Unused WASM host; costs ~55 s per clean build | `build-speed.md` D5 no longer applies |

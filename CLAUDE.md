@@ -3,27 +3,24 @@
 hoocode (Rust) fully replaces the TypeScript hoocode-ts (decided 2026-10-10). No TS
 reference, pin, shim or parity checks remain; don't ask about TS parity.
 
-- The TS→Rust migration is finished; its records are in `archive/`.
+- The TS→Rust migration is finished; its records were removed 2026-11-06 (git history keeps them).
 - **Disk (2026-10-10):** dev builds have `debug = false`. At session start run
   `scripts/dev/prune_target.sh --apply --if-over 15` without asking. It keeps current
   builds and deletes stale units (older than 3 days, old `cortex*` names) and an
   oversized incremental cache. Never `cargo clean` unless the user asks.
-- Build speed / agent loop design (profiles, nextest, test layout, hooks, CI):
-  `docs/design/build-speed.md`. Its §4.3 rules join this file as they are implemented.
+- Build, CI, tests, release and naming rules: the Engineering part of `docs/design/README.md`.
 - Done = `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo nextest run -p <touched crates>`. CI runs the full workspace. Component goldens run in nextest (`UPDATE_GOLDENS=1` accepts them). Screen goldens (about 10 key screens, `scripts/tui/goldens.py`) are a pre-release check, not per change.
 
 - **MIT only.** Never copy code, schemas or generated types from non-MIT projects (e.g.
   `../codex`, Apache-2.0) into this repo. Running such tools in tests is fine.
-- **What to build next:** `docs/design/README.md` (cards in build order, plus the user's
-  design preferences). Start with step 0a of the plan in `docs/design/README.md`.
-  A design session changes docs only.
-- **Three plans side by side:** the core plan (`docs/design/README.md`), the TUI plan
-  (`docs/design/tui-activity.md`, 2026-10-09) and the themes and keybindings plan
-  (`docs/design/themes-keybindings.md`, 2026-11-05). When the user asks to proceed or implement,
-  ask which plan and which step first.
+- **Design docs (2026-11-06):** six flat files in `docs/design/`: `README.md` (how we work,
+  standards, engineering), `roadmap.md` (the one plan), `runtime.md`, `agent.md`,
+  `subagents.md`, `tui.md`. No sub-folders and no dated decision pages: record a decision as
+  a dated row in the area doc's Decisions table. A design session changes docs only.
+- **What to build next:** `docs/design/roadmap.md`. When the user asks to proceed or
+  implement, ask which roadmap item first (recommendation: the top of "Next").
 - **TUI work is done by Haiku subagents** (user, 2026-10-09): review, implement and test.
-  The main session orchestrates, briefs and merges. The TUI declutter
-  (`docs/design/tui-declutter.md`, 2026-11-04) replaces Phase S of `docs/design/tui-activity.md`.
+  The main session orchestrates, briefs and merges. TUI rules: `docs/design/tui.md`.
 - **User docs:** `docs/user/` is the website's /hoocode pages, copied from each release
   tag. When a change alters a flag, command, path or install route, update the page in
   the same commit.
@@ -31,7 +28,7 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
   commands). Read them to find code; update them in the same commit as any crate, screen
   or command change.
 
-- **Agent loop rules** (from `docs/design/build-speed.md` §4.3):
+- **Agent loop rules:**
   - After an edit: `cargo check -p <crate> --message-format=short`. Build only to run tests.
   - Lints: run `cargo clippy --fix --allow-dirty -p <crate>` first, then fix the rest by hand.
   - New integration tests go in `crates/<crate>/tests/it/<name>.rs`, registered in `tests/it/main.rs`.
@@ -40,7 +37,7 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
   - Errors: follow the existing hand-written error enums; don't add `anyhow`/`thiserror`.
   - New dependency: check the resolved version in `Cargo.lock`, and read the API from
     `cargo doc` / the source for that exact version, not from memory.
-- Naming (2026-10-08, `archive/docs/naming-and-paths.md`): everything is named hoocode
+- Naming (2026-10-08, `docs/design/README.md` Engineering): everything is named hoocode
   (crates `hoocode-*`, binary `hoocode`, data in `~/.hoocode`, `HOOCODE_` env only). Don't
   add new `cortex` names (`scripts/ci/no_cortex.sh`).
 

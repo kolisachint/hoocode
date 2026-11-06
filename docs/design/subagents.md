@@ -1,672 +1,258 @@
-# Subagents: the process model, and what was fixed
-
-Status: **as-built, 2026-10-03.** The original design in this file (in-process sessions,
-delta token accounting, enforced budgets, a provider-error classifier enum) was reviewed
-against the code and the recorded failures in October 2026 and **rejected in three places**.
-What shipped is the child-process model with seven targeted fixes. The in-process migration
-is still open; see §6.
-
-Not a migration-ledger task: the migration is paused and this was taken out of it.
-
-## 0. Current limits (2026-10-16)
-
-Every subagent limit below resolves in the same order: frontmatter (where it has a key), then the
-`HOOCODE_` env var, then the settings value, then the default. A missing, non-numeric, zero or
-out-of-range value falls through to the next source. Env values are inherited by children, so the
-root's setting reaches the whole tree. Source: `limits.rs` (the per-run limits), `depth.rs` (depth and
-concurrency), `pool.rs` and `warm.rs` (queue).
-
-| Limit | Default | Settings key | Env var (wins over setting) | Frontmatter | On hit |
-|---|---|---|---|---|---|
-| Turns per run | 200 | `subagentMaxTurns` | `HOOCODE_SUBAGENT_MAX_TURNS` | `maxTurns` | Child gets `--max-turns`; it is asked to wrap up near the cap and stopped at it |
-| Token budget (advisory) | 150k per type; general-purpose 300k | `subagentTokenBudget` | `HOOCODE_SUBAGENT_TOKEN_BUDGET` | `tokenBudget` | Never stops the run. `budget_warning` at 80%, `budget_exceeded` at 100% (the result carries `budget_exceeded`) |
-| Wall-clock deadline | 4 h base, load-scaled | `subagentDeadlineMinutes` | `HOOCODE_SUBAGENT_DEADLINE_MS` (ms) | none | Child is given the base deadline and asked to wrap up; at the kill, SIGTERM to its process group. A partial result is still accepted |
-| Progress stall | 20 min, load-scaled | `subagentStallSeconds` | `HOOCODE_SUBAGENT_STALL_MS` (ms) | none | No turn or tool event for the window: SIGUSR1 to the child, 30 s grace, then SIGKILL. A partial result is still accepted |
-| Tool-in-flight stall | 30 min, load-scaled. A Shell call with a declared timeout gets the larger of that and its timeout + 60 s | `subagentToolStallSeconds` | `HOOCODE_SUBAGENT_TOOL_STALL_MS` (ms) | none | Same as the progress stall. A tool with `timeout: 0` has no bound |
-| Child resident memory | 4096 MiB | `subagentMaxRssMb` | `HOOCODE_SUBAGENT_MAX_RSS_MB` | none | Child is reaped by the lifeguard |
-| Shell default timeout (subagents only) | 1200 s | `subagentShellTimeoutSeconds` | `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS` | none (the Shell `timeout` argument wins) | The command's process group is killed; partial output is returned. The main session has no default |
-| Root concurrency (depth 0) | 12 (1 to 32) | `subagentConcurrency` | `HOOCODE_SUBAGENT_CONCURRENCY` | none | Extra dispatches wait in the queue |
-| Nested concurrency (depth 1 and below) | 6 | `nestedSubagentConcurrency` | `HOOCODE_NESTED_SUBAGENT_CONCURRENCY` | none | Same, per pool |
-| Dispatch queue | 8 slots per running slot | `subagentQueuePerSlot` | `HOOCODE_SUBAGENT_QUEUE_PER_SLOT` | none | A dispatch beyond running + queued is refused with a message |
-| Nesting depth | 4 (absolute max 8) | `maxSubagentDepth` | `HOOCODE_SUBAGENT_MAX_DEPTH`; `--max-subagent-depth` | none | At the cap the Agent tool is not offered; a dispatch is refused with "Maximum subagent depth (N) reached" |
-| `AgentOutput` wait | 300 s | `subagentWaitTimeoutSeconds` | `HOOCODE_SUBAGENT_WAIT_TIMEOUT_MS` (ms) | none (the `timeout_ms` argument wins) | The wait returns; the task keeps running |
-| Provider retries | `retry.maxRetries` 5 | `retry.maxRetries` | none | none | The retry loop stops and reports the error |
-| Provider output per request | 64000, never above the model's own maximum | `maxOutputTokens` | `HOOCODE_MAX_OUTPUT_TOKENS` | none | The request is sent with this cap. Only the Anthropic provider reads it. OpenAI, OpenAI Responses, Google and Gemini CLI still cap the default at `min(model max, 32000)` (not changed) |
-
-Worst case at the defaults: a depth-4 tree is 12 + 12·6 + 12·6² + 12·6³ = 3108 live children
-(it was 104 at depth 3 with 8 and 3). The queue, the budgets and the load scaling keep real runs far
-below that, but the number is the bound a runaway delegation can reach.
-
-Warm workers (`warmSubagents`) use the same concurrency, queue and Shell timeout values.
-
----
-
-## 1. The problem, and what the evidence actually said
-
-Subagents were failing on every recorded run. In `hoobot/.hoocode/dispatch/`, a clean
-success deleted its dispatch dir (`pool.rs`, clean-success branch), so every dir left on disk
-was a failure. (Changed 2026-10-11: dirs are kept, so a run can be resumed by label, and
-`prune_dispatch_dirs` keeps the newest 50 and drops anything older than 24h at dispatch time.) **Ten dirs, zero successes.**
-
-| Outcome | Count | What the parent was told |
-|---|---|---|
-| `timeout` | 4 | `task_timeout`, no partial work |
-| `cancelled` | 3 | `subagent cancelled` |
-| `stalled` | 1 | a 10 KB stdout dump |
-| `failed` | 1 | `Provider finish_reason: error` |
-| *(no `output.json`)* | 1 | nothing |
-
-Six causes were written up. Three of the six were wrong on inspection, and two of the three
-surviving causes were mis-diagnosed. The corrections are the most useful part of this
-record, so they come first.
-
-### Corrections to the original analysis
-
-**The load multiplier does not make subagents *more* likely to be killed — the opposite.**
-`lifeguard.rs` re-arms the timer rather than firing when `mult > 1.0`, and scales the stall
-threshold by it too. More concurrency means a genuinely stuck task is reaped *later*, up to a
-4x ceiling. And it never engaged in any recorded failure: all four timeouts fired at exactly
-300s = 5 min x 1.0 multiplier, because concurrency was 1.
-
-**`output.json` was not an unbounded transcript.** Capture is a 256 KB tail
-(`MAX_CAPTURED_STREAM_CHARS`, `append_tail`). The recorded 267-275 KB files were a *saturated*
-buffer — the head was already discarded. "Redundant" was right; "grows without bound" was not.
-
-**The timeout table matched no shipped agent, and that was the proximate cause of the
-recurring timeouts.** `base_timeout_ms` keyed on `edit | test | review`; we ship
-`code-review`, `explore`, `general-purpose`, `plan`, `security-review`. **No arm matched**,
-so every agent silently got the 5-minute default. hoocode has the same dead table against the
-same agent names — this is a faithful port of an upstream bug, and it is why three
-`code-review` runs died holding 220-297s of finished work.
-
-**Superseded 2026-10-10 (user):** the per-type table is gone. Every agent type gets one 2-hour
-deadline (`SUBAGENT_DEADLINE_MS`, `lifeguard.rs`). See §5.
-
-**The region errors are not in the artifacts.** `400 Upstream request failed: This Go model
-requires Global regions` appears in **zero** of the ten dispatch dirs. It may well have been
-seen live in the parent session, but the evidence base does not carry it, and the three most
-recent failures ran on `anthropic/claude-opus-5-5` and still timed out at 300s.
-
-**`capable` is not the priciest model.** The configured `defaultProvider`/`defaultModel` wins;
-priciest is only the fallback. `fast` is the cheapest *among models priced at or below*
-`capable`. The original write-up simplified this wrongly; the code comment beside it was right.
-
-**`dispatch.rs` was never the stdout framing.** It is `dispatch-evaluator.ts`: the depth guard
-and complexity heuristic. Framing and `SubagentStdoutLine` live in **`events.rs`**.
-
-### Two causes that survived, and are worse than described
-
-**Post-hoc salvage does not work.** The obvious fix — reconstruct a result from `session.jsonl`
-when a run is killed — produces garbage. `derive_summary` walks back for the last assistant
-text block, and in the recorded runs:
-
-| runs | assistant text messages | what salvage would return |
-|---|---|---|
-| 5 of 10 | **zero** | *"Task completed with no textual summary."* |
-| 4 of 10 | 1 | a progress note (*"I'll start by exploring…"*) |
-| 1 of 10 | 3 | a real summary — but it died anyway |
-
-The one run that had a real summary (`dispatch-1790866463943-0ozuar`) still failed, because
-`result.json` is written only after `prompt()` returns cleanly. **Salvage has to be
-pre-armed: the child must be told to wrap up before the kill, not reconstructed after it.**
-
-**Delta token accounting would not have fixed the budget.** `usage.totalTokens` is the
-*context size* of the turn, so summing it is quadratic — the recorded run reported 1 654 795
-against a 35 000 budget when its real generated total is 4 111. The obvious repair is to
-difference it. Measured across all eight runs with a transcript, the delta still crosses 35k
-at **turn 1 or 2 in 7 of 8**, because turn-1 context alone is 25k-62k (system prompt + tool
-schemas) and no subagent can shrink it. Delta accounting plus an enforced budget would have
-hard-stopped nearly every subagent on its first turn. The metric was the problem, not the
-arithmetic: `output` tokens run 1.2k-22k, and they are the only figure that tracks work done.
-
-## 2. What shipped
-
-Seven fixes to the child-process model. The pool's public API is unchanged; every consumer
-(Task tool, TaskOutput, inbox, TUI task panel, `/subagent`, the warm pool) ports untouched.
-
-| | Fix | Where |
-|---|---|---|
-| T1 | Timeout table keyed on agents we do not ship, so **every** agent got the 5-minute default. Real arms added; the warm pool's flat 180s now tracks the same table | `lifeguard.rs`, `warm.rs` |
-| T2 | `used` summed cumulative `totalTokens` (quadratic). Now sums `output + cacheWrite`; context reported separately as `peak_context` | `token_budget.rs` |
-| T3 | Children are killed at their deadline with `result.json` never written. The parent now passes `--deadline-ms`; the child wraps up 90s before it and settles `partial` | `pool.rs`, `runtime.rs`, `result.rs`, `args.rs` |
-| T4 | Killed tasks returned before the fallback ladder was consulted, so a run that died because its model was unreachable never retried. They consult it now — except a user cancellation, which is never retried | `pool.rs` |
-| T5 | The classifier matched neither `requires Global regions` nor `finish_reason: error`. Both added | `pool.rs` |
-| T6 | With `complexity` passed, the fallback re-resolved the same category and retried the identical model. A new `inherited_model` field carries the parent's concrete model | `pool.rs`, `tools.rs` |
-| T7 | `output.json` embedded a 256 KB stdout tail. Now outcome + cause + an 8 KB stderr tail | `pool.rs` |
-
-### T3 in detail — the only structural change
-
-`--deadline-ms` is an internal flag (not in `--help`, like `--task-id`). The pool sends the
-**base** deadline (2 hours then; 4 hours since 2026-10-16, §0), not the load-scaled budget: under load the parent widens its
-kill by at most 30 minutes (`MAX_SCALED_DEADLINE_MS`, 4h30m since 2026-10-16), so the wrap-up always lands first. Ninety seconds of lead covers the one or two turns a
-model needs to turn findings into a summary — recorded subagent turns took 5-65s.
-
-The pool side needed no change. `settle` already treats a valid `result.json` as success even
-when the task was killed (`kill_reason.filter(|_| !verification.valid)`), so all the child has
-to do is produce one. A deadline wrap-up settles `partial` with confidence 0.6, which clears
-the verifier's 0.5 floor.
-
-## 3. Deviations from hoocode
-
-Every one is commented in the source with the evidence.
-
-- **Timeout table** — replaced 2026-10-10: one 2-hour deadline for every agent type. (`lifeguard.rs`)
-- **Warm run timeout** — hoocode's `WARM_RUN_TIMEOUT_MS` is a flat 180s for every agent; we
-  use the same base deadline, never tighter. (`warm.rs`)
-- **Token accounting** — `used` counts generated tokens; `peak_context` carries the context
-  size. (`token_budget.rs`)
-- **`--deadline-ms`** and the wrap-up steer. (`runtime.rs`)
-- **Fallback classification** — hoocode's pattern plus region and unexplained-provider-failure
-  groups. Kept as one pattern rather than a classifier enum; the alternatives are grouped so
-  they can be lifted out later. (`pool.rs`)
-- **`inherited_model`** — hoocode falls back to `task.model`, which is a `complexity` category
-  when the caller passed one. (`pool.rs`, `tools.rs`)
-- **`output.json`** — no embedded `stdout`. (`pool.rs`)
-
-One candidate was **rejected during review**: setting a prose `error` on killed tasks. It
-changes a user-visible TUI line from hoocode's `subagent stalled`, and no parity scenario
-covers a killed task, so it would have shipped an uncovered divergence inside a correctness
-pass. `error` stays unset.
-
-## 4. Verification
-
-- `cargo nextest run --workspace` — **3494 passed**, 0 failed (was 3479; +15 tests).
-- `cargo clippy --workspace --all-targets -- -D warnings` — clean.
-- `cargo fmt --check`, `migration/check_dep_firewall.py` — clean.
-- **L2 parity: `subagent-task`, `subagent-command`, `json-subagent-child` all pass** against
-  real hoocode.
-
-**End to end**, against the release binary and the harness's mock LLM in an isolated `HOME`:
-
-| | duration | requests | status | confidence | steers |
-|---|---|---|---|---|---|
-| `--deadline-ms 95000` | 44s | 25 | **partial** | 0.6 | 1 |
-| control, no flag | 40s | 25 | **complete** | 0.9 | 0 |
-
-Both recovered the same real summary from a run that otherwise would not have. The steer is
-delivered exactly once and then persists as ordinary conversation history — verified as one
-copy per request body, not re-injection.
-
-A full `Agent` tool dispatch — parent, pool, real child process, verified `result.json` — settled
-`complete` and the parent received the summary. **The first clean subagent success in the ten
-recorded runs.**
-
-### Pre-existing L2 failures, not ours
-
-`harness.py run all` is not fully green. Attributed with a clean `git worktree` at HEAD:
-
-| scenario | ours | clean HEAD | cause |
-|---|---|---|---|
-| 9 x `print-*` | fail | **fail** | hoocode 0.6.0 ships a `SearchHooCode` tool the port does not implement |
-| `config-selector` | fail | **fail** | trailing slash in a config resource path |
-| `cd-reload`, `export-import` | invalid | **invalid** | *hoocode itself* fails the scenario |
-| 3 x subagent | pass | **pass** | — |
-
-## 5. Decisions taken
-
-- **The budget stays advisory.** T2 made the number honest; nothing enforces it. With `output`
-  at 1.2k-22k against a 35k limit, enforcement would essentially never fire. Wall-clock is the
-  primary stop, `--max-turns 50` the secondary one, the budget telemetry. Owner, 2026-10-03.
-- **Superseded 2026-10-10 (user): one 2-hour deadline for every type.** The 2026-10-03 per-type
-  deadlines (`explore`/`plan` 10 min, `code-review`/`security-review` 15 min, `general-purpose`
-  20 min) are withdrawn. The load multiplier adds at most 30 minutes. The parent polls with
-  `AgentOutput(task_id)` and stops a run with `AgentOutput(task_id, cancel: true)`. Stall checks
-  (§5b, H1 and H2) still reap a hung child early.
-- **Track 2 (in-process) not started.** Owner, 2026-10-03.
-
-## 5b. P1 hardening (2026-10-05)
-
-The eval suite (`subagent-evals.md`) made the remaining holes measurable, and
-this is what closed them. Every item is a Rust test in `tests/it/hardening.rs`
-or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
-
-| | Fix | Where |
-|---|---|---|
-| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 600s (10 min; 150s reaped long thinking turns), load-scaled. A tool in flight is bounded by the larger of 15 min × load (30 min since 2026-10-16) and the tool's declared timeout plus 60 s; a tool with timeout 0 has no bound. `HOOCODE_SUBAGENT_STALL_MS` overrides the 600s (20 min since 2026-10-16; §0) in the parent (the lifeguard runs there; the evals set 20s). A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore` at the time (the deadline was 2 hours then, 4 hours since 2026-10-16; §0), measured alive at 95s | `lifeguard.rs` |
-| H2 | **A reap is a signal, grace, SIGKILL.** A stall (silence, no progress, memory) sends SIGUSR1 to the **child pid only**; the hard deadline sends SIGTERM to the process group. The child writes its partial `result.json` and exits (the grace is 30s), and the pool already accepts a valid result from a reaped task. The grace escalates to SIGKILL for a child too wedged to catch a signal. **After a reaped child exits**, its process group is swept: SIGTERM, then SIGKILL after the grace if anything remains. A stall signal does not reach the grandchildren (node workers ignore SIGUSR1), so without the sweep they would be orphaned. **Limit:** the sweep covers the child's own process group only. A nested subagent (a child that dispatches a subagent of its own) runs in its own process group, so the sweep does not reach it | `lifeguard.rs`, `runtime.rs` |
-| H3 | **`pid` is written.** `sweep_old_agents` has always read `dispatch/<task>/pid` to ask whether a run is alive; nothing ever wrote it, so reaping was age-only and a real orphan was never detected | `pool.rs` |
-| H4 | **Admission control.** The queue was unbounded: a confused parent could enqueue hundreds of runs that never finish. It is refused at four per slot (eight per slot since 2026-10-16), with a message that says so | `pool.rs` |
-| H5 | **Ageing instead of starvation.** Priority gained a step per minute waited, so a `code-review` cannot sit behind a stream of `explore` runs forever | `pool.rs` |
-| H6 | **Finished results are bounded** (64, oldest dropped). Each carries its captured stdout and stderr and nothing released them: unbounded growth over a long session | `pool.rs` |
-| H7 | **Inbox reconciliation.** A `running` record the pool has forgotten (a lost settle event) used to report `running` forever, in the roster and the panel. `TaskOutput` now settles them, with an age guard so a dispatch that has not started yet is never mistaken for a lost one | `inbox.rs`, `tools.rs` |
-| H8 | **The warm pool shares the caps.** It booted one worker per dispatch with no ceiling and told the lifeguard nothing. It now has the cold pool's in-flight and admission limits, per depth (the root cap at depth 0, the nested cap below it, queue at 4 per slot then, 8 since 2026-10-16; opt-in, `warmSubagents`). Warm and cold keep separate counters | `warm.rs` |
-| H9 | **Writes are not swallowed.** `write_file_atomic(result.json)` was `let _ =`: a full disk gave a clean child exit with no result and a parent told only that it failed. It returns, logs, and exits non-zero | `result.rs`, `runtime.rs` |
-| H10 | **Settings deep-merge.** `instance.rs` used `global.extend(project)`, which replaced the whole `modelCategories` object — a project setting one tier silently lost the other two | `instance.rs` |
-| H11 | **`complexity` is validated at the tool.** An unrecognised tier used to pass through as a model id and kill the child at startup; it now falls back to the parent's model with one log line | `tools.rs` |
-| H12 | **The ledger reports what the child reported.** A run SIGTERMed at its deadline and wrapped up settles `partial` in the pool, matching `result.json`. It used to settle `complete` because the file was valid, which hid the cut-short run | `pool.rs` |
-| H13 | **A resumed session survives the prune.** `resume` touches the dispatch dir and its `session.jsonl`, and the prune never removes a dir whose task the pool is running or has queued (`prune_dispatch_dirs_keeping`). Before, an old session could be deleted between `resume` and the child's first write | `pool.rs` |
-
-## 5c. P2: the runner seam (2026-10-05)
-
-`crates/hoocode-code-subagents/src/runner.rs`. Until this existed, "run a
-subagent" and "spawn this executable with these argv" were the same statement:
-the pool built a `std::process::Command` and read its pipes. That made three
-things untestable — anything needing a *model* in it, anything where two runs
-must interleave deterministically, and the in-process model.
-
-A `Runner` takes a `RunSpec` (argv, env, prompt, tools, model, deadline — the
-same facts both as a command line and as fields) and returns a `RunnerHandle`
-with the same shape as a child process: two byte streams, a wait, a kill, a pid.
-Everything above the seam — queueing, priority, ageing, admission control, the
-lifeguard, heartbeats, token accounting, verification, the ledger — is unchanged
-and now runs against either implementation.
-
-The seam kept *streaming* deliberately: liveness is a per-byte signal, so a
-handle that returned its output at the end would quietly disable the stall
-watchdog.
-
-Two implementations ship:
-
-- `ProcessRunner` re-execs the binary. This is what the product uses.
-- `ScriptedRunner` answers from a script with no process at all. `tests/it/runner.rs`
-  drives the whole pool through it: settle paths, ledger lines, priority, queue
-  order, stderr capture, the watchdog. If any of those needed a `/bin/sh` mock
-  again, the seam would have leaked.
-
-**The seam found a latent kill bug on its first run.** `terminate_group(0)` is
-`kill(-0, SIGTERM)`, which signals *every process in the caller's group* — the
-parent agent included. Nothing could reach it before, because a dispatched run
-always had a pid; a processless runner can. `kill_tree` already guarded `pid > 0`;
-`terminate_group` now does too.
-
-Alongside it:
-
-- **Fault catalogue** in the eval harness: 429 with `retry-after`, a stream that
-  dies mid-line, a torn JSONL line, a context overflow, a provider error.
-- **`--matrix`**: every scenario against every fault. Current baseline: 65/65
-  cells settle, 95% usable.
-- **`--soak N`**: rounds of randomised faults asserting nothing leaks and
-  nothing stays unsettled. A 60s run is 26 rounds, 0 leaks.
-- **Flake fixes and retries**: `.config/nextest.toml` retries the subagent suite
-  three times (and has a `ci` profile that does not); the two inbox `wait:true`
-  tests wait on the finish instead of a 5ms sleep, and the warm-pool TTL test
-  polls instead of sleeping four times the TTL.
-
-## 5d. P3: one word for the thing (2026-10-05)
-
-`Task` read as a to-do item — the task store really does have a `Task` type for
-TodoWrite entries and MCP calls — while the tool starts a background run, and
-the transcript said a third thing entirely (`Agent [explore]`).
-
-| before | after | still accepted |
-|---|---|---|
-| `Task` (2026-10-05 wording) | **`Agent`** (2026-10-06) | `Task` was an alias for one release; deleted 2026-10-08, no longer accepted |
-| `TaskOutput` (2026-10-05 wording) | **`AgentOutput`** (2026-10-06 as `AgentOut`, renamed 2026-10-08) | `TaskOutput` and `AgentOut` are no longer accepted |
-| `Agent [explore]`, `TaskOutput explore#1` | **`Agent explore`**, **`AgentOutput explore#1`** (plus `resume`, plus `· background`) | — both names render through one renderer |
-| `call Task with resume_task_id` | `call Agent with …` | — |
-
-Tool rename, 2026-10-08 (user): `AgentOut` became `AgentOutput`. The `Task` and
-`TaskOutput` aliases were deleted, so the old names are unknown tools.
-
-First shipped on this branch as `Dispatch` / `DispatchStatus`; renamed to
-`Agent` / `AgentOut` before release (2026-10-06) because they are shorter, read
-the same in every surface (TUI, transcript, a hoobot chat line), and the
-transcript already said `Agent`. `Dispatch` never shipped, so it is not an
-alias.
-
-An alias is a spelling, not a second code path: both definitions execute the
-same function, and the prompt's tool list says which one is canonical
-(`deprecated alias for Agent; prefer Agent`) so a model is never offered
-two identical tools.
-
-The rename touched the tool definitions, the nested-agent allowlist (which never
-contained `Task` at all, so an agent that listed `tools:` silently lost it), the
-allowlist normalisation, the render dispatch, the pool's and warm pool's
-`--tools` grant, the availability prompt, the transcript renderer and the
-prompt templates.
-
-The TypeScript pin is gone (2026-10-10: hoocode fully replaces hoocode-ts), so
-the rename no longer has a pinned copy to diverge from. The prompt templates are
-checked only against the Rust build's own tests (`tests/it/shipped_prose.rs`).
-
-**Decision 2026-10-10 (user): 2-hour runs and cancel.** Every subagent type may
-run for up to 2 hours, and the parent can stop a run with
-`AgentOutput(task_id, cancel: true)`. The parent guidance template
-(`task-main.md`) tells the model to poll a long run and to cancel one it no
-longer needs. (2026-10-15: there is one template now; see the note in
-[subagent-orchestration.md](subagent-orchestration.md) §1.)
-
-## 5e. Reliability pass (2026-10-11)
-
-- **Background tasks outlive a run.** `hoocode-agent-loop` keeps one background
-  manager per session id in a registry (cap 64; idle entries are evicted first). A
-  task that settles after its run ended is delivered by the next run of that session.
-  An entry is dropped when its run ends with no work left.
-- **Tool-only final message.** The warm worker reads the last text with
-  `get_last_assistant_text_with_origin` (RPC, in `hoocode-code-rpc`), which walks back
-  past a tool-only message. The reply carries `stale`: true when an assistant message
-  after that text has a tool call. Only then does the summary start with
-  `(from an earlier turn) `. An empty aborted wrap-up after the text does not make it
-  stale, so the text stays the answer.
-- **Shell default timeout.** A bash call with no `timeout` gets 600 s then, 1200 s since
-  2026-10-16 (`subagentShellTimeoutSeconds`), but only inside a subagent; the main session
-  has no default limit. `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS` overrides it. `timeout: 0`
-  means no limit.
-- **Lifeguard tool bound.** A tool in flight is reaped at the larger of 15 min × load
-  (30 min × load since 2026-10-16) and the tool's declared timeout plus 60 s. A tool with
-  timeout 0 has no bound.
-- **Read on a directory.** `Read` on a directory returns a listing, not an error.
-
-## 5f. Background by default (2026-10-15)
-
-- **Every agent runs in the background unless it says otherwise.** A call's
-  `background` argument wins. Else the agent's definition decides: `background: false`
-  in its frontmatter makes foreground its default (the frontmatter value is kept as
-  `Some(false)`, so it is no longer dropped). Agents with no field, general-purpose
-  included, run in the background. Decided 2026-10-09 (D1, Q1); see
-  [subagent-orchestration.md](subagent-orchestration.md) §4.
-- A foreground answer still comes back inline; a background run returns a
-  notification and its body waits for `AgentOutput`.
-- Tests that mean "foreground" now pass `background: false` explicitly.
-- **A subagent's custom body keeps the base guidelines** (2026-10-15, card 9 4f). The
-  six generic guidelines (parallel tool calls, concise, no narration, match conventions,
-  cite path:line, say what was not verified) are appended as a `Guidelines:` block after
-  the agent body, only in a subagent child (depth > 0). A user's `--system-prompt` and
-  light mode still replace the default prompt.
-
-## 5g. Telling parallel runs apart (2026-10-30)
-
-**The report.** The model dispatched several subagents, took one for a duplicate,
-cancelled another one that was not a duplicate, and dispatched that one again.
-
-**What the model saw** (the eval `parent_tells_parallel_runs_apart`, run against the
-binary before the fix: two `explore` calls in one turn, then `AgentOutput(list: true)`):
+# Subagents
+
+Status (2026-11-06): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Open items are SA-1 to SA-11.
+
+Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
+
+## Principles
+
+| Rule | Detail |
+|---|---|
+| Child process per dispatch | A child's crash costs one dispatch. In-process is not the default (SA-8) |
+| `result.json` decides | The ledger is telemetry only |
+| Background by default | Unless the call or the agent says `background: false` |
+| Parent keeps working | Dispatch all independent tasks in one message. `AgentOutput(wait: true)` only for one named result the next step needs |
+| Brief every child | The child sees only its `prompt`. Brief format in How it works |
+| Worktrees only for writers | Writers: general-purpose, or a custom agent with Edit, Write or Shell. Read-only agents (explore, plan) use the parent tree |
+| Isolation by instruction | The harness never enforces worktree isolation |
+| Commit, never push | A child commits on its own branch. The user merges |
+| Cleanup rule | At session end, remove only what `git branch --merged <base>` lists. Keep and report the rest |
+| Every agent gets AGENTS.md and CLAUDE.md | Read-only agents too |
+| Advisory budget | Never stops a run. Counts output tokens only |
+| Liveness is progress | Stdout bytes are a signal. Turn end or tool event is progress |
+| One deadline for every type | No per-type timeout table |
+
+Worst case at defaults (depth-4 tree): 12 + 12·6 + 12·6² + 12·6³ = **3108** live children.
+
+## How it works
+
+### Limits
+
+Resolution: frontmatter (where the agent has the key), then `HOOCODE_*` env, then the settings key, then the default. Zero, non-numeric or out-of-range values fall through. Env values are inherited by children.
+
+| Limit | Default | Settings key | Env var | On hit |
+|---|---|---|---|---|
+| Turns per run | 200 | `subagentMaxTurns` | `HOOCODE_SUBAGENT_MAX_TURNS` (frontmatter `maxTurns`) | Asked to wrap up at 90%; stopped at the cap |
+| Token budget (advisory) | 150k; general-purpose 300k | `subagentTokenBudget` | `HOOCODE_SUBAGENT_TOKEN_BUDGET` (frontmatter `tokenBudget`) | `budget_warning` 80%, `budget_exceeded` 100%. Never stops |
+| Deadline | 4 h base; load-scaled to 4 h 30 m | `subagentDeadlineMinutes` | `HOOCODE_SUBAGENT_DEADLINE_MS` | Child wraps up 90 s before the base; parent kills at the scaled deadline |
+| Progress stall | 20 min, load-scaled | `subagentStallSeconds` | `HOOCODE_SUBAGENT_STALL_MS` | SIGUSR1, 30 s grace, SIGKILL |
+| Tool in flight | 30 min × load; a Shell call gets max(this, its timeout + 60 s) | `subagentToolStallSeconds` | `HOOCODE_SUBAGENT_TOOL_STALL_MS` | As progress stall. `timeout: 0` = unbounded |
+| Child RSS | 4096 MiB | `subagentMaxRssMb` | `HOOCODE_SUBAGENT_MAX_RSS_MB` | Child reaped |
+| Subagent Shell default | 1200 s | `subagentShellTimeoutSeconds` | `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS` | Command group killed; partial output returned. Main session has none |
+| Root concurrency | 12 (1–32) | `subagentConcurrency` | `HOOCODE_SUBAGENT_CONCURRENCY` | Extra dispatches queue |
+| Nested concurrency (depth ≥ 1) | 6 | `nestedSubagentConcurrency` | `HOOCODE_NESTED_SUBAGENT_CONCURRENCY` | Queue, per pool |
+| Queue | 8 per running slot | `subagentQueuePerSlot` | `HOOCODE_SUBAGENT_QUEUE_PER_SLOT` | Refused beyond running + queued |
+| Nesting depth | 4 (absolute max 8) | `maxSubagentDepth` | `HOOCODE_SUBAGENT_MAX_DEPTH`, `--max-subagent-depth` | No Agent tool at the cap. Refused with `Maximum subagent depth (N) reached` |
+| `AgentOutput` wait | 300 s | `subagentWaitTimeoutSeconds` | `HOOCODE_SUBAGENT_WAIT_TIMEOUT_MS` | Wait returns; run continues |
+| Provider retries | 5 | `retry.maxRetries` | none | Error reported |
+| Output tokens per request | 64000 | `maxOutputTokens` | `HOOCODE_MAX_OUTPUT_TOKENS` | Anthropic only (SA-11) |
+
+Fixed in code: 64 finished results kept; 50 settled inbox records; ledger trimmed past 20 000 lines to 10 000; dispatch dirs keep the newest 50 and drop those older than 24 h (never running or queued).
+
+Warm workers (`warmSubagents`, opt-in) share the concurrency, queue and Shell limits. Warm and cold keep separate counters.
+
+Child-only flags, not in `--help`: `--task-id`, `--deadline-ms`.
+
+### Agent definition
+
+Files: `crates/hoocode-code-resources/templates/agents/*.md`. Parser: `crates/hoocode-code-resources/src/agent_frontmatter.rs`. Shipped: `explore`, `plan`, `general-purpose`, `code-review`, `security-review`. All five ship `background: true`.
+
+| Field | Meaning |
+|---|---|
+| `name` | Agent id, used as `subagent_type` |
+| `description` | Use-when text for the parent |
+| `tools` | Allowlist. Agent is still offered when delegation is allowed |
+| `model` | Default model. A call's `model` overrides |
+| `background` | `false` = foreground default, kept as `Some(false)` |
+| `delegate` | `true` = may dispatch |
+| `fork` | Same flag helper as `background` |
+| `maxTurns`, `tokenBudget` | Per-agent limits (above) |
+
+Rules:
+
+- A writer has Edit, Write or Shell. Writers get the worktree instruction. Read-only agents do not.
+- Every body ends with the final-answer rule. Custom bodies get `BASE_GUIDELINES` appended only at depth > 0. `--system-prompt` and `--light` still replace.
+- Child prompt is one wrapper, `Task: <prompt>` (`pool::child_prompt`). Run description is the call's first line, at most 60 characters, `"` replaced by `'`.
+- Code review and security review: Shell only for `git diff`, `git log`, `git show` (text rule; SA-3).
+
+**Final-answer rule (every body):**
+
+> Your final message is the only thing the caller receives. Start with the status (complete, partial or failed). Then the result, with the Report fields from the brief. Do not say "see above".
+
+### Brief
 
 ```text
-toolResult | Started "Agent" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.
-toolResult | Started "Agent" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.
-toolResult | 2 background subagents (2 running):
-- explore#1  running  0.0s
-- explore#2  running  0.0s
+Goal: <outcome, one sentence>
+Context: <absolute file paths, findings so far, why it matters>
+Workspace: <absolute path> · branch <name or none> · base <commit or none>
+Constraints: <read-only, or may edit under <path>> · may commit: yes/no · never push
+Done when: <a check you can run>
+Report: status (complete | partial | failed) · summary · files changed · commits · verified (what you ran, and the result) · not verified · open questions
 ```
 
-Three causes, all about run identity:
+- Absolute paths only. The Agent schema has no cwd or workspace field.
+- `git -C <path>` for git. A Shell `cd` is not assumed to carry.
+- The parent fills Workspace. The harness never does.
 
-1. **The placeholder named nothing.** A background call is answered by the agent loop
-   before the tool runs. No hook was wired, so every Agent call got the loop's generic
-   line, identical for every call: no label, no description. The guidance in
-   `task-main.md` told the model to poll and cancel by `explore#1`, a label it was never
-   given for a running run.
-2. **Labels followed execute order, not call order.** The label was taken inside the
-   detached execute, and the loop starts those concurrently. The fixed binary's first eval
-   run registered the second call's run first. Before the fix that run would have been
-   `explore#1`, the handle a model would take for its first call.
-3. **The roster and the notifications showed bare labels.** `explore#1  running` and
-   `explore#2  running` look like duplicates. A cancel answered `Cancelled explore#2.`,
-   which does not say which task stopped.
+### Lifecycle, liveness, deadlines
 
-**Ruled out.** Cancel resolves a handle by exact task id or exact label (`inbox.rs`
-`get`), and labels are unique per agent type, so a cancel never hit a different run
-than the one it named (b). Tool calls run only once the assistant message is complete,
-and a provider retry happens before that, so a call is never executed twice (d). There
-is no idempotency by tool call id, and there should not be: the mock provider (like some
-real ones) numbers calls per turn, so `call_0` comes back every turn as a new call.
+| Stage | Rule |
+|---|---|
+| Admission | Refused beyond running + queued. Queue priority ages one step per minute waited |
+| Start | The parent's call gets a placeholder that names the run: `explore#2 ("…") started in the background` |
+| Heartbeat | Stdout silent past 60 s is one signal. Silence alone is not progress |
+| Stall | No progress (turn end or tool event) for 20 min, load-scaled. Also a tool in flight past its bound |
+| Reap | SIGUSR1 to the child pid only. The child writes a partial `result.json` and exits. 30 s grace, then SIGKILL. A valid partial result is accepted |
+| Wrap-up | The child gets `--deadline-ms` = base 4 h and wraps up 90 s before it. Settles `partial`, confidence 0.6 |
+| Deadline kill | Parent SIGTERMs the child group at the scaled deadline (≤ 4 h 30 m). A valid result is still accepted |
+| Settle | Valid `result.json` = success. Killed with a valid result = `partial`, never `complete`. Killed without one = `failed` or `cancelled`, with cause and an 8 KB stderr tail in `output.json` |
+| Fallback | Region error or `finish_reason: error` retries on the parent's concrete model (`inherited_model`). Never a user cancel |
+| Write error | `result.json` written atomically. A failed write is logged and the child exits non-zero |
+| Group sweep | After a reaped child exits, its process group gets SIGTERM, then SIGKILL after grace |
+| Depth | A child at the cap gets no Agent tool and no delegation block (`subagents_allowed`, `hoocode-code-cli/src/runtime.rs`) |
 
-**Not ruled out: (c), a roster that misses a fresh run.** The first version of this fix
-(d767bd1) said it "was not seen". That was wrong. A review re-ran the eval 13 times and
-it failed twice: `AgentOutput(list: true)` right after a dispatch answered "No background
-subagents have been dispatched", and a cancel in that window answered "No background
-task". The record was made by the detached execute, after the placeholder had named the
-handle. That is a direct path back to a re-dispatch. Fixed in the second round below.
+### Runs, handles, cancel
 
-**Fix, first round.**
+- Every Agent call is its own run, even with the same type. Two runs of one type with different descriptions are not duplicates.
+- Handle: `type#N`, unique per agent type per session. Counters continue after `--resume`. An old handle answers `explore#1 ran in an earlier process and is not running now`.
+- A background call's reply names the handle and description at once. A foreground call names it on its `resume_task_id:` line.
+- `AgentOutput(list: true)` shows every background run with handle, description and status.
+- `AgentOutput("explore#1", cancel: true)` stops that run only. A cancel while starting settles it `cancelled` and it never starts. A cancel on a settled run says `nothing was cancelled`.
+- Tool names: `Agent` and `AgentOutput` (`wait`, `list`, `cancel`, `timeout_ms`, `resume_task_id`). Old names (`Task`, `TaskOutput`, `AgentOut`) are unknown. No aliases.
+- Reservations are keyed by (session, call id). A refused call settles its handle `failed` with the reason.
 
-- A tool can give its own background placeholder (`AgentTool::background_placeholder`;
-  on `ToolDefinition` it also gets the call's `ToolContext`). It wins over the loop's
-  hook and is called once per call, in call order.
-- The Agent tool's placeholder reserves the run's label for the call id
-  (`SubagentInbox::reserve_label`) and says
-  `explore#2 ("audit the db layer") started in the background. Its handle is explore#2: …`.
-  The execute takes that label back (`take_label`), whatever order the executes start in.
-  A reservation is used once, so a reused call id is a new run.
-- Each inbox record keeps the call's description. The roster, the status line, the
-  finish and failure notifications, and the cancel result name the run as
-  `explore#2 ("audit the db layer")`. A cancel says `Only this run was stopped.`, and a
-  cancel on a settled run says `nothing was cancelled`.
-- The Agent and AgentOutput descriptions and `task-main.md` say that every call is its own
-  run, that two runs of one type with different descriptions are not duplicates, and to
-  check `AgentOutput(list: true)` before dispatching again or cancelling.
+### Process safety (tree kill)
 
-**Fix, second round (review of d767bd1).**
+- **Policy:** a subagent's descendants are SIGKILLed on cancel, deadline or dispose. Jobs re-parented to init are not.
+- **Only our own unreaped child is walked.** `plan_tree_kill` returns nothing unless the table shows the root with `ppid == getpid()`. This process, its ancestors and their groups are never killed. Table from `/proc` (or `/bin/ps` off Linux).
+- **A reaped pid is never signalled.** The registry (`lifeguard::child_spawned`, `child_exited`) marks the child exited before the reap. Kills by pid check it under the lock.
+- **Spawn generations.** A kill whose generation is not the live one for that pid is refused, so a stale kill never hits a reused pid.
+- **Groups** are killed only when a descendant leads them (`pgid == pid`, `pgid > 1`), not when they are ours or an ancestor's. `terminate_group` refuses pid 0.
+- **Freeze, then kill:** SIGSTOP the group, walk, SIGSTOP descendants, walk again, SIGKILL. `StoppedGuard` SIGKILLs anything left stopped. The warm worker walks under its child lock before stdin closes.
+- **Limits:** SA-9 and SA-10.
 
-- **The record exists from the placeholder on.** `reserve_label` makes the run's inbox
-  record at once, `starting` (lifecycle running), with its label, description and
-  session, keyed by the label until the execute's `start_in` binds the task id in the
-  same place in the listing. Roster, status, wait and cancel all see it.
-- **A cancel never misses.** On a starting run, `request_cancel` settles it `cancelled`
-  and its execute does not dispatch it (`Cancelled explore#2 ("…") before it started.`).
-  On a bound run it sets a flag, and the execute's `cancel_on_abort` offers the cancel to
-  the pool again every 25 ms until the pool holds the run (the moments between
-  `start_in` and the dispatch registering it). The answer to the model is the same.
-- **A refused call settles its handle.** When the execute returns before starting a
-  reserved run (unknown agent, delegation not allowed, a bad model or effort, provider
-  exhaustion), the record is settled `failed` with the reason, and the error reads
-  `explore#1 ("…") failed ✗ — <reason>`, so `AgentOutput("explore#1")` says what happened.
-- **Repeated call ids.** The OpenAI-compatible provider gives a tool call a new id when it
-  has none or repeats an earlier call's id in the same message (as the Google provider
-  does), and no longer merges two calls that share an id but not a stream index. A call
-  id still reserved in the message gets the loop's generic placeholder, and a reservation
-  is taken only by the call it describes (agent type, description, session).
-- **Per session, across restarts.** Records, label counters and label bindings are kept
-  per session (the session file), so `/new` and app-server sessions do not list each
-  other's runs. The first time a session is seen, its file is read for `type#N` handles
-  and the counters continue after them, so after `--resume` a new run never reuses
-  `explore#1`. An old handle answers `explore#1 ran in an earlier process and is not
-  running now`; as `resume_task_id` it is refused with the same reason.
-- **Descriptions** are the first line of the call's `description`, at most 60
-  characters, with `"` replaced by `'`.
-- The TUI's AgentOutput roster renders `- label ("description")  status` with the
-  description dim (`tools/subagent.rs`).
+Tests: `crates/hoocode-code-subagents/tests/it/tree_kill.rs`, `lifeguard.rs`, `warm.rs`.
 
-Tests: `tests/it/tools.rs` (`parallel_background_calls_keep_the_handles_their_placeholders_named`,
-`the_roster_and_a_cancel_name_each_run_by_handle_and_description`,
-`a_run_is_listed_and_cancellable_from_its_placeholder_on`,
-`a_refused_call_fails_the_handle_its_placeholder_named`,
-`a_cancel_asked_before_the_pool_holds_the_run_stops_it`,
-`an_old_handle_after_resume_is_named_as_an_earlier_run`), `tests/it/inbox.rs` (reserve and
-take, `a_reserved_run_is_listed_and_bound_in_place`, `a_run_cancelled_while_starting_never_starts`,
-`a_reserved_run_that_never_started_fails_with_its_reason`,
-`runs_and_labels_are_scoped_to_their_session`, `a_resumed_session_continues_its_handles`),
-`a_tools_own_background_placeholder_names_each_call` (`hoocode-agent-loop`),
-`repeated_or_missing_tool_call_ids_are_made_unique_within_a_message`
-(`hoocode-ai-provider-openai`) and `roster_line_with_a_description_keeps_its_colours`
-(`hoocode-code-tui-widgets`). The eval `parent_tells_parallel_runs_apart` fails on the
-binary before the fix and passes now, repeated (see `subagent-evals.md`). Its needles no
-longer match the example in `task-main.md`.
+### Ledger
 
-**Fix, third round (review of 25367f1).**
+- File: `<cwd>/.hoocode/dispatch/ledger.jsonl`. One line per attempt, one `write_all` per record. Telemetry only. A write failure is logged and dropped. Bounded: past 20 000 lines, trimmed to the newest 10 000.
+- Reads: `/subagent-stats [24h|7d|all]`, or Rust `ledger::stats(&cwd, since)` and `success_rate`. Code: `crates/hoocode-code-subagents/src/ledger.rs`.
 
-- **Warm runs cancel for real.** `WarmSubagentPool::dispatch_cancellable` selects the
-  worker's run (and the wait for a slot) against a cancel future. On cancel the task is
-  dropped, the worker discarded (its child disposed) and the result is `cancelled`. The
-  Agent tool passes `stop_asked`: the inbox's cancel flag or the call's abort signal,
-  foreground and background. Before, a cancel of a warm run answered "Cancelled" while
-  the run went on to report "finished ✓".
-- **A cancel reports what happened.** When the cold pool kills the run, the answer is
-  "Cancelled". Otherwise (a warm run, or a cold run the pool does not hold yet) the
-  answer waits up to 10 s for the run to settle and reports what it settled as:
-  cancelled, already finished, or "Asked … to stop; it has not stopped yet". The 60 s
-  guess is gone. A run listed as running always has an execute awaiting it, because:
-- **No ghosts.** A reservation is always taken by its call id, even when the execute sees
-  other arguments than the placeholder (its description is updated). An `AbandonGuard`
-  in `execute_task` settles the call's run `failed` ("not started: …") if the call
-  returns or panics while it is still listed as running.
-- `cancel_on_abort` does not start a run already asked to stop, and treats an abort like
-  a cancel request, retried until the pool holds the run.
-- Counter seeding reads the session file line by line as bytes, only lines with a `#`,
-  and does not remember a session whose file could not be read (a file that does not
-  exist yet is a new session, with nothing to continue after).
-- The OpenAI provider assigns a missing or repeated id when the call's block starts, so
-  every partial carries the id the call keeps: `call_<n>_<ms>`, counter first, short of
-  the 40 characters a request keeps.
-- A run cancelled while starting whose call then refused is reported cancelled, not
-  failed; a background resume's pool error names the run. A handle held for another
-  session of this process answers "belongs to another session or an earlier process".
-- The TUI's background notice parses `label ("description")` (it had stopped parsing the
-  notices since the first round) and finds the run's elapsed time by the call's run id;
-  AgentOutput results carry `runId` for the same reason.
+### Parent behaviour
 
-Tests added in this round: `a_cancelled_warm_dispatch_stops_its_worker_and_reports_cancelled`
-and `a_warm_background_run_reports_its_status_and_cancels_truthfully` (`tests/it/warm.rs`),
-`a_stop_asked_before_the_dispatch_never_starts_it` and
-`changed_arguments_keep_the_reserved_handle_and_leave_no_ghost` (`tests/it/tools.rs`), the
-abandon cases in `subagent_inbox_lifecycle`, `parses_a_notice_that_names_its_description`
-(`hoocode-code-tui-widgets`), and the partial-id check in the OpenAI provider test.
+`crates/hoocode-code-subagents/templates/prompts/task-main.md` is the one template. Results arrive at the next turn boundary (no mid-turn injection). Dispatch all independent subtasks in one message. Use `wait: true` only for one named result.
 
-**Fix, fourth round (review of e1dbd81).**
+### Writer worktree protocol
 
-- Reservations are keyed by (session, call id): two sessions whose providers both
-  number calls `call_0` no longer take each other's handle.
-- **A cancel stops the subagent's own commands.** The Shell tool starts each command in
-  a process group of its own, which neither the cold pool's group kill nor the warm
-  client's stop reached: a cancelled run's `sleep 300` (or test suite) kept running.
-  `kill_process_tree` and the warm worker's `dispose` now first find every descendant of
-  the child (`/proc`, or `ps` off Linux) while the child still holds them, and SIGKILL
-  each one and the group it leads (never this process's own group). Chosen over a
-  SIGTERM handler in the child: the cold child's SIGTERM path writes a partial result,
-  which would settle a cancel as `partial`, and the RPC child has no handler at all.
-- Esc on the AgentOutput call ends a cancel's settle wait; the cancel itself stands.
-- A warm run asked to stop while waiting for its slot never boots a worker.
-- Seeding opens the session file and treats only `NotFound` as a new session; a
-  permission or I/O error is not remembered.
-- A run its Agent call abandoned says "not started" only if it never started, and
-  "stopped unexpectedly" otherwise.
-
-Tests added in this round: `a_cancel_stops_the_subagents_own_commands`,
-`esc_ends_a_cancels_wait_for_the_run_to_settle` (`tests/it/tools.rs`),
-`a_cancelled_warm_run_stops_the_workers_own_commands`,
-`a_run_stopped_before_its_worker_never_boots_one` (`tests/it/warm.rs`), and the
-two-session and abandon cases in `subagent_inbox_lifecycle`. Both command tests fail with
-the descendant kill removed.
-
-**Fix, fifth round (safety review of 31eee91).**
-
-Policy: **a subagent's descendants are SIGKILLed on cancel, deadline or dispose; jobs
-re-parented to init are not.** The rules that keep that kill from reaching anything
-else:
-
-- **Only our own, unreaped child is walked.** `plan_tree_kill` returns nothing unless the
-  process table lists the root with `ppid == getpid()` (the cold child and the warm
-  worker both are direct children). This process, its ancestors and the groups they are
-  in are never in the kill set.
-- **A reaped pid is never signalled.** The cold `ProcessHandle` registers its child at
-  spawn (`lifeguard::child_spawned`). In `wait`, `waitid(P_PID, pid, WEXITED|WNOWAIT)`
-  sees the exit without reaping (a zombie keeps its pid), `child_exited` marks the pid
-  under the registry lock, and only then is the child reaped. Every kill by pid
-  (`kill_process_tree(s)`, the reap signals in `reap_group`) holds that lock while it
-  signals and refuses a pid marked reaped, so the stale pids the pool and lifeguard keep
-  for `EXIT_STDIO_GRACE` cannot be walked or signalled after the reap. A pid never
-  registered (other runners, tests) gets the old group kill and no walk. The pool's and
-  lifeguard's own copies of the pid are not cleared: the registry is the one check every
-  kill path passes through, which is simpler than keeping three tables in step.
-- **Warm side:** the walk runs inside `RpcClient::stop_with` while it holds the child
-  lock, which the exit watcher needs to reap, so the worker cannot be reaped during it.
-  Stdin is dropped before the lock is taken, and the lock is waited for at most a
-  second, so a watcher already in `wait()` cannot deadlock the stop.
-- **Groups:** a group is killed only when a descendant leads it
-  (`pgid == pid && pgid > 1`) and it is not our group or an ancestor's.
-- **Freeze, then kill:** the cold child's group (or the warm worker) is SIGSTOPped, the
-  tree walked, every descendant found SIGSTOPped, the tree walked again, then the groups
-  and descendants SIGKILLed. The warm worker gets SIGCONT so it can take its SIGTERM.
-- The table is read from `/proc` (or `/bin/ps` off Linux), once per dispose, inside
-  `block_in_place` on a runtime worker; an empty table is logged once.
-
-**Sixth round (follow-ups to ec64982).**
-
-- **Spawn generations, not bare pids.** The registry gives each cold child a generation
-  at `child_spawned`; the pool's slot and the lifeguard's monitor keep it next to the pid,
-  and every kill passes a `ChildPid { pid, generation }`. A kill whose generation is not
-  the live one for that pid is refused and logged. This closes the ABA window: the slot
-  and the monitor keep a pid for about 500 ms after the reap, and if the pool's next child
-  got the same pid, a stale cancel or grace-timer kill used to see it as live and kill the
-  wrong subagent's tree. A pid-only `kill_process_tree` of a pid one of our children holds
-  is refused too. The `reaped` set is gone: the registry holds only live children, so it
-  is bounded by them.
-- **A `waitid` error no longer marks a live child exited.** Only an exit or `ECHILD`
-  does. Any other error is logged once, and the plain reaping wait runs with the pid
-  still live (kills keep working until the reap); the pid is marked exited after it.
-- **The warm walk runs before stdin is closed**, under the child lock (waited for at most
-  a second). A worker that exits at once on EOF used to be reaped by the exit watcher
-  before the walk, and its Shell groups survived. Nothing waits on the watcher while
-  holding the lock, so the two cannot deadlock.
-- **No process is left stopped.** A `StoppedGuard` SIGKILLs every root and descendant a
-  kill SIGSTOPped if the kill unwinds midway.
-
-Tests added: `a_stale_generation_never_kills_the_child_that_reused_its_pid`
-(`tests/it/tree_kill.rs`) and `disposing_a_worker_that_exits_on_eof_still_stops_its_commands`
-(`tests/it/warm.rs`; it fails with stdin closed before the walk).
-
-Tests: `tests/it/tree_kill.rs` (a direct child is walked; a pid whose parent is not us,
-a reused pid now held by another process, and a grandchild are not; a descendant in a
-foreign group or group 1 does not get that group killed; a reaped child's pid is never
-signalled; the pool marks its child exited before the reap). The cold and warm "the
-`sleep` is gone after cancel" tests still pass.
-
-**Not proven.** We have no transcript of the user's session. The eval shows that the
-model could not tell its runs apart from anything it was shown. It does not show that a
-real model makes this mistake, or that it stops making it now. A command that left the
-child's tree entirely (double-forked and re-parented to init) before the cancel is not
-found.
-
-## 6. The in-process migration: built, measured, not shipped (2026-10-05)
-
-§6 of this file used to be an open question. It is now an answer, and the
-answer is "the mechanism works, the product does not use it yet".
-
-**What shipped.** `runner.rs` has three implementations of one seam:
-
-| | what it is | used by |
+| # | Who | Action |
 |---|---|---|
-| `ProcessRunner` | re-execs the binary per dispatch | the product, unchanged |
-| `ScriptedRunner` | answers from a script, no process | the whole test suite |
-| `InProcessRunner` | runs the agent loop in this process | off; wired but not enabled |
+| 1 | Parent | Check the task needs a writer. Note base with `git rev-parse HEAD`. Warn if the tree is dirty |
+| 2 | Parent | Pick a unique `<label>` (`git branch --list agent/<label>` must be empty). Run `git worktree add -b agent/<label> ~/.hoocode/worktrees/<repo>/<label> <base>` |
+| 3 | Parent | One writer per worktree. No overlapping files, including the parent's own. Put path, branch and base in the brief |
+| 4 | Child | Work only under the worktree, with `git -C <path>`. Run the project's checks. Commit on `agent/<label>`. Never push, never switch branches, never write the parent tree. Report branch, commits, diff stat, checks |
+| 5 | Parent | Read `git log --oneline <base>..agent/<label>` and the diff stat. Verify, or dispatch code-review. Report branch and `git merge agent/<label>`. The user merges |
+| 6 | Parent | Session end: for each branch in `git branch --merged <base>`, `git worktree remove`, then `git branch -d`. Keep and report the rest |
 
-**The gate, which was the whole question, passes.** `an_in_process_child_can_dispatch_its_own_child`
-runs a child in process which dispatches its own child through the *same* pool
-while the first run is still going: no deadlock, no double settle, two ledger
-lines, nothing stuck. The reason it works is small and worth writing down: the
-pool never holds its state lock across an await, so a run the pool owns can ask
-the same pool for another run. Object 4 of the old objection list — "panic
-containment has no precedent" — is also answered by construction for the seam,
-though a panicking *agent* still unwinds the whole process, which is the one
-argument for keeping children.
+Build output is per project. Each worktree uses its language's default location. Sharing a cache is a project rule in its AGENTS.md or CLAUDE.md, not harness code.
 
-**The measurement** (`in_process_and_child_process_runs_are_comparable`, 12
-identical runs through the same pool, same settle path, same ledger):
+### Evals
 
+Harness `scripts/eval/subagent_evals.py`. Mock `scripts/eval/mock_provider.py`. Needs `cargo build -p hoocode-code-main` first (the harness runs `target/debug/hoocode`).
+
+```bash
+scripts/eval/subagent_evals.py                    # fast suite, about 25 s
+scripts/eval/subagent_evals.py --include-slow     # plus the two slow scenarios, about 3 min
+scripts/eval/subagent_evals.py --matrix           # every scenario × 5 faults
+scripts/eval/subagent_evals.py --soak 600         # randomised faults, leak check
 ```
-in-process 8.9ms      child process 459.9ms
-```
+Also: `--only <name>`, `--repeat N`, `--min-success 0.8` (gate on usable rate).
 
-~0.7ms of dispatch overhead against ~38ms, for runs that do nothing. On a real
-subagent the model dominates and the ratio shrinks — but the per-dispatch floor
-is gone, and the floor is what makes many small subagents viable.
+Reports: `target/subagent-evals/` (`report.md`, `report.json`, transcripts, request log).
 
-**Why it is not the default anyway.**
+**Pass bars:**
 
-1. The session wiring lives in the CLI (`runtime.rs`), not in this crate. The
-   `InProcessFactory` deliberately takes the wiring from the caller; nobody has
-   written the production factory, and a second way to build a session would be
-   a second way to get auth, the registry and the system prompt wrong.
-2. Depth is still a process-global env var (`SUBAGENT_DEPTH`). With children,
-   depth is per process and therefore trivially correct. In process it is a
-   shared mutable global that a nested run has to mutate and restore — and the
-   gate test only proves the *pool* nests cleanly, not that depth accounting
-   does.
-3. A child's crash today costs one dispatch. In process it costs the session.
+| Check | Bar |
+|---|---|
+| Scenario | Meets its declared expectations (an absent field is not checked). Usable = `complete` or `partial` with a result |
+| Exit code | 0 when all scenarios meet expectations and usable rate ≥ `--min-success` (default 0.0) |
+| CI fast suite | Nightly and manual only, never on PR. `--min-success 0.8`. Non-blocking |
+| CI nightly | `--matrix` and `--soak 600`. Non-blocking |
+| Known issue | Recorded, not failed. None declared (SA-6) |
 
-**Verdict.** Keep child processes as the shipped model. The seam is the part
-that was worth building: it removed the 31 `/bin/sh` path seams, it is what the
-fault matrix and the soak run against, and it means the question above can be
-revisited with a factory and a per-run depth field rather than a rewrite. If
-someone picks it up: item 2 first, and re-run
-`an_in_process_child_can_dispatch_its_own_child` with real depth assertions
-rather than a pool-liveness one.
+**Method:**
 
-## 7. Footnote: the evidence is not permanent
+- Real binary, real parent, Agent tool, pool and child process, with a scripted mock provider. No `/bin/sh` mocks on the subagent path. Unit tests use `ScriptedRunner`.
+- A child's last user message ends in `Task: …`. Each route has its own script and cursor. `--repeat` resets cursors. An exhausted script answers `500 mock: script exhausted`.
+- Turn keys: `text`, `reasoning`, `tool_calls`, `usage`, `delay_s`, `hang`, `abort_after`, `error`, `corrupt_after`. `worktree: true` gives a temp repo and bare origin (`<REPO>`, `<WT>`, `<ORIGIN>`).
+- Expect fields: `result_status`, `result_confidence_min`, `ledger_*`, `summary_contains`, `error_contains`, `child_requests`, `parent_requests`, `parent_tool_calls_before_result`, `peak_inflight_min/max`, `attempts_usable_min`, `branch_commits`, `parent_status_unchanged`, `nothing_pushed`, plus needles. Scenario fields: `known_issue`, `slow`, `worktree`, `settings`, `env`.
 
-`sweep_old_agents` deletes dispatch dirs older than 24h when the pool starts — hoocode-faithful.
-Five of the ten recorded runs have already been swept. The figures this document cites are
-baked into the tests as literals (`RECORDED_TURNS` holds the exact 15 context/output pairs;
-the timeout, agent-type and status tables are in assertions), so nothing needed is lost. Copy
-the survivors in as fixtures if the raw evidence is worth keeping.
+**Faults (`MATRIX_FAULTS`):** `none`, `rate-limited` (429, retry-after 1), `mid-stream-abort` (120 bytes), `corrupt-line` (120 bytes), `provider-error` (500).
+
+**Scenarios (22 in code):**
+
+| Family | Scenarios |
+|---|---|
+| Child | `child_direct_answer`, `child_tool_call_then_answer`, `child_turn_limit_settles_partial`, `child_invalid_tool_arguments`, `child_stream_abort_mid_answer`, `child_deadline_wrapup_partial` (slow), `child_rate_limited_then_answers`, `child_corrupt_jsonl_line`, `child_context_overflow` |
+| Parent dispatch | `parent_dispatch_blocking`, `parent_dispatch_background`, `parent_works_while_background_runs`, `parent_tells_parallel_runs_apart`, `parent_stall_reaped` (slow) |
+| Parent rules | `parent_region_error_falls_back`, `parent_unknown_model_name`, `parent_legacy_alias_rejected`, `subagent_shell_denied_without_a_ui` |
+| Saturation | `parent_queue_saturation` (peak must equal root cap), `nested_depth_chain` (depth 3 gets no Agent tool), `nested_fanout_saturation` (peak must equal nested cap) |
+| Writer | `worktree_writer_commits_on_branch` |
+
+Not covered by any scenario: warm pool (SA-1), in-process mode, RSS limit, progress and tool stall numbers (SA-7).
+
+The mock tests mechanics only. It does not show that a real model follows the brief (SA-2).
+
+**Last recorded:** `--include-slow` 22/22 as declared, 33 attempts, 32 usable (97%), 2026-10-30. Matrix 65/65 and soak 26 rounds, 0 leaks, were 2026-10-05 and predate the cancel and tree-kill rounds (SA-4).
+
+## Decisions
+
+| Date | Decision |
+|---|---|
+| 2026-10-05 | Child processes are the shipped model. In-process is behind the seam, not enabled |
+| 2026-10-03 | Token budget is advisory. Count output tokens; context goes in `peak_context` |
+| 2026-10-05 | `result.json` decides correctness. Ledger is telemetry only |
+| 2026-10-05 | Stall is a signal: SIGUSR1, grace, SIGKILL. A valid partial result is accepted |
+| 2026-10-05 | Killed with a valid result settles `partial`. No prose `error` on killed tasks |
+| 2026-10-10 | One deadline for every agent type: 4 h base, load-scaled to 4 h 30 m |
+| 2026-10-10 | Parent can poll and cancel a run (`AgentOutput` with or without `cancel: true`) |
+| 2026-10-08 | Tool names `Agent` and `AgentOutput`. No aliases |
+| 2026-10-09 | Background by default. Frontmatter `background: false` is honoured. The parent's argument wins |
+| 2026-10-09 | No barrier wait while independent work exists. Isolation by instruction. Only writers get worktrees |
+| 2026-10-14 | Worktrees at `~/.hoocode/worktrees/<repo>/<label>`, branch `agent/<label>` |
+| 2026-10-09 | Subagents commit on their branch and never push. User merges. Parent removes only merged worktrees and branches, at session end |
+| 2026-10-14 | Harness never enforces worktree isolation. Dirty parent tree: warn only. Commit only if asked |
+| 2026-10-14 | Build output is per project. No harness setting (supersedes the old `CARGO_TARGET_DIR` answer) |
+| 2026-10-09 | Every agent, read-only too, gets AGENTS.md and CLAUDE.md |
+| 2026-10-15 | Custom bodies get base guidelines at depth > 0. One prompt wrapper, no `context` field |
+| 2026-10-30 | Every call is its own run. Handles are `type#N`, per session, continue after `--resume`. Descendants killed on cancel, deadline or dispose; re-parented jobs are not |
+| 2026-10-03 | Fallback retries region errors and `finish_reason: error`. Never retries a user cancel |
+| 2026-10-16 | Root 12, nested 6, queue 8 per slot, depth 4, wait 300 s, Shell default 1200 s |
+
+Dispatch dirs are pruned (newest 50, older than 24 h dropped), so they are not kept for the whole session. Recover is view or resume on request, never automatic (TUI rule, 2026-10-09).
+
+## Open
+
+Size: S about a session, M a few, L many.
+
+| ID | Item | Size | Trigger or gate | Design notes |
+|---|---|---|---|---|
+| SA-1 | Warm-pool evals: cap, reuse, cancel, stop path | S | Next change to `warm.rs`, or before warm pool goes on by default | No scenario exists. Set `warmSubagents: true`. Assert peak in flight = root cap. Cancel answers `cancelled`, the `sleep` is gone |
+| SA-2 | Real-model trial of the brief and writer protocol | S | Before relying on writers in real work | One general-purpose writer on a temp repo, real model. Check one commit on `agent/<label>`, no push, parent tree unchanged. Record the result here |
+| SA-3 | Review-agent Shell filter: only `git diff`, `git log`, `git show` | S | A review agent runs another command in a real run | Text rule is in `code-review.md:27`, `security-review.md:28`. Enforce with an agent-scoped allowlist in the Shell tool. Not found in code |
+| SA-4 | Re-run `--matrix` and `--soak 600` after the cancel and tree-kill rounds | S | Now. Last figures (2026-10-05) predate those rounds | Run locally or read the nightly artifact. Record the figures here |
+| SA-5 | Re-run `parent_queue_saturation` at the root cap of 12 | S | Next `--include-slow` run | Last run was at 8 slots. Peak in flight must equal 12 |
+| SA-6 | `known_issue` mechanism is unused | S | Next eval review | Recommend removing the field and its report branch unless a real known issue appears. User decides |
+| SA-7 | Evals for progress-stall, tool-stall and RSS limits | M | Before changing their defaults | One scenario each, using low env values (children inherit them): `HOOCODE_SUBAGENT_TOOL_STALL_MS`, `HOOCODE_SUBAGENT_MAX_RSS_MB` |
+| SA-8 | In-process child mode (Track 2) | L | A measured need for lower per-dispatch cost. Floor 8.9 ms vs 459.9 ms (no-op, 2026-10-05) | 1: per-run depth field replaces the `SUBAGENT_DEPTH` process global (`depth.rs`, `runtime.rs`). 2: production factory in the CLI. 3: depth assertions in `an_in_process_child_can_dispatch_its_own_child`. Until then, leave off |
+| SA-9 | Group sweep misses a nested subagent's own process group | M | A leaked process seen in a run or soak | The parent sweep covers the child's group only (H2). Reach nested groups through the descendant walk |
+| SA-10 | Re-parented grandchildren (double-forked before cancel) are not found | M | Only if the policy on re-parented jobs changes | Accepted gap today. Options if needed: subreaper or cgroup. Do not build without a policy change |
+| SA-11 | `maxOutputTokens` read only by Anthropic | S | A subagent truncates on a non-Anthropic model | OpenAI, Responses, Google and Gemini CLI cap at min(model max, 32000). Pass the setting through |
+
+## Not doing
+
+- A Rust worktree manager, or a `worktree` or `cwd` parameter on Agent.
+- Harness enforcement of worktree isolation.
+- Auto-merge, pushing, or worktrees for read-only agents.
+- Mid-turn injection of results. Locks or a scheduler for file overlap (the parent checks by hand).
+- Budget enforcement. Per-type deadlines. Salvaging a result from `session.jsonl` after a kill. Delta token accounting.
+- Idempotency by tool call id.

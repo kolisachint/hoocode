@@ -2,7 +2,7 @@
 
 Fuzz targets for the parsers that read bytes from outside the process: provider
 streams, session and settings files, RPC framing, terminal input and markdown. Plan
-step 1.6 ([reliability.md](../docs/design/reliability.md), item 5).
+reliability work ([runtime.md](../docs/design/runtime.md)).
 
 This directory is its own cargo workspace (`exclude = ["fuzz"]` in the root
 `Cargo.toml`). The main build never touches it, and it needs **nightly** plus

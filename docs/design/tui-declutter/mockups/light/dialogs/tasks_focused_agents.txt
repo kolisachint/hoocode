@@ -1,9 +1,0 @@
-«»
-«fg=#0a6b27» ● «fg=#555864;bold»Read«fg=#555864» docs/design/tui-activity.md«»  «fg=#555864»212 lines«»
-«fg=#555864» The renderer is next; I'll port it and then add the goldens.«»
-«»
-«bg=#e8e8f0» «fg=#f8f8fb;bg=#00625c;bold» Tasks «fg=#555864;bg=#e8e8f0» /tasks · ctrl+g«bg=#e8e8f0»  «fg=#555864;bg=#e8e8f0»plan 1/3«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»agents 1/1«fg=#555864;bg=#e8e8f0» · «fg=#555864;bg=#e8e8f0»mcp 1/1«bg=#e8e8f0»                                           «»
-«fg=#00625c;bg=#c3dcdc» › «fg=#0a6b27;bg=#c3dcdc»● «fg=#2b2f36;bg=#c3dcdc»explore  Trace the auth flow«bg=#c3dcdc»                                                                   «»
-«bg=#e8e8f0» «fg=#2b2f36;bg=#e8e8f0»↑↓«fg=#555864;bg=#e8e8f0» move«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»←→«fg=#555864;bg=#e8e8f0» tab«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»enter«fg=#555864;bg=#e8e8f0» open its log«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»esc«fg=#555864;bg=#e8e8f0» back«bg=#e8e8f0»                                                   «»
-«fg=#00625c;bg=#dadbe6» › «bg=#dadbe6»                                                                                                 «»
-«fg=#7a5200» ◉ «fg=#555864»working · 4s · esc stop«»             «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

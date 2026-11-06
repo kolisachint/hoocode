@@ -189,8 +189,8 @@ turns off startup network calls such as the version check.
   and where each lives in the code
 - [`docs/maps/packages.md`](docs/maps/packages.md): every crate in the workspace and
   what it does
-- [`docs/design/`](docs/design/README.md): design notes and the roadmap
-- [`docs/design/distribution.md`](docs/design/distribution.md): how releases reach users
+- [`docs/design/`](docs/design/README.md): design rules, and [`roadmap.md`](docs/design/roadmap.md), the plan
+- [`docs/design/README.md`](docs/design/README.md#release) (Engineering, Release): how releases reach users
 - [`CHANGELOG.md`](CHANGELOG.md): what changed (also `/changelog` inside hoocode)
 
 ## Contributing

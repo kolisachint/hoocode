@@ -1,138 +1,221 @@
 # Design docs
 
-Start here. hoocode is the product; it replaces the earlier TypeScript build (decided
-2026-10-10), and no TS pin or parity check remains. Everything
-still to build is planned in the cards below. Each card was agreed with the user on
-2026-10-07 or later. The dated decision pages win if a card disagrees:
-[decisions-2026-10-07.md](../../archive/docs/decisions-2026-10-07.md) and
-[decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md) and
-[decisions-2026-10-09.md](decisions-2026-10-09.md) and
-[decisions-2026-10-09-subagents.md](decisions-2026-10-09-subagents.md) (each later
-page adds to the earlier ones).
+Status (2026-11-06): Start here. Six area docs, one plan. Engineering rules below are in force. Open items: EN-1 to EN-13.
 
-To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) and
-[../maps/ui.md](../maps/ui.md) (screen, pickers, slash commands).
+## What hoocode is and how these docs work
 
-## How we work on designs (user preferences)
+hoocode is a coding agent for the terminal: a Rust CLI with a full-screen TUI, print and JSON modes, an rpc mode and an app server. These docs say what is built, what to build next, and the rules that must hold. Each area doc holds its principles, a short "How it works", its decisions and its open items.
 
-- **Design first, code later.** A card is reviewed and agreed before any code. A
-  session that is asked for design work changes docs only.
-- **One page per card.** Sections in this order: Goal, Decisions, What we build,
-  Not doing, Open questions, then a short Details appendix only if needed. Plain
-  words, short sentences, tables over prose. No history or background essays; git
-  has the long earlier drafts.
-- **Decide with the user, recommendation first.** Put open questions to the user as
-  choices with the recommended option first. Point out the trade-offs and the
-  risks an answer creates. Record the answers in a dated `decisions-*.md`.
-- **Standards first, no bloat.** Prefer open standards: AAIF's MCP and its
-  extensions, AGENTS.md, Agent Skills, and Agent Plugins. Support a vendor format
-  only when the standard can't cover it. Build for where the standards are going,
-  not for legacy (example: drop deprecated MCP transports).
-- **Reliability before features.**
-- **No new always-on token cost.** Tools that add schemas are opt-in or appear only
-  when used.
-- **Licences:** copy code only from MIT sources (CLAUDE.md). Depending on a
-  permissively licensed crate is fine. The user's own repos (`webtools`,
-  `embeddingsearchtools`, `voicetools`, `hooteams`, `drawio-canvas`) are MIT and
-  fair to use.
-
-## Three plans, side by side
-
-There are three plans: the **core plan** (below), the **TUI plan**
-([tui-activity.md](tui-activity.md), agreed 2026-10-09) and the **themes and keybindings plan**
-([themes-keybindings.md](themes-keybindings.md), decided 2026-11-05). None is ahead of the others.
-**When the user asks to proceed or to start implementing, ask which plan and which step
-first.** Don't pick one yourself.
-
-| Plan | Card | Phases | First step |
-|---|---|---|---|
-| Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
-| TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell · U surfaces ([tui-surfaces.md](tui-surfaces.md), agreed 2026-10-17) · Mission Control ([mission-control.md](mission-control.md), design 2026-10-17, after U). All work by Haiku subagents | T0 done 2026-10-09; T3, T4 and T5 done 2026-10-15 (T5.3 closed T1.3 too) |
-| Themes and keybindings | [themes-keybindings.md](themes-keybindings.md) | T themes T-1 to T-6 (S or M each) · K keybindings K-0 to K-10 (leader key, bare-letter lists, Alt removed from defaults). Decided 2026-11-05, not built. TUI work by Haiku subagents | Not started. Ask which part (T or K) and which step first. Start with T-1 or K-0 |
-
-**TUI declutter (2026-11-03):** [tui-declutter.md](tui-declutter.md) replaces the Mission
-Control look with a plain, minimal one. **Built 2026-11-04** (WP1–WP10, PR #174): plain words, status line, panes, `outline` view, dark/light themes only. `scripts/ci/plain_words.sh` keeps the old space words out of the TUI text.
-
-## Next session (from 2026-10-15, third session)
-
-Status: **proposed, not confirmed by the user.** Ask the user which item to start with
-before any work. Both plans are open here: say which plan and which step.
-
-| # | Item | Plan | Card | Recommendation |
-|---|---|---|---|---|
-| 1 | Core step 5 follow-up. **Done 2026-10-15.** Thread ceiling met: 34 to 24 threads, after the subagent pipe reader threads moved to `hoocode-io` tasks (on Unix; Windows still uses tokio's blocking pool). The `hoocode-io` pool is left uncapped (user decision 2026-10-15; a cap can deadlock). The three unmapped threads (`hoocode-perf`, resize, autocomplete-files) are in the thread map. Keystroke p99 on bash: 6 of 7 runs under 16 ms; one 27 ms miss at load average 3.4, cause unknown | Core | [concurrency.md](concurrency.md) | None. Closed |
-| 2 | Burst frame build dominates the tail: p50 0.7 ms, p99 100 to 136 ms, from frames that draw the bash block. Lane effects are not separable from noise. Forced-stall control done: both probes (UI stall, io starvation) fire when forced (tests in `hoocode-runtime` `tests/it/watchdog_forced.rs`). The starvation probe only sees total starvation. Open: a real-TUI stall check. Phase 6 trigger met, not started (user deferred) | Core | [concurrency.md](concurrency.md) | Phase 6 stays deferred until the user asks. Track the real-TUI stall check |
-| 3 | macOS load run (phase 0) | Core | [concurrency.md](concurrency.md) | User runs it on their Mac |
-| 4 | CI wiring patch not applied (step 0d). The session token lacks workflow scope | Core | [step1-workflows.patch](../../archive/migration/ci/step1-workflows.patch) | User runs `git apply` on the patch and pushes |
-| 5 | T5.3 low items, both done 2026-10-15: (a) attach view follows until the output is closed, even after the shell exits; (b) a no-pid spawn failure kills and reaps the child. Open: the header still reads `done` while a background child writes | TUI | [tui-activity.md](tui-activity.md) | Track the header wording only |
-| 6 | TUI leftovers: N14 exit-time abort done via the ordered shutdown (5 steps, 2.8 s plus a 0.2 s reserve; `hoocode-runtime` `shutdown.rs`, `code-tui-app` `mode/shutdown.rs`). MCP close wait is 0.7 s (was 5 s). Panic hook built (`tui-terminal` `panic_hook.rs`, installed in `code-tui-app` `mode/mod.rs`). Open: not checked on a real tty; non-UI panics still print to stderr over the frame. T1.2 handler signature still partial | TUI | [tui-activity.md](tui-activity.md), [concurrency.md](concurrency.md) §4 | Check the hook on a real tty, then decide on the stderr print. Leave T1.2 until a change touches that code |
-| 7 | Phase S tier Later, L1–L6. L1–L4 skipped (no measured cost). L5 and L6 partly done (other `_ts` suites remain). L7 stays held until asked | TUI | [tui-activity.md](tui-activity.md) | Do the rest only when `/perf` shows the cost, or when the file is touched anyway |
-| 8 | Tooling. Done: the SessionStart hook (`.claude/settings.json`) runs `scripts/dev/ensure_nextest.sh`, the target prune and the §4.1 warm-up (`scripts/dev/warm_up.sh`). The warm-up also runs locally; opt out with `HOOCODE_WARMUP=0` | Core | [build-speed.md](build-speed.md) | None. Closed |
-
-PR #75 is merged (v0.1.21). This session's work is on branch `claude/next-build-2026-10-15d`.
-
-## The core plan, in priority order
-
-Agreed on 2026-10-08. One milestone at a time; each lands as one or more PRs that
-pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
-**L** many.
-
-| # | Milestone | Card | Size | Needs | Why here |
-|---|---|---|---|---|---|
-| 0a | **Done 2026-10-14.** Close the migration ledger: `moved` and `dropped` statuses; mark 9.1, 10.2e, 10.11, 12.1–12.7 with their cards; 13.4 dropped; one line each in plan §0.3 and `PROGRESS.md` | this page | S | — | Bookkeeping before code |
-| 0b | **Done 2026-10-14.** Delete the unused crates, except `agent-mcp`, which is kept ([decision](decisions-2026-10-14.md)). Move `hoocode-ai`'s tests to `ai-registry` first; fix dep firewall, `generate_crates.sh`, CI, release scripts | [decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md) | S | 0a | Less to rename and build |
-| 0c | **Done 2026-10-14.** Rename everything to hoocode, one mechanical commit, no other branch open | [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §1 | M | 0b | Touches every file; must not race other work |
-| 0d | **Done 2026-10-14, except CI wiring:** CI wiring is staged in [step1-workflows.patch](../../archive/migration/ci/step1-workflows.patch) (guards job, TUI parity workflow, macOS job on PRs); the user applies it with `git apply` and pushes. `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md), `--check` in CI) and the `scripts/ci/no_cortex.sh` guard | [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §1 | S | 0c | Keeps the maps and names honest from here on |
-| 1 | **Done 2026-10-14.** Reliability, in this order: **1.1** rpc fails closed (security); **1.2** `~/.hoocode` paths, `HOOCODE_` env, one-time merge; **1.3** macOS test fixes and CI job; **1.4** `@file` without `fd`; **1.5** panic audit; **1.6** fuzzing | [reliability.md](reliability.md), [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §2–4 | L | 0c | Reliability before features |
-| 2 | Concurrency phases 0–1: `/perf` and the load test, then one runtime and the caps | [concurrency.md](concurrency.md) | M | 1 | Sets the runtime rules before MCP brings rmcp |
-| 3 | `DocSearch`; close the 8 `l1_done` tasks | [semantic-search.md](semantic-search.md) part A | S | 2 | Small; finishes the migration's loose ends |
-| 4 | MCP client on rmcp; then a short guide for the webtools MCP server | [mcp.md](mcp.md), [web-tools.md](web-tools.md) | L | 2 | The main missing capability |
-| 5 | Concurrency phases 2–5: terminal-output thread, session writer, lanes and priority, watchdog and memory limits | [concurrency.md](concurrency.md) | L | 4 | Built against the real MCP and tool load |
-| 6 | **Done 2026-10-15.** Plugins: load and install (`hoocode-code-plugins`, `/plugin`), then the opt-in model tools (`enablePluginTools`: SearchPlugins, InstallPlugin, UninstallPlugin, ListPlugins, ProposePlugin). Reviewed 2026-10-15: the `--trust` install path, the permission gate's plugin list, subagent registration and `/plugin update` for proposed plugins are fixed, and the `--platform` help text is corrected. Open: a model install or proposal reloads the plugin set, but the skills and MCP servers go live on `/reload` (no TUI reload from a tool result yet); the plugin-authoring skill still names UpdatePlugin (left alone) | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
-| 7 | **Done 2026-10-14.** Scheduler and `/loop`: the `/loop` forms, `/loop auto`, the 10-minute late-fire rule | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
-| 8 | **Done 2026-10-14.** Version check (`hoocode-code-update`, `hoocode update`) and completion chime (`chime.rs`). Open: the live registry request is not in tests (no network there) | [extras.md](extras.md) | S | 0c | Small polish |
-| 9 | **Done 2026-10-15.** Subagent orchestration: background by default, subagent brief, worktree protocol by instruction, child prompt fixes, evals | [subagent-orchestration.md](subagent-orchestration.md) | M | — | Parent stops waiting on subagents; writers stop sharing one tree |
-| 10 | **Approved 2026-10-29; P1 and P2 built 2026-10-30.** Short-session performance, for sessions of 10 to 15 turns. **P1** release profile (`lto`, one codegen unit, strip) and **P2** idle wakeups, built. **M3** subagent child footprint (gate not met, rejected) and **M4** streaming markdown re-lex are measure first, with decision gates. Long-session items are deferred | [perf-short-sessions.md](perf-short-sessions.md) | S | — | Cheap, measured, and nothing else waits on it. Placed last so no other card moves |
-| 11 | **Approved 2026-11-06, not built.** Unified performance page and plan: R0 (Responses tool-call routing fix) first, then cheap wins, approval concurrency, then measured streaming and memory work | [performance.md](performance.md) | M | — | R0 is a correctness fix; the rest follows the page's build order |
-
-**Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
-the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are
-built, not yet load-tested. Open items are listed in the 2026-10-08 (second session) entry in
-[../../archive/migration/PROGRESS.md](../../archive/migration/PROGRESS.md).
-
-**Status (2026-10-15):** steps 0a–0d are done. The 0d CI wiring (guards job, TUI parity workflow) is staged, not applied: the session token lacks workflow scope. The user applies `git apply archive/migration/ci/step1-workflows.patch` and pushes it ([tui-activity.md](tui-activity.md) T0.6). `agent-mcp` is kept as the home of the 9.1 MCP client ([decisions-2026-10-14.md](decisions-2026-10-14.md)). **Step 1 (reliability 1.1–1.6) is done in code** ([reliability.md](reliability.md)); the macOS job on PRs is staged in `step1-workflows.patch` and is not live until the user pushes it. **Step 6 (plugins) is done 2026-10-15**, parts 1 to 3 ([plugins.md](plugins.md)). **Step 9 (subagent orchestration) is done 2026-10-15** ([subagent-orchestration.md](subagent-orchestration.md)). Steps 7 and 8 are done 2026-10-14. Load test (2026-10-15). Step 4 is load-tested: a stdio MCP call that never answers ends at its 60 s deadline, and the UI stays responsive. Step 5 stays open: the io pool stays uncapped by user decision (2026-10-15), and the real-TUI stall check is not done. The thread ceiling now holds: the peak fell from 34 to 24 once the subagent pipe readers moved to `hoocode-io`. The keystroke target mostly holds: 6 of 7 bash runs were under 16 ms. One 27 ms miss is unexplained (an earlier 70.6 ms miss is also unexplained). The worst rolling-window key p99 in the burst is about 100 ms, and frame build is the cause. Passing: Ctrl+C with a paused pty (30 ms) and the memory shed-and-recover check. macOS is not measured. See [concurrency.md](concurrency.md), 2026-10-15 load run.
-
-**Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
-thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks
-extension, background compaction (its own card first), thinking escalation.
-
-**Dropped:** Copilot canvas, Skills over MCP, plugin update/package/publish tools,
-writing Claude plugin formats, `/mcp import`, rpc approval dialogs
-([rpc-approvals.md](rpc-approvals.md)), semantic search part B, crates.io, the WASM
-crate, Azure, `fd`/`rg` and the external-tools pane, and the extras marked No in
-[extras.md](extras.md).
-
-## Designed, not scheduled
-
-Agreed designs with no build step yet. They are not in the core order above. Ask the user
-before scheduling one.
-
-| Card | What | Status |
+| File | Covers | Read it for |
 |---|---|---|
-| [scoped-models.md](scoped-models.md) | `/scoped-models` gets an effort and a category per model; `scopedModels` replaces `enabledModels` and `modelCategories`; subagents ask by category or by model | Implemented 2026-10-09 (see its implementation notes). |
+| `README.md` (this file) | How we work, design philosophy, standards, engineering: build, CI, tests, release, naming, licence | The rules and the build |
+| [roadmap.md](roadmap.md) | The one plan: built summary per area, next steps in order, deferred items with triggers, not doing | What to build next |
+| [runtime.md](runtime.md) | Concurrency, lanes, caps, memory limits, reliability, performance | Threads, limits, speed |
+| [agent.md](agent.md) | Agent loop and tools, models, scheduler and `/loop`, extras, web tools, DocSearch, MCP, plugins and skills, extensions, app server and rpc | The agent and its integrations |
+| [subagents.md](subagents.md) | Subagents, orchestration, evals | Child agents |
+| [tui.md](tui.md) | TUI: declutter (the current look), screen anatomy, themes, keybindings | The terminal UI |
+| [../maps/packages.md](../maps/packages.md) | Crate map | Where code lives |
+| [../maps/ui.md](../maps/ui.md) | Screens, pickers, slash commands | Where UI code lives |
+| [../user/](../user/) | User pages: flags, commands, paths, install | What users see |
 
-Older docs that stay as they are: [app-server.md](app-server.md), [subagents.md](subagents.md),
-[subagent-evals.md](subagent-evals.md), [distribution.md](distribution.md),
-[build-speed.md](build-speed.md), and the migration plan
-[ts-to-rust-migration.md](../../archive/docs/ts-to-rust-migration.md).
+Rules for these docs:
 
-## Standards checked (2026-10-07)
+- **Design first.** A design session changes docs only. No code until the design is agreed.
+- **Decisions go in the area doc.** Add a dated row to its Decisions table. There are no dated decision pages. Remove a row when it stops holding.
+- **Ask before you build.** When the user asks to implement, ask which roadmap item to start with first.
+- **Code wins.** Where a doc and the code disagree, the code is what is built. Record the built behaviour as the decision.
+- **Maps and user docs move with the code.** Change `docs/maps/` and `docs/user/` in the same commit as any crate, screen, command, flag, path or install change.
+
+## How we work (user preferences)
+
+- **Recommendation first.** Put open questions to the user as choices, recommended option first. Give the trade-offs and the risk each answer creates.
+- **Standards first, no bloat.** Prefer open standards (see the table below). Use a vendor format only where the standard cannot cover it. Build for where the standards are going, not for legacy. Example: drop deprecated MCP transports.
+- **Reliability before features.**
+- **Never drop an idea to narrow scope. Tier it** as Now, Next or Later, each with its trigger. Verified non-issues go in Not doing, with the reason.
+- **No new always-on token cost.** A tool that adds a schema is opt-in, or appears only when used.
+- **Licences: MIT only for copied code.** Never copy code, schemas or generated types from non-MIT projects (for example `../codex`, Apache-2.0). Running such tools in tests is fine. Depending on a permissively licensed crate is fine. The user's own repos (`webtools`, `embeddingsearchtools`, `voicetools`, `hooteams`, `drawio-canvas`) are MIT and fair to use.
+- **TUI work is done by Haiku subagents** (user, 2026-10-09). The main session briefs, checks and merges. Haiku subagents review, implement and test. Visual review is a text grid plus a style legend. Use a PNG only for a changed or uncertain screen.
+- **Style.** Plain words. Short sentences. Tables over prose. No history or background essays (git keeps old drafts). No marketing.
+
+Area doc template:
+
+```
+# <Area>
+Status (YYYY-MM-DD): one or two lines.
+## Principles   durable rules and invariants, with real numbers and names
+## How it works what is built: terse facts, crates, files, config keys, formats
+## Decisions    table Date | Decision; only decisions still in force
+## Open         table ID | Item | Size | Trigger or gate | Design notes
+## Not doing    one bullet list
+```
+
+Sizes: S is about a session, M a few, L many. Open IDs use the area prefix (EN- here).
+
+## Standards
 
 | Standard | State | Used in |
 |---|---|---|
-| MCP (AAIF) | Spec `2026-07-28`: stateless, `server/discover`, multi round-trip input, extensions. HTTP+SSE, Roots, Sampling, Logging and Dynamic Client Registration deprecated. | mcp.md |
-| MCP Apps, Tasks, Skills extensions (AAIF) | Official | Not used for now: Apps and Tasks deferred, Skills dropped (2026-10-08) |
-| Agent Plugins 1.0.0 (agent-plugins.org; Amazon, Cursor, Google, Microsoft, OpenAI, Vercel) | Published 2026-08-06: `plugin.json`, `skills/`, `mcp.json` | plugins.md |
-| Agent Skills (agentskills.io) | `SKILL.md` frontmatter rules | plugins.md |
-| AGENTS.md (AAIF) | Already supported | — |
-| A2A (AAIF) | v1.0; no local or stdio story | not used |
+| MCP (AAIF), spec 2026-07-28 | Stateless, `server/discover`, multi round-trip input, extensions. Deprecated: HTTP+SSE, Roots, Sampling, Logging, Dynamic Client Registration. The client is built on rmcp, the official SDK | agent.md |
+| MCP Apps and Tasks extensions (AAIF) | Official. Deferred, not used | roadmap.md (only if needed) |
+| MCP Skills extension (AAIF) | Dropped 2026-10-08 | not used |
+| Agent Plugins 1.0.0 (agent-plugins.org) | Published 2026-08-06: `plugin.json`, `skills/`, `mcp.json`. hoocode writes Agent Plugins only; it reads Claude plugin formats and `marketplace.json` too | agent.md |
+| Agent Skills (agentskills.io) | `SKILL.md` frontmatter rules | agent.md |
+| AGENTS.md (AAIF) | Supported | agent.md |
+| A2A (AAIF) v1.0 | No local or stdio story | not used |
+
+## Engineering
+
+Status (2026-11-06): Built: the done bar, the CI jobs and guards, the release pipeline and four shipped channels. Open: EN-1 to EN-13 below.
+
+### Principles
+
+- **Each step ends green.** After each step, `cargo fmt --all`, clippy with `-D warnings`, and nextest for the touched crates all pass. Steps are small, atomic and revertable.
+- **Volatility isolation.** Volatile third-party crates are used only by the adapter crates listed in `scripts/ci/dep-firewall.json`. Adapters expose hoocode-owned types. The `firewall` CI job enforces it. Upgrading or swapping one of them touches only the listed crates. Never add to the `pending` list without a task ID.
+- **Scope rule.** Keep what the standards cover and what is used. Drop vendor-only extras and code nothing calls.
+- **One name: hoocode.** Crates are `hoocode-*`, the binary is `hoocode`, the user data is `~/.hoocode`, and project data is `<repo>/.hoocode/`. Environment variables use the `HOOCODE_` prefix only, with no aliases. Do not bring back the pre-rename app name: `scripts/ci/no_cortex.sh` fails the `guards` job.
+- **Agents read `.agents`.** Read skills, commands, agents, AGENTS.md and MCP config from `~/.agents` and `<project>/.agents`. Write nothing there except `<project>/.agents/scheduled_tasks.json`.
+- **Lockstep versions.** Every crate inherits the workspace version (`version.workspace = true`). A release bumps it once.
+- **Errors are hand-written enums** that implement `std::error::Error`. No `anyhow`, no `thiserror`.
+- **Code style.** Owned types, `Arc` and `.clone()` over lifetimes in structs. Plain `async fn`, also in traits. Avoid hand-written futures and deep combinator chains.
+- **New dependency.** Check the resolved version in `Cargo.lock`. Read the API from `cargo doc` or the source of that exact version, not from memory.
+- **Panics on user or model input are bugs.** Slice text through `text_slice` (`crates/hoocode-tui-util`). Rewrite only the `unwrap`s reachable from input.
+- **macOS is a supported dev platform.** Its test failures are bugs.
+- **Flaky tests are fixed, never quarantined.** Wait on final content, not on fixed quiet periods.
+- **Measure before tuning.** Speed work starts with a measurement. Record numbers with the date and the change that moved them.
+- **Disk.** Prune `target/` at session start. Never `cargo clean` unless the user asks.
+
+### How it works
+
+**Done bar and agent loop**
+
+- Done means: `cargo fmt --all`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo nextest run -p <touched crates>`. CI runs the full workspace.
+- After an edit: `cargo check -p <crate> --message-format=short`. Build only to run tests.
+- Lints: run `cargo clippy --fix --allow-dirty -p <crate>` first, then fix the rest by hand.
+- Integration tests live in `crates/<crate>/tests/it/<name>.rs`, registered as `mod <name>;` in `tests/it/main.rs`. Each crate has one `it` test binary. Helpers go in `tests/it/{common,support}/`. The `test-layout` CI job fails on any other `crates/*/tests/*.rs`.
+- Doctests: 75 of 76 crates set `doctest = false`. CI runs no doctest step (see EN-6).
+- Subagent evals: `python3 scripts/eval/subagent_evals.py --include-slow` (real binary, mock LLM). Run them before a subagent change ships.
+
+**Tests and goldens**
+
+- nextest profiles: `default` retries 2; `ci` retries 0, flags a test every 60 s and kills it after 5 min. Subagent tests retry 3.
+- Component goldens run in nextest. `UPDATE_GOLDENS=1` accepts them.
+- Screen goldens: about 10 scenarios, `python3 scripts/tui/goldens.py check all` (tmux, mock LLM). This is a pre-release check, not a per-change one. `python3 scripts/tui/goldens.py update <scenario>` accepts a deliberate change. Reports go to `target/tui-goldens/`. CI runs them nightly at 03:17 UTC (`tui-parity.yml`) and by hand.
+
+**Build and profiles**
+
+- The bottleneck is linking and running test binaries, not compiling. The linker is LLD, the Rust default on x86_64 Linux since 1.90.
+- `rust-toolchain.toml` pins 1.94.1, so fmt and clippy match CI. `rust-version = "1.88"` in `Cargo.toml` is the MSRV. No CI job checks it (EN-7).
+- Dev profile: `debug = false`. For one crate, add `[profile.dev.package.<crate>] debug = "line-tables-only"`. The regex crates (`regex-automata`, `regex-syntax`, `fancy-regex`) build at opt-level 3, because the markdown rules take about 1 s to build unoptimised.
+- Release profile: `lto = "thin"`, `codegen-units = 1`, `strip = "symbols"`, `panic = "unwind"`. Unwind stays on: `run_blocking` turns a tool panic into an error.
+- Environments: cloud sessions are Linux x86_64, 4 vCPU, 15 GB, ephemeral, with a fixed disk. Local is macOS arm64. CI is GitHub-hosted; the repo is public, so runner minutes are free.
+- Local macOS setup (manual, once): allow the terminal in Gatekeeper developer mode; exclude `target/` in Spotlight; set rust-analyzer `targetDir = true`; keep the default linker.
+
+**Session hooks (`.claude/settings.json`, SessionStart)**
+
+1. `scripts/dev/ensure_nextest.sh` installs cargo-nextest if it is missing (binstall, then the prebuilt tarball, then `cargo install --locked`). It exits 0 on failure.
+2. `scripts/dev/prune_target.sh --apply --if-over 15 --quiet`. When `target/` is over 15 GB, it deletes dependency units, fingerprints and build entries older than 3 days and stale units under the pre-rename names. An oversized incremental cache keeps only the newest session.
+3. `scripts/dev/warm_up.sh` starts a detached `nextest --no-run` build and returns at once. It is skipped when a stamp (`Cargo.lock` plus `rustc -V`) younger than 3 days matches, when free disk is under 8 GB, or with `HOOCODE_WARMUP=0`. While it runs it holds cargo's build lock, so cargo commands wait.
+
+The Stop hook (clippy per touched crate) and the PostToolUse hook (rustfmt) are not wired (EN-1).
+
+**CI (`.github/workflows/ci.yml`)**
+
+Runs on push and pull request to `main`, nightly at 04:17 UTC, and when `release.yml` calls it. Superseded PR runs are cancelled. Every cargo command uses `--locked`. `CARGO_INCREMENTAL=0`. The toolchain comes from `rust-toolchain.toml`.
+
+| Job | Runs | On PRs |
+|---|---|---|
+| fmt | `cargo fmt --all -- --check` | yes |
+| clippy | `cargo clippy --workspace --all-targets -- -D warnings` | yes |
+| test | `cargo nextest run -P ci --locked --workspace --no-fail-fast` | yes |
+| test-macos | the same command on `macos-latest` | yes |
+| doc | `cargo doc --locked --workspace --no-deps` | yes |
+| test-layout | fails on any test file outside `tests/it/` | yes |
+| guards | `scripts/ci/no_cortex.sh`; `scripts/ci/no_literal_keys.py` (key names in UI text come from the keymap); `scripts/maps/packages.py --check` (crate map) | yes |
+| firewall | `scripts/ci/check_dep_firewall.py`; `install/install.sh` and the npm launcher parse under sh and dash; launcher tests run under sh and dash | yes |
+| subagent-evals, subagent-evals-nightly | fast eval suite; nightly fault matrix and 10-minute soak | no: schedule or by hand |
+
+Other workflows: `fuzz.yml` (nightly 03:37 UTC, 9 fuzz targets); `tui-parity.yml` (goldens, see above); `models-sync.yml` (Mondays 06:00 UTC, opens a PR that refreshes `models.json`; the bot merges nothing).
+
+**Release**
+
+Three ways to release:
+
+1. A merged PR with label `rust:patch`, `rust:minor` or `rust:major`. `merge-release.yml` (on push to main) calls `release.yml`: gates (the CI workflow; skippable), then bump, `cargo update --workspace`, tag, GitHub release. Then `binaries.yml` builds, then `SHA256SUMS`, npm and PyPI.
+2. A `vX.Y.Z` tag pushed by hand on a `main` commit whose workspace version matches. `release-tag.yml` runs. Its manual run is a rehearsal by default (`dry_run` is on).
+3. `release.yml` run by hand (`workflow_dispatch`).
+
+Binaries are built only for labelled releases and tags. There are no nightly or per-merge builds. Each archive is `hoocode-<target>.tar.gz` and holds `hoocode`; `hoo` is a link.
+
+| Target | Note |
+|---|---|
+| `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl` | Static. One binary runs on every distro |
+| `apple-darwin` (aarch64 and x86_64) | Both arches built on one arm64 runner |
+
+| Channel | What | Checks |
+|---|---|---|
+| Archives | Four targets from `binaries.yml`, plus `SHA256SUMS` | sha256 list |
+| curl installer | `install/install.sh`, served from the site and synced from this repo. Installs to `~/.hoocode/bin` | Verifies `SHA256SUMS`; test-runs the new binary before it replaces anything |
+| npm | `hoocode` (primary); `@kolisachint/hoocode` (alias, same version); `@kolisachint/hoocode-{darwin,linux}-{arm64,x64}` | POSIX sh launcher `exec`s the platform binary, so no Node process stays up. No postinstall. Platform packages gated by `os` and `cpu`. Published with provenance |
+| PyPI | `hoocode`: a thin downloader that fetches the matching archive on first run | Checks sha256 against `SHA256SUMS`; caches the binary |
+
+The npm and PyPI publish scripts check the registry after upload and fail the job if the version is not visible yet (propagation can take about 11 minutes). Re-runs skip versions that already exist. Verify a release with `python3 scripts/npm/publish_packages.py <dist-dir> --verify-only`.
+
+Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (dropped), signed macOS builds (ad-hoc signature only). Yarn Berry 2+ is unsupported: it runs bins with `node`.
+
+### Decisions
+
+| Date | Decision |
+|---|---|
+| 2026-09-24 | Volatility isolation: volatile crates sit behind hoocode-owned adapter crates, enforced by the dependency firewall |
+| 2026-09-29 | Errors are hand-written enums. No `anyhow`, no `thiserror` |
+| 2026-09-29 | No new crates for build speed. More crates mean more test binaries |
+| 2026-10-01 | Binaries are built only for labelled releases or hand-pushed tags. No nightly or per-merge builds |
+| 2026-10-01 | A release runs the CI gates first, then tags, then builds binaries |
+| 2026-10-02 | One integration-test binary per crate, under `tests/it/`. The `test-layout` job enforces it |
+| 2026-10-08 | Scope rule: keep what standards cover and what is used; drop vendor-only extras and code nothing calls |
+| 2026-10-08 | crates.io publishing dropped. Users get archives, npm, PyPI and the curl installer |
+| 2026-10-08 | The WASM plugin host crate is deleted. wasmtime is in no build |
+| 2026-10-10 | `[profile.dev] debug = false`. Panic file and line still come from `Location::caller` |
+| 2026-10-10 | Prune `target/` at session start. Never `cargo clean` unless asked |
+| 2026-10-14 | Rename to hoocode is done: `HOOCODE_` env only, no aliases, `~/.hoocode` data, no pre-rename names |
+| 2026-10-14 | The pre-rename data folders were merged once into `~/.hoocode`, by copy. Nothing reads them now. hoocode never deletes them |
+| 2026-10-14 | `hoocode-agent-mcp` is kept as the home of the MCP client |
+| 2026-10-14 | `.agents` is read for skills, commands, agents, AGENTS.md and MCP config. hoocode writes only the scheduled-task store there |
+| 2026-10-14 | Flaky tests are fixed, never quarantined |
+| 2026-10-14 | The macOS test job runs on pull requests and blocks them |
+| 2026-10-15 | SessionStart runs the nextest install, the prune and the warm-up. `HOOCODE_WARMUP=0` opts out |
+| 2026-10-19 | CI wiring applied: the `guards` job, the goldens workflow and the macOS PR job |
+| 2026-10-29 | Release profile: thin LTO, one codegen unit, stripped symbols, unwind kept (built 2026-10-30) |
+| 2026-11-04 | Plain words only in TUI text. `scripts/ci/plain_words.sh` is run by hand; it is not in CI yet (EN-8) |
+
+### Open
+
+| ID | Item | Size | Trigger or gate | Design notes |
+|---|---|---|---|---|
+| EN-1 | Wire the Stop hook and the PostToolUse hook | S | None | Stop: map `git diff --name-only HEAD` plus untracked files to `crates/<name>/`, run `cargo clippy -p <each> --all-targets -- -D warnings`, exit 2 on failure with the short errors; skip when no `.rs` changed; bound the timeout. PostToolUse: `rustfmt --edition 2021 <file>` on the edited `*.rs` only, no `cargo check` |
+| EN-2 | `[workspace.lints]` | S | None | `rust.unused_must_use = "deny"`; `clippy.all = { level = "warn", priority = -1 }`; `[lints] workspace = true` in all 76 crates. No pedantic groups. CI keeps `-D warnings` |
+| EN-3 | Hygiene job: `cargo machete` and `cargo deny check` | S | None | Add `deny.toml`. Neither exists today |
+| EN-4 | Highlight opt-level experiment | S | Measure with EN-5 | `[profile.dev.package.hoocode-tui-highlight] opt-level = 1`. `highlight_gold` took 10.8 s in debug. Keep only if the test gain beats the slower rebuild of that crate. No blanket `"*"` override |
+| EN-5 | Re-measure the build and decide on mold | M | After EN-2 and EN-4 | Measure a clean `cargo check --workspace --all-targets --timings`, a clean `cargo nextest run --workspace --no-run`, and a base-crate edit followed by both. Adopt mold only if linking is over 30% of an incremental `nextest --no-run`. Linux only, never macOS |
+| EN-6 | Doctests: CI runs none | S | User picks: recommend adding a doctest step for the crates that have doctests | The earlier CI plan put `cargo test --doc` in CI; `ci.yml` `test` runs nextest only. Either add the step or drop the rule and keep `doctest = false` |
+| EN-7 | MSRV job | S | None | Build with Rust 1.88, `--locked`, the way the other jobs run. Nothing checks `rust-version` today |
+| EN-8 | Run `scripts/ci/plain_words.sh` in the `guards` job | S | None | The plain-words rule is enforced by hand only. Check the script's skip list after the cleanup |
+| EN-9 | Self-update prints the right command for the install method | S | User asks for `hoocode update` to be fixed | Under `~/.hoocode/bin`: the curl command. Under `node_modules`: the npm command. PyPI runs from the user cache dir: the pip command. Today `hoocode-code-update` does not detect the method |
+| EN-10 | Remove the dead `publish_crates` input from `release.yml` | S | Next edit to `release.yml` | The input does nothing; the job prints a notice. Or re-enable it with a paced publish script |
+| EN-11 | Windows build | M | User asks for Windows | Add `x86_64-pc-windows-msvc` to `binaries.yml`, a `.zip`, an `install.ps1` and a `win32-x64` npm package. The old Windows leg was the slowest part of a release |
+| EN-12 | macOS signing | M | Users hit the browser warning, and the user has an Apple Developer ID | `codesign` and `notarytool` in `binaries.yml`. Only browser downloads are quarantined; curl, npm and `gh` downloads run without it |
+| EN-13 | Subagent fast evals on PRs | S | User decides | Today they run nightly and by hand only. Run them on PRs that touch `hoocode-code-subagents` |
+
+### Not doing
+
+- Copying code, schemas or generated types from non-MIT projects.
+- `anyhow` or `thiserror`.
+- sccache, until there is a remote bucket and its credentials are set as environment secrets.
+- cargo-hakari (no measured thrash), bacon in the agent loop (it contends for the build lock), rust-analyzer in `rust-toolchain.toml`, the Cranelift backend, nightly `-Z threads`, a `CARGO_BUILD_JOBS` cap (until OOM during linking).
+- wasmtime or any `wasm` feature in default builds.
+- More crate splits for build speed.
+- A blanket `[profile.dev.package."*"]` override.
+- Per-merge or nightly binaries. npm postinstall scripts. Yarn Berry 2+ support.
+- crates.io publishing. `fd` and `rg` as external search binaries.
+- Env aliases for the pre-rename prefixes. hoocode does not edit `.gitignore` files.
+- Quarantining flaky tests.

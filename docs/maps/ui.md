@@ -1,7 +1,7 @@
 # UI map
 
 Where each part of the interactive screen lives. Snapshot of 2026-10-17 (full-screen, M1e). Crate names are `hoocode-*` since step 0c
-([naming-and-paths.md](../../archive/docs/naming-and-paths.md)). Crates are
+([design README](../design/README.md), Engineering). Crates are
 described in [packages.md](packages.md). Names, not line numbers: line numbers drift.
 
 **Keep this current.** Add, move or remove a screen part, picker or slash command →
@@ -9,7 +9,7 @@ update this page in the same commit.
 
 ## The screen, top to bottom
 
-Full-screen is the default (M1c, `mode/mod.rs`). The app runs on the alternate screen and `Tui` draws the frame. Rows top to bottom (TUI declutter WP5, `docs/design/tui-declutter.md`):
+Full-screen is the default (M1c, `mode/mod.rs`). The app runs on the alternate screen and `Tui` draws the frame. Rows top to bottom (`docs/design/tui.md`):
 
 ```
 start header ─ start screen: ` hoocode v<ver>` bold, ` <cwd> · N skills · M agents` dim; once a turn is in the transcript: one blank row (top chrome)
@@ -300,7 +300,7 @@ A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs
   change is accepted with `goldens.py update <scenario>` and shows in the diff. Component goldens
   (`tests/golden/<crate>/`) run in nextest; accept them with `UPDATE_GOLDENS=1`. The screens
   are hoocode's own.
-- Concurrency ([concurrency.md](../design/concurrency.md)): the UI thread never does
+- Concurrency ([runtime.md](../design/runtime.md)): the UI thread never does
   file or network I/O. Work off the UI thread reports back through `AppEvent`.
 - Attached view: code that writes to the transcript (`self.transcript`, `add_to_chat`) runs
   with the session on screen, which is the loop's default. Only the attached run's events and

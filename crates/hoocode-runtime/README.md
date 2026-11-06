@@ -1,7 +1,7 @@
 # hoocode-runtime
 
 The one place that builds tokio runtimes, OS threads and channels for hoocode.
-See `docs/design/concurrency.md` (sections 1 to 4).
+See `docs/design/runtime.md`.
 
 - `io_handle()`: the `hoocode-io` runtime (`min(4, cores)` workers, 2 in subagent children).
 - `block_on_entry(fut)`: for `main` and tests only.
