@@ -1,8 +1,8 @@
 
- ● Shell cargo clippy -p hoocode-parser
+ ◉ Shell cargo clippy -p hoocode-parser
     Compiling hoocode-parser v0.1.0
 --- styles ---
-r1 c1 fg=#989898
+r1 c1 fg=#5cc8bb
 r1 c3-7 fg=#e5e5e7 bold
 r1 c9-38 fg=#e5e5e7
 r2 c4-34 fg=#989898
