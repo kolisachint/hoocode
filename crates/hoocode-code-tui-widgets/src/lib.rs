@@ -20,6 +20,7 @@ pub mod render_utils;
 pub mod selected_row_list;
 pub mod skill_block;
 pub mod task_panel;
+pub mod text_block;
 pub mod tool_chain;
 pub mod tool_chain_summary;
 pub mod tool_execution;
