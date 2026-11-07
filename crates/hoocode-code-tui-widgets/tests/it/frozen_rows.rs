@@ -11,6 +11,7 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
+use hoocode_code_subagents::live::apply;
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -63,6 +64,31 @@ fn numbered(prefix: &str, n: usize) -> String {
 
 const DIFF: &str = " 12     let mut cfg = Config::default();\n-14     let raw = read_file(path)?;\n-15     apply_env(&mut cfg);\n+14     apply_env(&mut cfg);\n+15     let raw = read_file(path)?;\n 16     parse_into(&mut cfg, &raw)?;\n 17     Ok(cfg)";
 
+/// A settled Agent block with two calls of its own, the second failed.
+fn agent_block() -> Rc<RefCell<ToolExecutionComponent>> {
+    let run = "frozen-agent-row";
+    apply(run, &json!({"type": "task_started"}));
+    for (id, tool, fails) in [("s1", "Read", false), ("s2", "Grep", true)] {
+        apply(
+            run,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": tool, "args": {"pattern": "x"}}),
+        );
+        apply(
+            run,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": fails,
+                    "result": {"content": [{"type": "text", "text": "regex parse error: unclosed group"}]}}),
+        );
+    }
+    apply(run, &json!({"type": "task_done"}));
+    block(
+        "Agent",
+        json!({"subagent_type": "explore", "description": "Trace escaped quotes"}),
+        "Found it in lex.rs.\nSecond line.",
+        json!({"poolTaskId": run}),
+        false,
+    )
+}
+
 /// A settled chain with its payloads released, as `trim_transcript_memory`
 /// leaves it: every block frozen.
 fn frozen_chain() -> ToolChainComponent {
@@ -80,6 +106,41 @@ fn frozen_chain() -> ToolChainComponent {
             "a\nb\nc\nerror: could not compile `hoocode-parser` (lib)\n\nCommand exited with code 1",
             json!({"durationMs": 3100}),
             true,
+        ),
+        block(
+            "Shell",
+            json!({"command": "cargo test -p hoocode-config 2>&1 | tail -40"}),
+            &numbered("out_", 40),
+            json!({"durationMs": 8200}),
+            false,
+        ),
+        agent_block(),
+        block(
+            "TodoWrite",
+            json!({"todos": [
+                {"status": "completed", "content": "a"},
+                {"status": "completed", "content": "b"},
+                {"status": "in_progress", "content": "c"},
+                {"status": "pending", "content": "d"},
+                {"status": "pending", "content": "e"},
+            ]}),
+            "[]",
+            json!({}),
+            false,
+        ),
+        block(
+            "WebFetch",
+            json!({"url": "https://example.com/docs"}),
+            "docs text",
+            json!({"tokenEstimate": 8100}),
+            false,
+        ),
+        block(
+            "WebSearch",
+            json!({"query": "frozen rows snapshot"}),
+            "result text",
+            json!({"tokenEstimate": 2500}),
+            false,
         ),
         block(
             "Read",
@@ -117,10 +178,42 @@ fn frozen_rows_keep_their_marks_and_facts() {
                 .any(|r| r.starts_with(" ● Edit ") && r.contains("+2 −2")),
             "done Edit keeps green ● and +2 −2:\n{out}"
         );
+        // A failed row's facts overflow the 80-column header onto their own
+        // line, so the reason and exit read from the whole render.
+        assert!(
+            out.lines().any(|r| r.starts_with(" ⊗ Shell ")),
+            "failed Shell keeps red ⊗:\n{out}"
+        );
+        assert!(
+            out.contains("exit 1 · error: could not compile"),
+            "failed Shell keeps exit 1 and the first error line:\n{out}"
+        );
+        assert!(
+            out.lines().any(|r| {
+                r.starts_with(" ● Shell ") && r.contains("exit 0 · 40 lines · 8.2s")
+            }),
+            "done Shell keeps exit 0 · size · duration in order:\n{out}"
+        );
+        assert!(
+            out.lines().any(|r| {
+                r.starts_with(" ● Agent ") && r.contains("2 calls") && r.contains("1 failed")
+            }),
+            "Agent keeps N calls · M failed:\n{out}"
+        );
         assert!(
             out.lines()
-                .any(|r| { r.starts_with(" ⊗ Shell ") && r.contains("exit 1") }),
-            "failed Shell keeps red ⊗ and exit 1:\n{out}"
+                .any(|r| { r.starts_with(" ● TodoWrite ") && r.contains("5 items · 2 done") }),
+            "TodoWrite keeps N items · M done:\n{out}"
+        );
+        assert!(
+            out.lines()
+                .any(|r| { r.starts_with(" ● WebFetch ") && r.contains("~8.1k tokens") }),
+            "WebFetch keeps ~N tokens:\n{out}"
+        );
+        assert!(
+            out.lines()
+                .any(|r| { r.starts_with(" ● WebSearch ") && r.contains("~2.5k tokens") }),
+            "WebSearch keeps ~N tokens:\n{out}"
         );
         assert!(
             out.lines()
@@ -140,7 +233,16 @@ fn frozen_rows_survive_a_theme_change() {
     let light = text(&mut chain, 80);
     assert_eq!(dark, light, "same rows under a new theme");
     assert!(
-        light.contains("exit 1") && light.contains("+2 −2") && light.contains("1451 lines"),
+        light.contains("exit 1")
+            && light.contains("error: could not compile")
+            && light.contains("exit 0 · 40 lines · 8.2s")
+            && light.contains("2 calls")
+            && light.contains("1 failed")
+            && light.contains("5 items · 2 done")
+            && light.contains("~8.1k tokens")
+            && light.contains("~2.5k tokens")
+            && light.contains("+2 −2")
+            && light.contains("1451 lines"),
         "facts survive the theme change:\n{light}"
     );
 }

@@ -31,6 +31,7 @@ use crate::tool_signal::{
     ToolSignalInput,
 };
 use crate::tools::builtin_tool_definition;
+use hoocode_code_agent_session::format::format_tokens;
 use hoocode_tui_ratatui::core::text::Span;
 
 /// The exit code of a failed Shell result: our tool reports it as
@@ -57,6 +58,29 @@ fn shell_output_lines(output: &str) -> usize {
     } else {
         trimmed.lines().count()
     }
+}
+
+/// The first error-like line of failed Shell output, dimmed after `exit N`:
+/// the tool's own `Command exited with code N` trailer is never the reason.
+/// Falls back to the first output line when no line reads like an error.
+fn shell_failure_reason(output: &str) -> Option<String> {
+    let mut first: Option<String> = None;
+    for line in output.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if line.starts_with("Command exited with code") {
+            continue;
+        }
+        if first.is_none() {
+            first = Some(line.to_string());
+        }
+        let lower = line.to_lowercase();
+        if ["error", "fail", "fatal", "panic"]
+            .iter()
+            .any(|w| lower.contains(w))
+        {
+            return Some(line.to_string());
+        }
+    }
+    first
 }
 
 /// Distinct files in CodeSearch output: its `path:start-end [sources]`
@@ -946,6 +970,7 @@ impl ToolExecutionComponent {
         }
         if self.is_error() {
             let mut primary = Vec::new();
+            let mut secondary = Vec::new();
             if self.tool_name == "Shell" {
                 if let Some(code) = shell_exit_code(&self.text_output()) {
                     primary.push(vec![FactSegment {
@@ -953,10 +978,20 @@ impl ToolExecutionComponent {
                         tone: FactTone::Err,
                     }]);
                 }
+                // The reason first, then the size: the duration drops first.
+                if let Some(reason) = shell_failure_reason(&self.text_output()) {
+                    secondary.push(vec![FactSegment {
+                        text: reason,
+                        tone: FactTone::Dim,
+                    }]);
+                }
+                if let Some(size) = dim_run(lines_fact(shell_output_lines(&self.text_output()))) {
+                    secondary.push(size);
+                }
             }
-            let secondary = dim_run(self.result_duration().unwrap_or_default())
-                .into_iter()
-                .collect();
+            if let Some(dur) = dim_run(self.result_duration().unwrap_or_default()) {
+                secondary.push(dur);
+            }
             return (primary, secondary);
         }
         if let Some(job) = self.background_job_id() {
@@ -968,15 +1003,23 @@ impl ToolExecutionComponent {
         }
         let settled = self.result.is_some() && !self.is_partial;
         match self.tool_name.as_str() {
-            "Shell" if settled => (
-                vec![vec![FactSegment {
-                    text: "exit 0".to_string(),
-                    tone: FactTone::Dim,
-                }]],
-                dim_run(self.result_duration().unwrap_or_default())
-                    .into_iter()
-                    .collect(),
-            ),
+            // `exit 0 · size · duration`: the duration drops first.
+            "Shell" if settled => {
+                let mut secondary = Vec::new();
+                if let Some(size) = dim_run(lines_fact(shell_output_lines(&self.text_output()))) {
+                    secondary.push(size);
+                }
+                if let Some(dur) = dim_run(self.result_duration().unwrap_or_default()) {
+                    secondary.push(dur);
+                }
+                (
+                    vec![vec![FactSegment {
+                        text: "exit 0".to_string(),
+                        tone: FactTone::Dim,
+                    }]],
+                    secondary,
+                )
+            }
             "Read" if settled => {
                 let truncation = self
                     .result
@@ -1087,17 +1130,92 @@ impl ToolExecutionComponent {
                     )
                 }
             }
-            "Agent" => (
-                dim_run(
-                    self.block_elapsed_secs()
-                        .filter(|s| *s >= 1)
-                        .map(short_dur)
-                        .unwrap_or_default(),
+            "Agent" => {
+                if settled {
+                    // `3 calls · 1 failed`: the run's own calls, failed only
+                    // when any failed. Empty while the run is unknown.
+                    let mut primary = Vec::new();
+                    let steps = self.settled_sub_steps();
+                    if !steps.is_empty() {
+                        let calls = match steps.len() {
+                            1 => "1 call".to_string(),
+                            n => format!("{n} calls"),
+                        };
+                        primary.push(vec![FactSegment {
+                            text: calls,
+                            tone: FactTone::Dim,
+                        }]);
+                        let failed = steps.iter().filter(|s| s.failure.is_some()).count();
+                        if failed > 0 {
+                            primary.push(vec![FactSegment {
+                                text: format!("{failed} failed"),
+                                tone: FactTone::Dim,
+                            }]);
+                        }
+                    }
+                    return (
+                        primary,
+                        dim_run(self.result_duration().unwrap_or_default())
+                            .into_iter()
+                            .collect(),
+                    );
+                }
+                (
+                    dim_run(
+                        self.block_elapsed_secs()
+                            .filter(|s| *s >= 1)
+                            .map(short_dur)
+                            .unwrap_or_default(),
+                    )
+                    .into_iter()
+                    .collect(),
+                    Vec::new(),
                 )
-                .into_iter()
-                .collect(),
-                Vec::new(),
-            ),
+            }
+            // The plan the call landed, as the header shows it.
+            "TodoWrite" if settled => {
+                let todos: &[Value] = self
+                    .args
+                    .get("todos")
+                    .and_then(Value::as_array)
+                    .map_or(&[], Vec::as_slice);
+                let done = todos
+                    .iter()
+                    .filter(|t| t.get("status").and_then(Value::as_str) == Some("completed"))
+                    .count();
+                let items = match todos.len() {
+                    1 => "1 item".to_owned(),
+                    n => format!("{n} items"),
+                };
+                (
+                    vec![vec![FactSegment {
+                        text: format!("{items} · {done} done"),
+                        tone: FactTone::Dim,
+                    }]],
+                    dim_run(self.result_duration().unwrap_or_default())
+                        .into_iter()
+                        .collect(),
+                )
+            }
+            // `~8.1k tokens`: the hidden size the collapsed row stands for.
+            "WebFetch" | "WebSearch" if settled => {
+                let tokens = self
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.details.get("tokenEstimate"))
+                    .and_then(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_f64().map(|f| f.max(0.0).round() as u64))
+                    })
+                    .filter(|&n| n > 0)
+                    .map(|n| format!("~{} tokens", format_tokens(n)));
+                (
+                    dim_run(tokens.unwrap_or_default()).into_iter().collect(),
+                    dim_run(self.result_duration().unwrap_or_default())
+                        .into_iter()
+                        .collect(),
+                )
+            }
             _ => (Vec::new(), Vec::new()),
         }
     }
