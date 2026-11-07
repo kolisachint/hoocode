@@ -164,8 +164,15 @@ impl BackgroundNoticeComponent {
     }
 
     /// `true` at peek (the summary and model show), `false` at outline.
+    /// Single view (UI-21 P4): the block's own toggle; collapsed is the
+    /// one-line head, expanded the whole summary.
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
+    }
+
+    /// Whether the block's own toggle is open.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
     }
 
     /// `true` at the full stop: the summary wraps whole instead of being cut

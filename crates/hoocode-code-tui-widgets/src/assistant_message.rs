@@ -453,6 +453,10 @@ pub struct AssistantMessageComponent {
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
     /// The full stop: thinking shows whole instead of its first sentence.
     full: bool,
+    /// Single view (UI-21 P4): the block's own toggle. Collapsed, thinking
+    /// is its first sentence on one dim line; expanded, the whole trace.
+    /// `set_view(Full)` opens it too, until the dial goes in P5.
+    expanded: bool,
     /// The turn (header number) this message belongs to; `None` before the
     /// first turn. The transcript groups prose by it, and the turn's own end
     /// line stands in for a plain abort line.
@@ -521,6 +525,7 @@ impl AssistantMessageComponent {
             thinking_display,
             markdown_theme,
             full: false,
+            expanded: false,
             outline_mission: None,
             outline_prose_shown: false,
             last_message: None,
@@ -618,6 +623,21 @@ impl AssistantMessageComponent {
             self.full = full;
             self.refresh();
         }
+    }
+
+    /// Single view (UI-21 P4): the block's own toggle. `true` shows the
+    /// whole thinking trace; `false` folds it to its first sentence on one
+    /// dim line. `ctrl+x b` (`ThinkingDisplay::Omit`) still hides it whole.
+    pub fn set_expanded(&mut self, expanded: bool) {
+        if self.expanded != expanded {
+            self.expanded = expanded;
+            self.refresh();
+        }
+    }
+
+    /// Whether the block's own toggle is open.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
     }
 
     /// Outline (M5): the mission this message belongs to (`None` before the
@@ -763,12 +783,15 @@ impl AssistantMessageComponent {
                     if self.thinking_display == ThinkingDisplay::Omit {
                         continue;
                     }
-                    // Full: the whole trace, dim italic. Peek (and hidden
-                    // thinking): its first sentence on one dim italic line.
+                    // Full or expanded: the whole trace, dim italic.
+                    // Collapsed (and hidden thinking): its first sentence on
+                    // one dim italic line.
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
-                    if self.full && self.thinking_display == ThinkingDisplay::Full {
+                    if (self.full || self.expanded)
+                        && self.thinking_display == ThinkingDisplay::Full
+                    {
                         self.add_markdown_block(
                             BlockKey::Thinking(i),
                             js_trim(&t.thinking),

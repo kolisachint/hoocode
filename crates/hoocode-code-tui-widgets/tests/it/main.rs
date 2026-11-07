@@ -10,6 +10,7 @@ mod controls;
 mod controls_layers;
 mod custom_message_outline;
 mod edit_agent_output_peek;
+mod every_block;
 mod golden;
 mod jettison_row;
 mod message_block_fill;

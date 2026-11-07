@@ -120,6 +120,28 @@ fn verbose_keeps_the_listing_details_open_when_the_dial_moves_to_peek() {
 }
 
 #[test]
+fn the_details_toggle_opens_and_closes_the_same_listing_in_place() {
+    // UI-21 P4: startup details ride one toggle. Collapsed is the resource
+    // summary line; expanded is the listing. No dial in between.
+    let _g = lock(Some("dark"));
+    let loaded = show_loaded_resources_with_details(&listing(false, false), false, true);
+    let details = loaded.details.expect("a listing with skills has details");
+    let folded = text_of(&loaded.components);
+    assert!(folded.contains("1 skill"), "{folded}");
+    assert!(!folded.contains("[Skills]"), "{folded}");
+
+    details.borrow_mut().set_expanded(true);
+    let open = text_of(&loaded.components);
+    assert!(open.contains("[Skills]"), "{open}");
+    assert!(open.contains("/skill:alpha"), "{open}");
+
+    details.borrow_mut().set_expanded(false);
+    let folded = text_of(&loaded.components);
+    assert!(!folded.contains("[Skills]"), "{folded}");
+    assert!(folded.contains("1 skill"), "{folded}");
+}
+
+#[test]
 fn a_listing_without_resources_has_no_details_to_open() {
     let _g = lock(Some("dark"));
     let loaded = show_loaded_resources_with_details(&ResourceListing::default(), false, true);
