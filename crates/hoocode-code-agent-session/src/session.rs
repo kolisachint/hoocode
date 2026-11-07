@@ -60,9 +60,9 @@ const THINKING_LEVELS: [ThinkingLevel; 5] = [
 ];
 
 /// Tools active by default, in the order the model sees them: Read, Shell,
-/// Edit, Write, CodeSearch, AskUserQuestion, the Cron tools, DocSearch. The
+/// Edit, Write, CodeSearch, AskUserQuestion and the Cron tools. The
 /// rest follow.
-pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 10] = [
+pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 9] = [
     "Read",
     "Shell",
     "Edit",
@@ -72,7 +72,6 @@ pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 10] = [
     "CronCreate",
     "CronList",
     "CronDelete",
-    "DocSearch",
 ];
 
 /// The "Scoped models" section of the system prompt: one line per scoped model

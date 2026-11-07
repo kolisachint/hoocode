@@ -22,7 +22,6 @@ use std::path::Path;
 pub mod file_finder;
 pub mod light;
 pub mod permissions;
-pub mod search_hoocode;
 
 pub use permissions::*;
 
@@ -338,9 +337,8 @@ pub fn default_tools_with(
 }
 
 /// The default coding bundle (`CODING_TOOL_NAMES`): Read, Shell, Edit, Write
-/// and CodeSearch, in hoocode's order. DocSearch is not here: the CLI registers
-/// it after AskUserQuestion so the model sees that order. Read, Shell, Edit,
-/// Write, CodeSearch and AskUserQuestion, then DocSearch.
+/// and CodeSearch, in hoocode's order. AskUserQuestion and the other extension
+/// tools are registered by the CLI, after these.
 /// WebFetch/WebSearch and TodoWrite are opt-in tools (10.2e, 10.2f).
 pub fn default_tool_definitions(
     cwd: std::path::PathBuf,
