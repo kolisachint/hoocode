@@ -1,0 +1,15 @@
+
+ ⊗ Shell cargo test -p hoocode-parser escaped_quote
+   exit 1 · 3.1s
+    error: could not compile `hoocode-parser` (lib)
+    note: run with `cargo check` for details
+    thread 'main' panicked at parser.rs:12
+--- styles ---
+r1 c1 fg=#d58181
+r1 c3-7 fg=#e5e5e7 bold
+r1 c9-50 fg=#e5e5e7
+r2 c3-8 fg=#d58181
+r2 c9-15 fg=#989898
+r3 c4-50 fg=#989898
+r4 c4-43 fg=#989898
+r5 c4-41 fg=#989898

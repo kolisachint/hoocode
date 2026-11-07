@@ -36,3 +36,4 @@ mod tool_renderers_gold;
 mod tool_rows;
 mod turn_end;
 mod user_message;
+mod width_single_view;
