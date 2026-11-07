@@ -320,7 +320,18 @@ Dialogs and notices have no golden pin yet. Their mockup text is the only copy (
 
 ## Proposed: single view (UI-21, UI-22)
 
-Decided 2026-11-07; each answer is a dated row in the Decisions table below. Status (2026-11-07): P0–P4 and P6(a–e) are in; P5 (remove the dial: `toolOutputView`, the Settings View leaf, leader `o` / `O` / `p` as view keys, the outline branches) is next, in roadmap order. Mockup: `docs/assets/mockups/tui-single-view.html` (open in a browser; Dark and Light, and 40, 60, 80 and 120 column controls). Rows below that no phase has built yet are still the spec: the rules above hold until their phase lands.
+Decided 2026-11-07; each answer is a dated row in the Decisions table below. Status (2026-11-07): Done. P0–P6 landed on branch `feat/u21-u22` (roadmap UI-21 + UI-22 marked done). Mockup: `docs/assets/mockups/tui-single-view.html` (open in a browser; Dark and Light, and 40, 60, 80 and 120 column controls). The section below is the record of the proposal as built; deviations from verification are listed under As built.
+
+### As built (accepted verification deviations, 2026-11-07)
+
+- M1: label +2, as built.
+- M2: body indent 8 vs 6 in the mockup — 8 is pinned as built.
+- M3: tok/turn kept in dense rows.
+- M4: mdHeading yellow out of scope.
+- M5: source +1 cell.
+- M6: stale copy fixed.
+- Frozen-row theme lag is a known limitation: frozen blocks skip `invalidate`, so a theme change leaves them in the old colours until they scroll out (see Frozen rows above).
+- Focus fill and click-pin ride the block `expanded` flag (`code-tui-app/src/mode/transcript/focus.rs` `focus_expanded`, `set_block_expanded`): focusing a block expands it, and a click while live pins the view, then toggles the same flag.
 
 ### Interaction model
 
@@ -509,6 +520,10 @@ Decided 2026-11-07; each answer is a dated row in the Decisions table below. The
 | 2026-11-07 | Settings Tool output row is removed (caps live in `settings.json` only). `DocSearch` is removed with it: discovery via the prompt listing, `Read`, CLI help and user pages (AG-19 closed as No). |
 | 2026-11-07 | Pane clicks v1: click selects, `Enter` opens (e.g. attach a subagent run). No second-click pick. |
 | 2026-11-07 | Yellow is blocking only (fixes the palette contradiction with principle 17). |
+| 2026-11-07 | Single view (UI-21) and pane grammar (UI-22) are done: P0–P6 landed on `feat/u21-u22`. The proposal above is the record, not the plan. |
+| 2026-11-07 | Accepted verification deviations M1–M6 as built: M1 label +2; M2 body indent pinned at 8; M3 tok/turn kept in dense rows; M4 mdHeading yellow out of scope; M5 source +1 cell; M6 stale copy fixed. |
+| 2026-11-07 | Frozen-row theme lag is a known limitation: frozen blocks skip `invalidate`, so they keep the old palette until they scroll out. |
+| 2026-11-07 | Focus fill and click-pin ride the block `expanded` flag (`mode/transcript/focus.rs`). |
 
 ## Open
 
@@ -534,7 +549,7 @@ Decided 2026-11-07; each answer is a dated row in the Decisions table below. The
 | UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
-| UI-21, UI-22 | Proposed single view: one row per tool call, click or Enter to expand, one pane grammar, yellow only for blocking. See "Proposed: single view" above. | L | Decided 2026-11-07 (see Decisions table) | Phases P0 to P6 are in the roadmap. P0 starts with the frozen-row test. |
+| UI-21, UI-22 | Proposed single view: one row per tool call, click or Enter to expand, one pane grammar, yellow only for blocking. See "Proposed: single view" above. | L | Decided 2026-11-07 (see Decisions table) | Done 2026-11-07: P0–P6 landed on `feat/u21-u22`. |
 
 ## Not doing
 
