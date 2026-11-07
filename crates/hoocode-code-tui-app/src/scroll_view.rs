@@ -139,11 +139,7 @@ pub struct BlockToggle {
 /// The base buffer row of `child` in `parent`'s last render at `width`.
 /// `None` before the first render, at another width, or when the child is
 /// gone.
-pub fn child_base(
-    parent: &Container,
-    child: &ComponentHandle,
-    width: u16,
-) -> Option<usize> {
+pub fn child_base(parent: &Container, child: &ComponentHandle, width: u16) -> Option<usize> {
     let offsets = parent.child_row_offsets(width)?;
     let children = parent.children();
     if children.len() != offsets.len() {
@@ -181,6 +177,57 @@ pub fn hit_chain(
         .downcast_ref::<ToolChainComponent>()?
         .header_hit(row)?;
     Some((chain, block))
+}
+
+/// A click on a transcript body cell queued for the mode to drain: the
+/// buffer row clicked and how many buffer rows sat above it on screen, at
+/// the transcript width the rows were laid out at.
+///
+/// This mirrors tui-render's `BodyClick` field for field: that type is not
+/// re-exported yet, so the queue cannot name it from here. A follow-up
+/// re-exporting it should remove this mirror and name that type instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BodyClick {
+    pub buffer_row: i64,
+    pub context: i64,
+    pub width: u16,
+}
+
+/// Hit-test a transcript buffer row against the full-screen body: the chat
+/// child holds the transcript, so the row is mapped through the body's
+/// offsets to a chat-relative row and [`hit_chain`] places it in a chain's
+/// header. Rows above the chat (the header), body rows, and rows outside
+/// every chain are `None` (a click there does nothing).
+pub fn hit_block(
+    body: &Rc<RefCell<Container>>,
+    chat: &Rc<RefCell<Container>>,
+    width: u16,
+    buffer_row: i64,
+) -> Option<(ComponentHandle, usize)> {
+    let chat_handle: ComponentHandle = chat.clone();
+    let body_ref = body.borrow();
+    let index = body_ref
+        .children()
+        .iter()
+        .position(|c| Rc::ptr_eq(c, &chat_handle))?;
+    let chat_base = body_ref.child_row_offsets(width)?[index];
+    let rel = buffer_row.checked_sub(chat_base as i64)?;
+    let rel = usize::try_from(rel).ok()?;
+    hit_chain(chat, width, rel)
+}
+
+/// `on_body_click`: queue every transcript body click for the mode to
+/// drain. The mode hit-tests each queued row with [`hit_block`] while the
+/// layout still matches the painted frame the click mapped to, toggles the
+/// header it lands on, and pins the view.
+pub fn install_body_click(ui: &mut Tui, pending: Rc<RefCell<Vec<BodyClick>>>) {
+    ui.on_body_click = Some(Box::new(move |click| {
+        pending.borrow_mut().push(BodyClick {
+            buffer_row: click.buffer_row,
+            context: click.context,
+            width: click.width,
+        });
+    }));
 }
 
 /// Plain typed text rather than a chord (control bytes and escapes are keys).
@@ -644,4 +691,91 @@ pub fn install_scroll_view(
         view.borrow_mut().handle_input(ui, data)
     })));
     shared
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hoocode_ai_types::Content;
+    use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
+    use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
+    use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
+    use hoocode_code_tui_widgets::tool_signal::ToolResult;
+    use hoocode_code_tui_widgets::tools::builtin_tool_definition;
+    use serde_json::json;
+
+    fn shell_block(id: &str) -> ToolBlock {
+        let definition = builtin_tool_definition("Shell").expect("shell renderer");
+        let mut block = ToolExecutionComponent::new(
+            "Shell",
+            id,
+            json!({"command": "echo hi"}),
+            ToolExecutionOptions {
+                view: ToolOutputView::Peek,
+                ..Default::default()
+            },
+            Some(definition),
+            "/",
+        );
+        block.update_result(
+            ToolResult {
+                content: vec![Content::text("line one\nline two\nline three")],
+                details: json!({}),
+                is_error: false,
+            },
+            false,
+        );
+        Rc::new(RefCell::new(block))
+    }
+
+    /// Two stacked chains: a header row of the second chain's second block
+    /// hits `(chain, 1)`, while an expanded body row hits nothing.
+    #[test]
+    fn hit_block_places_header_and_body_rows() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let width: u16 = 80;
+        let chain0 = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        chain0.borrow_mut().add(shell_block("chain-0"));
+        // Two blocks so block 1 has a header; the first is expanded so the
+        // chain has body rows to miss on.
+        let chain1 = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        chain1.borrow_mut().add(shell_block("chain-1-a"));
+        chain1.borrow_mut().add(shell_block("chain-1-b"));
+        chain1.borrow_mut().toggle_block(0);
+        let chain0_handle: ComponentHandle = chain0.clone();
+        let chain1_handle: ComponentHandle = chain1.clone();
+        let chat = Rc::new(RefCell::new(Container::new()));
+        chat.borrow_mut().add_child(chain0_handle);
+        chat.borrow_mut().add_child(chain1_handle.clone());
+        let body = Rc::new(RefCell::new(Container::new()));
+        let chat_handle: ComponentHandle = chat.clone();
+        body.borrow_mut().add_child(chat_handle);
+        body.borrow_mut().render(width);
+
+        let chat_base = body
+            .borrow()
+            .child_row_offsets(width)
+            .expect("body laid out")[0];
+        let chat_offsets = chat
+            .borrow()
+            .child_row_offsets(width)
+            .expect("chat laid out");
+        assert_eq!(chat_offsets.len(), 2);
+        let header = chain1
+            .borrow()
+            .header_start_row(1)
+            .expect("second block header");
+        let header_row = (chat_base + chat_offsets[1] + header) as i64;
+        let hit = hit_block(&body, &chat, width, header_row).expect("header row hits");
+        assert!(Rc::ptr_eq(&hit.0, &chain1_handle));
+        assert_eq!(hit.1, 1);
+
+        // The row just above the second header is the expanded first
+        // block's body (no blank opens a run that shows a body), so it
+        // hits nothing.
+        assert!(header > 0, "second header leaves a body row above it");
+        assert_eq!(chain1.borrow().header_hit(header - 1), None);
+        let body_row = header_row - 1;
+        assert!(hit_block(&body, &chat, width, body_row).is_none());
+    }
 }
