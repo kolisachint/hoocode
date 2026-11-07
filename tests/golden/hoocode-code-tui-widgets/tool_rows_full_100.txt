@@ -22,7 +22,7 @@
      16     parse_into(&mut cfg, &raw)?;
      17     Ok(cfg)
 
- ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 8.2s
+ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 12 lines · 8.2s
     test config::tests::case_01
     test config::tests::case_02
     test config::tests::case_03
@@ -59,7 +59,7 @@ r22 c4-18 fg=#989898
 r24 c1 fg=#b5bd68
 r24 c3-7 fg=#e5e5e7 bold
 r24 c9-52 fg=#e5e5e7
-r24 c55-67 fg=#989898
+r24 c55-78 fg=#989898
 r25 c4-30 fg=#989898
 r26 c4-30 fg=#989898
 r27 c4-30 fg=#989898

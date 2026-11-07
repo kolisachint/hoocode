@@ -366,7 +366,10 @@ fn a_long_label_wraps_and_the_facts_close_the_last_row() {
         header[1].starts_with("   flag") || header[1].starts_with("   "),
         "{rows:?}"
     );
-    assert!(header.last().unwrap().ends_with("exit 0"), "{rows:?}");
+    assert!(
+        header.last().unwrap().ends_with("exit 0 · 1 line"),
+        "{rows:?}"
+    );
     assert!(!rows.iter().any(|r| r.contains('…')), "{rows:?}");
 }
 

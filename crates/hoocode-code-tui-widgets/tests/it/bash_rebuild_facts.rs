@@ -1,6 +1,6 @@
 //! A rebuilt transcript has no clock, so the facts of a finished Shell row
-//! (`exit 0 · 1.2s`) read the duration stored on its result
-//! (`details.durationMs`). The body carries no `Took` line.
+//! (`exit 0 · 1 line · 1.2s`) read the duration stored on its result
+//! (`details.durationMs`) plus the output size. The body carries no `Took` line.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -53,7 +53,10 @@ fn rows(details: Value, is_partial: bool, is_error: bool, output: &str) -> Vec<S
 fn rebuilt_shell_row_shows_the_stored_duration_in_its_facts() {
     let _g = lock();
     let rows = rows(json!({"durationMs": 1234}), false, false, "ok");
-    assert_eq!(rows[0], " ● Shell cargo test  exit 0 · 1.2s", "{rows:?}");
+    assert_eq!(
+        rows[0], " ● Shell cargo test  exit 0 · 1 line · 1.2s",
+        "{rows:?}"
+    );
     assert_eq!(rows[1], "    ok", "{rows:?}");
     assert!(!rows.iter().any(|r| r.contains("Took")), "{rows:?}");
 }
@@ -62,7 +65,7 @@ fn rebuilt_shell_row_shows_the_stored_duration_in_its_facts() {
 fn result_without_a_stored_duration_shows_the_exit_alone() {
     let _g = lock();
     let rows = rows(Value::Null, false, false, "ok");
-    assert_eq!(rows[0], " ● Shell cargo test  exit 0", "{rows:?}");
+    assert_eq!(rows[0], " ● Shell cargo test  exit 0 · 1 line", "{rows:?}");
 }
 
 #[test]
@@ -83,7 +86,10 @@ fn a_failed_call_names_its_exit_code_and_leaves_the_exit_line_out_of_the_body() 
         true,
         "boom\n\nCommand exited with code 3",
     );
-    assert_eq!(rows[0], " ⊗ Shell cargo test  exit 3 · 3.1s", "{rows:?}");
+    assert_eq!(
+        rows[0], " ⊗ Shell cargo test  exit 3 · boom · 3 lines · 3.1s",
+        "{rows:?}"
+    );
     assert_eq!(rows[1], "    boom", "{rows:?}");
     assert_eq!(rows.len(), 2, "{rows:?}");
 }
@@ -97,5 +103,8 @@ fn a_failed_call_without_an_exit_code_shows_the_duration_alone() {
         true,
         "Command timed out after 1 seconds",
     );
-    assert_eq!(rows[0], " ⊗ Shell cargo test  1.0s", "{rows:?}");
+    assert_eq!(
+        rows[0], " ⊗ Shell cargo test  Command timed out after 1 seconds · 1 line · 1.0s",
+        "{rows:?}"
+    );
 }

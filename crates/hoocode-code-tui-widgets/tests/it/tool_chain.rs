@@ -366,10 +366,13 @@ fn a_single_call_in_peek_is_still_its_own_block() {
         "peek1",
     );
     chain.close(ChainState::Done);
-    // Shut: ` ● Shell npm run check  exit 0` alone — no step number, no
+    // Shut: ` ● Shell npm run check  exit 0 · 1 line` alone — no step number, no
     // rail, no summary row, no body. The toggle opens the output at column 4.
     let shut = render(&mut chain);
-    assert!(shut.contains(" ● Shell npm run check  exit 0"), "{shut}");
+    assert!(
+        shut.contains(" ● Shell npm run check  exit 0 · 1 line"),
+        "{shut}"
+    );
     assert!(!shut.contains("l1"), "{shut}");
     assert!(!shut.contains("1 call"), "{shut}");
     assert!(!chain.is_summarised());
@@ -378,7 +381,7 @@ fn a_single_call_in_peek_is_still_its_own_block() {
     let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
     assert!(
         rows.windows(2)
-            .any(|w| w == [" ● Shell npm run check  exit 0", "    l1"]),
+            .any(|w| w == [" ● Shell npm run check  exit 0 · 1 line", "    l1"]),
         "{out}"
     );
 }
