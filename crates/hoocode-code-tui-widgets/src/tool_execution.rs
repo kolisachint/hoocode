@@ -283,6 +283,35 @@ impl Component for PrefixFirstLine {
     }
 }
 
+/// A running Shell's single dim tail line while collapsed (single view):
+/// its last output line, dim, truncated to one row. With no output yet,
+/// the dim `○` stands in, mirroring [`crate::bash_execution`]'s pulse
+/// fallback. The chain's indent wrapper puts the row at column 4.
+struct RunningTailLine {
+    line: String,
+}
+
+impl RunningTailLine {
+    fn new(line: String) -> Self {
+        Self { line }
+    }
+}
+
+impl Component for RunningTailLine {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let t = theme();
+        let content_width = (width as usize).max(1);
+        let trimmed = self.line.trim();
+        if trimmed.is_empty() {
+            return vec![t.fg("dim", hoocode_tui_glyphs::status::TODO_STR)];
+        }
+        let cut = truncate_to_width(trimmed, content_width, "\u{2026}", false);
+        vec![t.fg("dim", &cut)]
+    }
+
+    fn invalidate(&mut self) {}
+}
+
 /// Indents every non-blank line of a child: a failure's body under a outline row.
 struct IndentAll {
     child: ComponentHandle,
@@ -1514,6 +1543,39 @@ impl ToolExecutionComponent {
         format!("{} ", t.fg(color, glyph))
     }
 
+    /// A running Shell's tail line while collapsed: its last output line
+    /// (empty when nothing has streamed yet, for the `○` fallback).
+    /// Shell-only, partial, not expanded, not outline: settled and open
+    /// rows keep the result body (or none) as before.
+    fn running_shell_tail(&self) -> Option<String> {
+        if self.tool_name != "Shell" {
+            return None;
+        }
+        if !self.is_partial {
+            return None;
+        }
+        if self.interrupted {
+            return None;
+        }
+        if self.expanded() {
+            return None;
+        }
+        if self.should_show_signal_line() {
+            return None;
+        }
+        let result = self.result.as_ref()?;
+        if result.is_error {
+            return None;
+        }
+        let output = self.text_output();
+        let last = output
+            .lines()
+            .rfind(|l| !l.trim().is_empty())
+            .map(|l| l.trim().to_string())
+            .unwrap_or_default();
+        Some(last)
+    }
+
     #[allow(unused_assignments)]
     fn rebuild_display(&mut self) {
         let mut has_content = false;
@@ -1621,6 +1683,14 @@ impl ToolExecutionComponent {
                         }
                     }
                 }
+            }
+            // A running Shell stays one header plus one dim tail line while
+            // collapsed: the live output's last line, or the `○` stand-in
+            // with nothing yet. Expanded rows keep the result body instead.
+            if let Some(tail) = self.running_shell_tail() {
+                let component = self.indent_under_signal_row(handle(RunningTailLine::new(tail)));
+                self.add_to_shell(component);
+                has_content = true;
             }
         } else {
             self.content_text.borrow_mut().set_custom_bg_fn(None);

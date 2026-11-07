@@ -372,8 +372,8 @@ fn running_collapsed_keeps_one_dim_tail_line() {
             .iter()
             .position(|r| r.contains("cargo clippy"))
             .expect("running header");
-        // Today's dim `●`; P1 repaints working rows in accent `◉`.
-        assert!(rows[header].starts_with(" ● "), "running mark: {rows:?}");
+        // Working rows read accent `◉`.
+        assert!(rows[header].starts_with(" ◉ "), "running mark: {rows:?}");
         let tail: Vec<&String> = rows[header + 1..]
             .iter()
             .filter(|r| !r.is_empty())
