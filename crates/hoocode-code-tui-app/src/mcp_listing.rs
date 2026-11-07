@@ -1,10 +1,12 @@
 //! The `/mcp` listing: each MCP server with its source, state and tool
 //! count, as a transcript text block (spec §4 S22): glyph rows where only
 //! the glyph carries colour, `auth needed` in warning yellow because it
-//! waits on you, and the login command on its own row.
+//! waits on you, and the login command as the row's hint (inline while it
+//! fits, else a continuation line).
 
 use hoocode_code_agent_session::mcp::{McpServerInfo, McpStatus};
-use hoocode_code_tui_widgets::text_block::{cell, StatusGlyph, TextBlock};
+use hoocode_code_tui_widgets::text_block::{StatusRow, StatusTone, TextBlockComponent};
+use hoocode_tui_render::Component;
 
 /// The config files file-based servers come from, in heading order.
 const USER_CONFIG: &str = "~/.agents/mcp.json";
@@ -23,7 +25,8 @@ pub fn format_listing(servers: &[McpServerInfo]) -> String {
     if servers.iter().any(|s| s.source == "project") {
         facts.push(PROJECT_CONFIG);
     }
-    let mut block = TextBlock::new("MCP servers", &facts.join(" · "));
+    let mut block = TextBlockComponent::new("MCP servers");
+    block.set_heading_detail(&facts.join(" · "));
     for server in servers {
         match &server.status {
             McpStatus::Connected => {
@@ -32,54 +35,61 @@ pub fn format_listing(servers: &[McpServerInfo]) -> String {
                 } else {
                     "tools"
                 };
-                block.status(
-                    StatusGlyph::Done,
+                block.add_status(StatusRow::new(
+                    StatusTone::Ready,
                     &server.name,
-                    vec![
-                        cell(&server.source, "dim"),
-                        cell(&format!("{} {noun}", server.tool_count), "dim"),
-                    ],
-                );
+                    &server.source,
+                    &format!("{} {noun}", server.tool_count),
+                ));
             }
             McpStatus::Connecting => {
-                block.status(
-                    StatusGlyph::Working,
+                block.add_status(StatusRow::new(
+                    StatusTone::Working,
                     &server.name,
-                    vec![cell(&server.source, "dim"), cell("connecting", "dim")],
-                );
+                    &server.source,
+                    "connecting",
+                ));
             }
             McpStatus::NotTrusted => {
-                block.status(
-                    StatusGlyph::Failed,
+                block.add_status(StatusRow::new(
+                    StatusTone::Failed,
                     &server.name,
-                    vec![cell(&server.source, "dim"), cell("not trusted", "dim")],
-                );
+                    &server.source,
+                    "not trusted",
+                ));
             }
             McpStatus::AuthNeeded => {
-                block.status(
-                    StatusGlyph::Working,
-                    &server.name,
-                    vec![cell(&server.source, "dim"), cell("auth needed", "warning")],
+                block.add_status(
+                    StatusRow::new(
+                        StatusTone::Working,
+                        &server.name,
+                        &server.source,
+                        "auth needed",
+                    )
+                    .with_hint(&format!("/mcp login {}", server.name)),
                 );
-                block.raw(format!("   /mcp login {}", server.name));
             }
             McpStatus::Failed(reason) => {
-                block.status(
-                    StatusGlyph::Failed,
+                block.add_status(StatusRow::new(
+                    StatusTone::Failed,
                     &server.name,
-                    vec![cell(&server.source, "dim"), cell(reason, "dim")],
-                );
+                    &server.source,
+                    reason,
+                ));
             }
             McpStatus::Disabled => {
-                block.status(
-                    StatusGlyph::Done,
+                block.add_status(StatusRow::new(
+                    StatusTone::Ready,
                     &server.name,
-                    vec![cell(&server.source, "dim"), cell("disabled", "dim")],
-                );
+                    &server.source,
+                    "disabled",
+                ));
             }
         }
     }
-    block.render()
+    // Render wide so no row wraps or drops its source column here; the
+    // chat record re-wraps to the pane width.
+    block.render(u16::MAX).join("\n")
 }
 
 #[cfg(test)]
@@ -119,14 +129,13 @@ mod tests {
         assert_eq!(
             text,
             [
-                "MCP servers  ~/.agents/mcp.json · ./.agents/mcp.json",
-                " ● mine       user  2 tools",
-                " ⊗ repo-tool  project  not trusted",
-                " ◉ remote     project  auth needed",
-                "   /mcp login remote",
-                " ⊗ broken     plugin p  exit 1",
-                " ● off        project  disabled",
-                " ● one        user  1 tool",
+                " MCP servers  ~/.agents/mcp.json · ./.agents/mcp.json",
+                "   ● mine        user       2 tools",
+                "   ⊗ repo-tool   project    not trusted",
+                "   ◉ remote      project    auth needed  /mcp login remote",
+                "   ⊗ broken      plugin p   exit 1",
+                "   ● off         project    disabled",
+                "   ● one         user       1 tool",
             ]
             .join("\n")
         );
@@ -139,7 +148,8 @@ mod tests {
         let text = format_listing(&[server("remote", "project", McpStatus::AuthNeeded, 0)]);
         let t = hoocode_code_tui_theme::theme();
         assert!(text.contains(&t.fg("warning", "auth needed")));
-        // …but the working glyph itself stays accent, never yellow.
-        assert!(text.contains(&t.fg("accent", "◉")));
+        // The waiting glyph itself reads warning too (the shared helper
+        // colours `◉` with the working tone, never accent).
+        assert!(text.contains(&t.fg("warning", "◉")));
     }
 }
