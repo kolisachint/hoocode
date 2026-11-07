@@ -11,7 +11,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use hoocode_code_tui_widgets::console::{hints, Console};
+use hoocode_code_tui_widgets::console::Console;
 use hoocode_tui_components::PickerCursor;
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_ratatui::{Line, Palette, Span};
@@ -195,14 +195,17 @@ impl Component for UserMessageSelectorComponent {
                 )])];
             }
         }
-        console.hint = hints(&[
-            (
-                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
-                "move",
-            ),
-            (key_hint_text("tui.select.confirm").as_str(), "fork"),
-            (key_hint_text("tui.select.cancel").as_str(), "close"),
-        ]);
+        console.set_hints(
+            &[
+                (
+                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                    "move",
+                ),
+                (key_hint_text("tui.select.confirm").as_str(), "fork"),
+                (key_hint_text("tui.select.cancel").as_str(), "close"),
+            ],
+            false,
+        );
         console.render(width)
     }
 
