@@ -5,25 +5,12 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::outline::{turn_rows, FlightItem, FlightMark, FlightStats};
-use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::{ChainState, ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
-use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
-
-use ToolOutputView::{Outline, Peek};
-
-fn cwd() -> String {
-    std::env::current_dir()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned()
-}
 
 /// One delegated call, as the transcript sees it once its result is in.
 struct Sub {
@@ -76,15 +63,19 @@ fn poll(task: &'static str, status: &'static str) -> Sub {
     }
 }
 
-fn block(view: ToolOutputView, index: usize, sub: Sub) -> ToolBlock {
+fn cwd() -> String {
+    std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn block(index: usize, sub: Sub) -> ToolBlock {
     let mut component = ToolExecutionComponent::new(
         sub.tool,
         &format!("sub-{index}"),
         sub.args,
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(registered_tool_definition(sub.tool)),
         &cwd(),
     );
@@ -99,10 +90,10 @@ fn block(view: ToolOutputView, index: usize, sub: Sub) -> ToolBlock {
     Rc::new(RefCell::new(component))
 }
 
-fn group(view: ToolOutputView, subs: Vec<Sub>, state: ChainState) -> ToolChainComponent {
-    let mut chain = ToolChainComponent::new(view);
+fn group(subs: Vec<Sub>, state: ChainState) -> ToolChainComponent {
+    let mut chain = ToolChainComponent::new();
     for (i, sub) in subs.into_iter().enumerate() {
-        chain.add(block(view, i, sub));
+        chain.add(block(i, sub));
     }
     chain.close(state);
     chain
@@ -115,16 +106,10 @@ fn plain(lines: Vec<String>) -> Vec<String> {
 // --- outline: a settled subagent folds into its recap; only a failed one keeps
 // --- its own row -------------------------------------------------------------
 
-/// The outline rows of one turn that holds the chain's calls as one batch,
-/// keeping only the failed calls' rows.
-fn outline_hits(chain: &ToolChainComponent) -> Vec<String> {
-    let stats = FlightStats {
-        mark: FlightMark::Landed,
-        landed_time: Some("1s".to_string()),
-        items: vec![FlightItem::Batch(chain.tool_blocks().to_vec())],
-        ..Default::default()
-    };
-    plain(turn_rows("delegate", &stats, &Palette::default(), 120))
+/// The chain's failed calls' rows: in the single view the chain draws its
+/// calls, and only a failed one keeps its own row.
+fn outline_hits(chain: &mut ToolChainComponent) -> Vec<String> {
+    plain(chain.render(120))
         .into_iter()
         .filter(|l| l.trim_start().starts_with('⊗'))
         .collect()
@@ -135,9 +120,9 @@ fn outline_keeps_only_the_failed_subagent_as_its_own_row() {
     let _g = lock();
     let mut subs: Vec<Sub> = (0..10).map(|_| agent_done()).collect();
     subs.push(agent_stopped());
-    let chain = group(Outline, subs, ChainState::Done);
+    let mut chain = group(subs, ChainState::Done);
     // Ten settled subagents fold into the recap; the stopped one keeps its own row.
-    let hits = outline_hits(&chain);
+    let hits = outline_hits(&mut chain);
     assert_eq!(hits.len(), 1, "{hits:?}");
     assert!(hits[0].starts_with(" ⊗ Agent"), "{hits:?}");
 }
@@ -145,8 +130,8 @@ fn outline_keeps_only_the_failed_subagent_as_its_own_row() {
 #[test]
 fn outline_shows_no_failed_row_when_the_subagents_outcomes_all_happened() {
     let _g = lock();
-    let chain = group(Outline, vec![agent_done(), agent_done()], ChainState::Done);
-    assert!(outline_hits(&chain).is_empty());
+    let mut chain = group(vec![agent_done(), agent_done()], ChainState::Done);
+    assert!(outline_hits(&mut chain).is_empty());
 }
 
 #[test]
@@ -158,16 +143,16 @@ fn outline_counts_each_task_once_however_often_it_was_polled() {
         poll("explore#1", "done"),
         poll("explore#2", "done"),
     ];
-    let chain = group(Outline, subs, ChainState::Done);
-    assert!(outline_hits(&chain).is_empty());
+    let mut chain = group(subs, ChainState::Done);
+    assert!(outline_hits(&mut chain).is_empty());
 }
 
 #[test]
 fn outline_has_no_failed_row_for_a_background_dispatch_without_an_outcome() {
     let _g = lock();
     let subs = vec![background_placeholder(), background_placeholder()];
-    let chain = group(Outline, subs, ChainState::Done);
-    assert!(outline_hits(&chain).is_empty());
+    let mut chain = group(subs, ChainState::Done);
+    assert!(outline_hits(&mut chain).is_empty());
 }
 
 // --- peek: AgentOutput's folded body ---------------------------------------------
@@ -181,7 +166,7 @@ fn output_peek(text: &'static str, width: u16) -> Vec<String> {
         details: json!({"task_id": "explore#1", "status": "done"}),
         is_error: false,
     };
-    let component = block(Peek, 0, sub);
+    let component = block(0, sub);
     // Single view: the body opens on the toggle.
     component.borrow_mut().set_expanded(true);
     let lines = component.borrow_mut().render(width);

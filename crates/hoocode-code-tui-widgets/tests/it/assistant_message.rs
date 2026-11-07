@@ -2,7 +2,6 @@
 
 use crate::support::{assistant, lock};
 use hoocode_ai_types::{Content, ThinkingContent, ToolCallContent};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::{
     AssistantMessageComponent, ThinkingDisplay, OSC133_ZONE_END, OSC133_ZONE_FINAL,
     OSC133_ZONE_START,
@@ -118,26 +117,21 @@ fn thinking_is_one_dim_line_with_no_glyph_and_no_header() {
 }
 
 #[test]
-fn the_full_stop_shows_the_whole_trace_where_peek_cuts_it() {
+fn single_view_shows_the_whole_trace_on_the_toggle() {
     let _g = lock();
     let gist = "weighing the options one by one because the first idea hides a trap \
                 in the second step of the plan";
-    let build = |view| {
-        let mut c = AssistantMessageComponent::new(
-            Some(&assistant(vec![thinking(gist), tool_call()])),
-            ThinkingDisplay::Full,
-        );
-        c.set_view(view);
-        crate::support::strip(&c.render(50).join("\n"))
-    };
-    let peek = build(ToolOutputView::Peek);
-    assert!(peek.contains('…'), "{peek}");
-    assert_eq!(peek.trim().lines().count(), 1, "{peek}");
-    let full = build(ToolOutputView::Full);
+    let mut c = AssistantMessageComponent::new(
+        Some(&assistant(vec![thinking(gist), tool_call()])),
+        ThinkingDisplay::Full,
+    );
+    let shut = crate::support::strip(&c.render(50).join("\n"));
+    assert!(shut.contains('…'), "{shut}");
+    c.set_expanded(true);
+    let full = crate::support::strip(&c.render(50).join("\n"));
     assert!(!full.contains('…'), "{full}");
     let flat = full.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(flat.contains(gist), "{full}");
-    assert!(!full.contains("ctrl+t"), "{full}");
 }
 
 #[test]
@@ -147,7 +141,6 @@ fn prose_opens_with_a_blank_and_sits_at_the_prose_indent_with_no_rail() {
         Some(&assistant(vec![Content::text("The answer.")])),
         ThinkingDisplay::Full,
     );
-    c.set_view(ToolOutputView::Peek);
     let rows: Vec<String> = c
         .render(60)
         .iter()

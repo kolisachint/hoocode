@@ -16,7 +16,6 @@ use hoocode_code_agent_session::stats::{
     add_assistant_usage, sum_assistant_usage, AssistantUsageTotals,
 };
 use hoocode_code_resources::skill_blocks::parse_skill_block;
-use hoocode_code_settings::ToolOutputView;
 use hoocode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
 use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::{apply_block_fill, BlockFill};
@@ -31,8 +30,8 @@ use hoocode_code_tui_widgets::custom_message::{
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_code_tui_widgets::outline::{FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
+use hoocode_code_tui_widgets::tool_chain::ChainState;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
@@ -551,15 +550,6 @@ impl Transcript {
                 flight.items = items;
             }
         }
-        let first_start = self.missions.first().map(|m| m.start);
-        for (i, chain) in self.chains.iter().enumerate() {
-            // No mission yet: every chain stands before the first one,
-            // so all keep the summary line (a restored or fed transcript
-            // with no user turn never opens a mission).
-            chain
-                .borrow_mut()
-                .set_orphan(first_start.is_none_or(|start| i < start));
-        }
     }
 
     /// Opens a turn: the user message over the chat, then its rows.
@@ -569,9 +559,7 @@ impl Transcript {
             mark: FlightMark::InFlight,
             ..Default::default()
         }));
-        let mut header = MissionHeader::new(seq, prompt);
-        header.set_flight(flight.clone());
-        let header = handle(header);
+        let header = handle(MissionHeader::new(prompt));
         self.missions.push(MissionRange {
             seq,
             start: self.chains.len(),
@@ -1207,13 +1195,11 @@ impl Mode {
             name,
             id,
             args,
+            // Single view: blocks start collapsed; the per-block toggle
+            // opens them.
             ToolExecutionOptions {
                 show_images: self.show_images,
                 image_width_cells: self.image_width_cells,
-                // Single view: blocks start collapsed; the per-block toggle
-                // opens them. `Peek` is the widgets' collapsed stop until
-                // the widgets slice removes the view plumbing.
-                view: ToolOutputView::Peek,
             },
             definition,
             &self.session.cwd().to_string_lossy(),
@@ -1226,8 +1212,7 @@ impl Mode {
         let chain = match &self.transcript.open_chain {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
-                // Single view: the collapsed stop (see `new_tool_block`).
-                let chain = handle(ToolChainComponent::new(ToolOutputView::Peek));
+                let chain = handle(ToolChainComponent::new());
                 self.add_to_chat(as_component(&chain));
                 self.transcript.chains.push(chain.clone());
                 self.transcript.open_chain = Some(chain.clone());
@@ -1235,21 +1220,8 @@ impl Mode {
             }
         };
         chain.borrow_mut().add(block.clone());
-        if let Some(previous) = self.transcript.latest_block.replace(block.clone()) {
-            previous.borrow_mut().set_latest(false);
-        }
-        block.borrow_mut().set_latest(true);
-        let same = self
-            .transcript
-            .latest_chain
-            .as_ref()
-            .is_some_and(|c| Rc::ptr_eq(c, &chain));
-        if !same {
-            if let Some(previous) = self.transcript.latest_chain.replace(chain.clone()) {
-                previous.borrow_mut().set_latest(false);
-            }
-            chain.borrow_mut().set_latest(true);
-        }
+        self.transcript.latest_block.replace(block.clone());
+        self.transcript.latest_chain.replace(chain.clone());
         self.refresh_flight_stats();
         self.dirty.set(true);
     }
@@ -1991,10 +1963,7 @@ mod tests {
             "Shell",
             id,
             json!({"command": "echo hi"}),
-            ToolExecutionOptions {
-                view: ToolOutputView::Peek,
-                ..Default::default()
-            },
+            ToolExecutionOptions::default(),
             None,
             "/",
         );
@@ -2010,7 +1979,7 @@ mod tests {
     }
 
     fn chain_with(n: usize) -> Rc<RefCell<ToolChainComponent>> {
-        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new()));
         for i in 0..n {
             chain.borrow_mut().add(shell_block(&format!("call-{i}")));
         }
@@ -2073,10 +2042,7 @@ mod tests {
             "Shell",
             "call-bad",
             json!({"command": "exit 3"}),
-            ToolExecutionOptions {
-                view: ToolOutputView::Peek,
-                ..Default::default()
-            },
+            ToolExecutionOptions::default(),
             None,
             "/",
         );
@@ -2088,7 +2054,7 @@ mod tests {
             },
             false,
         );
-        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new()));
         chain.borrow_mut().add(Rc::new(RefCell::new(failed)));
         t.chains.push(chain.clone());
         chain.borrow_mut().close(ChainState::Interrupted);
@@ -2207,16 +2173,13 @@ mod tests {
 
         let mut t = fresh_transcript();
         t.begin_mission("run it");
-        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new()));
         for (id, interrupted) in [("failed", false), ("cut", true)] {
             let mut block = ToolExecutionComponent::new(
                 "Shell",
                 id,
                 json!({"command": "make"}),
-                ToolExecutionOptions {
-                    view: ToolOutputView::Peek,
-                    ..Default::default()
-                },
+                ToolExecutionOptions::default(),
                 None,
                 "/",
             );
@@ -2256,10 +2219,7 @@ mod tests {
             "Agent",
             "call-agent-hits",
             json!({"subagent_type": "general-purpose", "description": "check", "prompt": "check"}),
-            ToolExecutionOptions {
-                view: ToolOutputView::Peek,
-                ..Default::default()
-            },
+            ToolExecutionOptions::default(),
             None,
             "/",
         );
@@ -2271,7 +2231,7 @@ mod tests {
             },
             false,
         );
-        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new()));
         chain.borrow_mut().add(Rc::new(RefCell::new(agent)));
         t.chains.push(chain);
         assert_eq!(t.mission_tally(), (1, 0));

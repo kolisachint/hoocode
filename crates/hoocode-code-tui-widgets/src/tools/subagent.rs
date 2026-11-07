@@ -21,13 +21,28 @@ use regex::Regex;
 use serde_json::Value;
 
 use super::text;
-use crate::fold::{more_lines_hint, ELLIPSIS};
-use crate::tool_chain_summary::{TaskOutcome, TaskState};
+use crate::fold::{more_lines_hint, peek_block, ELLIPSIS};
 use crate::tool_execution::{
     ToolRenderContext, ToolRenderDefinition, ToolRenderResultOptions, ToolResultView,
 };
-use crate::tool_output_view::peek_block;
 use crate::tool_signal::ToolResult;
+
+/// A subagent call's word on its task, as a group line counts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOutcome {
+    pub state: TaskState,
+    /// The task an `AgentOutput` call asked about. Polls of one task count
+    /// once, with its latest state. `None` counts the call on its own.
+    pub task: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskState {
+    Done,
+    Failed,
+    Stopped,
+    Running,
+}
 
 /// A JS value as `String(value ?? "")` prints it.
 fn js_string(value: Option<&Value>) -> String {

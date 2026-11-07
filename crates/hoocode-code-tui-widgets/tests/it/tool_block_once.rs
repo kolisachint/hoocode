@@ -4,7 +4,6 @@
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_tui_render::Component;
@@ -17,10 +16,7 @@ fn block(name: &str, args: Value) -> ToolExecutionComponent {
         name,
         "call-1",
         args,
-        ToolExecutionOptions {
-            view: ToolOutputView::Peek,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(definition),
         "/work/project",
     )

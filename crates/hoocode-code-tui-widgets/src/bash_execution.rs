@@ -1,7 +1,7 @@
 //! `components/bash-execution.ts`: a user `!` command with streaming output,
 //! a spinner while it runs, and a status line once it ends.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -108,11 +108,6 @@ pub struct BashExecutionComponent {
     full_output_path: Option<String>,
     expanded: bool,
     tail: OutputTail,
-    /// The transcript's outline flag, shared so a view flip reaches every row.
-    outline: Option<Rc<Cell<bool>>>,
-    /// The transcript's full flag: at the full stop the output shows whole
-    /// and the command is never cut.
-    full: Option<Rc<Cell<bool>>>,
 }
 
 impl BashExecutionComponent {
@@ -140,31 +135,13 @@ impl BashExecutionComponent {
             truncation: None,
             full_output_path: None,
             expanded: false,
-            outline: None,
-            full: None,
         }
     }
 
-    /// Outline (M5): while `flag` is set the row shows its header only, the
-    /// output stays in peek. The flag is the transcript's outline flag.
-    pub fn set_outline_flag(&mut self, flag: Rc<Cell<bool>>) {
-        self.outline = Some(flag);
-    }
-
-    fn outline_hidden(&self) -> bool {
-        self.outline.as_ref().is_some_and(|flag| flag.get())
-    }
-
-    /// The transcript's full flag, shared so a view flip reaches every row.
-    pub fn set_full_flag(&mut self, flag: Rc<Cell<bool>>) {
-        self.full = Some(flag);
-    }
-
-    /// Whether the output shows whole: the full stop, or `set_expanded`.
-    /// Single view (UI-21 P4): the block's own toggle. Collapsed, a running
-    /// command shows one dim tail line; settled, the dial's body as before.
+    /// Whether the output shows whole: the block's own toggle. Collapsed,
+    /// a running command shows one dim tail line.
     pub fn is_expanded(&self) -> bool {
-        self.expanded || self.full.as_ref().is_some_and(|flag| flag.get())
+        self.expanded
     }
 
     pub fn set_expanded(&mut self, expanded: bool) {
@@ -277,7 +254,7 @@ impl BashExecutionComponent {
     /// command, collapsed, shows one dim tail line instead (see
     /// [`Self::running_tail_line`]); expanded, its tail and spinner.
     fn body_rows(&mut self, width: usize, palette: &Palette) -> Vec<String> {
-        if self.status == Status::Running && !self.is_expanded() && !self.outline_hidden() {
+        if self.status == Status::Running && !self.is_expanded() {
             return self.running_tail_line(width);
         }
         let t = theme();
@@ -373,11 +350,9 @@ impl Component for BashExecutionComponent {
         // One blank row opens the run, as it does a chain of tool rows.
         let mut lines = vec![String::new()];
         lines.extend(self.header_rows(width, &palette));
-        if !self.outline_hidden() {
-            let body = self.body_rows(width, &palette);
-            if !body.is_empty() {
-                lines.extend(body);
-            }
+        let body = self.body_rows(width, &palette);
+        if !body.is_empty() {
+            lines.extend(body);
         }
         lines
     }

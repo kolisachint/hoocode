@@ -16,10 +16,8 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::{ChainState, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::builtin_tool_definition;
 use hoocode_tui_render::golden::render_golden;
@@ -36,7 +34,6 @@ const RUN_CMD: &str = "cargo clippy -p hoocode-parser";
 const WIDTHS: [u16; 4] = [40, 60, 80, 120];
 
 fn block(
-    view: ToolOutputView,
     tool: &str,
     args: Value,
     output: &str,
@@ -49,10 +46,7 @@ fn block(
         tool,
         "id",
         args,
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(definition),
         CWD,
     );
@@ -75,10 +69,9 @@ fn numbered(prefix: &str, n: usize) -> String {
 }
 
 /// Read (1451 lines) plus a done Shell: the mock ladder's settled rows.
-fn settled_chain(view: ToolOutputView) -> ToolChainComponent {
-    let mut chain = ToolChainComponent::new(view);
+fn settled_chain() -> ToolChainComponent {
+    let mut chain = ToolChainComponent::new();
     chain.add(block(
-        view,
         "Read",
         json!({"file_path": READ_TARGET}),
         "ok",
@@ -86,7 +79,6 @@ fn settled_chain(view: ToolOutputView) -> ToolChainComponent {
         false,
     ));
     chain.add(block(
-        view,
         "Shell",
         json!({"command": DONE_CMD}),
         &numbered("test config::tests::case_", 40),
@@ -98,10 +90,9 @@ fn settled_chain(view: ToolOutputView) -> ToolChainComponent {
 }
 
 /// A failed Shell: red `⊗` and `exit 1`, the reason dim, never opened.
-fn failed_chain(view: ToolOutputView) -> ToolChainComponent {
-    let mut chain = ToolChainComponent::new(view);
+fn failed_chain() -> ToolChainComponent {
+    let mut chain = ToolChainComponent::new();
     chain.add(block(
-        view,
         "Shell",
         json!({"command": FAILED_CMD}),
         "error: could not compile `hoocode-parser` (lib)\nnote: run with `cargo check` for details\nthread 'main' panicked at parser.rs:12\nCommand exited with code 1",
@@ -113,16 +104,13 @@ fn failed_chain(view: ToolOutputView) -> ToolChainComponent {
 }
 
 /// A running Shell with one line of partial output: header plus one dim tail.
-fn running_chain(view: ToolOutputView) -> ToolChainComponent {
+fn running_chain() -> ToolChainComponent {
     let definition = builtin_tool_definition("Shell").expect("builtin Shell tool");
     let mut b = ToolExecutionComponent::new(
         "Shell",
         "run-1",
         json!({"command": RUN_CMD}),
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(definition),
         CWD,
     );
@@ -134,7 +122,7 @@ fn running_chain(view: ToolOutputView) -> ToolChainComponent {
         },
         true,
     );
-    let mut chain = ToolChainComponent::new(view);
+    let mut chain = ToolChainComponent::new();
     chain.add(Rc::new(RefCell::new(b)));
     chain.close(ChainState::Done);
     chain
@@ -169,84 +157,84 @@ fn style_runs(golden: &str) -> Vec<(usize, String)> {
 #[test]
 fn width_single_view_settled_40() {
     let _g = lock();
-    let mut c = settled_chain(ToolOutputView::Peek);
+    let mut c = settled_chain();
     assert_golden!("width_single_view_settled_40", render_golden(&mut c, 40));
 }
 
 #[test]
 fn width_single_view_settled_60() {
     let _g = lock();
-    let mut c = settled_chain(ToolOutputView::Peek);
+    let mut c = settled_chain();
     assert_golden!("width_single_view_settled_60", render_golden(&mut c, 60));
 }
 
 #[test]
 fn width_single_view_settled_80() {
     let _g = lock();
-    let mut c = settled_chain(ToolOutputView::Peek);
+    let mut c = settled_chain();
     assert_golden!("width_single_view_settled_80", render_golden(&mut c, 80));
 }
 
 #[test]
 fn width_single_view_settled_120() {
     let _g = lock();
-    let mut c = settled_chain(ToolOutputView::Peek);
+    let mut c = settled_chain();
     assert_golden!("width_single_view_settled_120", render_golden(&mut c, 120));
 }
 
 #[test]
 fn width_single_view_failed_40() {
     let _g = lock();
-    let mut c = failed_chain(ToolOutputView::Peek);
+    let mut c = failed_chain();
     assert_golden!("width_single_view_failed_40", render_golden(&mut c, 40));
 }
 
 #[test]
 fn width_single_view_failed_60() {
     let _g = lock();
-    let mut c = failed_chain(ToolOutputView::Peek);
+    let mut c = failed_chain();
     assert_golden!("width_single_view_failed_60", render_golden(&mut c, 60));
 }
 
 #[test]
 fn width_single_view_failed_80() {
     let _g = lock();
-    let mut c = failed_chain(ToolOutputView::Peek);
+    let mut c = failed_chain();
     assert_golden!("width_single_view_failed_80", render_golden(&mut c, 80));
 }
 
 #[test]
 fn width_single_view_failed_120() {
     let _g = lock();
-    let mut c = failed_chain(ToolOutputView::Peek);
+    let mut c = failed_chain();
     assert_golden!("width_single_view_failed_120", render_golden(&mut c, 120));
 }
 
 #[test]
 fn width_single_view_running_40() {
     let _g = lock();
-    let mut c = running_chain(ToolOutputView::Peek);
+    let mut c = running_chain();
     assert_golden!("width_single_view_running_40", render_golden(&mut c, 40));
 }
 
 #[test]
 fn width_single_view_running_60() {
     let _g = lock();
-    let mut c = running_chain(ToolOutputView::Peek);
+    let mut c = running_chain();
     assert_golden!("width_single_view_running_60", render_golden(&mut c, 60));
 }
 
 #[test]
 fn width_single_view_running_80() {
     let _g = lock();
-    let mut c = running_chain(ToolOutputView::Peek);
+    let mut c = running_chain();
     assert_golden!("width_single_view_running_80", render_golden(&mut c, 80));
 }
 
 #[test]
 fn width_single_view_running_120() {
     let _g = lock();
-    let mut c = running_chain(ToolOutputView::Peek);
+    let mut c = running_chain();
     assert_golden!("width_single_view_running_120", render_golden(&mut c, 120));
 }
 
@@ -256,11 +244,7 @@ fn width_single_view_running_120() {
 fn rows_fit_every_width() {
     let _g = lock();
     for width in WIDTHS {
-        for mut c in [
-            settled_chain(ToolOutputView::Peek),
-            failed_chain(ToolOutputView::Peek),
-            running_chain(ToolOutputView::Peek),
-        ] {
+        for mut c in [settled_chain(), failed_chain(), running_chain()] {
             for (i, line) in c.render(width).iter().enumerate() {
                 let w = visible_width(line);
                 assert!(
@@ -276,7 +260,7 @@ fn rows_fit_every_width() {
 fn primary_facts_and_targets_survive_narrow_widths() {
     let _g = lock();
     for width in WIDTHS {
-        let out = strip(&stripped_rows(&mut settled_chain(ToolOutputView::Peek), width).join("\n"));
+        let out = strip(&stripped_rows(&mut settled_chain(), width).join("\n"));
         assert!(out.contains("1451 lines"), "Read lines at {width}: {out}");
         assert!(out.contains("exit 0"), "Shell exit at {width}: {out}");
         assert!(
@@ -288,20 +272,20 @@ fn primary_facts_and_targets_survive_narrow_widths() {
             "Shell command at {width}: {out}"
         );
 
-        let out = strip(&stripped_rows(&mut failed_chain(ToolOutputView::Peek), width).join("\n"));
+        let out = strip(&stripped_rows(&mut failed_chain(), width).join("\n"));
         assert!(out.contains("exit 1"), "failed exit at {width}: {out}");
         assert!(
             out.contains("cargo test"),
             "failed command at {width}: {out}"
         );
     }
-    let out = strip(&stripped_rows(&mut failed_chain(ToolOutputView::Peek), 80).join("\n"));
+    let out = strip(&stripped_rows(&mut failed_chain(), 80).join("\n"));
     assert!(
         out.contains("could not compile"),
         "failed reason at 80: {out}"
     );
 
-    let out = strip(&stripped_rows(&mut running_chain(ToolOutputView::Peek), 40).join("\n"));
+    let out = strip(&stripped_rows(&mut running_chain(), 40).join("\n"));
     assert!(out.contains("cargo clippy"), "running command at 40: {out}");
     assert!(
         out.contains("Compiling hoocode-parser"),
@@ -312,7 +296,7 @@ fn primary_facts_and_targets_survive_narrow_widths() {
 #[test]
 fn failed_red_only_on_mark_and_exit() {
     let _g = lock();
-    let golden = render_golden(&mut failed_chain(ToolOutputView::Peek), 80);
+    let golden = render_golden(&mut failed_chain(), 80);
     let text: Vec<&str> = golden
         .split("--- styles ---")
         .next()
@@ -338,7 +322,7 @@ fn failed_red_only_on_mark_and_exit() {
 #[test]
 fn settled_rows_carry_no_red() {
     let _g = lock();
-    let golden = render_golden(&mut settled_chain(ToolOutputView::Peek), 80);
+    let golden = render_golden(&mut settled_chain(), 80);
     assert!(
         !golden.contains("#d58181"),
         "settled rows carry no red: {golden}"
@@ -367,7 +351,7 @@ fn settled_rows_carry_no_red() {
 fn running_collapsed_keeps_one_dim_tail_line() {
     let _g = lock();
     for width in WIDTHS {
-        let rows = stripped_rows(&mut running_chain(ToolOutputView::Peek), width);
+        let rows = stripped_rows(&mut running_chain(), width);
         let header = rows
             .iter()
             .position(|r| r.contains("cargo clippy"))
@@ -384,7 +368,7 @@ fn running_collapsed_keeps_one_dim_tail_line() {
             "dim tail at column 4: {rows:?}"
         );
     }
-    let golden = render_golden(&mut running_chain(ToolOutputView::Peek), 80);
+    let golden = render_golden(&mut running_chain(), 80);
     assert!(
         !golden.contains("#d58181") && !golden.contains("#b5bd68"),
         "running carries no red or green: {golden}"

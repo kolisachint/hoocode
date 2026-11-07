@@ -3,10 +3,10 @@
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
+use hoocode_code_tui_widgets::fold::PEEK_LINES;
 use hoocode_code_tui_widgets::tool_execution::{
     ToolRenderContext, ToolRenderResultOptions, ToolResultView,
 };
-use hoocode_code_tui_widgets::tool_output_view::PEEK_LINES;
 use hoocode_code_tui_widgets::tools::builtin_tool_definition;
 use hoocode_code_tui_widgets::tools::subagent::format_task_output_result;
 use serde_json::{json, Value};

@@ -1,4 +1,4 @@
-//! The three transcript layers: outline, peek, and full (peek with nothing cut).
+//! The single transcript view: collapsed rows, the toggle, whole bodies.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -6,21 +6,13 @@ use std::rc::Rc;
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ImageContent};
 use hoocode_code_tui_widgets::fold::{fold_rows, fold_rows_tail, parse_more_lines};
-use hoocode_code_tui_widgets::outline::{turn_rows, FlightItem, FlightMark, FlightStats};
-use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::{ChainState, ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::{
-    cycle_tool_output_view, ToolOutputView, TOOL_OUTPUT_VIEWS,
-};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_code_tui_widgets::trajectory::MissionHeader;
-use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
-
-use ToolOutputView::{Full, Outline, Peek};
 
 const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
@@ -38,15 +30,12 @@ fn rows_of(n: usize) -> String {
         .join("\n")
 }
 
-fn block(view: ToolOutputView, tool: &str, args: Value, content: Vec<Content>) -> ToolBlock {
+fn block(tool: &str, args: Value, content: Vec<Content>) -> ToolBlock {
     let mut component = ToolExecutionComponent::new(
         tool,
         "t-0",
         args,
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(registered_tool_definition(tool)),
         &cwd(),
     );
@@ -61,8 +50,8 @@ fn block(view: ToolOutputView, tool: &str, args: Value, content: Vec<Content>) -
     Rc::new(RefCell::new(component))
 }
 
-fn chain_with(view: ToolOutputView, blocks: Vec<ToolBlock>) -> ToolChainComponent {
-    let mut chain = ToolChainComponent::new(view);
+fn chain_with(blocks: Vec<ToolBlock>) -> ToolChainComponent {
+    let mut chain = ToolChainComponent::new();
     for block in blocks {
         chain.add(block);
     }
@@ -81,38 +70,22 @@ fn render(chain: &mut ToolChainComponent, width: u16) -> Vec<String> {
 
 /// A chain of one Write call whose content is `lines` rows: a tool that shows
 /// its first lines at peek (a Read shows no body there).
-fn read_chain(view: ToolOutputView, lines: usize) -> ToolChainComponent {
-    chain_with(
-        view,
-        vec![block(
-            view,
-            "Write",
-            json!({"file_path": "notes.txt", "content": rows_of(lines)}),
-            vec![Content::text("ok")],
-        )],
-    )
+fn read_chain(lines: usize) -> ToolChainComponent {
+    chain_with(vec![block(
+        "Write",
+        json!({"file_path": "notes.txt", "content": rows_of(lines)}),
+        vec![Content::text("ok")],
+    )])
 }
 
 #[test]
-fn the_dial_steps_outline_peek_full_and_wraps() {
-    assert_eq!(TOOL_OUTPUT_VIEWS, [Outline, Peek, Full]);
-    let mut view = Outline;
-    let mut seen = Vec::new();
-    for _ in 0..4 {
-        view = cycle_tool_output_view(view, true);
-        seen.push(view);
-    }
-    assert_eq!(seen, [Peek, Full, Outline, Peek]);
-}
-
-#[test]
-fn peek_collapses_while_the_toggle_and_full_show_a_long_tool_output_whole() {
+fn collapsed_hides_the_body_and_the_toggle_opens_it_whole() {
     let _g = lock();
-    let peek = render(&mut read_chain(Peek, 40), 100).join("\n");
-    assert!(!peek.contains("row-01"), "{peek}");
-    assert!(!peek.contains("more line"), "{peek}");
+    let shut = render(&mut read_chain(40), 100).join("\n");
+    assert!(!shut.contains("row-01"), "{shut}");
+    assert!(!shut.contains("more line"), "{shut}");
 
-    let mut open = read_chain(Peek, 40);
+    let mut open = read_chain(40);
     open.tool_blocks()[0].borrow_mut().set_expanded(true);
     let whole = render(&mut open, 100).join("\n");
     for i in 1..=40 {
@@ -120,17 +93,12 @@ fn peek_collapses_while_the_toggle_and_full_show_a_long_tool_output_whole() {
     }
     assert!(!whole.contains("more line"), "{whole}");
     assert!(!whole.contains('…'), "{whole}");
-
-    let full = render(&mut read_chain(Full, 40), 100).join("\n");
-    for i in 1..=40 {
-        assert!(full.contains(&format!("row-{i:02}")), "row {i}: {full}");
-    }
 }
 
 #[test]
 fn a_collapsed_chain_hides_every_row_and_the_toggle_opens_them_all() {
     let _g = lock();
-    let mut chain = read_chain(Peek, 40);
+    let mut chain = read_chain(40);
     let shut = render(&mut chain, 100);
     assert!(
         !shut.iter().any(|r| r.contains("more line")),
@@ -168,55 +136,49 @@ fn fold_rows_adds_the_renderers_own_hint_to_its_count() {
 }
 
 #[test]
-fn a_long_tool_header_cuts_to_one_row_in_peek_and_full() {
+fn a_long_tool_header_cuts_to_one_row_until_the_toggle_opens_it() {
     let _g = lock();
     let words: Vec<String> = (1..=30).map(|i| format!("flag{i:02}")).collect();
     let command = format!("cargo test {}", words.join(" "));
-    for view in [Peek, Full] {
-        let shell = block(
-            view,
-            "Shell",
-            json!({ "command": command }),
-            vec![Content::text("ok")],
-        );
-        // Full opens every body; in peek the output follows the toggle.
-        shell.borrow_mut().set_expanded(view == Peek);
-        let mut chain = chain_with(view, vec![shell]);
-        let rows = render(&mut chain, 60);
-        // render() drops blank rows: the single header, then the output whole.
-        assert_eq!(rows.len(), 2, "{view:?}: {rows:?}");
-        assert!(rows[0].contains("● Shell"), "the glyph leads: {rows:?}");
-        assert!(rows[0].contains('…'), "the target cuts: {rows:?}");
-        assert!(rows[0].chars().count() <= 60, "the header fits: {rows:?}");
-        assert!(rows[0].contains("exit 0"), "primary facts stay: {rows:?}");
-        assert!(!rows[0].contains("flag30"), "late words cut: {rows:?}");
-        // The cut header is not body: the output follows whole.
-        assert_eq!(rows[1].trim(), "ok", "{view:?}: {rows:?}");
-    }
+    let shell = block(
+        "Shell",
+        json!({ "command": command }),
+        vec![Content::text("ok")],
+    );
+    let mut chain = chain_with(vec![shell]);
+    // Collapsed: the single cut header, no body.
+    let rows = render(&mut chain, 60);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(rows[0].contains("● Shell"), "the glyph leads: {rows:?}");
+    assert!(rows[0].contains('…'), "the target cuts: {rows:?}");
+    assert!(rows[0].chars().count() <= 60, "the header fits: {rows:?}");
+    assert!(rows[0].contains("exit 0"), "primary facts stay: {rows:?}");
+    assert!(!rows[0].contains("flag30"), "late words cut: {rows:?}");
+    // The cut header is not body: the toggle opens the output whole.
+    chain.tool_blocks()[0].borrow_mut().set_expanded(true);
+    let rows = render(&mut chain, 60);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!(rows[1].trim(), "ok", "{rows:?}");
 }
 
 #[test]
-fn a_long_user_prompt_wraps_whole_in_peek_and_full() {
+fn a_long_user_prompt_wraps_whole() {
     let _g = lock();
     let words: Vec<String> = (1..=40).map(|i| format!("word{i:02}")).collect();
     let prompt = format!("{}\nsecond line of the prompt", words.join(" "));
-    for view in [Peek, Full] {
-        let mut header = MissionHeader::new(1, &prompt);
-        header.set_view(view);
-        let lines = header.render(50);
-        let text = strip(&lines.join("\n"));
-        for word in &words {
-            assert!(text.contains(word.as_str()), "{view:?} lost {word}: {text}");
-        }
-        assert!(text.contains("second line of the prompt"), "{text}");
-        assert!(!text.contains('…'), "{text}");
-        assert!(lines.len() >= 4, "{text}");
+    let mut header = MissionHeader::new(&prompt);
+    let lines = header.render(50);
+    let text = strip(&lines.join("\n"));
+    for word in &words {
+        assert!(text.contains(word.as_str()), "lost {word}: {text}");
     }
+    assert!(text.contains("second line of the prompt"), "{text}");
+    assert!(!text.contains('…'), "{text}");
+    assert!(lines.len() >= 4, "{text}");
 }
 
-fn image_block(view: ToolOutputView) -> ToolBlock {
+fn image_block() -> ToolBlock {
     block(
-        view,
         "mystery",
         json!({"file_path": "shot.png"}),
         vec![
@@ -237,7 +199,7 @@ fn an_image_result_is_not_folded_with_the_body() {
         true_color: true,
         hyperlinks: false,
     });
-    let mut chain = chain_with(Peek, vec![image_block(Peek)]);
+    let mut chain = chain_with(vec![image_block()]);
     chain.tool_blocks()[0].borrow_mut().set_expanded(true);
     let lines = chain.render(100);
     // The open body shows whole; the image still draws after the text.
@@ -261,68 +223,55 @@ fn an_image_result_is_not_folded_with_the_body() {
 #[test]
 fn the_image_placeholder_shows_when_the_terminal_draws_no_images() {
     let _g = lock();
-    for view in [Peek, Full] {
-        let block = image_block(view);
-        block.borrow_mut().set_expanded(true);
-        let mut chain = chain_with(view, vec![block]);
-        let rows = render(&mut chain, 100);
-        assert!(
-            rows.iter().any(|r| r.contains("[Image: ")),
-            "{view:?} dropped the placeholder: {rows:?}"
-        );
-    }
+    let block = image_block();
+    block.borrow_mut().set_expanded(true);
+    let mut chain = chain_with(vec![block]);
+    let rows = render(&mut chain, 100);
+    assert!(
+        rows.iter().any(|r| r.contains("[Image: ")),
+        "dropped the placeholder: {rows:?}"
+    );
 }
 
 #[test]
-fn a_subagent_result_is_whole_in_full_and_summarised_in_peek() {
+fn a_subagent_result_hides_until_the_toggle_opens_it_whole() {
     let _g = lock();
     let body = (1..=12)
         .map(|i| format!("finding {i:02}"))
         .collect::<Vec<_>>()
         .join("\n");
-    let make = |view| {
-        chain_with(
-            view,
-            vec![block(
-                view,
-                "Agent",
-                json!({"subagent_type": "explore"}),
-                vec![Content::text(body.clone())],
-            )],
-        )
+    let make = || {
+        chain_with(vec![block(
+            "Agent",
+            json!({"subagent_type": "explore"}),
+            vec![Content::text(body.clone())],
+        )])
     };
-    let peek = render(&mut make(Peek), 80).join("\n");
-    assert!(!peek.contains("finding 01"), "{peek}");
-    let mut open = make(Peek);
+    let shut = render(&mut make(), 80).join("\n");
+    assert!(!shut.contains("finding 01"), "{shut}");
+    let mut open = make();
     open.tool_blocks()[0].borrow_mut().set_expanded(true);
     let whole = render(&mut open, 80).join("\n");
     for i in 1..=12 {
         assert!(whole.contains(&format!("finding {i:02}")), "{whole}");
     }
     assert!(!whole.contains("more line"), "{whole}");
-    let full = render(&mut make(Full), 80).join("\n");
-    for i in 1..=12 {
-        assert!(full.contains(&format!("finding {i:02}")), "{full}");
-    }
-    assert!(!full.contains("more line"), "{full}");
 }
 
 #[test]
-fn a_frozen_block_keeps_the_whole_output_for_the_full_stop() {
+fn a_frozen_block_keeps_the_whole_output_for_the_toggle() {
     let _g = lock();
     let shell = block(
-        Peek,
         "Shell",
         json!({"command": "seq 1 30"}),
         vec![Content::text(rows_of(30))],
     );
     shell.borrow_mut().freeze();
-    let mut chain = chain_with(Peek, vec![shell.clone()]);
+    let mut chain = chain_with(vec![shell.clone()]);
     let peek = render(&mut chain, 100).join("\n");
     assert!(!peek.contains("row-01"), "shut, no body: {peek}");
     assert!(!peek.contains("earlier lines"), "shut, no hint: {peek}");
     shell.borrow_mut().set_expanded(true);
-    chain.set_view(Full);
     let full = render(&mut chain, 100).join("\n");
     for i in 1..=30 {
         assert!(full.contains(&format!("row-{i:02}")), "row {i}: {full}");
@@ -330,23 +279,18 @@ fn a_frozen_block_keeps_the_whole_output_for_the_full_stop() {
 }
 
 #[test]
-fn full_wraps_a_long_output_row_where_peek_keeps_it_on_the_rail() {
+fn the_toggle_wraps_a_long_output_row_whole() {
     let _g = lock();
     let long = "Q".repeat(150);
-    let chain = |view| {
-        chain_with(
-            view,
-            vec![block(
-                view,
-                "Read",
-                json!({"file_path": "notes.txt"}),
-                vec![Content::text(long.clone())],
-            )],
-        )
-    };
-    let full = render(&mut chain(Full), 60).join("");
-    assert_eq!(full.matches('Q').count(), 150, "{full}");
-    assert!(!full.contains('…'), "{full}");
+    let mut chain = chain_with(vec![block(
+        "Read",
+        json!({"file_path": "notes.txt"}),
+        vec![Content::text(long.clone())],
+    )]);
+    chain.tool_blocks()[0].borrow_mut().set_expanded(true);
+    let open = render(&mut chain, 60).join("");
+    assert_eq!(open.matches('Q').count(), 150, "{open}");
+    assert!(!open.contains('…'), "{open}");
 }
 
 #[test]
@@ -358,15 +302,9 @@ fn an_image_only_result_shows_just_its_placeholder() {
     });
     {
         let tool = "mystery";
-        let view = Peek;
-        let only = block(
-            view,
-            tool,
-            json!({"file_path": "shot.png"}),
-            vec![image.clone()],
-        );
+        let only = block(tool, json!({"file_path": "shot.png"}), vec![image.clone()]);
         only.borrow_mut().set_expanded(true);
-        let mut chain = chain_with(view, vec![only]);
+        let mut chain = chain_with(vec![only]);
         let rows = render(&mut chain, 100);
         let body: Vec<&String> = rows.iter().filter(|r| r.contains("[Image: ")).collect();
         assert_eq!(body.len(), 1, "{tool}: {rows:?}");
@@ -379,34 +317,35 @@ fn an_image_only_result_shows_just_its_placeholder() {
 }
 
 #[test]
-fn a_frozen_block_wraps_at_a_narrower_terminal_in_full() {
+fn a_frozen_block_keeps_the_whole_output_at_its_width() {
     let _g = lock();
     let long = "Q".repeat(120);
-    let read = block(
-        Full,
-        "Read",
-        json!({"file_path": "notes.txt"}),
-        vec![Content::text(long)],
-    );
-    read.borrow_mut().freeze();
-    let mut chain = chain_with(Full, vec![read]);
-    let wide = render(&mut chain, 160).join("");
+    // A frozen capture is taken at the width it first renders: a fresh
+    // block keeps the whole output, wrapped, at either terminal.
+    let make = || {
+        let read = block(
+            "Read",
+            json!({"file_path": "notes.txt"}),
+            vec![Content::text(long.clone())],
+        );
+        read.borrow_mut().freeze();
+        read.borrow_mut().set_expanded(true);
+        chain_with(vec![read])
+    };
+    let wide = render(&mut make(), 160).join("");
     assert_eq!(wide.matches('Q').count(), 120, "{wide}");
-    let narrow = render(&mut chain, 50);
-    assert_eq!(narrow.join("").matches('Q').count(), 120, "{narrow:?}");
-    assert!(!narrow.iter().any(|r| r.contains('…')), "{narrow:?}");
+    let narrow = render(&mut make(), 50).join("");
+    assert_eq!(narrow.matches('Q').count(), 120, "{narrow}");
+    assert!(!narrow.contains('…'), "{narrow}");
 }
 
 /// A Shell block with a stored duration, as a rebuilt session carries it.
-fn shell_block(view: ToolOutputView, output: &str, is_error: bool) -> ToolBlock {
+fn shell_block(output: &str, is_error: bool) -> ToolBlock {
     let mut component = ToolExecutionComponent::new(
         "Shell",
         "t-0",
         json!({"command": "cargo test"}),
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(registered_tool_definition("Shell")),
         &cwd(),
     );
@@ -424,8 +363,8 @@ fn shell_block(view: ToolOutputView, output: &str, is_error: bool) -> ToolBlock 
 #[test]
 fn a_shell_step_shows_the_end_of_its_output_and_counts_only_hidden_output_lines() {
     let _g = lock();
-    let block = shell_block(Peek, &rows_of(40), false);
-    let mut chain = chain_with(Peek, vec![block.clone()]);
+    let block = shell_block(&rows_of(40), false);
+    let mut chain = chain_with(vec![block.clone()]);
     let shut = render(&mut chain, 100);
     assert!(shut[0].ends_with("exit 0 · 40 lines · 8.2s"), "{shut:?}");
     assert!(
@@ -451,8 +390,8 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     let output = "error[E0308]: mismatched types\n   --> src/lex.rs:88:21\n    |\n\
                   88  |     return Ok(Token::Str(text));\n    |\n\
                   error: could not compile `parser`\n\nCommand exited with code 1";
-    let block = shell_block(Peek, output, true);
-    let mut chain = chain_with(Peek, vec![block.clone()]);
+    let block = shell_block(output, true);
+    let mut chain = chain_with(vec![block.clone()]);
     let shut = render(&mut chain, 100);
     assert!(
         shut[0].contains('⊗')
@@ -480,11 +419,11 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
 #[test]
 fn an_interrupted_step_is_no_hit_and_leaves_the_reason_to_the_message() {
     let _g = lock();
-    let shell = shell_block(Peek, "Operation aborted", true);
+    let shell = shell_block("Operation aborted", true);
     shell.borrow_mut().set_interrupted();
     assert!(!shell.borrow().is_error());
     assert!(!shell.borrow().chain_entry().is_error);
-    let mut chain = chain_with(Peek, vec![shell]);
+    let mut chain = chain_with(vec![shell]);
     let rows = render(&mut chain, 100);
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert!(
@@ -510,7 +449,7 @@ fn fold_rows_tail_keeps_the_last_rows_and_adds_the_renderers_hint() {
 
 /// An Agent block whose run (`run`) settled, with two calls of its own, the
 /// second failed.
-fn settled_agent(view: ToolOutputView, run: &str) -> ToolBlock {
+fn settled_agent(run: &str) -> ToolBlock {
     use hoocode_code_subagents::live::apply;
     apply(run, &json!({"type": "task_started"}));
     for (id, tool, fails) in [("s1", "Read", false), ("s2", "Grep", true)] {
@@ -529,10 +468,7 @@ fn settled_agent(view: ToolOutputView, run: &str) -> ToolBlock {
         "Agent",
         "t-agent",
         json!({"subagent_type": "explore", "description": "look around"}),
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(registered_tool_definition("Agent")),
         &cwd(),
     );
@@ -548,45 +484,19 @@ fn settled_agent(view: ToolOutputView, run: &str) -> ToolBlock {
 }
 
 #[test]
-fn a_settled_agent_keeps_its_failed_calls_in_peek_and_every_call_in_full() {
+fn a_settled_agent_hides_its_calls_until_the_toggle_opens_them() {
     let _g = lock();
-    let agent = settled_agent(Peek, "it-agent-peek");
-    let mut peek = chain_with(Peek, vec![agent.clone()]);
-    let shut = render(&mut peek, 100).join("\n");
+    let agent = settled_agent("it-agent-single");
+    let mut chain = chain_with(vec![agent.clone()]);
+    let shut = render(&mut chain, 100).join("\n");
     assert!(
         !shut.contains("Found it"),
         "a settled agent shows no body: {shut}"
     );
     assert!(!shut.contains("   ⊗ Grep"), "shut, no child rows: {shut}");
     agent.borrow_mut().set_expanded(true);
-    let rows = render(&mut peek, 100).join("\n");
-    assert!(rows.contains("   ⊗ Grep"), "{rows}");
-    assert!(rows.contains("bad regex"), "{rows}");
-    assert!(!rows.contains("HIT"), "{rows}");
-    assert!(
-        rows.contains("   ● Read"),
-        "the toggle opens every call: {rows}"
-    );
-
-    let mut full = chain_with(Full, vec![settled_agent(Full, "it-agent-full")]);
-    let rows = render(&mut full, 100).join("\n");
-    assert!(rows.contains("   ● Read"), "{rows}");
-    assert!(rows.contains("   ⊗ Grep"), "{rows}");
-
-    // Outline: the turn's block shows the failed call only, nested under the
-    // recap (the turn draws its batch's calls, not the chain).
-    let outline = chain_with(Outline, vec![settled_agent(Outline, "it-agent-outline")]);
-    let stats = FlightStats {
-        mark: FlightMark::Landed,
-        landed_time: Some("1s".to_string()),
-        items: vec![FlightItem::Batch(outline.tool_blocks().to_vec())],
-        ..Default::default()
-    };
-    let rows: Vec<String> = turn_rows("run it", &stats, &Palette::default(), 100)
-        .iter()
-        .map(|row| strip(row))
-        .filter(|row| row.trim_start().starts_with('⊗'))
-        .collect();
-    assert_eq!(rows.len(), 1, "{rows:?}");
-    assert!(rows[0].starts_with("   ⊗ Grep"), "{rows:?}");
+    let whole = render(&mut chain, 100).join("\n");
+    assert!(whole.contains("Found it."), "{whole}");
+    assert!(whole.contains("   ⊗ Grep"), "{whole}");
+    assert!(!whole.contains("more line"), "{whole}");
 }

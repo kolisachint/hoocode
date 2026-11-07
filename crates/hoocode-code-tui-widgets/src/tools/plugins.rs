@@ -7,8 +7,8 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 
 use super::text;
+use crate::fold::peek_block;
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::peek_block;
 
 /// The plugin tools that render their own result.
 pub const RENDERED_PLUGIN_TOOLS: [&str; 4] = [
