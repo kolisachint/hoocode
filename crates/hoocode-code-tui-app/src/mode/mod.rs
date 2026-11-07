@@ -42,6 +42,7 @@ use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
 use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
+use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
@@ -66,11 +67,14 @@ use crate::notification_panel::{NotificationKind, NotificationPanel};
 use crate::perf::Perf;
 use crate::record_row::RecordRows;
 use crate::resource_display::{format_display_path, ResourceListing};
-use crate::scroll_view::{install_scroll_status, install_scroll_view};
+use crate::scroll_view::{
+    child_base, hit_chain, install_scroll_status, install_scroll_view, BlockToggle,
+};
 use crate::startup_progress;
 use crate::tips::{
     render_tip, tip_ttl, TipRotation, TipRotationOptions, TipsController, TipsControllerOptions,
 };
+use hoocode_tui_render::BodyClick;
 
 mod attach;
 mod auth;
@@ -468,6 +472,9 @@ struct Mode {
     queue_recallable: Rc<Cell<bool>>,
     /// The transcript's scroll view: the leader opens its search (`leader.rs`).
     scroll_view: Rc<RefCell<crate::scroll_view::ScrollView>>,
+    /// Header clicks queued by the TUI, drained after each event (single
+    /// view: a click toggles its block and pins the view first).
+    pending_body_clicks: Rc<RefCell<Vec<BodyClick>>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
@@ -640,6 +647,14 @@ impl Mode {
         // A plain click on a link (OSC 8 or a bare URL) opens it in the
         // browser; `open_url` takes only http, https and mailto.
         tui.on_hyperlink = Some(Box::new(crate::login_controller::open_url));
+        // A click on a tool header toggles its block. The TUI only queues
+        // the row: the mode below drains the queue while the last frame's
+        // layout still matches the painted rows the click mapped to.
+        let pending_body_clicks: Rc<RefCell<Vec<BodyClick>>> = Rc::default();
+        let queued_clicks = pending_body_clicks.clone();
+        tui.on_body_click = Some(Box::new(move |click| {
+            queued_clicks.borrow_mut().push(click);
+        }));
 
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
@@ -944,6 +959,7 @@ impl Mode {
             transient,
             leader,
             scroll_view,
+            pending_body_clicks,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,
@@ -1029,9 +1045,110 @@ impl Mode {
         if !taken {
             self.tui.accept_event(event);
         }
+        self.drain_body_clicks();
         self.hand_off_panel_up();
         self.return_panel_focus_if_asked();
         self.show_main();
+    }
+
+    /// The chat's base buffer row in the last frame's layout: the body holds
+    /// it full-screen, else it is a direct child of the TUI root.
+    fn chat_base_row(&self, width: u16) -> Option<usize> {
+        let chat_handle: ComponentHandle = self.transcript.chat.clone();
+        match &self.scroll_body {
+            Some(body) => child_base(&body.borrow(), &chat_handle, width),
+            None => {
+                let offsets = self.tui.child_row_offsets(width)?;
+                let children = self.tui.children();
+                if children.len() != offsets.len() {
+                    return None;
+                }
+                children
+                    .iter()
+                    .position(|c| Rc::ptr_eq(c, &chat_handle))
+                    .map(|i| offsets[i])
+            }
+        }
+    }
+
+    /// A queued header click toggles its block and pins the view, keeping
+    /// the header on the row the click found it on (decision 6). A click on
+    /// a body row, or outside every chain, queued nothing.
+    fn drain_body_clicks(&mut self) {
+        let clicks = std::mem::take(&mut *self.pending_body_clicks.borrow_mut());
+        if clicks.is_empty() {
+            return;
+        }
+        for click in clicks {
+            let base = self.chat_base_row(click.width);
+            let rel = base.and_then(|b| (click.buffer_row as usize).checked_sub(b));
+            let hit = rel.and_then(|r| hit_chain(&self.transcript.chat, click.width, r));
+            let Some((chain, block)) = hit else { continue };
+            let toggle = BlockToggle {
+                chain,
+                block,
+                buffer_row: click.buffer_row,
+                context: click.context,
+            };
+            let toggled = toggle
+                .chain
+                .borrow_mut()
+                .as_any_mut()
+                .and_then(|a| a.downcast_mut::<ToolChainComponent>())
+                .is_some_and(|c| {
+                    c.toggle_block(toggle.block);
+                    true
+                });
+            if !toggled {
+                continue;
+            }
+            // Pin first, keeping the header on its row; the toggle opens
+            // under it.
+            self.tui
+                .scroll_to_row(toggle.buffer_row, Some(toggle.context));
+            self.dirty.set(true);
+        }
+    }
+
+    /// `ctrl+x u`: pin the view on the newest tool block and focus it for
+    /// the pinned keys. While live, printable keys type into the prompt, so
+    /// this is the way into the blocks.
+    fn focus_newest_tool_block(&mut self) {
+        let Some(newest) = self.tool_blocks().pop() else {
+            return;
+        };
+        let width = self.tui.transcript_width();
+        let mut target: Option<i64> = None;
+        if let Some(base) = self.chat_base_row(width) {
+            let chat = self.transcript.chat.borrow();
+            if let Some(chat_offsets) = chat.child_row_offsets(width) {
+                for chain_handle in self.transcript.chains.iter().rev() {
+                    let handle: ComponentHandle = chain_handle.clone();
+                    let chain = chain_handle.borrow();
+                    if let Some(pos) = chain
+                        .tool_blocks()
+                        .iter()
+                        .rposition(|b| Rc::ptr_eq(b, &newest))
+                    {
+                        if let Some(start) = chain.header_start_row(pos) {
+                            target = chat
+                                .children()
+                                .iter()
+                                .position(|c| Rc::ptr_eq(c, &handle))
+                                .map(|i| base as i64 + chat_offsets[i] as i64 + start as i64);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        self.scroll_view
+            .borrow_mut()
+            .set_focused_block(Some(newest));
+        if let Some(row) = target {
+            self.tui.scroll_to_row(row, None);
+        }
+        self.dirty.set(true);
     }
 
     /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn

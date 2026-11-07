@@ -40,6 +40,7 @@ pub(super) enum Action {
     Exit,
     Suspend,
     ToolsExpand,
+    ToolsFocusNewest,
     ThinkingForward,
     ThinkingBackward,
     ThinkingToggle,
@@ -108,7 +109,7 @@ pub(super) enum Action {
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 28] = [
+const EDITOR_ACTIONS: [(&str, Action); 29] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
     ("app.panel.focus", Action::PanelToggle),
@@ -128,6 +129,7 @@ const EDITOR_ACTIONS: [(&str, Action); 28] = [
     ("app.clear", Action::Clear),
     ("app.suspend", Action::Suspend),
     ("app.tools.expand", Action::ToolsExpand),
+    ("app.scroll.focusNewest", Action::ToolsFocusNewest),
     ("app.thinking.cycleForward", Action::ThinkingForward),
     ("app.model.cycleForward", Action::ModelForward),
     ("app.model.cycleBackward", Action::ModelBackward),
@@ -966,6 +968,7 @@ impl Mode {
             Action::Exit => self.request_user_quit(),
             Action::Suspend => self.handle_ctrl_z(),
             Action::ToolsExpand => self.toggle_tool_output_view(),
+            Action::ToolsFocusNewest => self.focus_newest_tool_block(),
             Action::ViewForward | Action::ViewBackward => {
                 self.cycle_tool_output_view(action == Action::ViewForward)
             }
