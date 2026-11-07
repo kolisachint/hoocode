@@ -320,7 +320,7 @@ Dialogs and notices have no golden pin yet. Their mockup text is the only copy (
 
 ## Proposed: single view (UI-21, UI-22)
 
-Proposed 2026-11-06, pending the decisions below. Mockup: `docs/assets/mockups/tui-single-view.html` (open in a browser; Dark and Light, and 40, 60, 80 and 120 column controls). Nothing here is built or decided. The rules above hold until the user decides, and no row is added to Decisions yet.
+Decided 2026-11-07; each answer is a dated row in the Decisions table below. Status (2026-11-07): P0 (pins at 40/60, notice goldens, the red frozen-row test) is in; the P6(d) text-block helper is in; P1–P5 and P6(a–c, e) are next, in roadmap order. Mockup: `docs/assets/mockups/tui-single-view.html` (open in a browser; Dark and Light, and 40, 60, 80 and 120 column controls). Rows below that no phase has built yet are still the spec: the rules above hold until their phase lands.
 
 ### Interaction model
 
@@ -333,7 +333,6 @@ Proposed 2026-11-06, pending the decisions below. Mockup: `docs/assets/mockups/t
 | `enter` | pinned, a block focused | Toggle it. With no focus, unchanged |
 | `{` `}` | pinned, empty prompt | Focus the previous or next block |
 | `ctrl+x u` | prompt | Focus the newest block and pin the view |
-| `ctrl+x o` | prompt | Expand every block. If all are open, collapse all |
 | `y` | block focused | Copy the raw output (never the rendered rows) |
 | `esc` | block focused | Clear the focus only. Never stops a turn |
 | `G` | pinned | Back to live, focus cleared |

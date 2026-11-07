@@ -74,12 +74,16 @@ To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
 ## Screen
 
 The screen has the transcript, one prompt row (` › `) and a status line under it that
-holds the view, session, model, context use, cost and what hoocode is doing now. There
+holds the session, model, context use, cost and what hoocode is doing now. There
 is no header, logo or frame; dialogs open as panes in the prompt's place.
 
-- **Views** (`ctrl+x o` cycles, `ctrl+x O` goes back): `outline` shows one recap row per
-  turn, `peek` (the default) shows each call on one row with its facts, `full` shows
-  every body. The old name `radar` still works as `outline` in `toolOutputView`.
+- **Transcript**: one row per tool call, collapsed (`● Edit src/config.rs  +2 −2`).
+  Click a header, or focus it and press `enter`, to show the full output; again to hide.
+  A running Shell shows one dim tail line until it settles; a failed call stays collapsed.
+- **Pinned transcript keys**: with the view pinned and the prompt empty, `{` and `}`
+  move between blocks, `enter` opens the focused block, `y` copies its raw output,
+  `esc` clears the focus, and `G` goes back to live. `ctrl+x u` jumps to the newest
+  block from the prompt. See [Keybindings](keybindings.md).
 - **Themes**: `dark`, `dusk`, `high-contrast`, `light` and `paper`, and `auto` follows the terminal background and
   re-checks when it changes. Pick one with `/theme`, which also lists your own themes.
   A pick is saved to your global settings. If this repo's `.hoocode/settings.json` sets
