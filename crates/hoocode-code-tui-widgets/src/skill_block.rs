@@ -1,7 +1,7 @@
 //! The `<skill …>` block a `/skill:name` message carries, as the transcript
-//! draws it. Outline shows one row, `◆ skill: <name>`. Peek (the default)
-//! adds the first lines of the skill's body, then how many are left. Full
-//! shows the whole body.
+//! draws it. Collapsed, one row: `skill <name>` with the name in bold (no
+//! mark: a skill block has no state). Expanded, the body follows, whole.
+//! One toggle (`expanded`); the transcript flips it in place.
 
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Text;
@@ -33,9 +33,16 @@ impl SkillBlockComponent {
     }
 
     /// `true` at peek (the body shows), `false` at outline (the row only).
+    /// Single view (UI-21 P4): the block's own toggle; collapsed is the
+    /// `skill <name>` row, expanded the whole body.
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
         self.rebuild();
+    }
+
+    /// Whether the block's own toggle is open.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
     }
 
     /// `true` at the full stop: the whole body shows, nothing folded.
@@ -46,17 +53,16 @@ impl SkillBlockComponent {
 
     fn rebuild(&mut self) {
         let t = theme();
-        let row = t.fg(
-            "customMessageText",
-            &t.bold(&format!("◆ skill: {}", self.name)),
-        );
+        let row = format!("skill {}", t.fg("customMessageText", &t.bold(&self.name)));
+        // Expanded, the whole body: the toggle opens the block, and the
+        // dial's full stop with it.
         let content = if self.expanded {
             let body = self.body.trim();
             if body.is_empty() {
                 row
             } else {
                 let lines: Vec<&str> = body.split('\n').collect();
-                let budget = line_budget(self.full);
+                let budget = line_budget(self.full || self.expanded);
                 let shown = lines
                     .iter()
                     .take(budget)
