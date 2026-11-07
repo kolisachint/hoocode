@@ -29,12 +29,12 @@ use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
-use hoocode_code_tui_widgets::outline::{FlightItem, FlightMark, FlightStats, PeekOnly};
+use hoocode_code_tui_widgets::outline::{FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
+
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_code_tui_widgets::trajectory::{self, MissionHeader};
@@ -43,11 +43,10 @@ use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
-use crate::expandable_text::{Expandable, ExpandableText};
+use crate::expandable_text::ExpandableText;
 
 use crate::notification_panel::NotificationKind;
-use crate::resource_display::{show_loaded_resources_with_details, startup_details_open};
-use crate::scroll_view;
+use crate::resource_display::show_loaded_resources_with_details;
 
 use super::*;
 
@@ -95,16 +94,9 @@ pub(super) struct Transcript {
     /// Where each assistant message's thinking sits in its mission's flight
     /// log (R3), in arrival order. See `ThinkingMark`.
     pub(super) thinking: Vec<ThinkingMark>,
-    /// Whether the outline flight log is showing (M5): peek-only rows hide
-    /// while set. Shared with the wrappers, so rows added in either view
-    /// follow later flips.
-    pub(super) outline_active: Rc<Cell<bool>>,
-    /// Whether the full stop is showing: rows that fold at peek (the `!`
-    /// command output) show whole while set. Shared like `outline_active`.
-    pub(super) full_active: Rc<Cell<bool>>,
-    /// The startup listing's detail block (skills, commands, agents, MCP),
-    /// so the dial opens and folds it. `None` until a listing is shown; a
-    /// rebuilt transcript drops it with its rows.
+    /// The startup listing's detail block (skills, commands, agents, MCP).
+    /// `None` until a listing is shown; a rebuilt transcript drops it with
+    /// its rows.
     pub(super) resource_details: Option<Rc<RefCell<ExpandableText>>>,
 }
 
@@ -136,14 +128,13 @@ pub(super) fn user_prompt(user: &UserMessage) -> LastPrompt {
 }
 
 /// One turn: its header number, the chain index it starts at, and whether it
-/// has ended yet. The header (the user message) and the shared outline data
-/// back the outline rows; the end line reads the same data.
+/// has ended yet. The shared flight data backs the header and end-line
+/// rows; the end line reads the same data.
 #[derive(Debug, Clone)]
 pub(super) struct MissionRange {
     pub(super) seq: usize,
     pub(super) start: usize,
     pub(super) landed: bool,
-    pub(super) header: Rc<RefCell<MissionHeader>>,
     pub(super) flight: Rc<RefCell<FlightStats>>,
     pub(super) landing: Option<Rc<RefCell<trajectory::LandingLine>>>,
     /// The answer the flight data holds: the source message's identity and
@@ -190,23 +181,16 @@ impl Transcript {
             last_prompt: None,
             missions: Vec::new(),
             thinking: Vec::new(),
-            outline_active: Rc::new(Cell::new(false)),
-            full_active: Rc::new(Cell::new(false)),
             resource_details: None,
         }
     }
 
     /// The view over a cleared chat. A retry still in progress keeps its
-    /// streak, so its end still reports how the streak went. The outline and
-    /// full flags survive too, so peek-only rows stay hidden across a rebuild.
+    /// streak, so its end still reports how the streak went.
     pub(super) fn reset_view(&mut self) {
         let streak = self.retry_streak.take();
-        let outline_active = self.outline_active.clone();
-        let full_active = self.full_active.clone();
         *self = Transcript::new(self.chat.clone());
         self.retry_streak = streak;
-        self.outline_active = outline_active;
-        self.full_active = full_active;
     }
 
     /// The turns a compaction folds, first to last (`turns 1–3`), for the
@@ -325,11 +309,6 @@ impl Transcript {
     pub(super) fn unlanded_current(&self) -> Option<usize> {
         let mission = self.missions.last()?;
         (!mission.landed && self.mission_tally().0 > 0).then_some(mission.seq)
-    }
-
-    /// A peek-only row in the chat (M5): drawn in peek, hidden in outline.
-    fn peek_child(&self, child: ComponentHandle) -> ComponentHandle {
-        as_component(&PeekOnly::wrap(self.outline_active.clone(), child))
     }
 
     /// Records where an assistant message sits in its mission's flight log
@@ -583,23 +562,20 @@ impl Transcript {
         }
     }
 
-    /// Opens a turn: the user message over the chat. In outline the header
-    /// draws the turn's whole block instead.
-    pub(super) fn begin_mission(&mut self, prompt: &str, view: ToolOutputView) {
+    /// Opens a turn: the user message over the chat, then its rows.
+    pub(super) fn begin_mission(&mut self, prompt: &str) {
         let seq = self.missions.len() + 1;
         let flight = Rc::new(RefCell::new(FlightStats {
             mark: FlightMark::InFlight,
             ..Default::default()
         }));
         let mut header = MissionHeader::new(seq, prompt);
-        header.set_view(view);
         header.set_flight(flight.clone());
         let header = handle(header);
         self.missions.push(MissionRange {
             seq,
             start: self.chains.len(),
             landed: false,
-            header: header.clone(),
             flight,
             landing: None,
             answer_key: Cell::new(None),
@@ -607,13 +583,13 @@ impl Transcript {
         if !self.chat.borrow().children().is_empty() {
             self.chat
                 .borrow_mut()
-                .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
+                .add_child(as_component(&handle(Spacer::new(1))));
         }
         self.chat.borrow_mut().add_child(as_component(&header));
     }
 
-    /// Ends the turn: its outline data takes the time, cost and outcome, and
-    /// its end line goes in the chat (peek and full). `stop` is how the turn's
+    /// Ends the turn: its flight data takes the time, cost and outcome, and
+    /// its end line goes in the chat. `stop` is how the turn's
     /// last message ended: an error is a turn that failed, an abort one that
     /// was stopped, even with no calls to show it. The end line reads the
     /// shared data, so it shows only for a failed or stopped turn; returns
@@ -657,9 +633,7 @@ impl Transcript {
         let line = handle(trajectory::LandingLine::new(
             self.missions[i].flight.clone(),
         ));
-        self.chat
-            .borrow_mut()
-            .add_child(self.peek_child(as_component(&line)));
+        self.chat.borrow_mut().add_child(as_component(&line));
         self.missions[i].landing = Some(line.clone());
         let mut flight = self.missions[i].flight.borrow_mut();
         // The mission header's stamp reads this data (hoocode_tui_render::note_change).
@@ -737,7 +711,9 @@ impl Mode {
         let mut listing = (self.listing)(&self.session);
         listing.columns = Some(self.size.get().0 as usize);
         listing.verbose = self.verbose;
-        listing.expanded = self.tool_output_view == ToolOutputView::Full;
+        // Single view: the details start collapsed (each block opens on its
+        // own toggle); `verbose` opens them, as `show_loaded_resources` reads.
+        listing.expanded = false;
         // The start screen's second line counts what loaded.
         listing.summary_in_header = true;
         *self.start_facts.borrow_mut() = crate::start_header::StartFacts {
@@ -754,12 +730,6 @@ impl Mode {
         self.transcript.resource_details = loaded.details;
     }
 
-    /// Whether the resource details are open: under
-    /// `verbose`, or at the full stop. Peek and outline fold them.
-    pub(super) fn startup_details_open(&self) -> bool {
-        startup_details_open(self.verbose, self.tool_output_view)
-    }
-
     /// `getMarkdownThemeWithSettings`.
     pub(super) fn markdown_theme(&self) -> Rc<dyn Fn() -> MarkdownTheme> {
         let indent = self.code_block_indent.clone();
@@ -769,11 +739,9 @@ impl Mode {
         })
     }
 
-    /// `thinkingDisplayForView`: outline drops traces outright.
+    /// Whether thinking traces draw whole, as one line, or not at all.
     pub(super) fn thinking_display(&self) -> ThinkingDisplay {
-        if self.tool_output_view == ToolOutputView::Outline {
-            ThinkingDisplay::Omit
-        } else if self.hide_thinking_block {
+        if self.hide_thinking_block {
             ThinkingDisplay::Label
         } else {
             ThinkingDisplay::Full
@@ -813,7 +781,7 @@ impl Mode {
         if let Some(seq) = self.transcript.unlanded_current() {
             self.land_previous_mission(seq);
         }
-        self.transcript.begin_mission(text, self.tool_output_view);
+        self.transcript.begin_mission(text);
         // The status line drops the last result for the new turn. An attached
         // run's missions are not the session's, so they leave it alone.
         if !self.drawing_run_view() {
@@ -901,13 +869,10 @@ impl Mode {
                     Some(skill) => {
                         let prompt = skill.user_message.as_deref().unwrap_or(&text);
                         self.add_mission_header(prompt);
+                        // Single view: the block starts as built (its own
+                        // toggle opens it); no dial moves it.
                         let component =
                             handle(SkillBlockComponent::new(&skill.name, &skill.content));
-                        {
-                            let mut block = component.borrow_mut();
-                            block.set_expanded(self.tool_output_view != ToolOutputView::Outline);
-                            block.set_full(self.tool_output_view == ToolOutputView::Full);
-                        }
                         self.transcript.skill_blocks.push(component.clone());
                         self.add_to_chat(as_component(&component));
                     }
@@ -915,12 +880,6 @@ impl Mode {
                         Some(notice) => {
                             self.add_mission_header(&text);
                             let component = handle(BackgroundNoticeComponent::new(notice));
-                            {
-                                let mut notice = component.borrow_mut();
-                                notice
-                                    .set_expanded(self.tool_output_view != ToolOutputView::Outline);
-                                notice.set_full(self.tool_output_view == ToolOutputView::Full);
-                            }
                             self.transcript.background_notices.push(component.clone());
                             self.add_to_chat(as_component(&component));
                         }
@@ -940,7 +899,6 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
-                component.borrow_mut().set_view(self.tool_output_view);
                 component
                     .borrow_mut()
                     .set_outline_mission(self.transcript.current_mission());
@@ -955,9 +913,6 @@ impl Mode {
                         custom.clone(),
                         self.markdown_theme(),
                     ));
-                    component
-                        .borrow_mut()
-                        .set_expanded(self.tool_output_view != ToolOutputView::Outline);
                     self.transcript.custom_messages.push(component.clone());
                     self.add_to_chat(as_component(&component));
                 }
@@ -968,9 +923,6 @@ impl Mode {
                     summary.clone(),
                     self.markdown_theme(),
                 ));
-                component
-                    .borrow_mut()
-                    .set_expanded(self.tool_output_view != ToolOutputView::Outline);
                 self.transcript.compaction_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -980,17 +932,12 @@ impl Mode {
                     summary.clone(),
                     self.markdown_theme(),
                 ));
-                component
-                    .borrow_mut()
-                    .set_expanded(self.tool_output_view != ToolOutputView::Outline);
                 self.transcript.branch_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
             AgentMessage::BashExecution(bash) => {
                 let exclude = bash.exclude_from_context.unwrap_or(false);
                 let mut component = BashExecutionComponent::new(&bash.command, exclude);
-                component.set_outline_flag(self.transcript.outline_active.clone());
-                component.set_full_flag(self.transcript.full_active.clone());
                 if !bash.output.is_empty() {
                     component.append_output(&bash.output);
                 }
@@ -1263,7 +1210,10 @@ impl Mode {
             ToolExecutionOptions {
                 show_images: self.show_images,
                 image_width_cells: self.image_width_cells,
-                view: self.tool_output_view,
+                // Single view: blocks start collapsed; the per-block toggle
+                // opens them. `Peek` is the widgets' collapsed stop until
+                // the widgets slice removes the view plumbing.
+                view: ToolOutputView::Peek,
             },
             definition,
             &self.session.cwd().to_string_lossy(),
@@ -1276,7 +1226,8 @@ impl Mode {
         let chain = match &self.transcript.open_chain {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
-                let chain = handle(ToolChainComponent::new(self.tool_output_view));
+                // Single view: the collapsed stop (see `new_tool_block`).
+                let chain = handle(ToolChainComponent::new(ToolOutputView::Peek));
                 self.add_to_chat(as_component(&chain));
                 self.transcript.chains.push(chain.clone());
                 self.transcript.open_chain = Some(chain.clone());
@@ -1471,20 +1422,7 @@ impl Mode {
             self.transcript.streaming_message = Some(message);
             self.transcript.sync_outline_prose();
         }
-        // Outline hides thinking whatever the setting, so the toggle has no
-        // visible effect there: the notice says what was saved and why the
-        // screen did not change.
-        let status = if self.tool_output_view == ToolOutputView::Outline {
-            format!(
-                "Thinking blocks: {}. Outline hides them; {} shows peek.",
-                if self.hide_thinking_block {
-                    "hidden"
-                } else {
-                    "visible"
-                },
-                hoocode_code_tui_keybindings::key_hint_text("app.tools.expand"),
-            )
-        } else if self.hide_thinking_block {
+        let status = if self.hide_thinking_block {
             "Thinking blocks: hidden".to_string()
         } else {
             "Thinking blocks: visible".to_string()
@@ -1565,118 +1503,6 @@ impl Mode {
             Some(topic),
         );
         self.dirty.set(true);
-    }
-
-    /// `applyToolOutputView`: move every block and chain to `view`.
-    pub(super) fn apply_tool_output_view(&mut self, view: ToolOutputView, persist: bool) {
-        // The dial moves every block at once, so a focused block's own stop
-        // no longer means anything.
-        self.clear_focus_overrides();
-        // The change moves rows above the pinned top: the same message stays on top.
-        let anchor =
-            scroll_view::capture_top(&self.tui, &self.transcript.chat, self.scroll_body.as_ref());
-        let previous_thinking = self.thinking_display();
-        self.tool_output_view = view;
-        if persist {
-            self.session.settings().set_tool_output_view(view);
-        }
-        self.task_panel
-            .borrow_mut()
-            .set_outline(view == ToolOutputView::Outline);
-        // Outline hides the peek-only rows (landing lines, message bodies)
-        // and switches the mission headers to their flight-log rows.
-        self.transcript
-            .outline_active
-            .set(view == ToolOutputView::Outline);
-        // The full stop opens what peek folds: `!` output, tool bodies.
-        self.transcript
-            .full_active
-            .set(view == ToolOutputView::Full);
-        // The peek-only rows' stamps read the outline flag.
-        hoocode_tui_render::note_change();
-        for mission in &self.transcript.missions {
-            mission.header.borrow_mut().set_view(view);
-        }
-        self.refresh_flight_stats();
-        let thinking = self.thinking_display();
-        for chain in &self.transcript.chains {
-            chain.borrow_mut().set_view(view);
-        }
-        if thinking != previous_thinking {
-            for component in &self.transcript.assistant_components {
-                component.borrow_mut().set_thinking_display(thinking);
-            }
-        }
-        // Peek opens each message's body; outline folds it to a row. The startup
-        // header and resource listing stay compact (they open under `verbose`).
-        let peek = view != ToolOutputView::Outline;
-        let full = view == ToolOutputView::Full;
-        // Mission Control peek: prose sits on the `┊` rail; outline has none.
-        for component in &self.transcript.assistant_components {
-            component.borrow_mut().set_view(view);
-        }
-        for component in &self.transcript.custom_messages {
-            component.borrow_mut().set_expanded(peek);
-        }
-        for component in &self.transcript.skill_blocks {
-            let mut block = component.borrow_mut();
-            block.set_expanded(peek);
-            block.set_full(full);
-        }
-        for component in &self.transcript.background_notices {
-            let mut notice = component.borrow_mut();
-            notice.set_expanded(peek);
-            notice.set_full(full);
-        }
-        for component in &self.transcript.branch_summaries {
-            component.borrow_mut().set_expanded(peek);
-        }
-        for component in &self.transcript.compaction_summaries {
-            component.borrow_mut().set_expanded(peek);
-        }
-        // The resource details open at full, fold at peek and outline.
-        let open = self.startup_details_open();
-        if let Some(details) = &self.transcript.resource_details {
-            details.borrow_mut().set_expanded(open);
-        }
-        scroll_view::reanchor_top(
-            &mut self.tui,
-            &self.transcript.chat,
-            self.scroll_body.as_ref(),
-            anchor,
-        );
-        self.dirty.set(true);
-    }
-
-    /// `app.tools.expand` (Ctrl+O): one stop forward, outline → peek → full →
-    /// outline, and save it.
-    pub(super) fn toggle_tool_output_view(&mut self) {
-        let next = cycle_tool_output_view(self.tool_output_view, true);
-        self.apply_tool_output_view(next, true);
-        // Ctrl+O has no direction, so the notice carries no "steps back" note.
-        self.notifications.borrow_mut().notify(
-            NotificationKind::Info,
-            &format!("Tool output: {next}"),
-            &[],
-            None,
-            None,
-            Some("app.tools.expand"),
-        );
-        self.dirty.set(true);
-    }
-
-    /// `cycleToolOutputView`: one stop on the dial, saved.
-    pub(super) fn cycle_tool_output_view(&mut self, forward: bool) {
-        let next = cycle_tool_output_view(self.tool_output_view, forward);
-        self.apply_tool_output_view(next, true);
-        self.show_dial_step(
-            if forward {
-                "app.view.cycleBackward"
-            } else {
-                "app.view.cycleForward"
-            },
-            &format!("Tool output: {next}"),
-        );
     }
 
     /// `showTurnCost`: this request's own tokens, time and cost. `stop` is how
@@ -1867,7 +1693,7 @@ mod tests {
         let answer =
             |t: &Transcript, seq: usize| t.missions[seq - 1].flight.borrow().answer.join(" ");
         let mut t = fresh_transcript();
-        t.begin_mission("run alpha", ToolOutputView::Outline);
+        t.begin_mission("run alpha");
         let running = outline_prose_message(&mut t, "Running alpha.");
         let last = outline_prose_message(&mut t, "Alpha printed.");
 
@@ -1885,7 +1711,7 @@ mod tests {
         assert!(!outline_text(&last).contains("Alpha printed."));
 
         // A later mission opens: the ended one keeps its answer, the open one has none.
-        t.begin_mission("run beta", ToolOutputView::Outline);
+        t.begin_mission("run beta");
         let beta = outline_prose_message(&mut t, "Beta is running.");
         t.sync_outline_prose();
         assert_eq!(answer(&t, 1), "Alpha printed.");
@@ -1949,7 +1775,7 @@ mod tests {
         // Thinking and calls with no text open no new chain: the message's
         // thinking sits between the calls it came before and the ones after.
         let mut t = fresh_transcript();
-        t.begin_mission("do it", ToolOutputView::Outline);
+        t.begin_mission("do it");
         let chain = chain_with(2);
         t.chains.push(chain.clone());
         t.open_chain = Some(chain.clone());
@@ -1979,7 +1805,7 @@ mod tests {
     #[test]
     fn a_retry_drops_the_thinking_mark_of_the_attempt_it_takes_out() {
         let mut t = fresh_transcript();
-        t.begin_mission("try it", ToolOutputView::Outline);
+        t.begin_mission("try it");
         let failed = mission_message(&mut t, vec![thinking("Try the build")], StopReason::Error);
         t.keep_attempt_error(failed, Vec::new());
         assert_eq!(t.thinking.len(), 1);
@@ -1991,7 +1817,7 @@ mod tests {
     fn the_opening_messages_thinking_comes_first() {
         // Thinking before any call (no chain yet) leads the mission's items.
         let mut t = fresh_transcript();
-        t.begin_mission("do it", ToolOutputView::Outline);
+        t.begin_mission("do it");
         mission_message(&mut t, vec![thinking("Plan the change")], StopReason::Stop);
         let chain = chain_with(2);
         t.chains.push(chain.clone());
@@ -2011,7 +1837,7 @@ mod tests {
     #[test]
     fn the_answer_is_read_again_after_its_message_changes() {
         let mut t = fresh_transcript();
-        t.begin_mission("run it", ToolOutputView::Outline);
+        t.begin_mission("run it");
         let message = outline_prose_message(&mut t, "First draft.");
         t.land_mission(1, 0, 0, 0.0, 0.1, None);
         t.sync_outline_prose();
@@ -2029,7 +1855,7 @@ mod tests {
     #[test]
     fn a_message_that_ends_on_a_call_is_not_the_answer() {
         let mut t = fresh_transcript();
-        t.begin_mission("run it", ToolOutputView::Outline);
+        t.begin_mission("run it");
         mission_message(
             &mut t,
             vec![Content::text("Let me check the file."), tool_call("Read")],
@@ -2045,7 +1871,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("try it", ToolOutputView::Outline);
+        t.begin_mission("try it");
         // The last attempt fails with no prose. The streak's retries run out,
         // which takes the failed attempt out of the chat.
         let failed = mission_message(&mut t, Vec::new(), StopReason::Error);
@@ -2074,7 +1900,7 @@ mod tests {
         // The turn's error arrives with PromptDone: the last message carries
         // no error of its own (it stopped clean), so the failure is the reason.
         let mut t = fresh_transcript();
-        t.begin_mission("try it", ToolOutputView::Outline);
+        t.begin_mission("try it");
         mission_message(&mut t, Vec::new(), StopReason::Stop);
         // A retry that succeeds clears a failure the open mission had recorded.
         t.set_mission_failure(Some("529 upstream overloaded".into()));
@@ -2096,7 +1922,7 @@ mod tests {
         // "No model selected" ends a turn before any user message opens a
         // mission, so the last mission is the one that already landed.
         let mut t = fresh_transcript();
-        t.begin_mission("try it", ToolOutputView::Outline);
+        t.begin_mission("try it");
         mission_message(&mut t, Vec::new(), StopReason::Stop);
         t.set_mission_failure(Some("529 upstream overloaded".into()));
         t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Error));
@@ -2199,7 +2025,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("do it", ToolOutputView::Peek);
+        t.begin_mission("do it");
         let chain = chain_with(2);
         t.chains.push(chain.clone());
         t.refresh_flight_marks();
@@ -2225,7 +2051,7 @@ mod tests {
     #[test]
     fn landed_counts_follow_a_removed_block() {
         let mut t = fresh_transcript();
-        t.begin_mission("do it", ToolOutputView::Peek);
+        t.begin_mission("do it");
         let chain = chain_with(2);
         t.chains.push(chain.clone());
         chain.borrow_mut().close(ChainState::Done);
@@ -2242,7 +2068,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("run it", ToolOutputView::Peek);
+        t.begin_mission("run it");
         let mut failed = ToolExecutionComponent::new(
             "Shell",
             "call-bad",
@@ -2270,7 +2096,7 @@ mod tests {
         assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::DidNotLand);
 
         let mut t = fresh_transcript();
-        t.begin_mission("run it", ToolOutputView::Peek);
+        t.begin_mission("run it");
         let clean = chain_with(1);
         t.chains.push(clean.clone());
         clean.borrow_mut().close(ChainState::Interrupted);
@@ -2284,7 +2110,7 @@ mod tests {
     #[test]
     fn a_queued_follow_up_lands_each_mission_with_its_own_steps() {
         let mut t = fresh_transcript();
-        t.begin_mission("first prompt", ToolOutputView::Peek);
+        t.begin_mission("first prompt");
         let first = chain_with(2);
         t.chains.push(first.clone());
         t.open_chain = Some(first);
@@ -2294,7 +2120,7 @@ mod tests {
         t.chains[0].borrow_mut().close(ChainState::Done);
         t.open_chain = None;
         assert!(!t.land_mission(1, 100, 200, 0.002, 0.5, None));
-        t.begin_mission("second prompt", ToolOutputView::Peek);
+        t.begin_mission("second prompt");
         assert_eq!(t.unlanded_current(), None);
         let second = chain_with(1);
         t.chains.push(second.clone());
@@ -2315,7 +2141,7 @@ mod tests {
     #[test]
     fn a_mission_with_steps_lands_even_when_nothing_was_used() {
         let mut t = fresh_transcript();
-        t.begin_mission("do it", ToolOutputView::Peek);
+        t.begin_mission("do it");
         t.chains.push(chain_with(1));
         t.land_mission(1, 0, 0, 0.0, 0.5, None);
         let flight = t.missions[0].flight.borrow();
@@ -2330,7 +2156,7 @@ mod tests {
     fn a_stepless_mission_that_finished_stays_silent() {
         for (input, output) in [(10, 20), (0, 0)] {
             let mut t = fresh_transcript();
-            t.begin_mission("just talking", ToolOutputView::Peek);
+            t.begin_mission("just talking");
             assert!(!t.land_mission(1, input, output, 0.01, 0.5, Some(StopReason::Stop)));
             let text = chat_text(&t.chat);
             assert!(!text.contains('⊗'), "{text}");
@@ -2347,7 +2173,7 @@ mod tests {
     fn the_turns_end_sets_the_outcome_on_the_end_line_and_the_outline() {
         let end_text = |stop: StopReason, steps: usize| {
             let mut t = fresh_transcript();
-            t.begin_mission("do it", ToolOutputView::Peek);
+            t.begin_mission("do it");
             if steps > 0 {
                 let chain = chain_with(steps);
                 chain.borrow_mut().close(ChainState::Done);
@@ -2380,7 +2206,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("run it", ToolOutputView::Peek);
+        t.begin_mission("run it");
         let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
         for (id, interrupted) in [("failed", false), ("cut", true)] {
             let mut block = ToolExecutionComponent::new(
@@ -2418,25 +2244,6 @@ mod tests {
         assert!(text.contains("⊗ stopped"), "{text}");
     }
 
-    /// Outline recaps a finished turn's calls on one row under the user
-    /// message; peek draws no such row.
-    #[test]
-    fn a_finished_turn_recaps_its_calls_only_in_outline() {
-        let mut t = fresh_transcript();
-        t.begin_mission("do it", ToolOutputView::Peek);
-        let chain = chain_with(2);
-        chain.borrow_mut().close(ChainState::Done);
-        t.chains.push(chain);
-        t.land_mission(1, 10, 20, 0.01, 0.5, Some(StopReason::Stop));
-        let header = t.missions[0].header.clone();
-        let peek = strip_vt_control_characters(&header.borrow_mut().render(100).join("\n"));
-        assert!(!peek.contains("Shell"), "{peek}");
-        header.borrow_mut().set_view(ToolOutputView::Outline);
-        let outline = strip_vt_control_characters(&header.borrow_mut().render(100).join("\n"));
-        assert!(outline.contains(" ● Shell echo hi"), "{outline}");
-        assert_eq!(t.missions[0].flight.borrow().calls().len(), 2);
-    }
-
     /// Calls a subagent's own run saw fail count as the mission's hits, not
     /// as steps, and keep counting once the run has settled.
     #[test]
@@ -2444,7 +2251,7 @@ mod tests {
         use hoocode_code_subagents::live;
 
         let mut t = fresh_transcript();
-        t.begin_mission("delegate it", ToolOutputView::Peek);
+        t.begin_mission("delegate it");
         let mut agent = ToolExecutionComponent::new(
             "Agent",
             "call-agent-hits",
@@ -2495,11 +2302,11 @@ mod tests {
     #[test]
     fn removing_a_whole_chain_keeps_the_later_missions_start() {
         let mut t = fresh_transcript();
-        t.begin_mission("first", ToolOutputView::Peek);
+        t.begin_mission("first");
         let failed = chain_with(1);
         t.chains.push(failed.clone());
         t.open_chain = Some(failed.clone());
-        t.begin_mission("second", ToolOutputView::Peek);
+        t.begin_mission("second");
         assert_eq!(t.missions[1].start, 1);
         // The failed attempt's chain leaves after M2 began.
         let block = failed.borrow().tool_blocks()[0].clone();
@@ -2522,7 +2329,7 @@ mod tests {
     #[test]
     fn removing_a_block_renumbers_the_later_steps() {
         let mut t = fresh_transcript();
-        t.begin_mission("m", ToolOutputView::Peek);
+        t.begin_mission("m");
         let first = chain_with(2);
         let second = chain_with(1);
         t.chains.push(first.clone());

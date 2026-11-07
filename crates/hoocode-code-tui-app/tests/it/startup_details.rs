@@ -1,16 +1,15 @@
-//! The resource listing's details open at the full stop and fold at peek and
-//! outline. `verbose` keeps them open. The dial flips them in place
-//! (`Expandable::set_expanded`), so a live move and a fresh listing (`/reload`,
-//! a session switch) show the same thing. The start header is two lines, then
-//! one blank row once there is a turn.
+//! The resource listing's details start collapsed and open on their own
+//! toggle (`Expandable::set_expanded`); `verbose` keeps them open, so a
+//! live move and a fresh listing (`/reload`, a session switch) show the
+//! same thing. The start header is two lines, then one blank row once
+//! there is a turn.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
-use hoocode_code_settings::ToolOutputView;
 use hoocode_code_tui_app::expandable_text::Expandable;
 use hoocode_code_tui_app::resource_display::{
-    show_loaded_resources_with_details, startup_details_open, ListedItem, ResourceListing,
+    show_loaded_resources_with_details, ListedItem, ResourceListing,
 };
 use hoocode_code_tui_app::start_header::{start_lines, StartFacts, StartHeader};
 use hoocode_tui_render::{Component, ComponentHandle};
@@ -49,73 +48,16 @@ fn text_of(components: &[ComponentHandle]) -> String {
 }
 
 #[test]
-fn the_dial_policy_opens_at_full_and_under_verbose_only() {
-    for view in [
-        ToolOutputView::Outline,
-        ToolOutputView::Peek,
-        ToolOutputView::Full,
-    ] {
-        assert_eq!(
-            startup_details_open(false, view),
-            view == ToolOutputView::Full,
-            "{view:?}"
-        );
-        assert!(
-            startup_details_open(true, view),
-            "verbose holds {view:?} open"
-        );
-    }
-}
-
-#[test]
-fn the_listing_details_fold_at_peek_and_open_at_full_on_a_live_move() {
-    let _g = lock(Some("dark"));
-    let loaded = show_loaded_resources_with_details(&listing(false, false), false, true);
-    let details = loaded.details.expect("a listing with skills has details");
-    let folded = text_of(&loaded.components);
-    assert!(!folded.contains("[Skills]"), "{folded}");
-    assert!(!folded.contains("/skill:alpha"), "{folded}");
-    // The summary line stays: the counts are what the peek shows.
-    assert!(folded.contains("skill"), "{folded}");
-
-    // Ctrl+O to full: the details open in place.
-    details
-        .borrow_mut()
-        .set_expanded(startup_details_open(false, ToolOutputView::Full));
-    let open = text_of(&loaded.components);
-    for needle in [
-        "[Skills]",
-        "/skill:alpha",
-        "[Commands]",
-        "/fix",
-        "[Agents]",
-        "explore",
-    ] {
-        assert!(open.contains(needle), "{needle} missing at full:\n{open}");
-    }
-
-    // Back to peek: they fold again.
-    details
-        .borrow_mut()
-        .set_expanded(startup_details_open(false, ToolOutputView::Peek));
-    assert!(!text_of(&loaded.components).contains("[Skills]"));
-}
-
-#[test]
-fn the_listing_opens_at_startup_when_the_saved_view_is_full() {
+fn the_listing_opens_at_startup_when_asked_open() {
     let _g = lock(Some("dark"));
     let loaded = show_loaded_resources_with_details(&listing(true, false), false, true);
     assert!(text_of(&loaded.components).contains("[Skills]"));
 }
 
 #[test]
-fn verbose_keeps_the_listing_details_open_when_the_dial_moves_to_peek() {
+fn verbose_opens_the_listing_details_without_a_toggle() {
     let _g = lock(Some("dark"));
-    let loaded = show_loaded_resources_with_details(&listing(true, true), false, true);
-    let details = loaded.details.expect("details");
-    details
-        .borrow_mut()
-        .set_expanded(startup_details_open(true, ToolOutputView::Peek));
+    let loaded = show_loaded_resources_with_details(&listing(false, true), false, true);
     assert!(text_of(&loaded.components).contains("[Skills]"));
 }
 

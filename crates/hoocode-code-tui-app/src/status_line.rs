@@ -2,8 +2,8 @@
 //!
 //! Left slot, only while something happens: `◉ working · 4s · esc stop`, the
 //! last turn's result, a notice, `scrolled 43–61 of 78 · ↓ 3 new`, or
-//! `search  query  1 match`. Right slot, always, dim: view, session, model,
-//! context, cost (`peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23`).
+//! `search  query  1 match`. Right slot, always, dim: session, model,
+//! context, cost (`amber-harbor · claude-haiku-5-5 · 42% context · $1.23`).
 //!
 //! The component is a pure function of [`StatusLineData`]: no session reads,
 //! no clock. The caller owns the state (and the notice's age): the mode
@@ -160,10 +160,8 @@ pub struct StatusLineData {
     pub search: Option<SearchInfo>,
     pub last_turn: Option<TurnResult>,
     /// No working provider: left slot `⊗ not signed in  /login`, right side
-    /// shows only view and session.
+    /// shows only the session.
     pub signed_out: bool,
-    /// The tool-output view: `peek`, `outline`, `full`.
-    pub view: String,
     pub plan_mode: bool,
     pub session: Option<String>,
     pub model: Option<String>,
@@ -394,7 +392,7 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
 /// drops one more part, in the spec's order: cost (1), session name (2), the
 /// word `context` with the percent kept (3), model effort (4); then, beyond
 /// the spec so the row always fits, the model (5) and the context percent
-/// (6). The view and the plan word never drop.
+/// (6). The plan word never drops.
 const LAST_STAGE: usize = 6;
 /// The last stage the spec names (model effort dropped).
 const LAST_BASIC_STAGE: usize = 4;
@@ -407,9 +405,6 @@ fn right_spans(data: &StatusLineData, stage: usize, st: &Styles) -> Vec<Span<'st
     if data.plan_mode {
         out.push(span("plan", st.plan));
         out.push(span(" · ", st.dim));
-    }
-    if !data.view.is_empty() {
-        parts.push(data.view.clone());
     }
     if stage < 2 {
         if let Some(session) = data.session.as_ref().filter(|s| !s.is_empty()) {

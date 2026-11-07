@@ -15,7 +15,7 @@
     +  14     apply_env(&mut cfg);
     … 3 more lines
 
- ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 8.2s
+ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 40 lines · 8.2s
 
  The overrides now apply before the file is parsed, so an override can set the
  parser's own options.
@@ -65,6 +65,6 @@ r15 c4-17 fg=#989898
 r17 c1 fg=#b5bd68
 r17 c3-7 fg=#e5e5e7 bold
 r17 c9-52 fg=#e5e5e7
-r17 c55-67 fg=#989898
+r17 c55-78 fg=#989898
 r22 c30-41 fg=#5cc8bb
 r23 c12-22 fg=#5cc8bb

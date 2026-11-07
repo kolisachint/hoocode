@@ -39,7 +39,6 @@ pub(super) enum Action {
     Clear,
     Exit,
     Suspend,
-    ToolsExpand,
     ThinkingForward,
     ThinkingBackward,
     ThinkingToggle,
@@ -52,8 +51,6 @@ pub(super) enum Action {
     ModelBackward,
     ModelSelect,
     SettingsOpen,
-    ViewForward,
-    ViewBackward,
     /// The editor submitted this text (it has already cleared itself).
     Submit(String),
     AutocompleteVisibility(bool),
@@ -111,7 +108,7 @@ pub(super) enum Action {
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 29] = [
+const EDITOR_ACTIONS: [(&str, Action); 26] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
     ("app.panel.focus", Action::PanelToggle),
@@ -126,12 +123,9 @@ const EDITOR_ACTIONS: [(&str, Action); 29] = [
     ("app.session.fork", Action::ForkOpen),
     ("app.hotkeys.open", Action::HotkeysOpen),
     ("app.clipboard.copyMessage", Action::CopyMessage),
-    ("app.view.cycleForward", Action::ViewForward),
-    ("app.view.cycleBackward", Action::ViewBackward),
     ("app.scroll.focusNewest", Action::FocusNewest),
     ("app.clear", Action::Clear),
     ("app.suspend", Action::Suspend),
-    ("app.tools.expand", Action::ToolsExpand),
     ("app.thinking.cycleForward", Action::ThinkingForward),
     ("app.model.cycleForward", Action::ModelForward),
     ("app.model.cycleBackward", Action::ModelBackward),
@@ -969,10 +963,6 @@ impl Mode {
             }
             Action::Exit => self.request_user_quit(),
             Action::Suspend => self.handle_ctrl_z(),
-            Action::ToolsExpand => self.toggle_tool_output_view(),
-            Action::ViewForward | Action::ViewBackward => {
-                self.cycle_tool_output_view(action == Action::ViewForward)
-            }
             Action::ThinkingForward | Action::ThinkingBackward => {
                 let direction = if action == Action::ThinkingForward {
                     hoocode_code_agent_session::CycleDirection::Forward

@@ -23,7 +23,6 @@ impl Component for BarLine {
 
 fn base() -> StatusLineData {
     StatusLineData {
-        view: "peek".into(),
         session: Some("amber-harbor".into()),
         model: Some("claude-haiku-5-5".into()),
         context_percent: Some(42.0),
@@ -102,8 +101,8 @@ fn scrolled_shows_the_range_new_lines_and_the_live_key() {
         "{text:?}"
     );
     assert!(
-        // Too wide for the cost at 100 columns: it drops first.
-        text.ends_with("peek · amber-harbor · claude-haiku-5-5 · 42% context"),
+        // The view word is gone, so the cost fits at 100 columns.
+        text.ends_with("amber-harbor · claude-haiku-5-5 · 42% context · $1.23"),
         "{text:?}"
     );
 }
