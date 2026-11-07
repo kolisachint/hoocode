@@ -16,10 +16,6 @@ pub const APP_NAME: &str = "hoocode";
 /// depend on the resources crate for one string.
 pub const TASK_TOOL_NAME: &str = "Agent";
 
-/// Name of the tool that searches the app's own docs.
-/// Kept verbatim until the self-knowledge extension is ported.
-pub const DOC_SEARCH_TOOL_NAME: &str = "DocSearch";
-
 /// Terse replacement for the default system prompt in light mode
 /// (`LIGHT_SYSTEM_PROMPT` in `core/light.ts`). `build_system_prompt` appends the
 /// date and working directory; light mode disables everything else.
@@ -314,7 +310,7 @@ pub fn format_self_docs_for_prompt(docs: &[SelfDoc]) -> String {
         .map(|(root, files)| format!("{root}/: {}", files.join(", ")))
         .collect();
     format!(
-        "\n\n# About {APP_NAME} itself\n\nYou are running inside {APP_NAME}. Its own docs ship with the install, listed below; {APP_NAME} is actively developed, so answer questions about it from these files rather than from memory. They sit outside the working directory, so searching the project will not find them. Use {DOC_SEARCH_TOOL_NAME} to locate a specific heading, or read a file directly.\n\n{}",
+        "\n\n# About {APP_NAME} itself\n\nYou are running inside {APP_NAME}. Its own docs ship with the install, listed below; {APP_NAME} is actively developed, so answer questions about it from these files rather than from memory. They sit outside the working directory, so searching the project will not find them. Read a file directly.\n\n{}",
         sections.join("\n")
     )
 }
@@ -528,30 +524,6 @@ mod tests {
         for t in ["- Read:", "- Shell:", "- Edit:", "- Write:"] {
             assert!(prompt.contains(t), "{t}");
         }
-    }
-
-    #[test]
-    fn lists_search_hoocode_with_its_snippet_and_guideline_when_active() {
-        let mut o = opts(Some(&["Read", "DocSearch"]));
-        o.tool_snippets = vec![(
-            "DocSearch".into(),
-            "Search hoocode's own docs and this session's capabilities by describing what you need.".into(),
-        )];
-        o.prompt_guidelines = vec![
-            "For questions about hoocode itself — its features, configuration, or how to extend it — use DocSearch and read the section it points at instead of answering from memory.".into(),
-        ];
-        let prompt = build_system_prompt(&o);
-        assert!(prompt.contains(
-            "- DocSearch: Search hoocode's own docs and this session's capabilities by describing what you need."
-        ));
-        assert!(prompt.contains("- For questions about hoocode itself"));
-    }
-
-    #[test]
-    fn omits_search_hoocode_when_it_is_not_active() {
-        let mut o = opts(Some(&["Read"]));
-        o.tool_snippets = vec![("DocSearch".into(), "Search".into())];
-        assert!(!build_system_prompt(&o).contains("DocSearch"));
     }
 
     #[test]

@@ -414,21 +414,14 @@ fn custom_tools(
         Arc::new(hoocode_code_tools_optin::NoUi)
     };
     let mut tools = vec![hoocode_code_tools_optin::create_ask_options_tool_definition(ask_host)];
-    // hoocode-ts's `loop` extension registers the Cron tools after ask_options and
-    // before SearchHooCode, so the model sees them in that place. Only the
+    // hoocode-ts's `loop` extension registers the Cron tools after ask_options,
+    // so the model sees them in that place. Only the
     // interactive TUI fires scheduled tasks (print, json, rpc and subagent runs
     // never tick the scheduler), so only it offers the tools: elsewhere a
     // CronCreate would be accepted and then never run.
     if interactive {
         tools.extend(hoocode_code_scheduler::create_cron_tool_definitions(cwd));
     }
-    // After AskUserQuestion: the model sees DocSearch last among the built-ins.
-    tools.push(
-        hoocode_code_tools::search_hoocode::create_search_hoocode_tool_definition(
-            cwd.to_path_buf(),
-            hoocode_code_tools::search_hoocode::SearchHooCodeOptions::default(),
-        ),
-    );
     tools.extend(subagent_tools(args, settings, false, cwd));
     if args.task_id.is_none()
         && args
@@ -2337,7 +2330,6 @@ mod tests {
         assert!(prompt.starts_with("You are an expert coding assistant operating inside hoocode"));
         for line in [
             "Agent: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
-            "DocSearch: Search this session's skills, subagents and plugins by describing what you need.",
             "AgentOutput: check status / list / collect the results of background subagents (handles like explore#1)",
             "TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
         ] {
@@ -2368,7 +2360,6 @@ mod tests {
                 "Write",
                 "CodeSearch",
                 "AskUserQuestion",
-                "DocSearch",
                 "Agent",
                 "AgentOutput",
                 "TodoWrite"

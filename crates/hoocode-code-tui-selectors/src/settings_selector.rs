@@ -656,7 +656,6 @@ pub fn tool_row_sort_key(name: &str) -> &str {
         "Read" => "read",
         "Write" => "write",
         "CodeSearch" => "SearchCodebase",
-        "DocSearch" => "SearchHooCode",
         "AskUserQuestion" => "ask_options",
         "WebFetch" => "webfetch",
         "WebSearch" => "websearch",
