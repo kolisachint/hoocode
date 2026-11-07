@@ -84,6 +84,11 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
   move between blocks, `enter` opens the focused block, `y` copies its raw output,
   `esc` clears the focus, and `G` goes back to live. `ctrl+x u` jumps to the newest
   block from the prompt. See [Keybindings](keybindings.md).
+- **View dial (phasing out)**: the `outline` / `peek` / `full` dial still works until
+  P5 removes it: `toolOutputView` in `settings.json` is still read (the old name
+  `radar` still parses as `outline`), `ctrl+x o` / `ctrl+x O` still cycle the view,
+  `ctrl+x p` still steps it, and the status line still names the view. The transcript
+  above is what is left once the dial goes.
 - **Themes**: `dark`, `dusk`, `high-contrast`, `light` and `paper`, and `auto` follows the terminal background and
   re-checks when it changes. Pick one with `/theme`, which also lists your own themes.
   A pick is saved to your global settings. If this repo's `.hoocode/settings.json` sets

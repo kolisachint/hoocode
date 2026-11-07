@@ -320,7 +320,7 @@ Dialogs and notices have no golden pin yet. Their mockup text is the only copy (
 
 ## Proposed: single view (UI-21, UI-22)
 
-Decided 2026-11-07; each answer is a dated row in the Decisions table below. Status (2026-11-07): P0 (pins at 40/60, notice goldens, the red frozen-row test) is in; the P6(d) text-block helper is in; P1–P5 and P6(a–c, e) are next, in roadmap order. Mockup: `docs/assets/mockups/tui-single-view.html` (open in a browser; Dark and Light, and 40, 60, 80 and 120 column controls). Rows below that no phase has built yet are still the spec: the rules above hold until their phase lands.
+Decided 2026-11-07; each answer is a dated row in the Decisions table below. Status (2026-11-07): P0–P4 and P6(a–e) are in; P5 (remove the dial: `toolOutputView`, the Settings View leaf, leader `o` / `O` / `p` as view keys, the outline branches) is next, in roadmap order. Mockup: `docs/assets/mockups/tui-single-view.html` (open in a browser; Dark and Light, and 40, 60, 80 and 120 column controls). Rows below that no phase has built yet are still the spec: the rules above hold until their phase lands.
 
 ### Interaction model
 
