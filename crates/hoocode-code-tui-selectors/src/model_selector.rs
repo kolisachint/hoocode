@@ -82,20 +82,35 @@ impl State {
             ModelScope::Scoped => "scoped",
         };
         let total = self.active().len();
-        let models = |n: usize| {
-            if n == 1 {
-                "1 model".to_string()
-            } else {
-                format!("{n} models")
-            }
-        };
         if query.is_empty() {
-            format!("showing {scope} · {}", models(total))
+            format!("showing {scope} · {}", models_text(total))
         } else {
             format!(
                 "showing {scope} · {} of {total}",
-                models(self.filtered.len())
+                models_text(self.filtered.len())
             )
+        }
+    }
+
+    /// The count's short form for a narrow title (`2 models`): the scope
+    /// prefix drops at 40 columns (settings `count_for_width` pattern).
+    fn short_text(&self, query: &str) -> String {
+        let total = self.active().len();
+        if query.is_empty() {
+            models_text(total)
+        } else {
+            format!("{} of {total}", models_text(self.filtered.len()))
+        }
+    }
+
+    /// The full count while it fits the title, else the short form.
+    fn count_for_width(&self, query: &str, width: usize) -> String {
+        let full = self.count_text(query);
+        // `  Models  /model  ` before the count.
+        if 18 + visible_width(&full) <= width {
+            full
+        } else {
+            self.short_text(query)
         }
     }
 
@@ -165,10 +180,25 @@ impl State {
     }
 }
 
+/// `1 model`, `N models`.
+fn models_text(count: usize) -> String {
+    if count == 1 {
+        "1 model".to_string()
+    } else {
+        format!("{count} models")
+    }
+}
+
 /// One model row (content only; the console adds the ` › ` marker or
 /// gutter and the selection band): the id padded to `id_width`, then the
-/// price, dim. A model whose login expired says so.
-fn model_row(model: &Model, id_width: usize, expired: &HashSet<String>) -> Line<'static> {
+/// price, dim. The model in use says so, dim; a model whose login expired
+/// says that instead.
+fn model_row(
+    model: &Model,
+    id_width: usize,
+    expired: &HashSet<String>,
+    current: Option<&Model>,
+) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![
         Span::raw(format!("{:<id_width$}", model.id)),
@@ -177,6 +207,8 @@ fn model_row(model: &Model, id_width: usize, expired: &HashSet<String>) -> Line<
     ];
     if expired.contains(&model.provider) {
         spans.push(Span::styled("  expired".to_string(), pal.warn()));
+    } else if models_are_equal(current, Some(model)) {
+        spans.push(Span::styled("  in use".to_string(), pal.dim()));
     }
     Line::from(spans)
 }
@@ -328,9 +360,13 @@ impl Component for ModelSelectorComponent {
         let state = self.state.borrow();
         let search = self.search.borrow();
         let query = search.get_value().to_string();
-        let mut console = Console::new("Models · /model", state.count_text(&query));
+        let mut console = Console::new(
+            "Models · /model",
+            state.count_for_width(&query, width as usize),
+        );
         console.query = Some(query_row(&query, state.focused));
         let expired = state.expired.clone();
+        let current = state.current.clone();
         let id_width = state
             .filtered
             .iter()
@@ -341,7 +377,7 @@ impl Component for ModelSelectorComponent {
         console.rows = state
             .filtered
             .iter()
-            .map(|model| model_row(model, id_width, &expired))
+            .map(|model| model_row(model, id_width, &expired, current.as_ref()))
             .collect();
         console.selected = (!state.filtered.is_empty()).then_some(selected);
         console.max_visible = Some(state.cursor.max_visible());
