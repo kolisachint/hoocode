@@ -235,7 +235,7 @@ pub fn available_tips() -> Vec<Tip> {
 
 /// `STAR_NUDGE`: not a tip, an ask, with its own budget.
 pub fn star_nudge() -> Tip {
-    Tip::new("star", "★ Enjoying HooCode? Star it.")
+    Tip::new("star", "Enjoying hoocode? Star it.")
         .rows(&[
             "It is the cheapest way to help people find it.",
             "github.com/kolisachint/hoocode",
