@@ -116,7 +116,8 @@ impl Mode {
     }
 
     /// `handleClipboardImagePaste`: read the clipboard's image off the UI
-    /// thread; [`Self::insert_pasted_image`] puts its path in the prompt.
+    /// thread; [`Self::insert_pasted_image`] inserts it as one atomic
+    /// image marker at the cursor.
     pub(super) fn handle_clipboard_image_paste(&mut self) {
         let tx = self.tx.clone();
         hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
@@ -127,8 +128,9 @@ impl Mode {
         });
     }
 
-    /// Write the pasted image to a temp file and insert its path at the
-    /// cursor. Failures are silent (no clipboard access, no image).
+    /// Write the pasted image to a temp file and insert it at the cursor
+    /// as one atomic `[image #N · clipboard.png]` marker (S17). Failures
+    /// are silent (no clipboard access, no image).
     pub(super) fn insert_pasted_image(&mut self, image: Option<ClipboardImage>) {
         let Some(image) = image else {
             return;
@@ -142,7 +144,7 @@ impl Mode {
         self.editor
             .borrow_mut()
             .editor
-            .insert_text_at_cursor(&path.to_string_lossy());
+            .insert_image_at_cursor(&path.to_string_lossy(), "clipboard.png");
         self.dirty.set(true);
     }
 }
