@@ -25,6 +25,7 @@ mod subagent_folding;
 mod subagent_live_tail;
 mod support;
 mod task_panel;
+mod text_block;
 mod theme_block_rendering;
 mod three_layers;
 mod tool_block_once;

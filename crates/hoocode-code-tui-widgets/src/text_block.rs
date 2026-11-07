@@ -1,218 +1,326 @@
-//! Transcript text blocks (spec §4 S22/S23): a bold heading with optional
-//! dim facts, then rows, no blank rows inside. One helper serves `/mcp`,
-//! `/session`, `/perf`, `/changelog` and the rest.
+//! The shared text-block helper for the U22 pane grammar (P6(d), roadmap
+//! item 46): the S22 MCP status pane and the S23 text output blocks
+//! (`/session`, `/perf`, `/changelog` and the rest) render through one
+//! component. The core U22 builder owns `pane.rs` and `console.rs`; this is
+//! only the inner content both panes share.
 //!
-//! Two row shapes: `Fact` rows with dim labels padded to the block and ink
-//! values (`Name        amber-harbor`), and `Status` glyph rows where only
-//! the glyph carries colour (`● docs  4 tools`). `auth needed` reads
-//! warning yellow because it waits on you; working `◉` is accent everywhere.
+//! S22 and S23 as resolved from the mock (`tui-single-view.html`, dark and
+//! light, `--cols:100` with `data-w="40"` narrow variants):
+//!
+//! - S22 MCP status: ` MCP servers` in bold with an optional dim detail
+//!   (the config paths, `~/.agents/mcp.json · ./.agents/mcp.json`), then one
+//!   glyph row per server at indent 3: `●` in success, `◉` in warning, `⊗` in
+//!   error; the name in ink padded to the longest name plus two; the source
+//!   in dim padded to the longest source plus two; then the state. The state
+//!   is ink for values (`4 tools`), warning when it waits on the user
+//!   (`auth needed`), dim for reasons (`timeout after 30s`). An overflow
+//!   hint (`/mcp login github`) stays inline behind two spaces while it fits
+//!   and wraps to an ink continuation line at indent 5 below it. The source
+//!   column (and the heading detail) hides below 60 columns, matching the
+//!   pane grammar's "under 60" detail rule, and drops whenever the full
+//!   row overflows at any width.
+//! - S23 text output blocks: ` Session info` in bold, then one row per
+//!   field: the label in dim padded to the longest label plus two, the value
+//!   in ink, no blank rows inside.
+//!
+//! One deliberate deviation: the wide S23 frame pads labels to the longest
+//! label plus four while the narrow frame uses plus two. The helper pins
+//! plus two at every width, matching the narrow frame.
+//!
+//! The helper never exceeds its width (overlong lines truncate with `…`)
+//! and never emits a blank row. Which rows and facts a narrow pane shows
+//! (the S23 narrow frame drops the `File` row and trailing facts) stays with
+//! the call sites; a future adoption wires `mode/mcp.rs` and
+//! `resource_display.rs` onto this helper.
 
 use hoocode_code_tui_theme::theme;
+use hoocode_tui_render::Component;
+use hoocode_tui_util::{truncate_to_width, visible_width, wrap_text_with_ansi};
 
-/// The glyph heading a [`BlockRow::Status`] row: done, working or failed.
+use crate::fold::ELLIPSIS;
+
+/// Below this width the detail hides: the heading detail and the status
+/// rows' source column (the S22 narrow frame shows neither, and the pane
+/// grammar hides detail under 60). At any width a row that still overflows
+/// drops the source column first, then truncates with `…`.
+const DETAIL_MIN_WIDTH: usize = 60;
+
+/// The state of an [`StatusRow`], as its glyph colours it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StatusGlyph {
-    /// `●` in success green.
-    Done,
-    /// `◉` in accent (never yellow: yellow is for blocking only).
+pub enum StatusTone {
+    /// Done: `●` in success.
+    Ready,
+    /// Waiting on the user: `◉` in warning.
     Working,
-    /// `⊗` in error red.
+    /// Failed: `⊗` in error.
     Failed,
 }
 
-/// A text-block row.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BlockRow {
-    /// `Name        amber-harbor`: the dim label pads to the block's
-    /// labels, the value reads ink.
-    Fact { label: String, value: String },
-    /// `● docs  4 tools`: the glyph in its colour, the name in ink, then
-    /// `text` cells in their colour, each two spaces apart.
-    Status {
-        glyph: StatusGlyph,
-        name: String,
-        cells: Vec<StatusCell>,
-    },
-    /// A pre-styled line (a detail under a status row).
-    Raw(String),
+impl StatusTone {
+    fn glyph(self) -> &'static str {
+        match self {
+            StatusTone::Ready => "●",
+            StatusTone::Working => "◉",
+            StatusTone::Failed => "⊗",
+        }
+    }
+
+    fn token(self) -> &'static str {
+        match self {
+            StatusTone::Ready => "success",
+            StatusTone::Working => "warning",
+            StatusTone::Failed => "error",
+        }
+    }
 }
 
-/// One trailing cell of a [`BlockRow::Status`] row: `text` in the `color`
-/// theme token (`dim`, `warning`, `ink`, …).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatusCell {
-    pub text: String,
-    pub color: &'static str,
+/// How an [`StatusRow`]'s state words draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailTone {
+    /// A value: ink.
+    Ink,
+    /// A reason: dim.
+    Dim,
+    /// Waiting on the user: warning.
+    Warn,
 }
 
-/// A transcript text block: the bold `heading` with dim `facts`, then rows.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TextBlock {
+impl DetailTone {
+    fn token(self) -> &'static str {
+        match self {
+            DetailTone::Ink => "ink",
+            DetailTone::Dim => "dim",
+            DetailTone::Warn => "warning",
+        }
+    }
+}
+
+/// One S22 glyph row: the name, its dim source column, the state, and an
+/// optional ink hint (a follow-up command, e.g. `/mcp login github`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusRow {
+    pub tone: StatusTone,
+    pub name: String,
+    pub source: String,
+    pub state: String,
+    pub state_tone: DetailTone,
+    pub hint: Option<String>,
+}
+
+impl StatusRow {
+    /// The mock's default tones: a ready row states ink values, a working
+    /// row warns, a failed row dims its reason. Override with
+    /// [`StatusRow::with_state_tone`] when a row differs.
+    pub fn new(tone: StatusTone, name: &str, source: &str, state: &str) -> Self {
+        let state_tone = match tone {
+            StatusTone::Ready => DetailTone::Ink,
+            StatusTone::Working => DetailTone::Warn,
+            StatusTone::Failed => DetailTone::Dim,
+        };
+        Self {
+            tone,
+            name: name.to_string(),
+            source: source.to_string(),
+            state: state.to_string(),
+            state_tone,
+            hint: None,
+        }
+    }
+
+    pub fn with_state_tone(mut self, tone: DetailTone) -> Self {
+        self.state_tone = tone;
+        self
+    }
+
+    pub fn with_hint(mut self, hint: &str) -> Self {
+        self.hint = Some(hint.to_string());
+        self
+    }
+}
+
+/// One S22/S23 text block: a bold heading with an optional dim detail, dim
+/// labels with ink values, and glyph status rows. No blank rows inside.
+#[derive(Debug, Clone, Default)]
+pub struct TextBlockComponent {
     heading: String,
-    facts: String,
-    rows: Vec<BlockRow>,
+    heading_detail: String,
+    fields: Vec<(String, String)>,
+    rows: Vec<StatusRow>,
 }
 
-impl TextBlock {
-    /// A block titled `heading`, with dim `facts` after it (empty draws none).
-    pub fn new(heading: &str, facts: &str) -> Self {
+impl TextBlockComponent {
+    pub fn new(heading: &str) -> Self {
         Self {
             heading: heading.to_string(),
-            facts: facts.to_string(),
+            heading_detail: String::new(),
+            fields: Vec::new(),
             rows: Vec::new(),
         }
     }
 
-    /// A `label value` fact row (S23).
-    pub fn fact(&mut self, label: &str, value: &str) {
-        self.rows.push(BlockRow::Fact {
-            label: label.to_string(),
-            value: value.to_string(),
-        });
+    /// The dim detail behind the heading (e.g. the S22 config paths).
+    /// Hidden when it does not fit.
+    pub fn set_heading_detail(&mut self, detail: &str) {
+        self.heading_detail = detail.to_string();
     }
 
-    /// A glyph row (S22).
-    pub fn status(&mut self, glyph: StatusGlyph, name: &str, cells: Vec<StatusCell>) {
-        self.rows.push(BlockRow::Status {
-            glyph,
-            name: name.to_string(),
-            cells,
-        });
+    /// One S23 row: a dim `label`, an ink `value`.
+    pub fn add_field(&mut self, label: &str, value: &str) {
+        self.fields.push((label.to_string(), value.to_string()));
     }
 
-    /// A pre-styled line.
-    pub fn raw(&mut self, line: String) {
-        self.rows.push(BlockRow::Raw(line));
+    /// One S22 glyph row.
+    pub fn add_status(&mut self, row: StatusRow) {
+        self.rows.push(row);
     }
 
-    /// The block as transcript text: the bold heading, then one row per
-    /// line, no blank rows inside. Rows sit one cell in (the transcript
-    /// adds its own pad outside).
-    pub fn render(self) -> String {
-        let t = theme();
-        let mut out = if self.facts.is_empty() {
-            t.bold(&self.heading)
+    fn fit(&self, line: &str, width: usize) -> String {
+        if visible_width(line) <= width {
+            line.to_string()
         } else {
-            format!("{}  {}", t.bold(&self.heading), t.fg("dim", &self.facts))
-        };
-        let label_w = self
-            .rows
+            truncate_to_width(line, width, ELLIPSIS, false)
+        }
+    }
+
+    fn heading_line(&self, width: usize) -> Option<String> {
+        if self.heading.is_empty() {
+            return None;
+        }
+        let t = theme();
+        let head = format!(" {}", t.fg("ink", &t.bold(&self.heading)));
+        if self.heading_detail.is_empty() {
+            return Some(self.fit(&head, width));
+        }
+        if width >= DETAIL_MIN_WIDTH {
+            let full = format!("{head}  {}", t.fg("dim", &self.heading_detail));
+            if visible_width(&full) <= width {
+                return Some(full);
+            }
+        }
+        // The detail drops instead of truncating (the S22 narrow frame
+        // shows the heading alone).
+        Some(self.fit(&head, width))
+    }
+
+    fn field_lines(&self, width: usize) -> Vec<String> {
+        let t = theme();
+        let label_width = self
+            .fields
             .iter()
-            .filter_map(|row| match row {
-                BlockRow::Fact { label, .. } => Some(label.chars().count()),
-                _ => None,
-            })
+            .map(|(label, _)| visible_width(label))
             .max()
             .unwrap_or(0);
-        let name_w = self
+        self.fields
+            .iter()
+            .filter(|(label, value)| !(label.is_empty() && value.is_empty()))
+            .map(|(label, value)| {
+                let cell = format!(
+                    "{label}{}",
+                    " ".repeat(label_width + 2 - visible_width(label))
+                );
+                let line = if value.is_empty() {
+                    format!(" {}", t.fg("dim", &cell))
+                } else {
+                    format!(" {}  {}", t.fg("dim", &cell), t.fg("ink", value))
+                };
+                self.fit(&line, width)
+            })
+            .collect()
+    }
+
+    fn status_lines(&self, width: usize) -> Vec<String> {
+        let t = theme();
+        let name_width = self
             .rows
             .iter()
-            .filter_map(|row| match row {
-                BlockRow::Status { name, .. } => Some(name.chars().count()),
-                _ => None,
-            })
+            .map(|row| visible_width(&row.name))
             .max()
             .unwrap_or(0);
-        for row in self.rows {
-            let line = match row {
-                BlockRow::Fact { label, value } => {
-                    let fill = label_w.saturating_sub(label.chars().count()) + 2;
-                    format!(
-                        " {}{}",
-                        t.fg("dim", &format!("{label}{}", " ".repeat(fill))),
-                        t.fg("ink", &value)
-                    )
-                }
-                BlockRow::Status { glyph, name, cells } => {
-                    let (mark, color) = match glyph {
-                        StatusGlyph::Done => ("●", "success"),
-                        StatusGlyph::Working => ("◉", "accent"),
-                        StatusGlyph::Failed => ("⊗", "error"),
-                    };
-                    let fill = name_w.saturating_sub(name.chars().count()) + 2;
-                    let mut line = format!(
-                        " {} {}{}",
-                        t.fg(color, mark),
-                        t.fg("ink", &name),
-                        " ".repeat(fill)
-                    );
-                    for (n, cell) in cells.iter().enumerate() {
-                        if n > 0 {
-                            line.push_str("  ");
-                        }
-                        line.push_str(&t.fg(cell.color, &cell.text));
-                    }
-                    line
-                }
-                BlockRow::Raw(line) => line,
+        let source_width = self
+            .rows
+            .iter()
+            .map(|row| visible_width(&row.source))
+            .max()
+            .unwrap_or(0);
+        let mut out = Vec::new();
+        for row in &self.rows {
+            let glyph = t.fg(row.tone.token(), row.tone.glyph());
+            let name = format!(
+                "{}{}",
+                row.name,
+                " ".repeat(name_width + 2 - visible_width(&row.name))
+            );
+            let state = t.fg(row.state_tone.token(), &row.state);
+            let head = format!("   {glyph} {}", t.fg("ink", &name));
+            let full = if row.source.is_empty() || width < DETAIL_MIN_WIDTH {
+                format!("{head}{state}")
+            } else {
+                let source = format!(
+                    "{}{}",
+                    row.source,
+                    " ".repeat(source_width + 2 - visible_width(&row.source))
+                );
+                format!("{head} {} {state}", t.fg("dim", &source))
             };
-            out.push('\n');
-            out.push_str(&line);
+            // The hint stays inline behind two spaces while it fits,
+            // else it wraps to ink continuation lines at indent 5.
+            let inline_hint = |head: &str| {
+                let hint = row.hint.as_deref().filter(|h| !h.is_empty())?;
+                Some(format!("{head}  {}", theme().fg("ink", hint)))
+            };
+            if visible_width(&full) <= width {
+                match inline_hint(&full) {
+                    Some(inline) if visible_width(&inline) <= width => out.push(inline),
+                    _ => {
+                        out.push(full);
+                        out.extend(self.hint_lines(row, width));
+                    }
+                }
+                continue;
+            }
+            // The source column drops with its separator (the S22 narrow
+            // frame keeps `◉ github  auth needed`): the padded name
+            // already leaves at least two columns before the state.
+            let compact = format!("{head}{state}");
+            match inline_hint(&compact) {
+                Some(inline) if visible_width(&inline) <= width => out.push(inline),
+                _ => {
+                    out.push(self.fit(&compact, width));
+                    out.extend(self.hint_lines(row, width));
+                }
+            }
         }
         out
     }
-}
 
-/// `text` in the `color` theme token (a [`StatusCell`] without the struct).
-pub fn cell(text: &str, color: &'static str) -> StatusCell {
-    StatusCell {
-        text: text.to_string(),
-        color,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn plain(text: &str) -> String {
-        hoocode_tui_util::strip_vt_control_characters(text)
-    }
-
-    #[test]
-    fn facts_pad_labels_and_read_ink() {
-        hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        hoocode_code_tui_theme::chalk::set_enabled(true);
-        let mut block = TextBlock::new("Session info", "");
-        block.fact("Name", "amber-harbor");
-        block.fact("Messages", "4 user · 4 assistant");
-        assert_eq!(
-            plain(&block.render()),
-            "Session info\n Name      amber-harbor\n Messages  4 user · 4 assistant"
-        );
-    }
-
-    #[test]
-    fn status_rows_color_only_the_glyph() {
-        hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        hoocode_code_tui_theme::chalk::set_enabled(true);
-        let mut block = TextBlock::new("MCP servers", "~/.agents/mcp.json");
-        block.status(StatusGlyph::Done, "docs", vec![cell("4 tools", "dim")]);
-        block.status(
-            StatusGlyph::Working,
-            "github",
-            vec![cell("auth needed", "warning")],
-        );
-        let rendered = block.render();
-        assert_eq!(
-            plain(&rendered),
-            "MCP servers  ~/.agents/mcp.json\n ● docs    4 tools\n ◉ github  auth needed"
-        );
-        // Only the glyph carries a state colour: the names read ink, the
-        // states read their own token (`auth needed` waits on you, so it
-        // reads warning yellow).
+    fn hint_lines(&self, row: &StatusRow, width: usize) -> Vec<String> {
+        let Some(hint) = row.hint.as_deref().filter(|h| !h.is_empty()) else {
+            return Vec::new();
+        };
         let t = theme();
-        let expected = format!(
-            "{}  {}\n {} {}    {}\n {} {}  {}",
-            t.bold("MCP servers"),
-            t.fg("dim", "~/.agents/mcp.json"),
-            t.fg("success", "●"),
-            t.fg("ink", "docs"),
-            t.fg("dim", "4 tools"),
-            t.fg("accent", "◉"),
-            t.fg("ink", "github"),
-            t.fg("warning", "auth needed"),
-        );
-        assert_eq!(rendered, expected);
+        let inner = width.saturating_sub(5).max(1);
+        wrap_text_with_ansi(hint, inner)
+            .into_iter()
+            .map(|line| self.fit(&format!("     {}", t.fg("ink", &line)), width))
+            .collect()
     }
+}
+
+impl Component for TextBlockComponent {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let width = usize::from(width).max(1);
+        let mut lines = Vec::new();
+        if let Some(head) = self.heading_line(width) {
+            lines.push(head);
+        }
+        lines.extend(self.field_lines(width));
+        lines.extend(self.status_lines(width));
+        lines.into_iter().filter(|l| !l.trim().is_empty()).collect()
+    }
+
+    fn invalidate(&mut self) {}
 }
