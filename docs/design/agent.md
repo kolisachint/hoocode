@@ -294,6 +294,7 @@ rpc (`--mode rpc`):
 | 2026-11-06 | Web tools are opt-in (`enableWebTools`, `--enable-webtools`). The names are gated; the tool definitions are not yet registered (AG-1). |
 | 2026-11-06 | The category key is `c`, bare letter, in `/scoped-models`. |
 | 2026-11-06 | rpc fails closed: a gated tool is denied unless `auto_allow` lists it. Approval dialogs over rpc are not built. |
+| 2026-11-07 | `DocSearch` is removed (with single-view decision 7): discovery via the prompt skill/agent listing, `Read`, CLI help and user pages. AG-19 closed as No. Code removal with the robustness matrix is the next session. |
 
 ## Open
 
@@ -317,7 +318,7 @@ rpc (`--mode rpc`):
 | AG-16 | Off switch for the three Cron tools | S | Measured token cost | Add a setting. Interactive default stays on. |
 | AG-17 | Decide `/learn` | S | None | The tip shows as unavailable (`tips.rs`). Remove the tip, or build the command. Decision says no. |
 | AG-18 | Thinking escalation | S | A way to measure its effect | Config is merged at `hoocode-code-modes/src/config.rs` (~69-78) but never applied. Apply it or delete the read. |
-| AG-19 | DocSearch indexes docs | S | Decision (the trigger "Rust user docs exist" is met by `docs/user/`) | Index `docs/user/` pages as a separate kind. Otherwise keep capabilities only. |
+| AG-19 | Remove `DocSearch` (was: index docs) | S | Decided 2026-11-07 | Remove the tool (with UI-21 decision 7) instead of indexing `docs/user/`. Code removal with the robustness matrix is the next session. |
 | AG-20 | Semantic code search | L | User asks for semantic search | Build the `embsearch` daemon client behind the `EmbsearchService` seam (line JSON over stdio). Make `--enable-semantic-index` do something. Fall back to keyword search with a reason. Until then, remove the flag or keep the "not available" message. |
 | AG-21 | Un-defer MCP Apps | L | A tool the user relies on ships a `ui://` resource | Declare `text/html;profile=mcp-app`. Read `_meta.ui.resourceUri`. Serve a host page on `127.0.0.1` with a session token. Use a sandboxed iframe on a second origin. Open links only after confirmation. Done when a headless Chromium test passes, with CSP and origin tests. App tool calls use the same rules as model calls. |
 | AG-22 | app-server: WebSocket on TCP with a token | M | Remote clients | Bind to loopback by default. Require a token. |
@@ -334,7 +335,7 @@ rpc (`--mode rpc`):
 - A Node extension host, a WASM extension API, and hooks in extensions or plugins.
 - Plugin slash commands, themes and providers; `.agents-plugin/` and Copilot layouts; writing Claude or Copilot layouts; writing `marketplace.json`.
 - `UpdatePlugin`, `PackagePlugin` and `PublishPlugin` tools; npm plugin sources; the `packages` setting (AG-3 deletes it).
-- `SearchSkills` (skills stay in the prompt); linking `embsearch` (ONNX, about 40 MB); indexing docs before AG-19 is decided.
+- `SearchSkills` (skills stay in the prompt); linking `embsearch` (ONNX, about 40 MB); indexing docs (AG-19 decided 2026-11-07: remove `DocSearch`).
 - Porting the hoocode web layer (`.webtoolsignore`, cache, notes); linking webtools crates; provider-native web search for now.
 - Copilot canvas host; `/share` and HTML export; voice; teams client; `/learn`.
 - Install telemetry that sends anything; thinking escalation until AG-18 is decided.

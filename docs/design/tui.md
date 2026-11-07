@@ -456,7 +456,7 @@ Proposed fix: `freeze()` saves an unstyled row snapshot (mark, target, primary f
 
 ### Decisions needed
 
-None of these is decided. The default is what the mockup draws. When the user decides, each answer becomes a dated row in the Decisions table below.
+Decided 2026-11-07; each answer is a dated row in the Decisions table below. The mockup default stood except: 5 drops `ctrl+x o` (no expand-all in v1), 7 takes Removed (caps live in `settings.json` only, and `DocSearch` is removed with it — discovery via the prompt listing, `Read`, CLI help and user pages), 8 takes click-selects with `Enter` opening (no second-click pick).
 
 | # | Decision | Default (mockup) | Alternative |
 |---|---|---|---|
@@ -501,6 +501,15 @@ None of these is decided. The default is what the mockup draws. When the user de
 | 2026-11-05 | Ctrl+J is not changed. Newline is Shift+Enter, with leader Enter as the fallback. |
 | 2026-11-05 | The theme picker saves `theme` to global settings. Keys change only by editing `keybindings.json`. No in-app key editor. |
 | 2026-11-05 | `theme_paths` is removed. An unknown saved theme falls back to `auto`. |
+| 2026-11-07 | Single view (UI-21): one transcript mode, one row per tool call, click or `Enter` opens in place. The dial (`outline` / `peek` / `full`, `toolOutputView`, `radar` alias) goes in P5. |
+| 2026-11-07 | Tool-row width rule: cut order — secondary facts drop first, the target never drops. Overturns "stats are never dropped". |
+| 2026-11-07 | Failed row reason colour: dim; red only on `⊗` and `exit N`. |
+| 2026-11-07 | Running Shell while collapsed: one dim tail line, gone on settle. |
+| 2026-11-07 | No expand-all in v1: `ctrl+x o` is dropped (`ctrl+x u`, `{` `}`, `Enter`, `G live` cover it). Revisit on user ask. |
+| 2026-11-07 | A click while live pins the view; the header keeps its row. |
+| 2026-11-07 | Settings Tool output row is removed (caps live in `settings.json` only). `DocSearch` is removed with it: discovery via the prompt listing, `Read`, CLI help and user pages (AG-19 closed as No). |
+| 2026-11-07 | Pane clicks v1: click selects, `Enter` opens (e.g. attach a subagent run). No second-click pick. |
+| 2026-11-07 | Yellow is blocking only (fixes the palette contradiction with principle 17). |
 
 ## Open
 
@@ -526,7 +535,7 @@ None of these is decided. The default is what the mockup draws. When the user de
 | UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
-| UI-21, UI-22 | Proposed single view: one row per tool call, click or Enter to expand, one pane grammar, yellow only for blocking. See "Proposed: single view" above. | L | The 9 decisions in "Decisions needed" (above) | Not decided. Phases P0 to P6 are in the roadmap. P0 starts with the frozen-row test. The Decisions table has no rows for it yet. |
+| UI-21, UI-22 | Proposed single view: one row per tool call, click or Enter to expand, one pane grammar, yellow only for blocking. See "Proposed: single view" above. | L | Decided 2026-11-07 (see Decisions table) | Phases P0 to P6 are in the roadmap. P0 starts with the frozen-row test. |
 
 ## Not doing
 

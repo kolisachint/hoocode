@@ -101,7 +101,7 @@ TUI work for both items is done by Haiku subagents, one step per subagent, per [
 | [AG-1](agent.md#open) | Register `WebFetch` and `WebSearch`, or drop the names? | Register both. The helpers exist and the flag already promises them |
 | [AG-8](agent.md#open) | Enforce `allowed-tools`, or delete the approval record? | Delete the record. Keep the warning |
 | [AG-12](agent.md#open) | Wire `/goal` to `/loop auto`? | Not yet. Do it when someone asks for `/goal` |
-| [AG-19](agent.md#open) | Index `docs/user/` in DocSearch? | Yes, as a separate kind |
+| [AG-19](agent.md#open) | Remove `DocSearch` instead of indexing docs? | Decided 2026-11-07: yes, remove (with UI-21 decision 7); code removal pending |
 | [AG-20](agent.md#open) | Build semantic code search? | No. Keep the "not available" message |
 | [AG-27](agent.md#open) | Add a CI step for the app-server schema check? | Yes, nightly and non-blocking |
 | [SA-6](subagents.md#open) | Remove the unused `known_issue` mechanism? | Yes, with its report branch |
@@ -113,7 +113,7 @@ TUI work for both items is done by Haiku subagents, one step per subagent, per [
 | [UI-16](tui.md#open) | Pinned page scroll step: view height minus 2, or minus 12? | Minus 2, as built. Write it in the code and on the page |
 | [UI-18](tui.md#open) | Keep the replay fixture? | Delete it if no test reads it |
 | [UI-19](tui.md#open) | Take the held behaviour changes? | Not now. One commit each, when asked |
-| [UI-21, UI-22](tui.md#proposed-single-view-ui-21-ui-22) | The 9 single-view decisions: one mode, tool-row cut order, failed reason colour, running Shell tail, expand-all scope, live click pins, Tool output setting, pane clicks, yellow for blocking only | The defaults in [tui.md](tui.md#decisions-needed), the mockup's choices |
+| [UI-21, UI-22](tui.md#proposed-single-view-ui-21-ui-22) | The 9 single-view decisions: one mode, tool-row cut order, failed reason colour, running Shell tail, expand-all scope, live click pins, Tool output setting, pane clicks, yellow for blocking only | Decided 2026-11-07 in [tui.md](tui.md#decisions-needed): one mode; cut order; dim reason; Shell tail line; no expand-all; click pins; Tool output row removed (+ `DocSearch` removed); click-selects / `Enter`-opens; yellow blocking only |
 
 ## Deferred (trigger)
 
