@@ -244,6 +244,31 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "Previous search match (pinned view)",
         ),
         entry(
+            "app.scroll.focusPrevious",
+            &["{"],
+            "Focus the previous tool block (pinned view)",
+        ),
+        entry(
+            "app.scroll.focusNext",
+            &["}"],
+            "Focus the next tool block (pinned view)",
+        ),
+        entry(
+            "app.scroll.expandFocused",
+            &["enter"],
+            "Toggle the focused tool block (pinned view)",
+        ),
+        entry(
+            "app.scroll.copyFocused",
+            &["y"],
+            "Copy the focused block's raw output (pinned view)",
+        ),
+        entry(
+            "app.scroll.focusNewest",
+            &["ctrl+x u"],
+            "Focus the newest tool block and pin the view",
+        ),
+        entry(
             "app.panel.nextTab",
             &["right", "tab"],
             "Task panel: next tab",

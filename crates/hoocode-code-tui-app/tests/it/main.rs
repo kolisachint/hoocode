@@ -31,4 +31,6 @@ mod support;
 mod suspend_ts;
 mod theme_diagnostics;
 mod tips;
+mod transcript_focus_keys;
+mod transcript_focus_perf;
 mod transient_lines;

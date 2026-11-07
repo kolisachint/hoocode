@@ -70,14 +70,14 @@ fn searching(query: &str, typing: bool, count: usize) -> ScrollStatus {
 /// The status row, plain, at 100 columns.
 fn row(status: &ScrollStatus) -> String {
     AppKeybindingsManager::default().install();
-    plain(&format_scroll_status(status, &base()))
+    plain(&format_scroll_status(status, &base(), false))
 }
 
 #[test]
 fn scrolled_golden() {
     let _g = lock(Some("dark"));
     AppKeybindingsManager::default().install();
-    let mut line = BarLine(format_scroll_status(&scrolled(false), &base()));
+    let mut line = BarLine(format_scroll_status(&scrolled(false), &base(), false));
     assert_golden!("scroll_rewind_100x1", render_golden(&mut line, 100));
 }
 
@@ -88,6 +88,7 @@ fn search_golden() {
     let mut line = BarLine(format_scroll_status(
         &searching("beta item 25", false, 1),
         &base(),
+        false,
     ));
     assert_golden!("scroll_scan_100x1", render_golden(&mut line, 100));
 }

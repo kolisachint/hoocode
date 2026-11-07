@@ -106,6 +106,9 @@ pub(super) enum Action {
     PanelUp(String),
     /// `app.subagent.attach`: attach to the newest Agent block's run.
     SubagentAttach,
+    /// `app.scroll.focusNewest` (Ctrl+X u): focus the newest tool block and
+    /// pin the view.
+    FocusNewest,
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
@@ -126,6 +129,7 @@ const EDITOR_ACTIONS: [(&str, Action); 29] = [
     ("app.clipboard.copyMessage", Action::CopyMessage),
     ("app.view.cycleForward", Action::ViewForward),
     ("app.view.cycleBackward", Action::ViewBackward),
+    ("app.scroll.focusNewest", Action::FocusNewest),
     ("app.clear", Action::Clear),
     ("app.suspend", Action::Suspend),
     ("app.tools.expand", Action::ToolsExpand),
@@ -1031,6 +1035,7 @@ impl Mode {
             }
             Action::PanelToggle => self.toggle_task_panel(),
             Action::PanelUp(data) => self.enter_task_panel_from_prompt(&data),
+            Action::FocusNewest => self.focus_newest_and_pin(),
             Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
             Action::ClearanceDone(choice) => self.close_clearance(choice),
