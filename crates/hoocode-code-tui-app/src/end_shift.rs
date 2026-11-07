@@ -5,7 +5,7 @@
 //! `esc` stays).
 
 use hoocode_code_tui_keybindings::key_hint_text;
-use hoocode_code_tui_widgets::pane::{hint_line, Pane, PaneStyle};
+use hoocode_code_tui_widgets::pane::{fit_hint_line, hint_line, Pane, PaneStyle};
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
@@ -76,7 +76,11 @@ impl Component for EndShiftCard {
         pane.facts = Line::from(vec![Span::styled(self.facts(), st.dim_style())]);
         let confirm = key_hint_text("tui.select.confirm");
         let cancel = key_hint_text("tui.select.cancel");
-        pane.hint = hint_line(&[(confirm.as_str(), "quit"), (cancel.as_str(), "stay")]);
+        pane.hint = fit_hint_line(
+            &[(confirm.as_str(), "quit"), (cancel.as_str(), "stay")],
+            false,
+            width as usize,
+        );
         pane.style = Some(st);
         pane.render(width as usize)
     }
@@ -144,10 +148,17 @@ impl EndShiftJobsCard {
     }
 
     /// `2 background jobs running`
-    fn facts(&self) -> String {
+    /// `2 background jobs running`, or `2 jobs running` where the title
+    /// would overflow (mock §S5).
+    fn facts(&self, width: usize) -> String {
         let n = self.jobs.len();
         let noun = if n == 1 { "job" } else { "jobs" };
-        format!("{n} background {noun} running")
+        let long = format!("{n} background {noun} running");
+        if "  Quit?  ".len() + long.len() + 4 <= width {
+            long
+        } else {
+            format!("{n} {noun} running")
+        }
     }
 
     /// The state column: `4s of ~60s`, `4s`, or `done`.
@@ -183,7 +194,8 @@ impl EndShiftJobsCard {
             .iter()
             .map(|job| {
                 let (mark, mark_style) = if job.running {
-                    (status::RUNNING_STR, pal.warn())
+                    // Jobs in orbit read accent: yellow is for blocking only.
+                    (status::RUNNING_STR, pal.acc())
                 } else {
                     (status::DONE_STR, pal.ok())
                 };
@@ -218,16 +230,30 @@ impl Component for EndShiftJobsCard {
     fn render(&mut self, width: u16) -> Vec<String> {
         let st = PaneStyle::current();
         let mut pane = Pane::new("Quit?");
-        pane.facts = Line::from(vec![Span::styled(self.facts(), st.dim_style())]);
+        let width = width as usize;
+        pane.facts = Line::from(vec![Span::styled(self.facts(width), st.dim_style())]);
         pane.rows = self.rows();
         let cancel = key_hint_text("tui.select.cancel");
-        pane.hint = hint_line(&[
+        // The copy shortens where the long row would overflow (mock §S5).
+        let long = [
             ("k", "stop jobs and quit"),
             ("l", "leave them running"),
             (cancel.as_str(), "stay"),
-        ]);
+        ];
+        let short = [
+            ("k", "stop and quit"),
+            ("l", "leave"),
+            (cancel.as_str(), "stay"),
+        ];
+        let budget = width.saturating_sub(2);
+        let hints = if hint_line(&long).width() <= budget {
+            &long[..]
+        } else {
+            &short[..]
+        };
+        pane.hint = fit_hint_line(hints, false, width);
         pane.style = Some(st);
-        pane.render(width as usize)
+        pane.render(width)
     }
 
     fn handle_input(&mut self, data: &str) {

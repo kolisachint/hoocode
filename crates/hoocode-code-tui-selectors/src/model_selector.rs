@@ -13,7 +13,7 @@ use std::rc::Rc;
 use hoocode_ai_models::models_are_equal;
 use hoocode_ai_types::Model;
 use hoocode_code_tui_theme::style_input;
-use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_code_tui_widgets::console::{query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
@@ -162,31 +162,6 @@ impl State {
             },
         ));
         rows
-    }
-
-    /// The hint foot: the picker keys (the scope switch only where it
-    /// flips something).
-    fn hint_row(&self) -> Line<'static> {
-        if self.scoped.is_empty() {
-            hints(&[
-                (
-                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
-                    "move",
-                ),
-                (key_hint_text("tui.select.confirm").as_str(), "pick"),
-                (key_hint_text("tui.select.cancel").as_str(), "close"),
-            ])
-        } else {
-            hints(&[
-                (
-                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
-                    "move",
-                ),
-                (key_hint_text("tui.select.confirm").as_str(), "pick"),
-                (key_hint_text("tui.input.tab").as_str(), "all / scoped"),
-                (key_hint_text("tui.select.cancel").as_str(), "close"),
-            ])
-        }
     }
 }
 
@@ -372,7 +347,33 @@ impl Component for ModelSelectorComponent {
         console.max_visible = Some(state.cursor.max_visible());
         console.bottom = state.bottom_rows(&pal);
         console.detail = state.detail_rows(&pal);
-        console.hint = state.hint_row();
+        // The picker keys (the scope switch only where it flips something).
+        if state.scoped.is_empty() {
+            console.set_hints(
+                &[
+                    (
+                        key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                        "move",
+                    ),
+                    (key_hint_text("tui.select.confirm").as_str(), "pick"),
+                    (key_hint_text("tui.select.cancel").as_str(), "close"),
+                ],
+                false,
+            );
+        } else {
+            console.set_hints(
+                &[
+                    (
+                        key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                        "move",
+                    ),
+                    (key_hint_text("tui.select.confirm").as_str(), "pick"),
+                    (key_hint_text("tui.input.tab").as_str(), "all / scoped"),
+                    (key_hint_text("tui.select.cancel").as_str(), "close"),
+                ],
+                false,
+            );
+        }
         console.render(width as usize)
     }
 

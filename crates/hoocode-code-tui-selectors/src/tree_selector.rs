@@ -20,7 +20,6 @@ use hoocode_code_settings::TreeFilterMode;
 use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, key_text};
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
-use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{bold, italic, Line, Palette, Span};
@@ -858,7 +857,7 @@ impl TreeList {
                 )]
             }
             "branch_summary" => vec![
-                Span::styled("[branch summary]: ".to_string(), pal.warn()),
+                Span::styled("[branch summary]: ".to_string(), pal.dim()),
                 Span::raw(normalize(str_field(entry, "summary").unwrap_or(""))),
             ],
             "model_change" => vec![Span::styled(
@@ -1069,7 +1068,7 @@ impl TreeList {
             spans.push(Span::styled("⊞ ".to_string(), pal.acc()));
         }
         if let Some(label) = &node.label {
-            spans.push(Span::styled(format!("[{label}] "), pal.warn()));
+            spans.push(Span::styled(format!("[{label}] "), pal.dim()));
         }
         match (&node.label, &node.label_timestamp) {
             (Some(_), Some(ts)) if self.show_label_timestamps => {
@@ -1323,7 +1322,7 @@ impl LabelInput {
         });
         let mut row = vec![Span::raw("  ".to_string()), Span::raw(before.to_string())];
         if focused {
-            row.push(Span::styled("▏".to_string(), pal.warn()));
+            row.push(Span::styled("▏".to_string(), pal.ink()));
         }
         row.push(Span::raw(after.to_string()));
         vec![
@@ -1464,7 +1463,8 @@ impl Component for TreeSelectorComponent {
                 console.bottom.extend(help_rows(&as_pairs(&hints)));
             }
             let hints = tree_hints();
-            console.hint = capped_hint_line(&as_pairs(&hints), true);
+            let pairs = as_pairs(&hints);
+            console.set_hints(&pairs, true);
         }
         console.render(width)
     }
