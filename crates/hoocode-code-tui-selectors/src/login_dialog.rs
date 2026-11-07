@@ -130,7 +130,7 @@ impl LoginDialogComponent {
         ));
         if let Some(instructions) = instructions.filter(|i| !i.is_empty()) {
             self.rows.push(Line::raw(""));
-            self.rows.push(line(instructions.to_string(), pal.warn()));
+            self.rows.push(line(instructions.to_string(), pal.ink()));
         }
         self.hint = hints(&[(key_hint_text("tui.select.cancel").as_str(), "cancel")]);
     }

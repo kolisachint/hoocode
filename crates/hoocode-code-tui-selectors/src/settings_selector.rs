@@ -714,7 +714,7 @@ fn tools_submenu(
         )
         .suffix(
             tool.tokens
-                .map(|t| format!("{} tok/turn", token_count(t as u64))),
+                .map(|t| format!("{} tokens", token_count(t as u64))),
         )
         .to_item()
     });
@@ -1262,6 +1262,28 @@ impl SurfaceLine {
             None => String::new(),
         }
     }
+
+    /// The count's short form for a narrow title (`4,140 tokens per turn`):
+    /// facts drop at 40 columns (spec §3).
+    fn short_text(&self) -> String {
+        match self.last.borrow().as_ref() {
+            Some(surface) => format!(
+                "{} tokens per turn",
+                token_count(surface.total_tokens as u64)
+            ),
+            None => String::new(),
+        }
+    }
+
+    /// The full count while it fits the title, else the short form.
+    fn count_for_width(&self, prefix: usize, width: usize) -> String {
+        let full = self.count_text();
+        if prefix + visible_width(&full) <= width {
+            full
+        } else {
+            self.short_text()
+        }
+    }
 }
 
 /// `SettingsSelectorComponent`: the whole pane as the Settings pane.
@@ -1674,7 +1696,7 @@ impl SettingsSelectorComponent {
                 Leaf::opens(
                     "tools",
                     "Tools",
-                    "Enable/disable tools and tool groups (web, semantic search), each priced by what its schema costs per turn. Changes persist across sessions.",
+                    "Enable or disable tools and tool groups (web, semantic search), each priced by what its schema costs per turn. Changes persist across sessions.",
                     if tools_off > 0 {
                         format!("{tools_on} on · {tools_off} off")
                     } else {
@@ -1712,9 +1734,9 @@ impl SettingsSelectorComponent {
                     }),
                 )
                 .suffix(
-                    initial_surface
-                        .as_ref()
-                        .map(|s| format!("{} tok/turn", token_count(s.tool_schema_tokens as u64))),
+                    initial_surface.as_ref().map(|s| {
+                        format!("{} tokens", token_count(s.tool_schema_tokens as u64))
+                    }),
                 ),
             );
         }
@@ -1725,7 +1747,11 @@ impl SettingsSelectorComponent {
                 "tool-output",
                 "Tool output",
                 "How much of a tool result is rendered, and where it is truncated.",
-                config.tool_output_view.as_str().into(),
+                format!(
+                    "{} lines · {}",
+                    config.tool_output_max_lines,
+                    bytes_to_label(config.tool_output_max_bytes)
+                ),
                 Rc::new(move |_current: &str, slot: DoneSlot| {
                     tool_settings_submenu(
                         config.tool_output_view,
@@ -1986,7 +2012,9 @@ impl Component for SettingsSelectorComponent {
         let width = width as usize;
         let inner = width.saturating_sub(2);
         let list = self.list.borrow();
-        let mut console = Console::new("Settings · /settings", self.surface.count_text());
+        // `  Settings  /settings  ` before the count.
+        let count = self.surface.count_for_width(23, width);
+        let mut console = Console::new("Settings · /settings", count);
         let query = list.query_text().to_string();
         console.query = Some(query_row(&query, false));
         let max_label = list
@@ -2066,15 +2094,18 @@ impl Component for SettingsSelectorComponent {
             }
             console.detail = detail;
         }
-        console.hint = hints(&[
-            (
-                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
-                "move",
-            ),
-            (SPACE_KEY, "toggle"),
-            (key_hint_text("tui.select.confirm").as_str(), "open"),
-            (key_hint_text("tui.select.cancel").as_str(), "close"),
-        ]);
+        console.set_hints(
+            &[
+                (
+                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                    "move",
+                ),
+                (SPACE_KEY, "toggle"),
+                (key_hint_text("tui.select.confirm").as_str(), "open"),
+                (key_hint_text("tui.select.cancel").as_str(), "close"),
+            ],
+            false,
+        );
         console.render(width)
     }
 

@@ -5,12 +5,10 @@
 │ mock-large  in use                                       │
 │ provider  mock                                           │
 │ context   128k                                           │
-│ price     free                                           │
-│ thinking  supported                                      │
-│ › filter                                                 │
+│ …                                                        │
+│ ▏ filter                                                 │
 │ ↑↓ move · enter pick · tab all / scoped · esc close      │
 └──────────────────────────────────────────────────────────┘
 --- styles ---
 r1 c1-20 bold
 r4 c2-11 bold
-r9 c1-3 bold

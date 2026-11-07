@@ -17,7 +17,7 @@ use std::sync::Arc;
 use hoocode_code_auth::provider_display_names::built_in_provider_display_name;
 use hoocode_code_auth::{AuthCredential, AuthSource, AuthStatus, AuthStorage};
 use hoocode_code_tui_theme::style_input;
-use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_code_tui_widgets::console::{query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
@@ -104,11 +104,12 @@ impl State {
             return vec![Span::styled("configured", pal.ok())];
         }
         if let Some(stored) = stored {
+            // Still configured, so still green: yellow is for blocking only.
             let label = match stored {
                 AuthType::OAuth => "subscription configured",
                 AuthType::ApiKey => "API key configured",
             };
-            return vec![Span::styled(label, pal.warn())];
+            return vec![Span::styled(label, pal.ok())];
         }
         let not_configured = || vec![Span::styled("not configured", pal.dim())];
         if provider.auth_type != AuthType::ApiKey {
@@ -284,14 +285,17 @@ impl Component for OAuthSelectorComponent {
                 pal.dim(),
             )]));
         }
-        console.hint = hints(&[
-            (
-                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
-                "move",
-            ),
-            (key_hint_text("tui.select.confirm").as_str(), action),
-            (key_hint_text("tui.select.cancel").as_str(), "cancel"),
-        ]);
+        console.set_hints(
+            &[
+                (
+                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                    "move",
+                ),
+                (key_hint_text("tui.select.confirm").as_str(), action),
+                (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+            ],
+            false,
+        );
         console.render(width as usize)
     }
 

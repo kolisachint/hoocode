@@ -16,10 +16,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_code_tools_optin::ask_options::AskQuestion;
-use hoocode_code_tui_widgets::pane::{hint_line, input_line, Chip, Pane, PaneStyle};
+use hoocode_code_tui_widgets::pane::{
+    fit_hint_line, hint_line, input_line, wrap_text, Chip, Pane, PaneStyle,
+};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key};
-use hoocode_tui_ratatui::{Line, Modifier, Palette, Span};
+use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
@@ -62,20 +64,27 @@ impl State {
         (self.custom_input.get_cursor() >= typed, typed == 0)
     }
 
-    /// The hint row: `1–2 pick · tab next question · esc skip`.
-    fn render_hints(&self, last: bool) -> Line<'static> {
+    /// The hint row: `1–2 pick · tab next question · esc skip`. The move
+    /// item drops first at narrow widths, and `next question` shortens to
+    /// `next` where the long row would overflow (mock §S3).
+    fn render_hints(&self, last: bool, width: usize) -> Line<'static> {
         let pick = format!("1–{}", self.current().options.len().max(1));
         let (_, back) = self.custom_arrows();
         let tab = key_hint_text("tui.input.tab");
         let back_key = key_glyph_text("app.options.back");
         let skip = key_hint_text("tui.select.cancel");
         let mut hints: Vec<(&str, &str)> = vec![(pick.as_str(), "pick")];
-        hints.push((tab.as_str(), if last { "submit" } else { "next question" }));
+        let next = if last { "submit" } else { "next question" };
+        hints.push((tab.as_str(), next));
         if self.step > 0 && back {
             hints.push((back_key.as_str(), "back"));
         }
         hints.push((skip.as_str(), "skip"));
-        hint_line(&hints)
+        let budget = width.saturating_sub(2);
+        if !last && hint_line(&hints).width() > budget {
+            hints[1].1 = "next";
+        }
+        fit_hint_line(&hints, false, width)
     }
 
     /// The pane: title chip, breadcrumb and detail rows, the option rows
@@ -88,18 +97,18 @@ impl State {
         let mut pane = Pane::new("Question");
         pane.chip = Chip::Warn;
 
-        // The title row: the question in bold, then `1 of 2`; a question too
-        // long for the row moves under the title.
+        // The title row: the question in ink, then dim `1 of 2`; a question
+        // too long for the row moves under the title, wrapped (mock §S3).
         let count = if self.questions.len() > 1 {
             format!("{} of {}", self.step + 1, self.questions.len())
         } else {
             String::new()
         };
-        let bold_text = st.text_style().add_modifier(Modifier::BOLD);
+        let ink = st.text_style();
         let fits = visible_width(&cur.question) + visible_width(&count) + 14 <= width;
         let mut facts = Vec::new();
         if fits {
-            facts.push(Span::styled(cur.question.clone(), bold_text));
+            facts.push(Span::styled(cur.question.clone(), ink));
             if !count.is_empty() {
                 facts.push(Span::styled(format!("  {count}"), st.dim_style()));
             }
@@ -107,6 +116,9 @@ impl State {
             facts.push(Span::styled(count.clone(), st.dim_style()));
         }
         pane.facts = Line::from(facts);
+        // A narrow pane wraps the question and the detail instead of
+        // cutting them: two cells of caller indent under the row's pad.
+        let wrap = width.saturating_sub(4);
 
         for i in 0..self.step {
             let q = &self.questions[i];
@@ -125,48 +137,49 @@ impl State {
             ]));
         }
         if !fits {
-            pane.top.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(cur.question.clone(), bold_text),
-            ]));
+            for part in wrap_text(&cur.question, wrap) {
+                pane.top
+                    .push(Line::from(vec![Span::raw("  "), Span::styled(part, ink)]));
+            }
         }
         if let Some(detail) = &cur.detail {
-            pane.top.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(detail.clone(), st.dim_style()),
-            ]));
+            for part in wrap_text(detail, wrap) {
+                pane.top.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(part, st.dim_style()),
+                ]));
+            }
         }
 
         // Option rows: number, label and description in aligned columns.
+        // A description that would overflow moves to its own row at the
+        // label's column, so labels stay aligned (mock §S3).
         let label_w = cur
             .options
             .iter()
             .map(|o| visible_width(&o.label))
             .max()
             .unwrap_or(0);
+        let item_budget = width.saturating_sub(4);
         let on_custom = self.is_on_custom_row();
         for (i, o) in cur.options.iter().enumerate() {
-            let active = !on_custom && i == self.cursor.selected();
-            let number = if active && !st.mono {
-                st.text_style()
-            } else {
-                st.dim_style()
-            };
             let mut spans = vec![
-                Span::styled(format!("{}  ", i + 1), number),
-                Span::styled(o.label.clone(), st.text_style()),
+                Span::styled(format!("{}  ", i + 1), ink),
+                Span::styled(o.label.clone(), ink),
             ];
             if let Some(description) = &o.description {
-                let fill = label_w.saturating_sub(visible_width(&o.label));
-                spans.push(Span::raw(" ".repeat(fill + 2)));
-                spans.push(Span::styled(
-                    description.clone(),
-                    if active && !st.mono {
-                        st.text_style()
-                    } else {
-                        st.dim_style()
-                    },
-                ));
+                let num_w = visible_width(&format!("{}", i + 1)) + 2;
+                let aligned = num_w + label_w + 2 + visible_width(description) <= item_budget;
+                if aligned {
+                    let fill = label_w.saturating_sub(visible_width(&o.label));
+                    spans.push(Span::raw(" ".repeat(fill + 2)));
+                    spans.push(Span::styled(description.clone(), st.dim_style()));
+                } else {
+                    pane.flow.entry(i).or_default().push(Line::from(vec![
+                        Span::raw("     "),
+                        Span::styled(description.clone(), st.dim_style()),
+                    ]));
+                }
             }
             if o.recommended {
                 // The recommended answer reads green: it is the safe
@@ -184,7 +197,7 @@ impl State {
                 input_line("", "or type your own answer", false)
             });
         }
-        pane.hint = self.render_hints(last);
+        pane.hint = self.render_hints(last, width);
         pane.style = Some(st);
         pane
     }
