@@ -410,28 +410,50 @@ impl ToolChainComponent {
                 out.extend(lead.component.borrow_mut().render(width));
             }
             let parts = block.borrow_mut().step_parts(width);
-            let Some(header) = parts.header else {
+            let Some(_) = parts.header else {
                 out.extend(parts.images);
                 continue;
             };
             if i == 0 || !spaced {
                 ensure_blank(&mut out);
             }
-            let (mark, facts, tool, failed, open) = {
+            let (mark, tool, target, primary, secondary, reason, failed, open) = {
                 let b = block.borrow();
+                let (target, primary, secondary, reason) = b.header_parts();
                 (
                     b.mark(),
-                    b.facts(palette),
                     b.tool_name().to_string(),
+                    target,
+                    primary,
+                    secondary,
+                    reason,
                     b.is_error(),
                     full || b.is_expanded(),
                 )
             };
+            // Single view: the header is one row, never wrapped. Its facts
+            // cut through `header_spans` (secondary drops first, then the
+            // target, then the reason); the gutter keeps column 0.
             let start = out.len();
-            out.extend(tool_row::tool_rows(0, mark, &header, facts, w, palette));
+            {
+                let primaries: Vec<&str> = primary.iter().map(String::as_str).collect();
+                let secondaries: Vec<&str> = secondary.iter().map(String::as_str).collect();
+                let mut spans = vec![Span::raw(" ".to_string())];
+                spans.extend(tool_row::header_spans(
+                    mark,
+                    &tool,
+                    &target,
+                    &primaries,
+                    &secondaries,
+                    reason.as_deref(),
+                    w.saturating_sub(1),
+                    palette,
+                ));
+                out.push(row(spans, w));
+            }
             header_map.push(HeaderHit {
                 start,
-                len: out.len() - start,
+                len: 1,
                 block: i,
             });
 
