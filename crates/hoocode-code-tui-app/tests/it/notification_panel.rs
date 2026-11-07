@@ -302,7 +302,7 @@ fn draws_plain_rows_with_no_fill_indented_by_one() {
 }
 
 #[test]
-fn a_warning_is_yellow_with_a_bold_title_over_dim_rows() {
+fn a_warning_is_ink_bold_with_a_title_over_dim_rows() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
     s.panel.notify(
@@ -315,7 +315,7 @@ fn a_warning_is_yellow_with_a_bold_title_over_dim_rows() {
     );
     let lines = s.panel.render(WIDTH);
     assert!(
-        lines[1].contains(theme().get_fg_ansi("warning")),
+        lines[1].contains(theme().get_fg_ansi("ink")),
         "{:?}",
         lines[1]
     );
