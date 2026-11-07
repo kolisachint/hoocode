@@ -1707,7 +1707,10 @@ impl ToolExecutionComponent {
             // tail, a ticking clock) is read even while the body stays shut.
             // Only an open toggle attaches what it drew.
             if self.result.is_some() {
-                let show_body = self.should_show_body();
+                // A running Shell's collapsed row keeps the canonical
+                // `RunningTailLine` below: the result body stays shut so the
+                // tail renders once, not twice (w-tail + w-wire overlap).
+                let show_body = self.should_show_body() && self.running_shell_tail().is_none();
                 match self.result_renderer() {
                     None => {
                         if show_body {
