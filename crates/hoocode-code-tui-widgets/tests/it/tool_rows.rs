@@ -14,6 +14,7 @@ use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
+use hoocode_code_tui_widgets::tool_row::{fit_header, header_spans, Mark};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_tui_render::golden::render_golden;
@@ -280,6 +281,52 @@ fn facts_follow_the_subject_and_zero_values_stay_out() {
     );
     assert!(!out.contains("−0") && !out.contains("+0"), "{out}");
     assert!(!out.contains("0 lines"), "{out}");
+}
+
+/// Structured header cut order (UI-21 P3 header slice): at 40 columns a Shell
+/// failure keeps `⊗` and the primary `exit 1` while the secondary duration
+/// drops right-to-left and the reason cuts, then drops.
+#[test]
+fn shell_failure_at_40_keeps_exit_while_dropping_duration_then_reason() {
+    let _g = lock();
+    let target = "cargo test -p hoocode-parser escaped_quote";
+    let reason = "error: could not compile `hoocode-parser`";
+    // Plain contract: duration drops first, then the reason drops; the
+    // primary exit never drops and the command keeps its minimum.
+    let row = fit_header(
+        '⊗',
+        "Shell",
+        target,
+        &["exit 1"],
+        &["3.1s"],
+        Some(reason),
+        40,
+    );
+    assert!(row.contains('⊗'), "{row}");
+    assert!(row.contains("exit 1"), "{row}");
+    assert!(row.contains("cargo test"), "{row}");
+    assert!(!row.contains("3.1s"), "{row}");
+    assert!(!row.contains("could not compile"), "{row}");
+    assert!(row.chars().count() <= 40, "{row}");
+    // The styled header carries the same cut through spans: mark, bold tool,
+    // target, two spaces, dim facts with the exit red on a failed row.
+    let palette = hoocode_tui_ratatui::Palette::current();
+    let spans = header_spans(
+        Mark::Failed,
+        "Shell",
+        target,
+        &["exit 1"],
+        &["3.1s"],
+        Some(reason),
+        40,
+        &palette,
+    );
+    let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+    assert!(text.contains('⊗'), "{text}");
+    assert!(text.contains("exit 1"), "{text}");
+    assert!(!text.contains("3.1s"), "{text}");
+    assert!(!text.contains("could not compile"), "{text}");
+    assert!(text.chars().count() <= 40, "{text}");
 }
 
 #[test]
