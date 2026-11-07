@@ -96,12 +96,6 @@ impl From<hoocode_ai_types::ThinkingLevel> for ThinkingLevelSetting {
 }
 
 str_enum!(
-    /// `toolOutputView`: the three layers of the transcript, least to most.
-    ToolOutputView { Outline => "outline", Peek => "peek", Full => "full" }
-    aliases { "radar" => Outline }
-);
-
-str_enum!(
     /// `pluginInstallScope`.
     PluginInstallScope { User => "user", Project => "project" }
 );
@@ -341,7 +335,6 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
         "timeoutSecs": 15
     },
     "disabledTools": [],
-    "toolOutputView": "peek",
     "branchSummary": {
         "reserveTokens": 16384,
         "skipPrompt": false

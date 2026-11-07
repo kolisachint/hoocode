@@ -2270,7 +2270,6 @@ mod tests {
         assert!(result.is_ok());
         let drawn = hoocode_tui_util::strip_vt_control_characters(&output.lock().unwrap());
         assert!(drawn.contains(" › "), "{drawn}");
-        assert!(drawn.contains("peek · "), "{drawn}");
         assert!(drawn.contains(" hoocode v0.0.1"), "{drawn}");
         assert!(drawn.contains("hi"), "{drawn}");
         assert_eq!(*title.lock().unwrap(), "HooCode - w");
@@ -2717,10 +2716,7 @@ mod tests {
         fn peek_draws_each_trace_above_the_call_it_led_to() {
             // M4 hides thinking by default, so the trace bodies are asked
             // for here; the trace-above-call ordering is what this test owns.
-            let lines = draw(
-                two_turns(),
-                json!({"toolOutputView": "peek", "hideThinkingBlock": false}),
-            );
+            let lines = draw(two_turns(), json!({"hideThinkingBlock": false}));
             // The second trace is above its own call, not below it, and
             // below the first call. The trace does not split the run: both
             // calls stay in one chain (thinking never splits a chain).
@@ -2826,19 +2822,6 @@ mod tests {
         }
 
         #[test]
-        fn outline_keeps_the_run_whole_because_it_draws_no_trace() {
-            let lines = draw(two_turns(), json!({"toolOutputView": "outline"}));
-            assert_eq!(line_of(&lines, "TRACE_ONE"), None);
-            assert_eq!(line_of(&lines, "TRACE_TWO"), None);
-            // One chain of two calls: a single row names both.
-            assert!(
-                lines[at(&lines, "QUERY_ONE")].contains("QUERY_TWO"),
-                "{}",
-                lines.join("\n")
-            );
-        }
-
-        #[test]
         fn speaking_is_still_a_boundary_on_its_own() {
             let spoken: AgentMessage = serde_json::from_value(json!({
                 "role": "assistant",
@@ -2857,7 +2840,7 @@ mod tests {
                     spoken,
                     tool_result("call-2", "RESULT_TWO"),
                 ],
-                json!({"toolOutputView": "outline"}),
+                json!({}),
             );
             // Two chains of one call each, the spoken text between them: two
             // rows (`● CodeSearch <query>`), not one row naming both calls.
@@ -2879,140 +2862,6 @@ mod tests {
             };
             let (one, spoken_at, two) = (last("QUERY_ONE"), last("SPOKEN"), last("QUERY_TWO"));
             assert!(one < spoken_at && spoken_at < two, "{}", lines.join("\n"));
-        }
-    }
-
-    /// The Ctrl+O (`app.tools.expand`) toggle and the footer's view stop, on
-    /// the real interactive mode. Ctrl+O steps outline, peek, full, outline.
-    mod interactive_mode_status {
-        use super::*;
-        use serde_json::json;
-
-        /// Run the idle mode with `settings`, typing `keys` (then ctrl+d);
-        /// the drawn output and the session (for its settings).
-        fn run(settings: serde_json::Value, keys: &[&'static str]) -> (String, AgentSession) {
-            let args = crate::args::parse_args(&[]);
-            let agent_dir = tempfile::tempdir().unwrap();
-            let (session, _) = assemble_session(
-                &args,
-                std::path::PathBuf::from("/w"),
-                agent_dir.path().to_path_buf(),
-                SettingsManager::in_memory(settings.as_object().unwrap().clone()),
-                hoocode_code_models::ModelRegistry::in_memory(),
-                Arc::new(hoocode_code_models::NoAuth),
-                SessionManager::in_memory("/w"),
-                ModelOptions::default(),
-                None,
-                true,
-                None,
-                &hoocode_code_plugins::PluginSet::default(),
-            );
-            let output = Arc::new(Mutex::new(String::new()));
-            let mut script: Vec<(u64, &'static str)> = vec![(300, "\x1b")]; // Esc leaves the first-run Log in pane
-            script.extend(keys.iter().map(|k| (150, *k)));
-            script.push((300, "\x04"));
-            // The end-of-shift card that quit raises: enter ends the shift.
-            script.push((150, "\r"));
-            let terminal = ScriptedTerminal {
-                script,
-                output: output.clone(),
-                title: Arc::new(Mutex::new(String::new())),
-            };
-            hoocode_code_tui_app::mode::run_interactive(
-                hoocode_code_tui_app::mode::InteractiveOptions {
-                    session: session.clone(),
-                    session_runtime: None,
-                    runtime: async_runtime(),
-                    listing: Box::new(resource_listing),
-                    auth_storage: Arc::new(AuthStorage::in_memory([])),
-                    version: "0.0.1".into(),
-                    verbose: false,
-                    initial_message: None,
-                    initial_images: Vec::new(),
-                    initial_messages: Vec::new(),
-                    model_fallback_message: None,
-                    startup_warnings: Vec::new(),
-                    terminal: Some(Box::new(terminal)),
-                    perf_log: None,
-                    update_notice: None,
-                },
-            )
-            .unwrap();
-            let drawn = hoocode_tui_util::strip_vt_control_characters(&output.lock().unwrap());
-            (drawn, session)
-        }
-
-        /// Where each needle first appears after `from`, in order.
-        fn in_order(drawn: &str, needles: &[&str]) -> bool {
-            let mut at = 0;
-            for needle in needles {
-                match drawn[at..].find(needle) {
-                    Some(i) => at += i + needle.len(),
-                    None => return false,
-                }
-            }
-            true
-        }
-
-        /// Ctrl+X, the leader. The tool output step is leader p (it was Ctrl+O, K-4).
-        const CTRL_X: &str = "\x18";
-
-        /// `n` tool output steps: each one is the leader, then p.
-        fn step_keys(n: usize) -> Vec<&'static str> {
-            (0..n).flat_map(|_| [CTRL_X, "p"]).collect()
-        }
-
-        #[test]
-        fn ctrl_o_cycles_outline_peek_full_and_back() {
-            let outline = "outline · ";
-            let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &step_keys(3));
-            assert!(
-                in_order(&drawn, &[outline, "peek · ", "full · ", outline]),
-                "{drawn}"
-            );
-            let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &step_keys(2));
-            assert!(
-                in_order(&drawn, &["peek · ", "full · ", outline]),
-                "{drawn}"
-            );
-        }
-
-        #[test]
-        fn a_stored_full_setting_loads_as_full_and_cycles_to_outline() {
-            let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
-            assert!(drawn.contains("full · "), "{drawn}");
-            assert!(!drawn.contains("outline · "), "{drawn}");
-            let (drawn, _) = run(json!({ "toolOutputView": "full" }), &step_keys(1));
-            assert!(in_order(&drawn, &["full · ", "outline · "]), "{drawn}");
-        }
-
-        #[test]
-        fn a_stored_radar_setting_still_loads_as_outline() {
-            // `radar` was the outline stop's name before the rename.
-            let (drawn, session) = run(json!({ "toolOutputView": "radar" }), &[]);
-            assert!(drawn.contains("outline · "), "{drawn}");
-            assert_eq!(session.settings().tool_output_view().as_str(), "outline");
-        }
-
-        #[test]
-        fn the_cycled_choice_is_saved() {
-            let (_, session) = run(json!({ "toolOutputView": "outline" }), &step_keys(1));
-            assert_eq!(session.settings().tool_output_view().as_str(), "peek");
-            let (_, session) = run(json!({ "toolOutputView": "peek" }), &step_keys(1));
-            assert_eq!(session.settings().tool_output_view().as_str(), "full");
-            let (_, session) = run(json!({ "toolOutputView": "full" }), &step_keys(1));
-            assert_eq!(session.settings().tool_output_view().as_str(), "outline");
-        }
-
-        #[test]
-        fn the_toggle_leaves_the_startup_header_compact() {
-            // The header opens under `verbose`, not with the dial.
-            let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &step_keys(1));
-            assert!(in_order(&drawn, &["peek · "]), "{drawn}");
-            assert!(
-                !drawn.contains("Compose — the message in your hands"),
-                "{drawn}"
-            );
         }
     }
 }

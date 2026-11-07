@@ -208,50 +208,18 @@ fn disabled_tools_default_round_trip_and_preservation() {
     assert_eq!(saved["defaultModel"], "claude-sonnet");
 }
 
-// --- toolOutputView ---
-
+/// The view dial is gone (single view): a saved `toolOutputView` still
+/// loads with the rest of the file and has no effect.
 #[test]
-fn tool_output_view_defaults_round_trips_and_rejects_bogus() {
+fn a_saved_tool_output_view_is_ignored() {
     let d = Dirs::new();
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Peek);
-    let mut manager = d.manager();
-    manager.set_tool_output_view(ToolOutputView::Outline);
-    assert_eq!(read(&d.global_path())["toolOutputView"], "outline");
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Outline);
-
-    write(&d.global_path(), &json!({"toolOutputView": "bogus"}));
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Peek);
-
-    // The third layer round-trips as "full".
-    let mut manager = d.manager();
-    manager.set_tool_output_view(ToolOutputView::Full);
-    assert_eq!(read(&d.global_path())["toolOutputView"], "full");
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Full);
-
-    manager.set_tool_output_view(ToolOutputView::Peek);
-    assert_eq!(read(&d.global_path())["toolOutputView"], "peek");
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Peek);
-}
-
-#[test]
-fn tool_output_view_reads_known_values_and_falls_back_to_peek() {
-    let d = Dirs::new();
-    let read_view = |value: &str| {
-        write(&d.global_path(), &json!({"toolOutputView": value}));
-        d.manager().tool_output_view()
-    };
-    assert_eq!(read_view("outline"), ToolOutputView::Outline);
-    // `radar` was the outline stop's name before it was renamed; it still reads.
-    assert_eq!(read_view("radar"), ToolOutputView::Outline);
-    assert_eq!(
-        ToolOutputView::parse("radar"),
-        Some(ToolOutputView::Outline)
+    write(
+        &d.global_path(),
+        &json!({"toolOutputView": "full", "theme": "dark"}),
     );
-    assert_eq!(read_view("full"), ToolOutputView::Full);
-    assert_eq!(read_view("peek"), ToolOutputView::Peek);
-    // Old or unknown values fall back to the default.
-    assert_eq!(read_view("collapsed"), ToolOutputView::Peek);
-    assert_eq!(read_view("standard"), ToolOutputView::Peek);
+    let manager = d.manager();
+    assert_eq!(manager.settings()["toolOutputView"], json!("full"));
+    assert_eq!(manager.theme().as_deref(), Some("dark"));
 }
 
 /// The chrome dial is gone (TUI declutter): a saved `chromeDensity` still
@@ -261,9 +229,9 @@ fn a_saved_chrome_density_is_ignored() {
     let d = Dirs::new();
     write(
         &d.global_path(),
-        &json!({"chromeDensity": "compact", "toolOutputView": "full"}),
+        &json!({"chromeDensity": "compact", "theme": "dark"}),
     );
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Full);
+    assert_eq!(d.manager().theme().as_deref(), Some("dark"));
 }
 
 // --- tool settings (output caps + context GC) ---

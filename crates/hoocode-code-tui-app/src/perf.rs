@@ -402,10 +402,6 @@ fn rss_text(rss_kib: Option<u64>) -> String {
 /// dim labels with ink values, no blank rows inside. Times in milliseconds.
 pub fn format_report(snapshot: &Snapshot) -> String {
     use hoocode_code_tui_widgets::text_block::TextBlockComponent;
-<<<<<<< HEAD
-    use hoocode_tui_render::Component;
-=======
->>>>>>> agent/w-p5app
 
     let stats = &snapshot.stats;
     let threads = snapshot
@@ -422,13 +418,8 @@ pub fn format_report(snapshot: &Snapshot) -> String {
     block.add_field("frame write (ms)", &dist_value(stats.frame_write));
     block.add_field("keystroke to frame (ms)", &dist_value(stats.key_latency));
     block.add_field("loop iteration (ms)", &dist_value(stats.loop_iteration));
-<<<<<<< HEAD
-    // Render wide so no row wraps or drops its detail here; the chat
-    // record re-wraps to the pane width.
-=======
     // No width cap here: the caller (`/perf`) wraps the lines itself.
     // Render wide so nothing truncates.
->>>>>>> agent/w-p5app
     block.render(u16::MAX).join("\n")
 }
 

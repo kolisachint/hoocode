@@ -27,13 +27,12 @@ use std::rc::Rc;
 use hoocode_code_paths::{APP_NAME, CONFIG_DIR_NAME};
 use hoocode_code_settings::{
     DoubleEscapeAction, EditorBorder, FlagValue, LearnSettingKey, LearnSettings,
-    MarketplacePlatform, PluginInstallScope, QueueMode, ThinkingLevelSetting, ToolOutputView,
-    TreeFilterMode, WarningSettings,
+    MarketplacePlatform, PluginInstallScope, QueueMode, ThinkingLevelSetting, TreeFilterMode,
+    WarningSettings,
 };
 use hoocode_code_tools::light::PromptSurface;
 use hoocode_code_tui_theme::{get_select_list_theme, get_settings_list_theme, style_input, theme};
 use hoocode_code_tui_widgets::console::{hints, query_row, Console};
-use hoocode_code_tui_widgets::tool_output_view::{tool_output_view_description, TOOL_OUTPUT_VIEWS};
 use hoocode_tui_components::{
     Input, SelectItem, SelectList, SettingItem, SettingsList, SettingsListOptions, Spacer,
     SubmenuOutcome, Text,
@@ -89,7 +88,6 @@ pub struct SettingsConfig {
     pub tools: Vec<ToolToggleInfo>,
     pub tool_groups: Vec<ToolGroupInfo>,
     pub flags: Vec<FlagInfo>,
-    pub tool_output_view: ToolOutputView,
     pub tool_output_max_bytes: u64,
     pub tool_output_max_lines: u64,
     pub context_gc: bool,
@@ -145,7 +143,6 @@ impl Default for SettingsConfig {
             tools: Vec::new(),
             tool_groups: Vec::new(),
             flags: Vec::new(),
-            tool_output_view: ToolOutputView::Peek,
             tool_output_max_bytes: 8192,
             tool_output_max_lines: 200,
             context_gc: true,
@@ -208,7 +205,6 @@ pub enum SettingsChange {
         id: String,
         enabled: bool,
     },
-    ToolOutputView(ToolOutputView),
     ToolOutputMaxBytes(u64),
     ToolOutputMaxLines(u64),
     ContextGc(bool),
@@ -783,27 +779,31 @@ fn byte_labels(current: u64) -> Vec<String> {
     all.into_iter().map(|(l, _)| l).collect()
 }
 
-/// `ToolSettingsSubmenu`: how much of a tool result is rendered, and caps.
+/// `ToolSettingsSubmenu`: single-view note and caps.
 fn tool_settings_submenu(
-    view: ToolOutputView,
     max_bytes: u64,
     max_lines: u64,
     callback: SettingsCallback,
     slot: DoneSlot,
 ) -> ComponentHandle {
     let items = vec![
-        Leaf::cycle(
-            "tool-output-view",
-            "View",
-            format!(
-                "How much of a tool call the transcript shows, least to most. 'outline': {}. 'peek': {}. 'full': {}.",
-                tool_output_view_description(ToolOutputView::Outline),
-                tool_output_view_description(ToolOutputView::Peek),
-                tool_output_view_description(ToolOutputView::Full)
+        // Single view: the dial is gone. The note keeps the row searchable
+        // and says where the caps live (settings.json only).
+        Leaf {
+            id: "tool-output-note".into(),
+            label: "Single view".into(),
+            description: Some(
+                "One row per tool call; a block opens in place on Enter. The caps below \
+                 truncate future tool results; they live in settings.json as \
+                 toolOutput.maxBytes and toolOutput.maxLines."
+                    .into(),
             ),
-            view.as_str().into(),
-            TOOL_OUTPUT_VIEWS.iter().map(|v| v.as_str().to_string()).collect(),
-        )
+            current_value: "Enter expands".into(),
+            value_suffix: None,
+            keywords: None,
+            values: None,
+            submenu: None,
+        }
         .to_item(),
         Leaf::cycle(
             "output-max-bytes",
@@ -828,11 +828,6 @@ fn tool_settings_submenu(
         max,
         false,
         move |id, value| match id {
-            "tool-output-view" => {
-                if let Some(view) = ToolOutputView::parse(value) {
-                    emit(&callback, SettingsChange::ToolOutputView(view));
-                }
-            }
             "output-max-bytes" => {
                 // A hand-set cap's label is "<n> KB" by construction.
                 let bytes = match TOOL_OUTPUT_BYTE_PRESETS.iter().find(|(l, _)| *l == value) {
@@ -1751,7 +1746,7 @@ impl SettingsSelectorComponent {
             top.push(Leaf::opens(
                 "tool-output",
                 "Tool output",
-                "How much of a tool result is rendered, and where it is truncated.",
+                "Blocks open in place; the caps below truncate future tool results.",
                 format!(
                     "{} lines · {}",
                     config.tool_output_max_lines,
@@ -1759,7 +1754,6 @@ impl SettingsSelectorComponent {
                 ),
                 Rc::new(move |_current: &str, slot: DoneSlot| {
                     tool_settings_submenu(
-                        config.tool_output_view,
                         config.tool_output_max_bytes,
                         config.tool_output_max_lines,
                         callback.clone(),

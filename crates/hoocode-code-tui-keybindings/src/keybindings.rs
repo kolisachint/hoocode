@@ -118,22 +118,6 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             &["ctrl+x T"],
             "Cycle thinking level backward",
         ),
-        // ── Read — what you see of what it did
-        entry(
-            "app.view.cycleForward",
-            &["ctrl+x o"],
-            "Cycle tool output view (outline → peek → full)",
-        ),
-        entry(
-            "app.view.cycleBackward",
-            &["ctrl+x O"],
-            "Cycle tool output view backward",
-        ),
-        entry(
-            "app.tools.expand",
-            &["ctrl+x p"],
-            "Step tool output: outline → peek → full → outline",
-        ),
         entry(
             "app.thinking.toggle",
             &["ctrl+x b"],
