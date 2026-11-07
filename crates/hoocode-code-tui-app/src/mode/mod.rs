@@ -1103,65 +1103,26 @@ impl Mode {
                 buffer_row: click.buffer_row,
                 context: click.context,
             };
-            let toggled = toggle
+            // The click shares `enter`'s primitive (see `set_block_expanded`):
+            // the flag opens the body, the override keeps the focus path
+            // agreeing.
+            let target = toggle
                 .chain
                 .borrow_mut()
                 .as_any_mut()
                 .and_then(|a| a.downcast_mut::<ToolChainComponent>())
-                .is_some_and(|c| {
-                    c.toggle_block(toggle.block);
-                    true
-                });
-            if !toggled {
+                .and_then(|c| c.tool_blocks().get(toggle.block).cloned());
+            let Some(target) = target else {
                 continue;
-            }
+            };
+            let expanded = !target.borrow().is_expanded();
+            self.set_block_expanded(&target, expanded);
             // Pin first, keeping the header on its row; the toggle opens
             // under it.
             self.tui
                 .scroll_to_row(toggle.buffer_row, Some(toggle.context));
             self.dirty.set(true);
         }
-    }
-
-    /// `ctrl+x u`: pin the view on the newest tool block and focus it for
-    /// the pinned keys. While live, printable keys type into the prompt, so
-    /// this is the way into the blocks.
-    fn focus_newest_tool_block(&mut self) {
-        let Some(newest) = self.tool_blocks().pop() else {
-            return;
-        };
-        let width = self.tui.transcript_width();
-        let mut target: Option<i64> = None;
-        if let Some(base) = self.chat_base_row(width) {
-            let chat = self.transcript.chat.borrow();
-            if let Some(chat_offsets) = chat.child_row_offsets(width) {
-                for chain_handle in self.transcript.chains.iter().rev() {
-                    let handle: ComponentHandle = chain_handle.clone();
-                    let chain = chain_handle.borrow();
-                    if let Some(pos) = chain
-                        .tool_blocks()
-                        .iter()
-                        .rposition(|b| Rc::ptr_eq(b, &newest))
-                    {
-                        if let Some(start) = chain.header_start_row(pos) {
-                            target = chat
-                                .children()
-                                .iter()
-                                .position(|c| Rc::ptr_eq(c, &handle))
-                                .map(|i| base as i64 + chat_offsets[i] as i64 + start as i64);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        self.scroll_view
-            .borrow_mut()
-            .set_focused_block(Some(newest));
-        if let Some(row) = target {
-            self.tui.scroll_to_row(row, None);
-        }
-        self.dirty.set(true);
     }
 
     /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn
