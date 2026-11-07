@@ -1569,6 +1569,9 @@ impl Mode {
 
     /// `applyToolOutputView`: move every block and chain to `view`.
     pub(super) fn apply_tool_output_view(&mut self, view: ToolOutputView, persist: bool) {
+        // The dial moves every block at once, so a focused block's own stop
+        // no longer means anything.
+        self.clear_focus_overrides();
         // The change moves rows above the pinned top: the same message stays on top.
         let anchor =
             scroll_view::capture_top(&self.tui, &self.transcript.chat, self.scroll_body.as_ref());
@@ -2570,6 +2573,8 @@ mod tests {
         );
     }
 }
+
+pub(super) mod focus;
 
 #[cfg(test)]
 mod layer_goldens;

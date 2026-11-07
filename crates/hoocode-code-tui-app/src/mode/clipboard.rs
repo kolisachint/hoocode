@@ -15,7 +15,7 @@ use super::*;
 /// The native clipboard write (`clipboard-native.ts`), only where a display
 /// is available. `copy_to_clipboard` never uses it on Linux, where the
 /// platform tools keep selection ownership and the native library does not.
-fn native_clipboard_writer() -> Option<NativeWriter> {
+pub(super) fn native_clipboard_writer() -> Option<NativeWriter> {
     SystemClipboardHost::has_native_display().then(|| {
         Box::new(|text: &str| {
             arboard::Clipboard::new()

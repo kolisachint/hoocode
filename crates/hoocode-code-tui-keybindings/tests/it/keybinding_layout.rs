@@ -61,6 +61,7 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.input.voiceTranscribe",
     "app.message.followUp",
     "app.message.dequeue",
+    "app.scroll.focusNewest",
     "app.history.search",
     "app.clipboard.copyMessage",
     "app.clipboard.pasteImage",
@@ -195,6 +196,10 @@ const SCROLL_SCOPE: &[&str] = &[
     "app.scroll.searchInView",
     "app.scroll.searchNext",
     "app.scroll.searchPrevious",
+    "app.scroll.focusPrevious",
+    "app.scroll.focusNext",
+    "app.scroll.expandFocused",
+    "app.scroll.copyFocused",
 ];
 
 const SCOPES: &[(&str, &[&str])] = &[
@@ -637,7 +642,7 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings|hotkeys)"),
         (
             "Overlays",
-            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
+            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
         ("Lists", r"^app\.list\."),
         ("Dialogs", r"^app\.dialog\."),

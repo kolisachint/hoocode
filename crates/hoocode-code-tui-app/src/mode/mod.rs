@@ -66,7 +66,7 @@ use crate::notification_panel::{NotificationKind, NotificationPanel};
 use crate::perf::Perf;
 use crate::record_row::RecordRows;
 use crate::resource_display::{format_display_path, ResourceListing};
-use crate::scroll_view::{install_scroll_status, install_scroll_view};
+use crate::scroll_view::{install_scroll_status, install_scroll_view, TranscriptFocus};
 use crate::startup_progress;
 use crate::tips::{
     render_tip, tip_ttl, TipRotation, TipRotationOptions, TipsController, TipsControllerOptions,
@@ -266,6 +266,9 @@ enum AppEvent {
     BashDone(Result<BashResult, String>),
     /// A `/copy` write ended: what was copied, and the flavour that landed.
     CopyDone(String, Result<CopyFlavour, String>),
+    /// A `y` copy of a focused block's raw output ended: what was copied,
+    /// and its bytes that landed.
+    CopyRawDone(String, Result<usize, String>),
     /// The clipboard image read ended.
     PastedImage(Option<ClipboardImage>),
     /// A `/subagent` run ended: its mode, and its summary or error.
@@ -468,6 +471,9 @@ struct Mode {
     queue_recallable: Rc<Cell<bool>>,
     /// The transcript's scroll view: the leader opens its search (`leader.rs`).
     scroll_view: Rc<RefCell<crate::scroll_view::ScrollView>>,
+    /// U21 single view (P2): the pinned view's focused tool block, shared
+    /// with the scroll view (see `mode/transcript/focus.rs`).
+    focus: Rc<RefCell<TranscriptFocus>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
@@ -878,7 +884,11 @@ impl Mode {
             }),
             Rc::new(move || busy_session.is_streaming() || busy_session.is_retrying()),
         );
-        install_scroll_status(&mut tui, status_data.clone());
+        // U21 single view (P2): the pinned view's transcript focus, shared
+        // with the scroll view (`mode/transcript/focus.rs`).
+        let focus = Rc::new(RefCell::new(TranscriptFocus::new()));
+        scroll_view.borrow_mut().set_focus_state(focus.clone());
+        install_scroll_status(&mut tui, status_data.clone(), focus.clone());
 
         let (tx, rx) = mpsc::channel();
         let tx = AppSender {
@@ -944,6 +954,7 @@ impl Mode {
             transient,
             leader,
             scroll_view,
+            focus,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,
@@ -1029,6 +1040,8 @@ impl Mode {
         if !taken {
             self.tui.accept_event(event);
         }
+        // U21 single view (P2): the transcript keys the pinned view queued.
+        self.drain_focus_intents();
         self.hand_off_panel_up();
         self.return_panel_focus_if_asked();
         self.show_main();
@@ -1525,6 +1538,9 @@ impl Mode {
                     }
                     AppEvent::BashDone(result) => self.finish_bash_command(result),
                     AppEvent::CopyDone(subject, result) => self.finish_copy(&subject, result),
+                    AppEvent::CopyRawDone(subject, result) => {
+                        self.finish_raw_copy(&subject, result)
+                    }
                     AppEvent::PastedImage(image) => self.insert_pasted_image(image),
                     AppEvent::SubagentDone(mode, result) => self.finish_subagent(&mode, result),
                     AppEvent::Subagent(task_id, event) => {
