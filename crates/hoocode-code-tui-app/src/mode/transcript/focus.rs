@@ -6,8 +6,7 @@
 //! The scroll view queues the pinned keys as [`FocusIntent`]s (it owns no
 //! chains); the mode drains them here, where the chains, the session and the
 //! clipboard live. The per-block toggle stops are kept as overrides on the
-//! shared [`TranscriptFocus`], so they survive re-renders; the tool output
-//! dial wipes them when it moves every block at once.
+//! shared [`TranscriptFocus`], so they survive re-renders.
 
 use std::rc::Rc;
 
@@ -186,13 +185,13 @@ impl Mode {
         found
     }
 
-    /// Whether the focused block draws expanded: its toggle stop, else the
-    /// dial's stop (only the full stop opens every block).
+    /// Whether the focused block draws expanded: its toggle stop, else
+    /// collapsed (single view: every block starts as one row).
     fn focus_expanded(&self, call_id: &str) -> bool {
         self.focus
             .borrow()
             .expanded_override(call_id)
-            .unwrap_or(self.tool_output_view == ToolOutputView::Full)
+            .unwrap_or(false)
     }
 
     /// One primitive for both toggle paths (click + `enter`): flip the
@@ -282,10 +281,5 @@ impl Mode {
             Ok(bytes) => self.show_status(&format!("Copied {subject} ({bytes} bytes).")),
             Err(reason) => self.show_error(&format!("Could not copy the {subject}: {reason}.")),
         }
-    }
-
-    /// Forget the focused toggle stops (the dial moved every block at once).
-    pub(crate) fn clear_focus_overrides(&mut self) {
-        self.focus.borrow_mut().clear_expanded();
     }
 }

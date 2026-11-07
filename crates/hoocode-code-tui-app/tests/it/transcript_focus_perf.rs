@@ -132,7 +132,12 @@ fn two_thousand_focus_keys_queue_with_no_loop_stall() {
         proc: ProcSample::default(),
         stats,
     });
-    assert!(report.contains("stalls (loop > 500 ms): 0"), "{report}");
+    let stall_row = report
+        .lines()
+        .find(|line| line.contains("stalls (loop > 500 ms)"))
+        .expect("stall row in {report}");
+    let plain = hoocode_tui_util::strip_vt_control_characters(stall_row);
+    assert_eq!(plain.split_whitespace().last(), Some("0"), "{report}");
 }
 
 #[test]

@@ -1,6 +1,6 @@
- scrolled 43–61 of 78 · ↓ 3 new  esc live      peek · amber-harbor · claude-haiku-5-5 · 42% context
+ scrolled 43–61 of 78 · ↓ 3 new  esc live     amber-harbor · claude-haiku-5-5 · 42% context · $1.23
 --- styles ---
 r0 c1-32 fg=#989898
 r0 c33-35 fg=#e5e5e7
 r0 c36-40 fg=#989898
-r0 c47-98 fg=#989898
+r0 c46-98 fg=#989898

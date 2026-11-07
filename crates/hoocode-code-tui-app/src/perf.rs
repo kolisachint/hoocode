@@ -16,7 +16,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use hoocode_tui_render::FrameTiming;
+use hoocode_tui_render::{Component, FrameTiming};
 use serde_json::{json, Value};
 
 /// Samples kept per metric: the rolling window the percentiles are taken over.
@@ -401,23 +401,26 @@ fn rss_text(rss_kib: Option<u64>) -> String {
 /// The `/perf` notice as a text block (spec §4 S23): a bold heading,
 /// dim labels with ink values, no blank rows inside. Times in milliseconds.
 pub fn format_report(snapshot: &Snapshot) -> String {
-    use hoocode_code_tui_widgets::text_block::TextBlock;
+    use hoocode_code_tui_widgets::text_block::TextBlockComponent;
 
     let stats = &snapshot.stats;
     let threads = snapshot
         .proc
         .threads
         .map_or_else(|| "n/a".to_string(), |count| count.to_string());
-    let mut block = TextBlock::new("Performance", "the last 1024 samples of each");
-    block.fact("threads", &threads);
-    block.fact("rss", &rss_text(snapshot.proc.rss_kib));
-    block.fact("frames", &stats.frames.to_string());
-    block.fact("stalls (loop > 500 ms)", &stats.stalls.to_string());
-    block.fact("frame build (ms)", &dist_value(stats.frame_build));
-    block.fact("frame write (ms)", &dist_value(stats.frame_write));
-    block.fact("keystroke to frame (ms)", &dist_value(stats.key_latency));
-    block.fact("loop iteration (ms)", &dist_value(stats.loop_iteration));
-    block.render()
+    let mut block = TextBlockComponent::new("Performance");
+    block.set_heading_detail("the last 1024 samples of each");
+    block.add_field("threads", &threads);
+    block.add_field("rss", &rss_text(snapshot.proc.rss_kib));
+    block.add_field("frames", &stats.frames.to_string());
+    block.add_field("stalls (loop > 500 ms)", &stats.stalls.to_string());
+    block.add_field("frame build (ms)", &dist_value(stats.frame_build));
+    block.add_field("frame write (ms)", &dist_value(stats.frame_write));
+    block.add_field("keystroke to frame (ms)", &dist_value(stats.key_latency));
+    block.add_field("loop iteration (ms)", &dist_value(stats.loop_iteration));
+    // No width cap here: the caller (`/perf`) wraps the lines itself.
+    // Render wide so nothing truncates.
+    block.render(u16::MAX).join("\n")
 }
 
 fn dist_json(dist: Option<Dist>) -> Value {

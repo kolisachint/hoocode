@@ -1,4 +1,4 @@
- search  beta item 25  1 match  enter next · esc close        peek · claude-haiku-5-5 · 42% context
+ search  beta item 25  1 match  enter next · esc close               claude-haiku-5-5 · 42% context
 --- styles ---
 r0 c1-8 fg=#989898
 r0 c9-20 fg=#e5e5e7
@@ -7,4 +7,4 @@ r0 c32-36 fg=#e5e5e7
 r0 c37-44 fg=#989898
 r0 c45-47 fg=#e5e5e7
 r0 c48-53 fg=#989898
-r0 c62-98 fg=#989898
+r0 c69-98 fg=#989898

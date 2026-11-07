@@ -1,5 +1,6 @@
-//! Layer goldens: one scripted session rendered in each transcript layer
-//! (outline, peek, full) at 80 and 120 columns.
+//! Layer golden: one scripted session rendered in the single transcript
+//! layer at 80 and 120 columns. (The outline and full layers went with the
+//! P5 dial removal; their tests and files were deleted with them.)
 //!
 //! `Mode` needs a live session, so a session cannot be built here as a whole.
 //! [`Replay`] plays the script through the same `Transcript` calls the rebuild
@@ -63,7 +64,6 @@ struct Turn {
 struct Replay {
     chat: Rc<RefCell<Container>>,
     t: Transcript,
-    view: ToolOutputView,
     /// Calls waiting for their results, by call id (`rendered_pending`).
     pending: Vec<(String, ToolBlock)>,
     turn: Option<Turn>,
@@ -78,18 +78,13 @@ fn markdown_theme() -> Rc<dyn Fn() -> MarkdownTheme> {
 }
 
 impl Replay {
-    fn new(view: ToolOutputView) -> Self {
+    fn new() -> Self {
         let chat = Rc::new(RefCell::new(Container::new()));
         let t = Transcript::new(chat.clone());
-        // `apply_tool_output_view`: outline hides the peek-only rows (the
-        // landing line and its summary); the full stop opens `!` output.
-        t.outline_active.set(view == ToolOutputView::Outline);
-        t.full_active.set(view == ToolOutputView::Full);
         hoocode_tui_render::note_change();
         Self {
             t,
             chat,
-            view,
             pending: Vec::new(),
             turn: None,
             last_stop: None,
@@ -112,11 +107,7 @@ impl Replay {
     }
 
     fn thinking_display(&self) -> ThinkingDisplay {
-        if self.view == ToolOutputView::Outline {
-            ThinkingDisplay::Omit
-        } else {
-            ThinkingDisplay::Full
-        }
+        ThinkingDisplay::Full
     }
 
     /// A user message: its turn settles the one before, then it opens a mission.
@@ -124,7 +115,7 @@ impl Replay {
         if let Some(previous) = self.turn.take() {
             self.settle_turn(previous);
         }
-        self.t.begin_mission(text, self.view);
+        self.t.begin_mission(text);
         self.refresh();
         self.turn = Some(Turn {
             started_ms: timestamp,
@@ -152,7 +143,7 @@ impl Replay {
         ));
         {
             let mut c = component.borrow_mut();
-            c.set_view(self.view);
+            c.set_view(ToolOutputView::Peek);
             c.set_outline_mission(self.t.current_mission());
         }
         self.t.note_assistant(&component);
@@ -319,7 +310,7 @@ impl Replay {
             args,
             ToolExecutionOptions {
                 show_images: false,
-                view: self.view,
+                view: ToolOutputView::Peek,
                 ..Default::default()
             },
             Some(registered_tool_definition(name)),
@@ -332,7 +323,7 @@ impl Replay {
         let chain = match &self.t.open_chain {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
-                let chain = handle(ToolChainComponent::new(self.view));
+                let chain = handle(ToolChainComponent::new(ToolOutputView::Peek));
                 self.t.chat.borrow_mut().add_child(as_component(&chain));
                 self.t.chains.push(chain.clone());
                 self.t.open_chain = Some(chain.clone());
@@ -437,8 +428,8 @@ fn diff_row(sign: char, number: usize, body: &str) -> String {
 const LANDED_PROMPT: &str = "Make the config loader apply environment overrides before the file is parsed, so an override can set the parser's own options. Keep the public API the same for every caller in the workspace.\nUpdate the configuration section of the README so the order of resolution matches the code.\nRun the config tests afterwards and report anything that fails.";
 
 /// A mission that lands: a Read, an Edit, a Shell, then the answer.
-fn landed(view: ToolOutputView, _run: &str) -> Replay {
-    let mut r = Replay::new(view);
+fn landed(_run: &str) -> Replay {
+    let mut r = Replay::new();
     r.user(LANDED_PROMPT, 1_000);
     r.assistant(&assistant(
         vec![
@@ -519,8 +510,8 @@ fn landed(view: ToolOutputView, _run: &str) -> Replay {
 const FAILED_PROMPT: &str = "The parser test fails on the escaped-quote case. Find the cause, fix it, and check the screenshot of the failing output too.";
 
 /// A mission that does not land: a failing Shell, a PNG Read, then an error.
-fn failed(view: ToolOutputView, _run: &str) -> Replay {
-    let mut r = Replay::new(view);
+fn failed(_run: &str) -> Replay {
+    let mut r = Replay::new();
     r.user(FAILED_PROMPT, 1_000);
     r.assistant(&assistant(
         vec![call(
@@ -595,8 +586,8 @@ fn failed(view: ToolOutputView, _run: &str) -> Replay {
 const ABORTED_PROMPT: &str = "Run the full integration suite and report the first failure.";
 
 /// A mission cut short: the long-running Shell is interrupted and the turn aborted.
-fn aborted(view: ToolOutputView, _run: &str) -> Replay {
-    let mut r = Replay::new(view);
+fn aborted(_run: &str) -> Replay {
+    let mut r = Replay::new();
     r.user(ABORTED_PROMPT, 1_000);
     r.assistant(&assistant(
         vec![
@@ -618,7 +609,7 @@ fn aborted(view: ToolOutputView, _run: &str) -> Replay {
 const AGENT_PROMPT: &str = "Find where the parser handles escaped quotes in string literals.";
 
 /// A mission that delegates to a subagent; one of its sub-steps fails.
-fn agent(view: ToolOutputView, run: &str) -> Replay {
+fn agent(run: &str) -> Replay {
     live::apply(run, &json!({"type": "task_started"}));
     let steps = [
         (
@@ -663,7 +654,7 @@ fn agent(view: ToolOutputView, run: &str) -> Replay {
     }
     live::apply(run, &json!({"type": "task_done"}));
 
-    let mut r = Replay::new(view);
+    let mut r = Replay::new();
     r.user(AGENT_PROMPT, 1_000);
     r.assistant(&assistant(
         vec![
@@ -707,8 +698,8 @@ fn agent(view: ToolOutputView, run: &str) -> Replay {
 const STEPLESS_PROMPT: &str = "What does CONTRIBUTING say about commit messages?";
 
 /// A mission with no calls: an answer only.
-fn stepless(view: ToolOutputView, _run: &str) -> Replay {
-    let mut r = Replay::new(view);
+fn stepless(_run: &str) -> Replay {
+    let mut r = Replay::new();
     r.user(STEPLESS_PROMPT, 1_000);
     r.assistant(&assistant(
         vec![text(
@@ -727,51 +718,27 @@ fn stepless(view: ToolOutputView, _run: &str) -> Replay {
 // ---------------------------------------------------------------------------
 
 macro_rules! layer_golden {
-    ($name:ident, $scenario:ident, $view:ident, $width:literal) => {
+    ($name:ident, $scenario:ident, $width:literal) => {
         #[test]
         fn $name() {
             let _guard = guard();
-            let replay = $scenario(ToolOutputView::$view, stringify!($name));
+            let replay = $scenario(stringify!($name));
             let text = replay.render($width);
             assert_golden!(stringify!($name), text);
         }
     };
 }
 
-layer_golden!(layers_landed_outline_80, landed, Outline, 80);
-layer_golden!(layers_landed_outline_120, landed, Outline, 120);
-layer_golden!(layers_landed_peek_80, landed, Peek, 80);
-layer_golden!(layers_landed_peek_120, landed, Peek, 120);
-layer_golden!(layers_landed_full_80, landed, Full, 80);
-layer_golden!(layers_landed_full_120, landed, Full, 120);
-
-layer_golden!(layers_failed_outline_80, failed, Outline, 80);
-layer_golden!(layers_failed_outline_120, failed, Outline, 120);
-layer_golden!(layers_failed_peek_80, failed, Peek, 80);
-layer_golden!(layers_failed_peek_120, failed, Peek, 120);
-layer_golden!(layers_failed_full_80, failed, Full, 80);
-layer_golden!(layers_failed_full_120, failed, Full, 120);
-
-layer_golden!(layers_aborted_outline_80, aborted, Outline, 80);
-layer_golden!(layers_aborted_outline_120, aborted, Outline, 120);
-layer_golden!(layers_aborted_peek_80, aborted, Peek, 80);
-layer_golden!(layers_aborted_peek_120, aborted, Peek, 120);
-layer_golden!(layers_aborted_full_80, aborted, Full, 80);
-layer_golden!(layers_aborted_full_120, aborted, Full, 120);
-
-layer_golden!(layers_agent_outline_80, agent, Outline, 80);
-layer_golden!(layers_agent_outline_120, agent, Outline, 120);
-layer_golden!(layers_agent_peek_80, agent, Peek, 80);
-layer_golden!(layers_agent_peek_120, agent, Peek, 120);
-layer_golden!(layers_agent_full_80, agent, Full, 80);
-layer_golden!(layers_agent_full_120, agent, Full, 120);
-
-layer_golden!(layers_stepless_outline_80, stepless, Outline, 80);
-layer_golden!(layers_stepless_outline_120, stepless, Outline, 120);
-layer_golden!(layers_stepless_peek_80, stepless, Peek, 80);
-layer_golden!(layers_stepless_peek_120, stepless, Peek, 120);
-layer_golden!(layers_stepless_full_80, stepless, Full, 80);
-layer_golden!(layers_stepless_full_120, stepless, Full, 120);
+layer_golden!(layers_landed_peek_80, landed, 80);
+layer_golden!(layers_landed_peek_120, landed, 120);
+layer_golden!(layers_failed_peek_80, failed, 80);
+layer_golden!(layers_failed_peek_120, failed, 120);
+layer_golden!(layers_aborted_peek_80, aborted, 80);
+layer_golden!(layers_aborted_peek_120, aborted, 120);
+layer_golden!(layers_agent_peek_80, agent, 80);
+layer_golden!(layers_agent_peek_120, agent, 120);
+layer_golden!(layers_stepless_peek_80, stepless, 80);
+layer_golden!(layers_stepless_peek_120, stepless, 120);
 
 /// What a mission's flight items read as, one line each: `batch N` for a batch
 /// of N calls, `thinking <gist>` for a thinking item.
@@ -813,7 +780,7 @@ fn call_message(id: &str, name: &str, args: Value, at: i64) -> AssistantMessage 
 #[test]
 fn sequential_calls_without_thinking_make_one_batch() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Outline);
+    let mut r = Replay::new();
     r.user("fix the wrap helper", 1_000);
     r.assistant(&call_message(
         "c1",
@@ -843,7 +810,7 @@ fn sequential_calls_without_thinking_make_one_batch() {
 #[test]
 fn thinking_between_calls_splits_the_batch_at_its_gist() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Outline);
+    let mut r = Replay::new();
     r.user("fix the wrap helper", 1_000);
     r.assistant(&call_message(
         "c1",
@@ -876,7 +843,7 @@ fn thinking_between_calls_splits_the_batch_at_its_gist() {
 #[test]
 fn thinking_on_the_opening_message_comes_before_the_first_batch() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Outline);
+    let mut r = Replay::new();
     r.user("fix the wrap helper", 1_000);
     r.assistant(&assistant(
         vec![
@@ -898,7 +865,7 @@ fn thinking_on_the_opening_message_comes_before_the_first_batch() {
 #[test]
 fn a_message_without_thinking_text_adds_no_item() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Outline);
+    let mut r = Replay::new();
     r.user("fix the wrap helper", 1_000);
     r.assistant(&assistant(
         vec![
@@ -917,7 +884,7 @@ fn a_message_without_thinking_text_adds_no_item() {
 #[test]
 fn thinking_before_the_final_answer_follows_the_last_batch() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Outline);
+    let mut r = Replay::new();
     r.user("fix the wrap helper", 1_000);
     r.assistant(&call_message(
         "c1",
@@ -945,7 +912,7 @@ fn thinking_before_the_final_answer_follows_the_last_batch() {
 #[test]
 fn an_older_finished_mission_folds_and_the_latest_finished_and_live_stay_open() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Outline);
+    let mut r = Replay::new();
     let folded = |r: &mut Replay| -> Vec<bool> {
         r.refresh();
         r.t.missions

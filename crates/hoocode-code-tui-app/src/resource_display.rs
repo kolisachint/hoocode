@@ -13,7 +13,6 @@ use hoocode_code_resources::agent_registry::summarize_agent_description;
 use hoocode_code_resources::context_files::ContextFile;
 use hoocode_code_resources::diagnostics::{DiagnosticType, ResourceDiagnostic};
 use hoocode_code_resources::source_info::{SourceInfo, SourceScope};
-use hoocode_code_settings::ToolOutputView;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
@@ -59,7 +58,8 @@ pub struct ResourceListing {
     pub columns: Option<usize>,
     pub quiet_startup: bool,
     pub verbose: bool,
-    /// The tool output dial is at full (verbose opens the details as well).
+    /// The details start open (verbose opens them as well). Each listing
+    /// carries its own toggle; nothing global moves it.
     pub expanded: bool,
     /// The start screen's header already counts the skills and agents: leave
     /// the summary line (and its blank row) out.
@@ -353,21 +353,14 @@ fn handle<C: hoocode_tui_render::Component + 'static>(c: C) -> ComponentHandle {
     Rc::new(RefCell::new(c))
 }
 
-/// Whether the startup header and the resource details are open: under
-/// `verbose`, or at the full stop. The dial moves them, so peek and outline
-/// fold them again (unless `verbose`).
-pub fn startup_details_open(verbose: bool, view: ToolOutputView) -> bool {
-    verbose || view == ToolOutputView::Full
-}
-
 /// `willShowResourceListing`.
 pub fn will_show_resource_listing(listing: &ResourceListing, force: bool) -> bool {
     force || listing.verbose || !listing.quiet_startup
 }
 
 /// What the listing put into the transcript: the components to append, and
-/// the detail block (skills, commands, agents, MCP) as a typed handle, so the
-/// tool output dial can open and fold it (`set_expanded`).
+/// the detail block (skills, commands, agents, MCP) as a typed handle, so
+/// the transcript can open and fold it (`set_expanded`).
 pub struct LoadedResources {
     pub components: Vec<ComponentHandle>,
     pub details: Option<Rc<RefCell<ExpandableText>>>,
@@ -633,7 +626,7 @@ pub fn show_loaded_resources_with_details(
             let block = Rc::new(RefCell::new(ExpandableText::new(
                 String::new,
                 move || details.clone(),
-                // `getStartupExpansionState`: verbose, or the dial at full.
+                // `getStartupExpansionState`: verbose, or asked open.
                 listing.verbose || listing.expanded,
                 0,
                 0,

@@ -332,7 +332,6 @@ fn status() -> ScrollStatus {
 
 fn base() -> StatusLineData {
     StatusLineData {
-        view: "peek".into(),
         session: Some("amber-harbor".into()),
         model: Some("claude-haiku-5-5".into()),
         ..Default::default()

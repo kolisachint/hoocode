@@ -19,7 +19,7 @@ use hoocode_code_media::clipboard_image::ClipboardImage;
 use hoocode_code_media::rich_clipboard::CopyFlavour;
 use hoocode_code_paths::{env_override, VERSION};
 use hoocode_code_permissions::ClearanceChoice;
-use hoocode_code_settings::{EditorBorder, ToolOutputView};
+use hoocode_code_settings::EditorBorder;
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::live::LiveSink;
 use hoocode_code_task_store::task_store;
@@ -433,7 +433,6 @@ struct Mode {
     /// gate's questions) wait for their answer.
     dialog_select: Rc<Cell<u32>>,
     update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
-    tool_output_view: ToolOutputView,
     hide_thinking_block: bool,
     chain_closed_for_current_message: bool,
     dial_reverse_taught: HashSet<&'static str>,
@@ -618,7 +617,6 @@ impl Mode {
             editor_border,
             editor_padding_x,
             autocomplete_max_visible,
-            tool_output_view,
             hide_thinking_block,
             code_block_indent,
             show_images,
@@ -630,7 +628,6 @@ impl Mode {
             settings.editor_border(),
             settings.editor_padding_x() as usize,
             settings.autocomplete_max_visible() as usize,
-            settings.tool_output_view(),
             settings.hide_thinking_block(),
             settings.code_block_indent(),
             settings.show_images(),
@@ -759,9 +756,8 @@ impl Mode {
             Rc::new(move || queue_read.borrow().clone()),
             bash_marker.clone(),
         ));
-        let mut task_panel_component = TaskPanelComponent::new();
-        task_panel_component.set_outline(tool_output_view == ToolOutputView::Outline);
-        let task_panel = handle(task_panel_component);
+        // Single view: the task panel always draws its rows (no outline).
+        let task_panel = handle(TaskPanelComponent::new());
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
 
         let render_flag = dirty.clone();
@@ -910,7 +906,7 @@ impl Mode {
             tx,
             wake: tui.wake_handle(),
         };
-        let mode = Self {
+        Self {
             session,
             runtime: options.runtime,
             tui,
@@ -948,7 +944,6 @@ impl Mode {
             herdr: None,
             dialog_select: Rc::new(Cell::new(0)),
             update_notice: options.update_notice,
-            tool_output_view,
             hide_thinking_block,
             chain_closed_for_current_message: false,
             dial_reverse_taught: HashSet::new(),
@@ -1016,16 +1011,7 @@ impl Mode {
             restarted_input: None,
             session_op: None,
             mode_dial_after: None,
-        };
-        // Peek-only rows follow the saved view from the first frame: a
-        // restored outline session hides them without waiting for a flip.
-        mode.transcript
-            .outline_active
-            .set(mode.tool_output_view == ToolOutputView::Outline);
-        mode.transcript
-            .full_active
-            .set(mode.tool_output_view == ToolOutputView::Full);
-        mode
+        }
     }
 
     /// The next time something is due without input.
