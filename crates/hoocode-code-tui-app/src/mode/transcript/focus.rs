@@ -195,6 +195,15 @@ impl Mode {
             .unwrap_or(self.tool_output_view == ToolOutputView::Full)
     }
 
+    /// One primitive for both toggle paths (click + `enter`): flip the
+    /// block's expanded flag and record the stop in the override map, so a
+    /// click and `enter` agree however the block was opened.
+    pub(crate) fn set_block_expanded(&mut self, block: &ToolBlock, expanded: bool) {
+        let call_id = block.borrow().tool_call_id().to_string();
+        block.borrow_mut().set_expanded(expanded);
+        self.focus.borrow_mut().set_expanded(&call_id, expanded);
+    }
+
     /// `enter` on a focused block: open it in place, or fold it back to one
     /// row. The header keeps its screen row while the body opens under it.
     fn toggle_focused(&mut self) {
@@ -207,12 +216,7 @@ impl Mode {
             pin_to_tail(self);
         }
         let anchor = capture_top(&self.tui, &self.transcript.chat, self.scroll_body.as_ref());
-        block.borrow_mut().set_view(if expanded {
-            ToolOutputView::Full
-        } else {
-            ToolOutputView::Outline
-        });
-        self.focus.borrow_mut().set_expanded(&call_id, expanded);
+        self.set_block_expanded(&block, expanded);
         reanchor_top(
             &mut self.tui,
             &self.transcript.chat,

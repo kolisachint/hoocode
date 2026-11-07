@@ -28,7 +28,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
-use hoocode_code_tui_widgets::tool_execution::ToolExecutionComponent;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui};
 
@@ -178,57 +177,6 @@ pub fn hit_chain(
         .downcast_ref::<ToolChainComponent>()?
         .header_hit(row)?;
     Some((chain, block))
-}
-
-/// A click on a transcript body cell queued for the mode to drain: the
-/// buffer row clicked and how many buffer rows sat above it on screen, at
-/// the transcript width the rows were laid out at.
-///
-/// This mirrors tui-render's `BodyClick` field for field: that type is not
-/// re-exported yet, so the queue cannot name it from here. A follow-up
-/// re-exporting it should remove this mirror and name that type instead.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BodyClick {
-    pub buffer_row: i64,
-    pub context: i64,
-    pub width: u16,
-}
-
-/// Hit-test a transcript buffer row against the full-screen body: the chat
-/// child holds the transcript, so the row is mapped through the body's
-/// offsets to a chat-relative row and [`hit_chain`] places it in a chain's
-/// header. Rows above the chat (the header), body rows, and rows outside
-/// every chain are `None` (a click there does nothing).
-pub fn hit_block(
-    body: &Rc<RefCell<Container>>,
-    chat: &Rc<RefCell<Container>>,
-    width: u16,
-    buffer_row: i64,
-) -> Option<(ComponentHandle, usize)> {
-    let chat_handle: ComponentHandle = chat.clone();
-    let body_ref = body.borrow();
-    let index = body_ref
-        .children()
-        .iter()
-        .position(|c| Rc::ptr_eq(c, &chat_handle))?;
-    let chat_base = body_ref.child_row_offsets(width)?[index];
-    let rel = buffer_row.checked_sub(chat_base as i64)?;
-    let rel = usize::try_from(rel).ok()?;
-    hit_chain(chat, width, rel)
-}
-
-/// `on_body_click`: queue every transcript body click for the mode to
-/// drain. The mode hit-tests each queued row with [`hit_block`] while the
-/// layout still matches the painted frame the click mapped to, toggles the
-/// header it lands on, and pins the view.
-pub fn install_body_click(ui: &mut Tui, pending: Rc<RefCell<Vec<BodyClick>>>) {
-    ui.on_body_click = Some(Box::new(move |click| {
-        pending.borrow_mut().push(BodyClick {
-            buffer_row: click.buffer_row,
-            context: click.context,
-            width: click.width,
-        });
-    }));
 }
 
 /// Plain typed text rather than a chord (control bytes and escapes are keys).
@@ -425,9 +373,6 @@ pub struct ScrollView {
     chat: Rc<RefCell<Container>>,
     /// The full-screen body that holds the chat, when the screen has one.
     body: Option<Rc<RefCell<Container>>>,
-    /// The block `{` `}` move and `enter` opens (P2 renders its fill).
-    /// `ctrl+x u` and, later, a click set it; a toggle never clears it.
-    focused_block: Option<Rc<RefCell<ToolExecutionComponent>>>,
     is_user_message: IsUserMessage,
     /// The prompt holds no text: the plain arrows step the pinned view.
     editor_empty: EditorEmpty,
@@ -483,16 +428,6 @@ fn scroll_step(ui: &mut Tui, data: &str) -> bool {
 }
 
 impl ScrollView {
-    /// The block `{` `}` move and `enter` opens, if one has the focus.
-    pub fn focused_block(&self) -> Option<Rc<RefCell<ToolExecutionComponent>>> {
-        self.focused_block.clone()
-    }
-
-    /// Focus a block: `ctrl+x u` moves here, and, later, a click.
-    pub fn set_focused_block(&mut self, block: Option<Rc<RefCell<ToolExecutionComponent>>>) {
-        self.focused_block = block;
-    }
-
     fn editor_focused(&self, ui: &Tui) -> bool {
         ui.focused().is_some_and(|f| Rc::ptr_eq(&f, &self.editor))
     }
@@ -878,7 +813,6 @@ pub fn install_scroll_view(
         editor,
         chat,
         body,
-        focused_block: None,
         is_user_message,
         editor_empty,
         agent_busy,
@@ -931,9 +865,10 @@ mod tests {
     }
 
     /// Two stacked chains: a header row of the second chain's second block
-    /// hits `(chain, 1)`, while an expanded body row hits nothing.
+    /// hits `(chain, 1)`, while an expanded body row hits nothing. Rows are
+    /// chat-relative, the same mapping the mode's click drain uses.
     #[test]
-    fn hit_block_places_header_and_body_rows() {
+    fn hit_chain_places_header_and_body_rows() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let width: u16 = 80;
         let chain0 = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
@@ -954,10 +889,6 @@ mod tests {
         body.borrow_mut().add_child(chat_handle);
         body.borrow_mut().render(width);
 
-        let chat_base = body
-            .borrow()
-            .child_row_offsets(width)
-            .expect("body laid out")[0];
         let chat_offsets = chat
             .borrow()
             .child_row_offsets(width)
@@ -967,8 +898,8 @@ mod tests {
             .borrow()
             .header_start_row(1)
             .expect("second block header");
-        let header_row = (chat_base + chat_offsets[1] + header) as i64;
-        let hit = hit_block(&body, &chat, width, header_row).expect("header row hits");
+        let header_rel = chat_offsets[1] + header;
+        let hit = hit_chain(&chat, width, header_rel).expect("header row hits");
         assert!(Rc::ptr_eq(&hit.0, &chain1_handle));
         assert_eq!(hit.1, 1);
 
@@ -977,7 +908,6 @@ mod tests {
         // hits nothing.
         assert!(header > 0, "second header leaves a body row above it");
         assert_eq!(chain1.borrow().header_hit(header - 1), None);
-        let body_row = header_row - 1;
-        assert!(hit_block(&body, &chat, width, body_row).is_none());
+        assert!(hit_chain(&chat, width, header_rel - 1).is_none());
     }
 }
