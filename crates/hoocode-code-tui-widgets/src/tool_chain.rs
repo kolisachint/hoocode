@@ -373,7 +373,6 @@ impl ToolChainComponent {
     /// collapsed block is its header row. The toggle opens the body whole;
     /// the full stop opens every body. A subagent's own calls sit under its
     /// row, indented 3, when it is open.
-
     /// Flip a block's toggle by its position in the chain. A click the
     /// hit-test placed calls this; an unknown index does nothing.
     pub fn toggle_block(&mut self, index: usize) {

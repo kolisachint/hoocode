@@ -68,8 +68,7 @@ use crate::perf::Perf;
 use crate::record_row::RecordRows;
 use crate::resource_display::{format_display_path, ResourceListing};
 use crate::scroll_view::{
-    child_base, hit_chain, install_scroll_status, install_scroll_view, BlockToggle,
-    TranscriptFocus,
+    child_base, hit_chain, install_scroll_status, install_scroll_view, BlockToggle, TranscriptFocus,
 };
 use crate::startup_progress;
 use crate::tips::{
