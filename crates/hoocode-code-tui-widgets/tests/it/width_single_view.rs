@@ -372,7 +372,7 @@ fn running_collapsed_keeps_one_dim_tail_line() {
             .iter()
             .position(|r| r.contains("cargo clippy"))
             .expect("running header");
-        // Working rows read accent `◉`.
+        // A working row carries the accent `◉` (tui.md single-view mark).
         assert!(rows[header].starts_with(" ◉ "), "running mark: {rows:?}");
         let tail: Vec<&String> = rows[header + 1..]
             .iter()

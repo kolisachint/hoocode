@@ -274,9 +274,10 @@ fn facts_follow_the_subject_and_zero_values_stay_out() {
         ],
     );
     let out = strip(&c.render(100).join("\n"));
-    assert!(out.contains(" ● Edit /work/a.rs  +1 −1"), "{out}");
+    // Chain subjects read relative to the cwd, as the outline recap does.
+    assert!(out.contains(" ● Edit a.rs  +1 −1"), "{out}");
     assert!(
-        out.contains(" ● Edit /work/b.rs  +1\n") || out.contains(" ● Edit /work/b.rs  +1 "),
+        out.contains(" ● Edit b.rs  +1\n") || out.contains(" ● Edit b.rs  +1 "),
         "{out}"
     );
     assert!(!out.contains("−0") && !out.contains("+0"), "{out}");
@@ -330,7 +331,7 @@ fn shell_failure_at_40_keeps_exit_while_dropping_duration_then_reason() {
 }
 
 #[test]
-fn a_long_label_wraps_and_the_facts_close_the_last_row() {
+fn a_long_label_cuts_to_one_row_and_keeps_the_facts() {
     let _g = lock();
     let view = ToolOutputView::Peek;
     let command = format!(
@@ -356,21 +357,15 @@ fn a_long_label_wraps_and_the_facts_close_the_last_row() {
         .iter()
         .map(|l| strip(l).trim_end().to_string())
         .collect();
-    let header: Vec<&String> = rows
-        .iter()
-        .filter(|r| !r.is_empty() && !r.starts_with("    ok"))
-        .collect();
-    assert!(header.len() >= 3, "{rows:?}");
+    // A settled, collapsed Shell shows one header row and no body.
+    let header: Vec<&String> = rows.iter().filter(|r| !r.is_empty()).collect();
+    assert_eq!(header.len(), 1, "{rows:?}");
     assert!(header[0].starts_with(" ● Shell cargo test"), "{rows:?}");
-    assert!(
-        header[1].starts_with("   flag") || header[1].starts_with("   "),
-        "{rows:?}"
-    );
-    assert!(
-        header.last().unwrap().ends_with("exit 0 · 1 line"),
-        "{rows:?}"
-    );
-    assert!(!rows.iter().any(|r| r.contains('…')), "{rows:?}");
+    // The target cuts at a word while the primary facts stay on the row.
+    assert!(header[0].contains('…'), "the target cuts: {rows:?}");
+    assert!(header[0].contains("exit 0"), "{rows:?}");
+    assert!(!header[0].contains("flag20"), "late words cut: {rows:?}");
+    assert!(header[0].chars().count() <= 50, "{rows:?}");
 }
 
 #[test]

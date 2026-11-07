@@ -168,7 +168,7 @@ fn fold_rows_adds_the_renderers_own_hint_to_its_count() {
 }
 
 #[test]
-fn a_long_tool_header_wraps_in_peek_and_full_instead_of_being_cut() {
+fn a_long_tool_header_cuts_to_one_row_in_peek_and_full() {
     let _g = lock();
     let words: Vec<String> = (1..=30).map(|i| format!("flag{i:02}")).collect();
     let command = format!("cargo test {}", words.join(" "));
@@ -183,18 +183,15 @@ fn a_long_tool_header_wraps_in_peek_and_full_instead_of_being_cut() {
         shell.borrow_mut().set_expanded(view == Peek);
         let mut chain = chain_with(view, vec![shell]);
         let rows = render(&mut chain, 60);
-        let joined = rows.join(" ");
-        for word in &words {
-            assert!(
-                joined.contains(word.as_str()),
-                "{view:?} lost {word}: {rows:?}"
-            );
-        }
-        assert!(!rows.iter().any(|r| r.contains('…')), "{view:?}: {rows:?}");
+        // render() drops blank rows: the single header, then the output whole.
+        assert_eq!(rows.len(), 2, "{view:?}: {rows:?}");
         assert!(rows[0].contains("● Shell"), "the glyph leads: {rows:?}");
-        assert!(rows.len() >= 3, "the header took several rows: {rows:?}");
-        // The wrapped header rows are not body: the output follows whole.
-        assert!(rows.iter().any(|r| r.trim() == "ok"), "{view:?}: {rows:?}");
+        assert!(rows[0].contains('…'), "the target cuts: {rows:?}");
+        assert!(rows[0].chars().count() <= 60, "the header fits: {rows:?}");
+        assert!(rows[0].contains("exit 0"), "primary facts stay: {rows:?}");
+        assert!(!rows[0].contains("flag30"), "late words cut: {rows:?}");
+        // The cut header is not body: the output follows whole.
+        assert_eq!(rows[1].trim(), "ok", "{view:?}: {rows:?}");
     }
 }
 

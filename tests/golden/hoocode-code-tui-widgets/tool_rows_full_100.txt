@@ -1,5 +1,5 @@
 
- ● Read /work/src/config.rs  12 lines
+ ● Read src/config.rs  12 lines
     setting_01
     setting_02
     setting_03
@@ -13,7 +13,7 @@
     setting_11
     setting_12
 
- ● Edit /work/src/config.rs  +2 −2
+ ● Edit src/config.rs  +2 −2
      12     let mut cfg = Config::default();
     -14     let raw = read_file(path)?;
     -15     apply_env(&mut cfg);
@@ -38,13 +38,12 @@
 --- styles ---
 r1 c1 fg=#b5bd68
 r1 c3-6 fg=#e5e5e7 bold
-r1 c8-26 fg=#e5e5e7
-r1 c29-36 fg=#989898
+r1 c8-20 fg=#e5e5e7
+r1 c23-30 fg=#989898
 r15 c1 fg=#b5bd68
 r15 c3-6 fg=#e5e5e7 bold
-r15 c8-26 fg=#e5e5e7
-r15 c29-30 fg=#b5bd68
-r15 c32-33 fg=#d58181
+r15 c8-20 fg=#e5e5e7
+r15 c23-27 fg=#989898
 r16 c4-43 fg=#989898
 r17 c4 fg=#d58181
 r17 c5-38 fg=#989898

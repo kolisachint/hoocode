@@ -66,6 +66,11 @@ fn subject_source(args: &Value, cwd: &str) -> String {
     let Some(subject) = subject else {
         return String::new();
     };
+    // URLs are not paths: relativizing one against the cwd mangles it
+    // (the empty `//` component collapses, so `https://` loses a slash).
+    if subject.contains("://") {
+        return subject.to_string();
+    }
     // Paths are the most common subject and the least readable in absolute form.
     let relative = hoocode_code_paths::cwd_relative_path(Path::new(subject), Path::new(cwd))
         .map(|p| p.to_string_lossy().into_owned());

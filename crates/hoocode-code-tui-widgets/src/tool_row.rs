@@ -234,7 +234,11 @@ fn render_header_text(
     secs: &[&str],
     reason: Option<&str>,
 ) -> String {
-    let mut out = format!("{head}{target}");
+    let mut out = head.to_string();
+    if !target.is_empty() {
+        out.push(' ');
+        out.push_str(target);
+    }
     let mut facts: Vec<&str> = Vec::new();
     if !prim.is_empty() {
         facts.push(prim);
@@ -262,7 +266,7 @@ pub fn fit_header(
     reason: Option<&str>,
     width: usize,
 ) -> String {
-    let head = format!("{mark} {tool} ");
+    let head = format!("{mark} {tool}");
     let prim = primary.join(" · ");
     // Step 1: secondary facts drop whole, right to left.
     let mut kept: Vec<&str> = secondary.to_vec();
@@ -277,7 +281,7 @@ pub fn fit_header(
     // Step 2: the target shortens against the full reason, never below its
     // minimum.
     let rpart = reason.map(|r| header_cells(r) + 3).unwrap_or(0);
-    let avail_t = width.saturating_sub(header_cells(&head) + 2 + header_cells(&prim) + rpart);
+    let avail_t = width.saturating_sub(header_cells(&head) + 3 + header_cells(&prim) + rpart);
     let short = shorten_target(target, avail_t);
     // Steps 3-4: the reason cuts at a word, or drops.
     let base = render_header_text(&head, &short, &prim, &[], None);
@@ -315,7 +319,7 @@ pub fn header_spans(
     width: usize,
     palette: &Palette,
 ) -> Vec<Span<'static>> {
-    let head = format!("{} {tool} ", mark_char(mark));
+    let head = format!("{} {tool}", mark_char(mark));
     let prim = primary.join(" · ");
     // Step 1: secondary facts drop whole, right to left.
     let mut kept: Vec<&str> = secondary.to_vec();
@@ -333,7 +337,7 @@ pub fn header_spans(
     } else {
         // Step 2: the target shortens against the full reason.
         let rpart = reason.map(|r| header_cells(r) + 3).unwrap_or(0);
-        let avail_t = width.saturating_sub(header_cells(&head) + 2 + header_cells(&prim) + rpart);
+        let avail_t = width.saturating_sub(header_cells(&head) + 3 + header_cells(&prim) + rpart);
         let short = shorten_target(target, avail_t);
         // Steps 3-4: the reason cuts at a word, or drops.
         let base = render_header_text(&head, &short, &prim, &[], None);
@@ -348,9 +352,11 @@ pub fn header_spans(
         mark.span(palette),
         Span::raw(" ".to_string()),
         Span::styled(tool.to_string(), bold(palette.ink())),
-        Span::raw(" ".to_string()),
-        Span::styled(short_target, palette.ink()),
     ];
+    if !short_target.is_empty() {
+        spans.push(Span::raw(" ".to_string()));
+        spans.push(Span::styled(short_target, palette.ink()));
+    }
     let failed_exit = matches!(mark, Mark::Failed);
     let mut first = true;
     let mut push_fact = |text: &str, err: bool, spans: &mut Vec<Span<'static>>| {

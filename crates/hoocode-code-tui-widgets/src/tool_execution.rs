@@ -978,6 +978,69 @@ impl ToolExecutionComponent {
         join_facts(groups, palette)
     }
 
+    /// The single-view header's structured parts: the target after the tool
+    /// name, the primary facts (never dropped), the secondary facts
+    /// (dropped first) and a failed Shell row's dim reason (cut, never
+    /// wrapped). [`Self::fact_runs`] records the reason as the first
+    /// secondary run of a failed Shell row; it is split out here so the
+    /// chain's cut order can treat it apart. Read-only: fact content is
+    /// unchanged, for live and frozen rows alike.
+    pub fn header_parts(&self) -> (String, Vec<String>, Vec<String>, Option<String>) {
+        // The Agent row names the subtype, as the call line does
+        // (`Agent explore · Trace escaped quotes`): the `Agent` word comes
+        // from the tool name, the rest is the label.
+        let target = if self.is_agent() {
+            let subtype = self
+                .args
+                .get("subagent_type")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("agent")
+                .to_string();
+            let resume = if self.args.get("resume_task_id").is_some() {
+                "resume "
+            } else {
+                ""
+            };
+            match self.agent_label() {
+                Some((_, summary)) => format!("{resume}{subtype} · {summary}"),
+                None => format!("{resume}{subtype}"),
+            }
+        } else {
+            chain_subject(&self.tool_name, &self.args, &self.cwd)
+        };
+        // Mirrors [`Self::facts`]: a frozen call has released its payloads,
+        // so the facts come from the capture taken at freeze.
+        let (primary_runs, secondary_runs) = match &self.snapshot {
+            Some(snapshot) if self.frozen => (snapshot.primary.clone(), snapshot.secondary.clone()),
+            _ => self.fact_runs(),
+        };
+        let flatten = |runs: Vec<FactRun>| -> Vec<String> {
+            runs.into_iter()
+                .map(|run| run.into_iter().map(|seg| seg.text).collect::<String>())
+                .filter(|text| !text.trim().is_empty())
+                .collect()
+        };
+        let primary = flatten(primary_runs);
+        let mut secondary = flatten(secondary_runs);
+        let mut reason = None;
+        if self.tool_name == "Shell" && self.is_error() && !secondary.is_empty() {
+            // Live, the output still in tells whether a reason was found;
+            // frozen, the payloads are released, but `freeze` kept the
+            // first error line, which is non-empty exactly when a reason
+            // was recorded first.
+            let recorded = if self.frozen {
+                !self.frozen_error.trim().is_empty()
+            } else {
+                shell_failure_reason(&self.text_output()).is_some()
+            };
+            if recorded {
+                reason = Some(secondary.remove(0));
+            }
+        }
+        (target, primary, secondary, reason)
+    }
+
     /// The row's facts unstyled: the primary facts (never dropped by the cut
     /// order) and the secondary ones (dropped first). [`Self::facts`] styles
     /// them; [`Self::row_snapshot`] keeps them for frozen rows.
@@ -1331,10 +1394,19 @@ impl ToolExecutionComponent {
         self.expanded || self.view == ToolOutputView::Full
     }
 
-    /// Whether the block draws its body at all: only an open toggle does.
-    /// A failure settles collapsed like every other call.
+    /// Whether the block draws its body at all: an open toggle, or a
+    /// running call whose live tail the collapsed single-view row keeps
+    /// (Decision 4). A failure settles collapsed like every other call,
+    /// and outline rows never carry a body.
     fn should_show_body(&self) -> bool {
-        !self.interrupted && self.expanded()
+        if self.interrupted {
+            return false;
+        }
+        if self.expanded() {
+            return true;
+        }
+        self.view != ToolOutputView::Outline
+            && (self.result.is_none() || self.is_partial || self.is_live_background_job())
     }
 
     fn should_show_signal_line(&self) -> bool {
