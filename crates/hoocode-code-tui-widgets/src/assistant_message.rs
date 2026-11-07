@@ -14,7 +14,7 @@ use hoocode_tui_render::{fresh_stamp, Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
 use crate::outline::{self, STEP_INDENT};
-use crate::tool_output_view::ToolOutputView;
+
 use crate::wrap_zone;
 
 /// How a thinking block renders (declutter spec "Transcript").
@@ -451,11 +451,8 @@ pub struct AssistantMessageComponent {
     content: Container,
     thinking_display: ThinkingDisplay,
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
-    /// The full stop: thinking shows whole instead of its first sentence.
-    full: bool,
     /// Single view (UI-21 P4): the block's own toggle. Collapsed, thinking
     /// is its first sentence on one dim line; expanded, the whole trace.
-    /// `set_view(Full)` opens it too, until the dial goes in P5.
     expanded: bool,
     /// The turn (header number) this message belongs to; `None` before the
     /// first turn. The transcript groups prose by it, and the turn's own end
@@ -524,7 +521,6 @@ impl AssistantMessageComponent {
             content: Container::new(),
             thinking_display,
             markdown_theme,
-            full: false,
             expanded: false,
             outline_mission: None,
             outline_prose_shown: false,
@@ -612,17 +608,6 @@ impl AssistantMessageComponent {
         self.rev = fresh_stamp();
         self.thinking_display = display;
         self.refresh();
-    }
-
-    /// The view dial's stop: full shows thinking whole, peek its first
-    /// sentence.
-    pub fn set_view(&mut self, view: ToolOutputView) {
-        self.rev = fresh_stamp();
-        let full = view == ToolOutputView::Full;
-        if self.full != full {
-            self.full = full;
-            self.refresh();
-        }
     }
 
     /// Single view (UI-21 P4): the block's own toggle. `true` shows the
@@ -783,15 +768,13 @@ impl AssistantMessageComponent {
                     if self.thinking_display == ThinkingDisplay::Omit {
                         continue;
                     }
-                    // Full or expanded: the whole trace, dim italic.
-                    // Collapsed (and hidden thinking): its first sentence on
-                    // one dim italic line.
+                    // Expanded: the whole trace, dim italic. Collapsed
+                    // (and hidden thinking): its first sentence on one dim
+                    // italic line.
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
-                    if (self.full || self.expanded)
-                        && self.thinking_display == ThinkingDisplay::Full
-                    {
+                    if self.expanded && self.thinking_display == ThinkingDisplay::Full {
                         self.add_markdown_block(
                             BlockKey::Thinking(i),
                             js_trim(&t.thinking),
@@ -935,9 +918,9 @@ impl AssistantMessageComponent {
             use std::io::Write;
             let _ = writeln!(
                 file,
-                "assistant-message render width={width} full={} src_chars={src_chars} \
+                "assistant-message render width={width} expanded={} src_chars={src_chars} \
                  src_longest={src_longest} out_lines={} out_longest={out_longest}",
-                u8::from(self.full),
+                u8::from(self.expanded),
                 lines.len(),
             );
         }

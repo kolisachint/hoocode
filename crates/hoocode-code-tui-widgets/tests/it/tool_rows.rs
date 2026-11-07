@@ -1,5 +1,5 @@
 //! The declutter tool rows (WP6a): ` ● Name subject  facts`, an indented dim
-//! body, per-view body rules, no step numbers, rails, `Took` lines or gutters.
+//! body, single-view body rules, no step numbers, rails, `Took` lines or gutters.
 //! Goldens pin the screens in `docs/design/tui-declutter/mockups/dark/screens`
 //! (peek, full, failed, agent) at 100 columns.
 
@@ -10,10 +10,8 @@ use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_subagents::live::apply;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::{ChainState, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_row::{fit_header, header_spans, Mark};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
@@ -24,7 +22,6 @@ use serde_json::{json, Value};
 const CWD: &str = "/work";
 
 fn block(
-    view: ToolOutputView,
     tool: &str,
     args: Value,
     output: &str,
@@ -37,10 +34,7 @@ fn block(
         tool,
         "id",
         args,
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(definition),
         CWD,
     );
@@ -55,11 +49,8 @@ fn block(
     Rc::new(RefCell::new(b))
 }
 
-fn chain(
-    view: ToolOutputView,
-    blocks: Vec<Rc<RefCell<ToolExecutionComponent>>>,
-) -> ToolChainComponent {
-    let mut chain = ToolChainComponent::new(view);
+fn chain(blocks: Vec<Rc<RefCell<ToolExecutionComponent>>>) -> ToolChainComponent {
+    let mut chain = ToolChainComponent::new();
     for b in blocks {
         chain.add(b);
     }
@@ -81,73 +72,64 @@ const DIFF: &str = " 12     let mut cfg = Config::default();\n-14     let raw = 
 #[test]
 fn tool_rows_peek_40() {
     let _g = lock();
-    let mut c = config_run(ToolOutputView::Peek);
+    let mut c = config_run();
     assert_golden!("tool_rows_peek_40", render_golden(&mut c, 40));
 }
 
 #[test]
 fn tool_rows_peek_60() {
     let _g = lock();
-    let mut c = config_run(ToolOutputView::Peek);
+    let mut c = config_run();
     assert_golden!("tool_rows_peek_60", render_golden(&mut c, 60));
 }
 
 /// Read, Edit and Shell: the mockup's `peek` and `full` screens.
-fn config_run(view: ToolOutputView) -> ToolChainComponent {
-    chain(
-        view,
-        vec![
-            block(
-                view,
-                "Read",
-                json!({"file_path": "/work/src/config.rs"}),
-                &numbered("setting_", 12),
-                json!({}),
-                false,
-            ),
-            block(
-                view,
-                "Edit",
-                json!({"path": "/work/src/config.rs", "oldText": "a", "newText": "b"}),
-                "ok",
-                json!({"diff": DIFF}),
-                false,
-            ),
-            block(
-                view,
-                "Shell",
-                json!({"command": "cargo test -p hoocode-config 2>&1 | tail -40"}),
-                &numbered("test config::tests::case_", 12),
-                json!({"durationMs": 8200}),
-                false,
-            ),
-        ],
-    )
+fn config_run() -> ToolChainComponent {
+    chain(vec![
+        block(
+            "Read",
+            json!({"file_path": "/work/src/config.rs"}),
+            &numbered("setting_", 12),
+            json!({}),
+            false,
+        ),
+        block(
+            "Edit",
+            json!({"path": "/work/src/config.rs", "oldText": "a", "newText": "b"}),
+            "ok",
+            json!({"diff": DIFF}),
+            false,
+        ),
+        block(
+            "Shell",
+            json!({"command": "cargo test -p hoocode-config 2>&1 | tail -40"}),
+            &numbered("test config::tests::case_", 12),
+            json!({"durationMs": 8200}),
+            false,
+        ),
+    ])
 }
 
 #[test]
 fn tool_rows_peek_100() {
     let _g = lock();
-    let mut c = config_run(ToolOutputView::Peek);
+    let mut c = config_run();
     assert_golden!("tool_rows_peek_100", render_golden(&mut c, 100));
 }
 
 #[test]
 fn tool_rows_full_100() {
     let _g = lock();
-    let mut c = config_run(ToolOutputView::Full);
+    let mut c = config_run();
     assert_golden!("tool_rows_full_100", render_golden(&mut c, 100));
 }
 
 #[test]
 fn tool_rows_failed_100() {
     let _g = lock();
-    let view = ToolOutputView::Peek;
     let mut c = chain(
-        view,
         vec![
             block(
-                view,
                 "Shell",
                 json!({"command": "cargo test -p hoocode-parser escaped_quote"}),
                 "a\nb\nc\nd\ne\nf\nerror: could not compile `hoocode-parser` (lib)\n\nCommand exited with code 1",
@@ -155,7 +137,6 @@ fn tool_rows_failed_100() {
                 true,
             ),
             block(
-                view,
                 "Read",
                 json!({"file_path": "/work/docs/screens/parser-failure.png"}),
                 "line one\nline two",
@@ -168,7 +149,7 @@ fn tool_rows_failed_100() {
 }
 
 /// A settled agent with one failed call of its own.
-fn settled_agent(view: ToolOutputView, run: &str) -> Rc<RefCell<ToolExecutionComponent>> {
+fn settled_agent(run: &str) -> Rc<RefCell<ToolExecutionComponent>> {
     apply(run, &json!({"type": "task_started"}));
     for (id, tool, fails) in [("s1", "Read", false), ("s2", "Grep", true)] {
         apply(
@@ -183,7 +164,6 @@ fn settled_agent(view: ToolOutputView, run: &str) -> Rc<RefCell<ToolExecutionCom
     }
     apply(run, &json!({"type": "task_done"}));
     block(
-        view,
         "Agent",
         json!({"subagent_type": "explore", "description": "Trace escaped quotes"}),
         "Found it in lex.rs.\nSecond line.",
@@ -195,27 +175,21 @@ fn settled_agent(view: ToolOutputView, run: &str) -> Rc<RefCell<ToolExecutionCom
 #[test]
 fn tool_rows_agent_100() {
     let _g = lock();
-    let mut c = chain(
-        ToolOutputView::Peek,
-        vec![settled_agent(ToolOutputView::Peek, "tool-rows-agent-peek")],
-    );
+    let mut c = chain(vec![settled_agent("tool-rows-agent-peek")]);
     assert_golden!("tool_rows_agent_100", render_golden(&mut c, 100));
 }
 
 #[test]
 fn tool_rows_agent_full_100() {
     let _g = lock();
-    let mut c = chain(
-        ToolOutputView::Full,
-        vec![settled_agent(ToolOutputView::Full, "tool-rows-agent-full")],
-    );
+    let mut c = chain(vec![settled_agent("tool-rows-agent-full")]);
     assert_golden!("tool_rows_agent_full_100", render_golden(&mut c, 100));
 }
 
 #[test]
 fn a_collapsed_run_is_tight_and_an_open_row_is_followed_by_one_blank() {
     let _g = lock();
-    let mut c = config_run(ToolOutputView::Peek);
+    let mut c = config_run();
     let rows: Vec<String> = c
         .render(100)
         .iter()
@@ -243,36 +217,29 @@ fn a_collapsed_run_is_tight_and_an_open_row_is_followed_by_one_blank() {
 #[test]
 fn facts_follow_the_subject_and_zero_values_stay_out() {
     let _g = lock();
-    let view = ToolOutputView::Peek;
-    let mut c = chain(
-        view,
-        vec![
-            block(
-                view,
-                "Edit",
-                json!({"path": "/work/a.rs", "oldText": "a", "newText": "b"}),
-                "ok",
-                json!({"diff": "-old\n+new"}),
-                false,
-            ),
-            block(
-                view,
-                "Edit",
-                json!({"path": "/work/b.rs", "oldText": "a", "newText": "b"}),
-                "ok",
-                json!({"diff": "+only added"}),
-                false,
-            ),
-            block(
-                view,
-                "Read",
-                json!({"file_path": "/work/empty.rs"}),
-                "",
-                json!({}),
-                false,
-            ),
-        ],
-    );
+    let mut c = chain(vec![
+        block(
+            "Edit",
+            json!({"path": "/work/a.rs", "oldText": "a", "newText": "b"}),
+            "ok",
+            json!({"diff": "-old\n+new"}),
+            false,
+        ),
+        block(
+            "Edit",
+            json!({"path": "/work/b.rs", "oldText": "a", "newText": "b"}),
+            "ok",
+            json!({"diff": "+only added"}),
+            false,
+        ),
+        block(
+            "Read",
+            json!({"file_path": "/work/empty.rs"}),
+            "",
+            json!({}),
+            false,
+        ),
+    ]);
     let out = strip(&c.render(100).join("\n"));
     // Chain subjects read relative to the cwd, as the outline recap does.
     assert!(out.contains(" ● Edit a.rs  +1 −1"), "{out}");
@@ -333,7 +300,6 @@ fn shell_failure_at_40_keeps_exit_while_dropping_duration_then_reason() {
 #[test]
 fn a_long_label_cuts_to_one_row_and_keeps_the_facts() {
     let _g = lock();
-    let view = ToolOutputView::Peek;
     let command = format!(
         "cargo test {}",
         (1..=20)
@@ -341,17 +307,13 @@ fn a_long_label_cuts_to_one_row_and_keeps_the_facts() {
             .collect::<Vec<_>>()
             .join(" ")
     );
-    let mut c = chain(
-        view,
-        vec![block(
-            view,
-            "Shell",
-            json!({ "command": command }),
-            "ok",
-            json!({}),
-            false,
-        )],
-    );
+    let mut c = chain(vec![block(
+        "Shell",
+        json!({ "command": command }),
+        "ok",
+        json!({}),
+        false,
+    )]);
     let rows: Vec<String> = c
         .render(50)
         .iter()
@@ -371,19 +333,17 @@ fn a_long_label_cuts_to_one_row_and_keeps_the_facts() {
 #[test]
 fn a_collapsed_row_shows_no_body_and_the_toggle_opens_it_whole() {
     let _g = lock();
-    let view = ToolOutputView::Peek;
     // Single view: every block starts as one row; the toggle opens the
     // whole output, however long, with no fold hint.
     for lines in [4, 12] {
         let b = block(
-            view,
             "Shell",
             json!({"command": "x"}),
             &numbered("row-", lines),
             json!({}),
             false,
         );
-        let mut c = chain(view, vec![b.clone()]);
+        let mut c = chain(vec![b.clone()]);
         let shut = strip(&c.render(100).join("\n"));
         assert!(!shut.contains("row-01"), "{shut}");
         b.borrow_mut().set_expanded(true);
@@ -399,19 +359,15 @@ fn a_collapsed_row_shows_no_body_and_the_toggle_opens_it_whole() {
 #[test]
 fn a_running_call_has_an_accent_fisheye_and_no_facts() {
     let _g = lock();
-    let view = ToolOutputView::Peek;
     let b = ToolExecutionComponent::new(
         "Shell",
         "id",
         json!({"command": "sleep 5"}),
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(builtin_tool_definition("Shell").unwrap()),
         CWD,
     );
-    let mut c = chain(view, vec![Rc::new(RefCell::new(b))]);
+    let mut c = chain(vec![Rc::new(RefCell::new(b))]);
     let rows: Vec<String> = c
         .render(80)
         .iter()

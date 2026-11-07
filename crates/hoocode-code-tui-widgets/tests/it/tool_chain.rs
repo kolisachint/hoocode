@@ -6,17 +6,11 @@ use std::rc::Rc;
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
-use hoocode_code_tui_widgets::outline::{turn_rows, FlightItem, FlightMark, FlightStats};
-use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ChainState, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
-use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
-
-use ToolOutputView::{Outline, Peek};
 
 struct Call {
     tool: &'static str,
@@ -43,18 +37,15 @@ fn cwd() -> String {
         .into_owned()
 }
 
-fn chain_of(view: ToolOutputView, calls: Vec<Call>, id: &str) -> ToolChainComponent {
-    let mut chain = ToolChainComponent::new(view);
+fn chain_of(calls: Vec<Call>, id: &str) -> ToolChainComponent {
+    let mut chain = ToolChainComponent::new();
     for (i, c) in calls.into_iter().enumerate() {
         // `createAllToolDefinitions(cwd)[tool]`: the built-in table.
         let mut block = ToolExecutionComponent::new(
             c.tool,
             &format!("{id}-{i}"),
             c.args,
-            ToolExecutionOptions {
-                view,
-                ..Default::default()
-            },
+            ToolExecutionOptions::default(),
             None,
             &cwd(),
         );
@@ -73,28 +64,11 @@ fn chain_of(view: ToolOutputView, calls: Vec<Call>, id: &str) -> ToolChainCompon
     chain
 }
 
-/// The turn's outline block over the chain's calls, plain, one row per
-/// entry, trailing blanks trimmed. A turn's chain draws nothing in outline: its
-/// header draws the calls (`outline::turn_rows`), so the chain's own rows are
-/// read through it here.
-fn mission(chain: &ToolChainComponent, width: usize) -> Vec<String> {
-    let open = chain.is_open();
-    let mark = if open {
-        FlightMark::InFlight
-    } else if chain.chain_state() == ChainState::Interrupted {
-        FlightMark::Aborted
-    } else {
-        FlightMark::Landed
-    };
-    let stats = FlightStats {
-        mark,
-        steps: chain.tool_blocks().len(),
-        landed_time: (!open).then(|| "1s".to_string()),
-        started: open.then(std::time::Instant::now),
-        items: vec![FlightItem::Batch(chain.tool_blocks().to_vec())],
-        ..Default::default()
-    };
-    turn_rows("run it", &stats, &Palette::default(), width)
+/// The chain's own rows, plain, trailing blanks trimmed: in the single view
+/// a chain always draws its calls.
+fn mission(chain: &mut ToolChainComponent, width: u16) -> Vec<String> {
+    chain
+        .render(width)
         .iter()
         .map(|row| strip(row).trim_end().to_string())
         .collect()
@@ -126,22 +100,23 @@ fn run() -> Vec<Call> {
 }
 
 #[test]
-fn outline_shows_a_live_step_for_the_call_still_running() {
+fn running_calls_render_a_live_step_row() {
     let _g = lock();
-    // The recap reads live: the call still running is named with the
-    // settled calls before it.
+    // The rows read live: the call still running carries the live mark
+    // while the settled calls before it carry the done mark.
     let mut calls = run();
     calls[2].pending = true;
-    let chain = chain_of(Outline, calls, "c");
-    let rows = mission(&chain, 100);
-    let recap: Vec<&String> = rows.iter().filter(|r| r.starts_with(" ◉ ")).collect();
-    assert_eq!(recap.len(), 1, "{rows:?}");
-    assert!(recap[0].contains("CodeSearch"), "{rows:?}");
+    let mut chain = chain_of(calls, "c");
+    let rows = mission(&mut chain, 100);
+    let live: Vec<&String> = rows.iter().filter(|r| r.starts_with(" ◉ ")).collect();
+    assert_eq!(live.len(), 1, "{rows:?}");
+    assert!(live[0].contains("Edit"), "{rows:?}");
+    assert!(!live[0].contains("calls"), "{rows:?}");
     assert!(
-        recap[0].contains(" · Read src/keys.ts · Edit src/keys.ts"),
+        rows.iter()
+            .any(|r| r.starts_with(" ● ") && r.contains("CodeSearch")),
         "{rows:?}"
     );
-    assert!(!recap[0].contains("calls"), "{rows:?}");
 }
 
 #[test]
@@ -152,29 +127,33 @@ fn shows_the_calls_while_running_and_once_done() {
         pending: true,
         ..call("Shell", json!({"command": "x"}), "")
     });
-    let running = chain_of(Outline, calls, "r");
-    let rows = mission(&running, 100);
+    let mut running = chain_of(calls, "r");
+    let rows = mission(&mut running, 100);
     assert!(
         rows.iter()
             .any(|r| r.starts_with(" ◉ ") && r.contains("Shell x")),
         "{rows:?}"
     );
 
-    // Settled clean: one recap row, no failed row, and the chain itself draws nothing.
-    let mut done = chain_of(Outline, run(), "d");
+    // Settled clean: one row per call, no failed row.
+    let mut done = chain_of(run(), "d");
     done.close(ChainState::Done);
-    let rows = mission(&done, 100);
-    assert!(rows.iter().any(|r| r.starts_with(" ● ")), "{rows:?}");
+    let rows = mission(&mut done, 100);
+    assert_eq!(
+        rows.iter().filter(|r| r.starts_with(" ● ")).count(),
+        3,
+        "{rows:?}"
+    );
     assert!(rows.iter().all(|r| !r.starts_with(" ⊗")), "{rows:?}");
-    assert!(render(&mut done).trim().is_empty());
 }
 
 #[test]
-fn an_interrupted_chain_with_no_hits_leaves_outline_to_its_mission_row() {
+fn an_interrupted_chain_still_lists_its_calls() {
     let _g = lock();
-    let mut chain = chain_of(Outline, run(), "i");
+    let mut chain = chain_of(run(), "i");
     chain.close(ChainState::Interrupted);
-    assert!(render(&mut chain).trim().is_empty());
+    let rows = mission(&mut chain, 100);
+    assert!(rows.iter().any(|r| r.contains("CodeSearch")), "{rows:?}");
 }
 
 #[test]
@@ -182,7 +161,6 @@ fn a_collapsed_chain_still_shows_why_a_call_failed() {
     let _g = lock();
     let first = run().remove(0);
     let mut chain = chain_of(
-        Outline,
         vec![
             first,
             Call {
@@ -193,37 +171,44 @@ fn a_collapsed_chain_still_shows_why_a_call_failed() {
         "e",
     );
     chain.close(ChainState::Done);
-    let rows = mission(&chain, 100);
+    let rows = mission(&mut chain, 100);
+    let failed = rows
+        .iter()
+        .find(|r| r.starts_with(" ⊗ "))
+        .expect("the failed row");
     assert!(
-        rows.contains(&" ⊗ Shell bun test  ASSERTION FAILED".to_string()),
+        failed.contains("⊗ Shell bun test  ASSERTION FAILED"),
         "{rows:?}"
     );
-    let recap = rows
-        .iter()
-        .find(|r| r.starts_with(" ● "))
-        .expect("the recap");
-    assert!(!recap.contains("Shell"), "{rows:?}");
+    assert!(
+        rows.iter()
+            .any(|r| r.starts_with(" ● ") && r.contains("CodeSearch")),
+        "{rows:?}"
+    );
     assert!(!rows.join("\n").contains("1 failed"), "{rows:?}");
 }
 
 #[test]
-fn the_dial_not_a_per_chain_toggle_is_what_turns_the_line_back_into_calls() {
+fn a_shut_chain_lists_every_call() {
     let _g = lock();
-    let mut chain = chain_of(Outline, run(), "o");
+    let mut chain = chain_of(run(), "o");
     chain.close(ChainState::Done);
-    // In outline a mission's chain draws nothing; its header draws the calls.
-    assert!(render(&mut chain).trim().is_empty());
-    chain.set_view(Peek);
-    let opened = render(&mut chain);
-    assert!(opened.contains("CodeSearch"));
-    assert!(opened.contains("Read"));
-    assert!(opened.contains("Edit"));
+    // Shut: one header row per call.
+    let rows = mission(&mut chain, 100);
+    assert_eq!(
+        rows.iter().filter(|r| r.starts_with(" ● ")).count(),
+        3,
+        "{rows:?}"
+    );
+    assert!(rows.iter().any(|r| r.contains("CodeSearch")), "{rows:?}");
+    assert!(rows.iter().any(|r| r.contains("Read")), "{rows:?}");
+    assert!(rows.iter().any(|r| r.contains("Edit")), "{rows:?}");
 }
 
 #[test]
-fn is_a_plain_pass_through_in_peek() {
+fn is_a_plain_pass_through() {
     let _g = lock();
-    let mut chain = chain_of(Peek, run(), "p");
+    let mut chain = chain_of(run(), "p");
     chain.close(ChainState::Done);
     let out = render(&mut chain);
     assert!(!out.contains('›'));
@@ -231,15 +216,17 @@ fn is_a_plain_pass_through_in_peek() {
 }
 
 #[test]
-fn follows_the_dial_when_the_view_changes_under_it() {
+fn the_toggle_opens_and_closes_a_call_body() {
     let _g = lock();
-    let mut chain = chain_of(Peek, run(), "v");
+    let mut chain = chain_of(run(), "v");
     chain.close(ChainState::Done);
     assert!(!render(&mut chain).contains('›'));
-    chain.set_view(Outline);
-    assert!(render(&mut chain).trim().is_empty());
-    chain.set_view(Peek);
-    assert!(!render(&mut chain).contains('›'));
+    chain.tool_blocks()[0].borrow_mut().set_expanded(true);
+    let opened = render(&mut chain);
+    assert!(opened.lines().any(|l| l.trim() == "a"), "{opened}");
+    chain.tool_blocks()[0].borrow_mut().set_expanded(false);
+    let shut = render(&mut chain);
+    assert!(!shut.lines().any(|l| l.trim() == "a"), "{shut}");
 }
 
 #[test]
@@ -247,7 +234,6 @@ fn every_tools_call_line_starts_in_the_same_column() {
     let _g = lock();
     let cwd = cwd();
     let mut chain = chain_of(
-        Peek,
         vec![
             call("CodeSearch", json!({"query": "docs"}), "a"),
             call("Read", json!({"file_path": format!("{cwd}/a.ts")}), "a"),
@@ -273,7 +259,6 @@ fn every_tools_call_line_starts_in_the_same_column() {
 fn a_failed_row_carries_tool_subject_and_reason_on_one_line() {
     let _g = lock();
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call("Shell", json!({"command": "bun test"}), "ASSERTION FAILED")
@@ -281,11 +266,11 @@ fn a_failed_row_carries_tool_subject_and_reason_on_one_line() {
         "indent",
     );
     chain.close(ChainState::Done);
-    let rows = mission(&chain, 100);
+    let rows = mission(&mut chain, 100);
     let failed: Vec<&String> = rows.iter().filter(|r| r.starts_with(" ⊗ ")).collect();
-    assert_eq!(
-        failed,
-        vec![" ⊗ Shell bun test  ASSERTION FAILED"],
+    assert_eq!(failed.len(), 1, "{rows:?}");
+    assert!(
+        failed[0].contains("⊗ Shell bun test  ASSERTION FAILED"),
         "{rows:?}"
     );
     // Its only call failed: the batch has no recap row of its own.
@@ -293,22 +278,26 @@ fn a_failed_row_carries_tool_subject_and_reason_on_one_line() {
 }
 
 #[test]
-fn a_settled_clean_chain_reads_nothing_in_outline() {
+fn a_settled_clean_chain_lists_its_call_shut() {
     let _g = lock();
     let first = run().remove(0);
-    let mut chain = chain_of(Outline, vec![first], "one");
+    let mut chain = chain_of(vec![first], "one");
     chain.close(ChainState::Done);
-    assert!(render(&mut chain).trim().is_empty());
-    assert!(chain.is_summarised());
+    let rows = mission(&mut chain, 100);
+    assert_eq!(
+        rows.iter().filter(|r| r.starts_with(" ● ")).count(),
+        1,
+        "{rows:?}"
+    );
+    assert!(!chain.tool_blocks()[0].borrow().is_expanded());
 }
 
 #[test]
-fn an_orphan_single_call_in_outline_reads_as_a_recap_row() {
-    // A chain before the first turn has no recap row above it, so outline
-    // draws its own: ` ● Shell npm run`.
+fn a_settled_single_call_reads_as_its_own_header_row() {
+    // A chain before the first turn has no recap row above it: its own
+    // header row carries the call.
     let _g = lock();
     let mut chain = chain_of(
-        Outline,
         vec![call(
             "Shell",
             json!({"command": "npm run check"}),
@@ -316,36 +305,35 @@ fn an_orphan_single_call_in_outline_reads_as_a_recap_row() {
         )],
         "single",
     );
-    chain.set_orphan(true);
     chain.close(ChainState::Done);
-    let lines = chain.render(100);
-    assert_eq!(lines[0], "");
-    let row = strip(&lines[1]);
+    let rows = mission(&mut chain, 100);
+    let row = rows
+        .iter()
+        .find(|r| r.starts_with(" ● "))
+        .expect("the header row");
     assert!(row.starts_with(" ● Shell npm run"), "{row:?}");
     assert!(!row.contains("1 call"), "{row:?}");
 }
 
 #[test]
-fn a_running_single_call_in_outline_reads_as_a_live_step() {
+fn a_running_single_call_reads_as_a_live_step() {
     let _g = lock();
-    let chain = chain_of(
-        Outline,
+    let mut chain = chain_of(
         vec![Call {
             pending: true,
             ..call("Shell", json!({"command": "npm run check"}), "")
         }],
         "running1",
     );
-    let out = mission(&chain, 100).join("\n");
+    let out = mission(&mut chain, 100).join("\n");
     assert!(out.contains(" ◉ Shell npm run"), "{out}");
     assert!(!out.contains("running"), "{out}");
 }
 
 #[test]
-fn a_failed_single_call_in_outline_still_shows_its_reason() {
+fn a_failed_single_call_still_shows_its_reason() {
     let _g = lock();
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call("Shell", json!({"command": "bun test"}), "ASSERTION FAILED")
@@ -353,15 +341,14 @@ fn a_failed_single_call_in_outline_still_shows_its_reason() {
         "failed1",
     );
     chain.close(ChainState::Done);
-    let out = mission(&chain, 100).join("\n");
+    let out = mission(&mut chain, 100).join("\n");
     assert!(out.contains("⊗ Shell bun test  ASSERTION FAILED"), "{out}");
 }
 
 #[test]
-fn a_single_call_in_peek_is_still_its_own_block() {
+fn a_single_call_is_still_its_own_block() {
     let _g = lock();
     let mut chain = chain_of(
-        Peek,
         vec![call("Shell", json!({"command": "npm run check"}), "l1")],
         "peek1",
     );
@@ -375,7 +362,7 @@ fn a_single_call_in_peek_is_still_its_own_block() {
     );
     assert!(!shut.contains("l1"), "{shut}");
     assert!(!shut.contains("1 call"), "{shut}");
-    assert!(!chain.is_summarised());
+    assert!(!chain.tool_blocks()[0].borrow().is_expanded());
     chain.tool_blocks()[0].borrow_mut().set_expanded(true);
     let out = render(&mut chain);
     let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
@@ -387,41 +374,41 @@ fn a_single_call_in_peek_is_still_its_own_block() {
 }
 
 #[test]
-fn two_calls_with_one_running_show_the_live_step_in_outline() {
+fn two_calls_with_one_running_show_the_live_step() {
     let _g = lock();
     let mut calls = run();
     calls.truncate(2);
     calls[1].pending = true;
-    let chain = chain_of(Outline, calls, "two");
-    assert!(chain.is_summarised());
-    let out = mission(&chain, 100).join("\n");
-    // The live recap names both calls, the settled one first.
-    assert!(out.contains(" ◉ CodeSearch"), "{out}");
-    assert!(out.contains(" · Read src/keys.ts"), "{out}");
+    let mut chain = chain_of(calls, "two");
+    let out = mission(&mut chain, 100).join("\n");
+    // The live row names the running call; the settled one reads done.
+    assert!(out.contains(" ◉ Read"), "{out}");
+    assert!(out.contains(" ● CodeSearch"), "{out}");
 }
 
 #[test]
-fn a_settled_chain_attaches_straight_under_its_mission_row() {
-    // No lead-in blank: the flight-log rows sit directly under the mission.
+fn a_settled_chain_draws_its_rows() {
     let _g = lock();
-    let mut chain = chain_of(Outline, run(), "lead");
+    let mut chain = chain_of(run(), "lead");
     chain.close(ChainState::Done);
-    assert!(chain.render(100).is_empty());
+    let out = render(&mut chain);
+    assert!(out.contains("CodeSearch"), "{out}");
 }
 
 #[test]
-fn a_settled_run_of_one_leaves_no_lead_in_either() {
+fn a_settled_run_of_one_draws_its_row() {
     let _g = lock();
     let first = run().remove(0);
-    let mut chain = chain_of(Outline, vec![first], "lead-one");
+    let mut chain = chain_of(vec![first], "lead-one");
     chain.close(ChainState::Done);
-    assert!(chain.render(100).is_empty());
+    let out = render(&mut chain);
+    assert!(out.contains("CodeSearch"), "{out}");
 }
 
 #[test]
 fn does_not_double_the_gap_where_the_blocks_already_draw_one() {
     let _g = lock();
-    let mut chain = chain_of(Peek, run(), "nolead");
+    let mut chain = chain_of(run(), "nolead");
     chain.close(ChainState::Done);
     let lines = chain.render(100);
     assert_eq!(lines.iter().take(2).filter(|l| l.is_empty()).count(), 1);
@@ -430,7 +417,7 @@ fn does_not_double_the_gap_where_the_blocks_already_draw_one() {
 #[test]
 fn reports_whether_it_is_still_collecting_calls() {
     let _g = lock();
-    let mut chain = chain_of(Outline, run(), "s");
+    let mut chain = chain_of(run(), "s");
     assert!(chain.is_open());
     chain.close(ChainState::Done);
     assert!(!chain.is_open());
@@ -441,10 +428,7 @@ fn background_shell() -> ToolExecutionComponent {
         "Shell",
         "bg-0",
         json!({"command": "npm run dev", "run_in_background": true}),
-        ToolExecutionOptions {
-            view: Outline,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         None,
         &cwd(),
     );
@@ -462,21 +446,18 @@ fn background_shell() -> ToolExecutionComponent {
 #[test]
 fn an_interrupted_chain_with_no_failure_is_stopped_never_green() {
     let _g = lock();
-    let mut chain = chain_of(Outline, run(), "cancel");
+    let mut chain = chain_of(run(), "cancel");
     for block in chain.tool_blocks() {
         block.borrow_mut().set_interrupted();
     }
     chain.close(ChainState::Interrupted);
-    // The recap reads dim `⊗`, never green `●`.
-    let rows = mission(&chain, 100);
+    // Interrupted calls read `⊗`, never green `●`.
+    let rows = mission(&mut chain, 100);
     assert!(
         rows.iter().any(|row| row.starts_with(" ⊗ CodeSearch")),
         "{rows:?}"
     );
     assert!(rows.iter().all(|row| !row.starts_with(" ● ")), "{rows:?}");
-    assert!(rows.contains(&" ⊗ stopped · 1s".to_string()), "{rows:?}");
-    // The chain itself draws nothing in outline: its turn's header does.
-    assert!(render(&mut chain).trim().is_empty());
 }
 
 /// The job's row in the task store, as the Shell tool keeps it: `shell:<id>`,
@@ -502,54 +483,60 @@ fn set_job_row(job: &str, status: Option<TaskStatus>) {
 }
 
 fn chain_with_job(state: ChainState) -> ToolChainComponent {
-    let mut chain = ToolChainComponent::new(Outline);
+    let mut chain = ToolChainComponent::new();
     chain.add(Rc::new(RefCell::new(background_shell())));
     chain.close(state);
     chain
 }
 
 #[test]
-fn a_background_call_is_in_the_recap_while_its_job_runs() {
+fn a_background_call_lists_its_job_while_it_runs() {
     let _g = lock();
     set_job_row("j1", Some(TaskStatus::InProgress));
-    let rows = mission(&chain_with_job(ChainState::Done), 100);
+    let mut replayed = chain_with_job(ChainState::Done);
+    let rows = mission(&mut replayed, 100);
     set_job_row("j1", None);
     assert!(
-        rows.iter().any(|r| r.starts_with(" ◉ Shell npm run")),
+        rows.iter()
+            .any(|r| r.starts_with(" ● ") && r.contains("Shell npm run")),
         "{rows:?}"
     );
+    assert!(rows.iter().any(|r| r.contains("background j1")), "{rows:?}");
 }
 
 #[test]
 fn a_replayed_background_call_with_no_live_job_reads_done() {
     let _g = lock();
     set_job_row("j1", None);
-    assert!(render(&mut chain_with_job(ChainState::Done))
-        .trim()
-        .is_empty());
+    let mut chain = chain_with_job(ChainState::Done);
+    let out = render(&mut chain);
+    assert!(out.contains(" ● Shell"), "{out}");
 }
 
 #[test]
-fn an_aborted_chain_keeps_a_live_background_job_running() {
+fn an_aborted_chain_keeps_a_live_background_job_listed() {
     let _g = lock();
-    // Aborting the turn does not stop a job: its recap does not read stopped.
+    // Aborting the turn does not stop a job: its row does not read stopped.
     set_job_row("j1", Some(TaskStatus::InProgress));
-    let rows = mission(&chain_with_job(ChainState::Interrupted), 100);
+    let mut aborted = chain_with_job(ChainState::Interrupted);
+    let rows = mission(&mut aborted, 100);
     set_job_row("j1", None);
-    assert!(
-        rows.iter().any(|r| r.starts_with(" ◉ Shell npm run")),
-        "{rows:?}"
-    );
+    assert!(rows.iter().any(|r| r.contains("Shell npm run")), "{rows:?}");
     assert!(rows.iter().all(|r| !r.starts_with(" ⊗ Shell")), "{rows:?}");
 }
 
 #[test]
-fn an_aborted_chain_whose_job_has_ended_reads_interrupted() {
+fn an_aborted_chain_keeps_its_calls_and_reads_interrupted() {
     let _g = lock();
     set_job_row("j1", Some(TaskStatus::Done));
-    assert!(render(&mut chain_with_job(ChainState::Interrupted))
-        .trim()
-        .is_empty());
+    let mut chain = chain_with_job(ChainState::Interrupted);
+    assert_eq!(chain.chain_state(), ChainState::Interrupted);
+    let rows = mission(&mut chain, 100);
+    assert!(
+        rows.iter()
+            .any(|r| r.starts_with(" ● ") && r.contains("Shell npm run")),
+        "{rows:?}"
+    );
 }
 
 #[test]
@@ -557,18 +544,17 @@ fn a_finished_shell_reads_done_as_soon_as_its_result_arrives() {
     let _g = lock();
     // The chain is still open: the model has not answered yet.
     let mut chain = chain_of(
-        Outline,
         vec![call("Shell", json!({"command": "npm test"}), "ok")],
         "fin",
     );
-    assert!(render(&mut chain).trim().is_empty());
+    let out = render(&mut chain);
+    assert!(out.contains(" ● Shell npm test"), "{out}");
 }
 
 #[test]
 fn a_failed_row_names_the_first_line_of_the_failure() {
     let _g = lock();
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call("Shell", json!({"command": "make"}), "l1\nl2\nl3\nl4\nl5")
@@ -576,8 +562,12 @@ fn a_failed_row_names_the_first_line_of_the_failure() {
         "cap",
     );
     chain.close(ChainState::Done);
-    let rows = mission(&chain, 100);
-    assert!(rows.contains(&" ⊗ Shell make  l1".to_string()), "{rows:?}");
+    let rows = mission(&mut chain, 100);
+    let failed = rows
+        .iter()
+        .find(|r| r.starts_with(" ⊗ "))
+        .expect("the failed row");
+    assert!(failed.contains("⊗ Shell make  l1"), "{rows:?}");
     let out = rows.join("\n");
     assert!(!out.contains("l2"), "{out}");
     assert!(!out.contains("more line"), "{out}");
@@ -587,7 +577,6 @@ fn a_failed_row_names_the_first_line_of_the_failure() {
 fn a_failed_call_with_two_lines_or_fewer_shows_no_fold() {
     let _g = lock();
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call("Shell", json!({"command": "make"}), "l1\nl2")
@@ -595,7 +584,7 @@ fn a_failed_call_with_two_lines_or_fewer_shows_no_fold() {
         "short",
     );
     chain.close(ChainState::Done);
-    let out = mission(&chain, 100).join("\n");
+    let out = mission(&mut chain, 100).join("\n");
     assert!(out.contains("l1"), "{out}");
     assert!(!out.contains("more line"), "{out}");
 }
@@ -605,7 +594,6 @@ fn a_failed_row_wraps_a_long_command_within_the_width() {
     let _g = lock();
     let long = format!("npm run check -- {}", "--flag-with-a-long-name ".repeat(6));
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call("Shell", json!({ "command": long }), "boom")
@@ -613,7 +601,7 @@ fn a_failed_row_wraps_a_long_command_within_the_width() {
         "drop",
     );
     chain.close(ChainState::Done);
-    let rows = mission(&chain, 36);
+    let rows = mission(&mut chain, 36);
     assert!(
         rows.iter().any(|r| r.starts_with(" ⊗ Shell npm run")),
         "{rows:?}"
@@ -626,7 +614,6 @@ fn a_failed_row_wraps_a_long_command_within_the_width() {
 fn a_failed_row_fits_a_very_narrow_width() {
     let _g = lock();
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call("Shell", json!({ "command": "npm test" }), "boom")
@@ -634,7 +621,7 @@ fn a_failed_row_fits_a_very_narrow_width() {
         "cut",
     );
     chain.close(ChainState::Done);
-    let rows = mission(&chain, 12);
+    let rows = mission(&mut chain, 12);
     assert!(rows.iter().all(|r| r.chars().count() <= 12), "{rows:?}");
 }
 
@@ -643,7 +630,6 @@ fn a_failed_row_at_eighty_columns_keeps_its_reason() {
     let _g = lock();
     let long = format!("npm run check -- {}", "--flag-with-a-long-name ".repeat(6));
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call("Shell", json!({ "command": long }), "boom")
@@ -651,7 +637,7 @@ fn a_failed_row_at_eighty_columns_keeps_its_reason() {
         "wide",
     );
     chain.close(ChainState::Done);
-    let rows = mission(&chain, 80);
+    let rows = mission(&mut chain, 80);
     assert!(rows.iter().all(|r| r.chars().count() <= 80), "{rows:?}");
     assert!(
         rows.iter().any(|r| r.trim_end().ends_with("boom")),
@@ -663,7 +649,6 @@ fn a_failed_row_at_eighty_columns_keeps_its_reason() {
 fn an_agent_failure_names_the_description_not_the_whole_prompt() {
     let _g = lock();
     let mut chain = chain_of(
-        Outline,
         vec![Call {
             is_error: true,
             ..call(
@@ -678,9 +663,13 @@ fn an_agent_failure_names_the_description_not_the_whole_prompt() {
         "agent",
     );
     chain.close(ChainState::Done);
-    let out = mission(&chain, 100).join("\n");
-    assert!(out.contains("Survey repo"), "{out}");
-    assert!(!out.contains("Read every file"), "{out}");
+    let rows = mission(&mut chain, 100);
+    let header = rows
+        .iter()
+        .find(|r| r.starts_with(" ⊗ "))
+        .expect("the failed row");
+    assert!(header.contains("Survey repo"), "{rows:?}");
+    assert!(!header.contains("Read every file"), "{rows:?}");
 }
 
 #[test]

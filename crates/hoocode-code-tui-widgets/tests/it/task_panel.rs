@@ -1229,9 +1229,9 @@ fn up_from_the_prompt_does_not_take_a_hidden_or_empty_panel() {
     let mut panel = TaskPanelComponent::new();
     assert!(!panel.enter_from_below(), "no rows");
     create("row a");
-    panel.set_outline(true);
-    assert!(!panel.enter_from_below(), "hidden in outline");
-    panel.set_outline(false);
+    panel.toggle_shown();
+    assert!(!panel.enter_from_below(), "hidden");
+    panel.toggle_shown();
     assert!(panel.enter_from_below());
 }
 
@@ -1531,37 +1531,32 @@ fn unfocused_the_console_draws_the_same_rows_without_the_pick_or_the_hint() {
 }
 
 #[test]
-fn the_panel_is_shown_in_peek_and_full_and_hidden_in_outline_by_default() {
+fn the_panel_is_shown_by_default() {
     let _g = lock();
     create("row a");
     let mut panel = TaskPanelComponent::new();
     assert!(panel.is_shown());
     assert!(!render(&mut panel, 120).is_empty());
-    panel.set_outline(true);
+    panel.toggle_shown();
     assert!(!panel.is_shown());
     assert!(render(&mut panel, 120).is_empty());
-    panel.set_outline(false);
+    panel.toggle_shown();
+    assert!(panel.is_shown());
     assert!(!render(&mut panel, 120).is_empty());
 }
 
 #[test]
-fn ctrl_g_toggles_the_panel_and_a_view_switch_resets_the_toggle() {
+fn ctrl_g_toggles_the_panel() {
     let _g = lock();
     create("row a");
     let mut panel = TaskPanelComponent::new();
     assert!(!panel.toggle_shown(), "a shown panel is hidden");
     assert!(render(&mut panel, 120).is_empty());
     assert!(panel.toggle_shown(), "and shown again");
-    assert!(!render(&mut panel, 120).is_empty());
-
-    // Hide in peek, then switch to outline: outline's default (hidden) wins.
-    panel.toggle_shown();
-    panel.set_outline(true);
-    assert!(!panel.is_shown());
-    // Show in outline, then switch back to peek: peek's default (shown) wins.
-    assert!(panel.toggle_shown());
-    panel.set_outline(false);
     assert!(panel.is_shown());
+    assert!(!render(&mut panel, 120).is_empty());
+    assert!(!panel.toggle_shown(), "and hidden again");
+    assert!(!panel.is_shown());
 }
 
 #[test]
@@ -1969,9 +1964,10 @@ fn up_is_handed_over_only_while_the_panel_is_shown_with_rows() {
     assert!(!panel.can_take_up(), "no rows");
     create("row a");
     assert!(panel.can_take_up());
-    panel.set_outline(true);
-    assert!(!panel.can_take_up(), "hidden in outline");
-    panel.set_outline(false);
+    panel.toggle_shown();
+    assert!(!panel.can_take_up(), "hidden");
+    panel.toggle_shown();
+    assert!(panel.can_take_up(), "shown again");
     panel.toggle_shown();
     assert!(!panel.can_take_up(), "hidden by the leader g");
 }

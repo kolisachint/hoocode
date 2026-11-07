@@ -14,9 +14,9 @@ use hoocode_tui_render::{Component, ComponentHandle, Container};
 use serde_json::{json, Value};
 
 use crate::diff::render_diff;
+use crate::fold::{line_budget, peek_block, peek_window};
 use crate::render_utils::{arg_or, invalid_arg_text, str_arg};
 use crate::tool_execution::ToolRenderDefinition;
-use crate::tool_output_view::{line_budget, peek_block, peek_window};
 use hoocode_home::shorten_path;
 
 /// `EditPreview`: the diff, or why the edit cannot apply.

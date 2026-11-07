@@ -9,10 +9,8 @@
 //! `○` queued, `●` done, `⊗` failed or cancelled. It draws the same at every
 //! density.
 //!
-//! The panel is shown by default in the peek and full views and hidden in
-//! outline, where the flight log carries the work. Ctrl+G toggles it in every
-//! view. A view switch resets the toggle to that view's default
-//! ([`TaskPanelComponent::set_outline`]). With no rows it draws nothing.
+//! The panel is shown by default. Ctrl+G toggles it. With no rows it draws
+//! nothing.
 //!
 //! One tab per kind of task, in tab order (see [`TaskPanelView`]); a tab
 //! with no rows is hidden.
@@ -853,9 +851,7 @@ fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(String, &'static st
 /// `TaskPanelComponent`.
 pub struct TaskPanelComponent {
     view: TaskPanelView,
-    /// Outline view: the panel starts hidden (see [`TaskPanelComponent::is_shown`]).
-    outline: bool,
-    /// The user's Ctrl+G choice for the current view; `None` takes the view's default.
+    /// The user's Ctrl+G choice; `None` shows the panel.
     shown_override: Option<bool>,
     disposed: bool,
     ticking: bool,
@@ -907,7 +903,6 @@ impl TaskPanelComponent {
     pub fn new() -> Self {
         Self {
             view: TaskPanelView::Plan,
-            outline: false,
             shown_override: None,
             disposed: false,
             ticking: false,
@@ -935,18 +930,9 @@ impl TaskPanelComponent {
         self.selected = None;
     }
 
-    /// Outline view (M5): the flight log carries the running work, so the panel
-    /// starts hidden there. A view switch clears the Ctrl+G choice, so every
-    /// view starts from its own default.
-    pub fn set_outline(&mut self, outline: bool) {
-        self.outline = outline;
-        self.shown_override = None;
-    }
-
-    /// Whether the panel is drawn: the user's Ctrl+G choice for this view,
-    /// else shown in peek and full and hidden in outline.
+    /// Whether the panel is drawn: the user's Ctrl+G choice, else shown.
     pub fn is_shown(&self) -> bool {
-        self.shown_override.unwrap_or(!self.outline)
+        self.shown_override.unwrap_or(true)
     }
 
     /// Ctrl+G: flips shown and hidden for this view. Returns the new state.

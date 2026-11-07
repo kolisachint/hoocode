@@ -7,10 +7,8 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::{ChainState, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
@@ -33,7 +31,7 @@ fn rows(details: Value, is_partial: bool, is_error: bool, output: &str) -> Vec<S
         },
         is_partial,
     );
-    let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
+    let mut chain = ToolChainComponent::new();
     let handle = Rc::new(RefCell::new(block));
     // Single view: bodies open on the toggle; the running row stays shut.
     if !is_partial {

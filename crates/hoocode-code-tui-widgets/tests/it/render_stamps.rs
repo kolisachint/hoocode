@@ -3,38 +3,34 @@
 //! container (which re-draws on a hit and compares, in debug builds), changes
 //! the item, and checks the screen followed.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats, PeekOnly};
+use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats};
+use hoocode_code_tui_widgets::tool_chain::ChainState;
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::AssistantMessageComponent;
 use hoocode_code_tui_widgets::ThinkingDisplay;
 use hoocode_tui_components::{Spacer, Text};
-use hoocode_tui_render::{note_change, Component, ComponentHandle, Container};
+use hoocode_tui_render::{note_change, Component, Container};
 use serde_json::json;
 
 fn joined(container: &mut Container, width: u16) -> String {
     strip(&container.render(width).join("\n"))
 }
 
-fn shell_block(view: ToolOutputView, output: &str) -> ToolBlock {
+fn shell_block(output: &str) -> ToolBlock {
     let mut component = ToolExecutionComponent::new(
         "Shell",
         "t-0",
         json!({"command": "ls"}),
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(registered_tool_definition("Shell")),
         "/tmp",
     );
@@ -67,7 +63,7 @@ fn a_stamped_item_changes_when_its_text_does() {
 }
 
 #[test]
-fn an_assistant_message_follows_its_updates_and_view() {
+fn an_assistant_message_follows_its_updates() {
     let _g = lock();
     let message = |text: &str| assistant(vec![Content::text(text)]);
     let component = Rc::new(RefCell::new(AssistantMessageComponent::new(
@@ -85,12 +81,10 @@ fn an_assistant_message_follows_its_updates_and_view() {
     let after = joined(&mut container, 40);
     assert!(after.contains("goodbye now") && !after.contains("hello there"));
 
-    // A view change redraws: the prose stays, with no rail in any view.
-    component.borrow_mut().set_view(ToolOutputView::Peek);
-    assert!(joined(&mut container, 40).contains("goodbye now"));
-    component.borrow_mut().set_view(ToolOutputView::Full);
-    let full = joined(&mut container, 40);
-    assert!(full.contains("goodbye now") && !full.contains('┊'));
+    // Expanding redraws: the prose stays, with no rail.
+    component.borrow_mut().set_expanded(true);
+    let open = joined(&mut container, 40);
+    assert!(open.contains("goodbye now") && !open.contains('┊'));
     component.borrow_mut().invalidate();
     joined(&mut container, 40);
 }
@@ -108,25 +102,25 @@ fn a_streaming_message_has_no_stamp() {
 #[test]
 fn a_chain_is_stamped_once_it_has_settled() {
     let _g = lock();
-    let block = shell_block(ToolOutputView::Peek, "a\nb\nc");
-    let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
+    let block = shell_block("a\nb\nc");
+    let mut chain = ToolChainComponent::new();
     chain.add(block.clone());
     assert_eq!(chain.render_stamp(), None, "still collecting calls");
     chain.close(ChainState::Done);
     let settled = chain.render_stamp().expect("a settled chain");
-    chain.set_view(ToolOutputView::Full);
+    block.borrow_mut().set_expanded(true);
     assert_ne!(chain.render_stamp(), Some(settled));
 }
 
 #[test]
-fn a_chain_follows_its_view_and_its_blocks() {
+fn a_chain_follows_its_blocks() {
     let _g = lock();
     let output = (1..=30)
         .map(|n| format!("row-{n:02}"))
         .collect::<Vec<_>>()
         .join("\n");
-    let block = shell_block(ToolOutputView::Peek, &output);
-    let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+    let block = shell_block(&output);
+    let chain = Rc::new(RefCell::new(ToolChainComponent::new()));
     chain.borrow_mut().add(block.clone());
     chain.borrow_mut().close(ChainState::Done);
     let mut container = Container::new();
@@ -142,13 +136,6 @@ fn a_chain_follows_its_view_and_its_blocks() {
     assert!(open.contains("row-01") && open.contains("row-30"), "{open}");
     assert!(!open.contains("earlier lines"), "{open}");
 
-    chain.borrow_mut().set_view(ToolOutputView::Full);
-    let full = joined(&mut container, 100);
-    assert!(
-        full.contains("row-01") && !full.contains("earlier lines"),
-        "{full}"
-    );
-
     // A frozen block draws from its capture, which the chain keeps stamped.
     block.borrow_mut().freeze();
     let frozen = joined(&mut container, 100);
@@ -158,11 +145,11 @@ fn a_chain_follows_its_view_and_its_blocks() {
     );
     assert_eq!(joined(&mut container, 100), frozen);
 
-    chain.borrow_mut().set_view(ToolOutputView::Peek);
-    let peek_again = joined(&mut container, 100);
+    block.borrow_mut().set_expanded(false);
+    let shut_again = joined(&mut container, 100);
     assert!(
-        peek_again.contains("row-01") && !peek_again.contains("earlier lines"),
-        "{peek_again}"
+        !shut_again.contains("row-01") && !shut_again.contains("earlier lines"),
+        "{shut_again}"
     );
 }
 
@@ -181,54 +168,26 @@ fn a_running_block_is_not_stamped() {
 }
 
 #[test]
-fn a_turn_header_follows_the_view_and_its_outline_data() {
+fn a_turn_header_keeps_its_prompt_band() {
     let _g = lock();
-    let flight = Rc::new(RefCell::new(FlightStats {
-        mark: FlightMark::Landed,
-        steps: 1,
-        landed_time: Some("0.8s".into()),
-        ..Default::default()
-    }));
-    let mut header = MissionHeader::new(1, "fix the build");
-    header.set_flight(flight.clone());
-    header.set_view(ToolOutputView::Outline);
-    let header = Rc::new(RefCell::new(header));
+    let header = Rc::new(RefCell::new(MissionHeader::new("fix the build")));
     let mut container = Container::new();
     container.add_child(header.clone());
     let one = joined(&mut container, 100);
+    assert!(one.contains("› fix the build"), "{one}");
     assert_eq!(joined(&mut container, 100), one);
-    flight.borrow_mut().answer = vec!["Fixed.".to_string()];
-    // Shared data the stamp reads: its writer says so.
-    note_change();
-    let two = joined(&mut container, 100);
-    assert_ne!(two, one);
-    header.borrow_mut().set_view(ToolOutputView::Peek);
-    let peek = joined(&mut container, 100);
-    assert!(peek.contains("› fix the build"), "{peek}");
-    assert!(!peek.contains("Fixed."), "{peek}");
 }
 
 #[test]
-fn a_running_turn_header_has_no_stamp() {
+fn a_turn_header_is_always_stamped() {
+    // The band draws what it was built with: no live data, no running state.
     let _g = lock();
-    let flight = Rc::new(RefCell::new(FlightStats {
-        started: Some(std::time::Instant::now()),
-        ..Default::default()
-    }));
-    let mut header = MissionHeader::new(1, "go");
-    header.set_flight(flight.clone());
-    header.set_view(ToolOutputView::Outline);
-    assert_eq!(header.render_stamp(), None);
-    // Ending sets the mark and the time together.
-    let mut landed = flight.borrow_mut();
-    landed.mark = FlightMark::Landed;
-    landed.landed_time = Some("1s".into());
-    drop(landed);
+    let header = MissionHeader::new("go");
     assert!(header.render_stamp().is_some());
 }
 
 #[test]
-fn an_end_line_follows_its_outline_data_and_the_peek_flag() {
+fn an_end_line_follows_its_outline_data() {
     let _g = lock();
     let flight = Rc::new(RefCell::new(FlightStats {
         mark: FlightMark::Aborted,
@@ -236,21 +195,12 @@ fn an_end_line_follows_its_outline_data_and_the_peek_flag() {
         ..Default::default()
     }));
     let line = Rc::new(RefCell::new(LandingLine::new(flight.clone())));
-    let hidden = Rc::new(Cell::new(false));
-    let wrapped: ComponentHandle = PeekOnly::wrap(hidden.clone(), line.clone());
     let mut container = Container::new();
-    container.add_child(wrapped);
+    container.add_child(line.clone());
     let before = joined(&mut container, 100);
     assert!(before.contains("⊗ stopped · 1.0s"), "{before}");
     flight.borrow_mut().landed_time = Some("2.0s".into());
     note_change();
     let changed = joined(&mut container, 100);
     assert!(changed.contains("⊗ stopped · 2.0s"), "{changed}");
-    // Outline hides the row; flipping the shared flag must show.
-    hidden.set(true);
-    note_change();
-    assert_eq!(joined(&mut container, 100).trim(), "");
-    hidden.set(false);
-    note_change();
-    assert_eq!(joined(&mut container, 100), changed);
 }

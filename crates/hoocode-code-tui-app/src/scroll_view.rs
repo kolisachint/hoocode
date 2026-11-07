@@ -835,7 +835,6 @@ mod tests {
     use hoocode_ai_types::Content;
     use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
     use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-    use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
     use hoocode_code_tui_widgets::tool_signal::ToolResult;
     use hoocode_code_tui_widgets::tools::builtin_tool_definition;
     use serde_json::json;
@@ -846,10 +845,7 @@ mod tests {
             "Shell",
             id,
             json!({"command": "echo hi"}),
-            ToolExecutionOptions {
-                view: ToolOutputView::Peek,
-                ..Default::default()
-            },
+            ToolExecutionOptions::default(),
             Some(definition),
             "/",
         );
@@ -871,11 +867,11 @@ mod tests {
     fn hit_chain_places_header_and_body_rows() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let width: u16 = 80;
-        let chain0 = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        let chain0 = Rc::new(RefCell::new(ToolChainComponent::new()));
         chain0.borrow_mut().add(shell_block("chain-0"));
         // Two blocks so block 1 has a header; the first is expanded so the
         // chain has body rows to miss on.
-        let chain1 = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        let chain1 = Rc::new(RefCell::new(ToolChainComponent::new()));
         chain1.borrow_mut().add(shell_block("chain-1-a"));
         chain1.borrow_mut().add(shell_block("chain-1-b"));
         chain1.borrow_mut().toggle_block(0);

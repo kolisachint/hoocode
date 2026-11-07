@@ -8,18 +8,16 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip, strip_all};
 use hoocode_ai_types::Content;
+use hoocode_code_tui_widgets::fold::PEEK_LINES;
 use hoocode_code_tui_widgets::tool_execution::{
     ToolExecutionComponent, ToolExecutionOptions, ToolRenderDefinition,
 };
-use hoocode_code_tui_widgets::tool_output_view::{ToolOutputView, PEEK_LINES};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools;
 use hoocode_tui_components::Text;
 use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::visible_width;
 use serde_json::{json, Value};
-
-use ToolOutputView::{Outline, Peek};
 
 fn cwd() -> String {
     std::env::current_dir()
@@ -53,17 +51,13 @@ fn component(
     name: &str,
     id: &str,
     args: Value,
-    view: ToolOutputView,
     definition: Option<ToolRenderDefinition>,
 ) -> ToolExecutionComponent {
     ToolExecutionComponent::new(
         name,
         id,
         args,
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         definition,
         &cwd(),
     )
@@ -91,7 +85,7 @@ mod parity {
             render_call: call_renderer("$ npm run check"),
             ..base()
         };
-        let mut c = component("custom_tool", "tool-dot", json!({}), Peek, Some(def));
+        let mut c = component("custom_tool", "tool-dot", json!({}), Some(def));
         let lines = lines_of(&mut c, 120);
         let dot_line = lines.iter().find(|l| l.contains('●')).expect("dot line");
         assert!(dot_line.contains("$ npm run check"));
@@ -107,7 +101,7 @@ mod parity {
             ),
             ..base()
         };
-        let mut c = component("custom_tool", "tool-dot-wrap", json!({}), Peek, Some(def));
+        let mut c = component("custom_tool", "tool-dot-wrap", json!({}), Some(def));
         let lines = lines_of(&mut c, 30);
         let dot = lines.iter().position(|l| l.contains('●')).unwrap();
         assert!(lines[dot].contains("$ cd"));
@@ -123,7 +117,7 @@ mod parity {
             render_call: call_renderer("custom call"),
             render_result: result_renderer("custom result"),
         };
-        let mut c = component("custom_tool", "tool-1", json!({}), Peek, Some(def));
+        let mut c = component("custom_tool", "tool-1", json!({}), Some(def));
         assert!(strip_all(&c.render(120)).contains("custom call"));
         c.update_result(result("done", false), false);
         // Single view: bodies open on the toggle.
@@ -140,7 +134,6 @@ mod parity {
             "Edit",
             "tool-2",
             json!({"path": "README.md", "oldText": "before", "newText": "after"}),
-            Peek,
             Some(base()),
         );
         c.update_result(
@@ -160,13 +153,7 @@ mod parity {
     #[test]
     fn preserves_legacy_file_path_rendering_compatibility_for_built_in_tools() {
         let _g = lock();
-        let mut c = component(
-            "Read",
-            "tool-3",
-            json!({"file_path": "README.md"}),
-            Peek,
-            None,
-        );
+        let mut c = component("Read", "tool-3", json!({"file_path": "README.md"}), None);
         let rendered = strip_all(&c.render(120));
         assert!(rendered.contains("Read"));
         assert!(rendered.contains("README.md"));
@@ -179,7 +166,6 @@ mod parity {
             "Read",
             "tool-4",
             json!({"path": "README.md"}),
-            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("hello", false), false);
@@ -198,13 +184,7 @@ mod parity {
             render_call: call_renderer("override call"),
             ..base()
         };
-        let mut c = component(
-            "Read",
-            "tool-4b",
-            json!({"path": "notes.txt"}),
-            Peek,
-            Some(def),
-        );
+        let mut c = component("Read", "tool-4b", json!({"path": "notes.txt"}), Some(def));
         c.update_result(result("hello", false), false);
         // Single view: bodies open on the toggle.
         c.set_expanded(true);
@@ -220,13 +200,7 @@ mod parity {
             render_result: result_renderer("override result"),
             ..base()
         };
-        let mut c = component(
-            "Read",
-            "tool-4c",
-            json!({"path": "README.md"}),
-            Peek,
-            Some(def),
-        );
+        let mut c = component("Read", "tool-4c", json!({"path": "README.md"}), Some(def));
         c.update_result(result("hello", false), false);
         // Single view: bodies open on the toggle.
         c.set_expanded(true);
@@ -243,13 +217,7 @@ mod parity {
             render_call: call_renderer("override call"),
             render_result: result_renderer("override result"),
         };
-        let mut c = component(
-            "Read",
-            "tool-4d",
-            json!({"path": "README.md"}),
-            Peek,
-            Some(def),
-        );
+        let mut c = component("Read", "tool-4d", json!({"path": "README.md"}), Some(def));
         c.update_result(result("hello", false), false);
         // Single view: bodies open on the toggle.
         c.set_expanded(true);
@@ -268,13 +236,7 @@ mod parity {
             render_call: call_renderer("wrapped override call"),
             render_result: result_renderer("wrapped override result"),
         };
-        let mut c = component(
-            "Read",
-            "tool-4e",
-            json!({"path": "README.md"}),
-            Peek,
-            Some(def),
-        );
+        let mut c = component("Read", "tool-4e", json!({"path": "README.md"}), Some(def));
         c.update_result(result("hello", false), false);
         // Single view: bodies open on the toggle.
         c.set_expanded(true);
@@ -302,7 +264,7 @@ mod parity {
                 Ok(text(format!("custom result {token}")))
             })),
         };
-        let mut c = component("custom_tool", "tool-5", json!({}), Peek, Some(def));
+        let mut c = component("custom_tool", "tool-5", json!({}), Some(def));
         c.update_result(result("done", false), false);
         // Single view: bodies open on the toggle.
         c.set_expanded(true);
@@ -323,13 +285,7 @@ mod parity {
                 )))
             })),
         };
-        let mut c = component(
-            "custom_tool",
-            "tool-5b",
-            json!({"foo": "bar"}),
-            Peek,
-            Some(def),
-        );
+        let mut c = component("custom_tool", "tool-5b", json!({"foo": "bar"}), Some(def));
         c.update_result(result("done", false), false);
         // Single view: bodies open on the toggle.
         c.set_expanded(true);
@@ -339,13 +295,7 @@ mod parity {
     #[test]
     fn falls_back_when_custom_renderers_are_absent() {
         let _g = lock();
-        let mut c = component(
-            "custom_tool",
-            "tool-6",
-            json!({"foo": "bar"}),
-            Peek,
-            Some(base()),
-        );
+        let mut c = component("custom_tool", "tool-6", json!({"foo": "bar"}), Some(base()));
         c.update_result(result("done", false), false);
         // Single view: bodies open on the toggle.
         c.set_expanded(true);
@@ -361,7 +311,6 @@ mod parity {
             "Write",
             "tool-7",
             json!({"path": "README.md", "content": "one\ntwo\n"}),
-            Peek,
             Some(tools::write::definition()),
         );
         // Single view: bodies open on the toggle.
@@ -379,7 +328,6 @@ mod parity {
             "Read",
             "tool-8",
             json!({"path": "notes.txt"}),
-            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("one\ntwo\n", false), false);
@@ -450,7 +398,6 @@ mod parity {
                 "Read",
                 &format!("tool-compact-{}", s.title),
                 json!({"path": s.path}),
-                Peek,
                 Some(tools::read::definition()),
             );
             c.update_result(result(&long_body(), false), false);
@@ -489,7 +436,6 @@ mod parity {
                 "Read",
                 "tool-compact-range",
                 json!({"path": path, "offset": 120, "limit": 210}),
-                Peek,
                 Some(tools::read::definition()),
             );
             let collapsed = strip_all(&c.render(120));
@@ -500,10 +446,10 @@ mod parity {
     }
 }
 
-mod view_dial {
+mod body_toggle {
     use super::*;
 
-    fn build(view: ToolOutputView, args: Value) -> ToolExecutionComponent {
+    fn build(args: Value) -> ToolExecutionComponent {
         let def = ToolRenderDefinition {
             render_call: call_renderer("custom call"),
             render_result: Some(Rc::new(|_, options, _| {
@@ -514,19 +460,18 @@ mod view_dial {
                 }))
             })),
         };
-        let mut c = component("custom_tool", "view", args, view, Some(def));
+        let mut c = component("custom_tool", "view", args, Some(def));
         c.update_result(result("one\ntwo\nthree", false), false);
         c
     }
 
     /// A finished `Read` of `count` rows.
-    fn read_of(count: usize, view: ToolOutputView) -> ToolExecutionComponent {
+    fn read_of(count: usize) -> ToolExecutionComponent {
         let body: Vec<String> = (1..=count).map(|i| format!("row {i}")).collect();
         let mut c = component(
             "Read",
             "view-read",
             json!({"path": "notes.txt"}),
-            view,
             Some(tools::read::definition()),
         );
         c.update_result(result(&body.join("\n"), false), false);
@@ -536,7 +481,7 @@ mod view_dial {
     #[test]
     fn a_collapsed_read_shows_no_body_and_the_toggle_opens_it_whole() {
         let _g = lock();
-        let mut c = read_of(12, Peek);
+        let mut c = read_of(12);
         let collapsed = strip_all(&c.render(120));
         assert!(!collapsed.contains("row 1"), "{collapsed}");
         c.set_expanded(true);
@@ -552,7 +497,6 @@ mod view_dial {
             "Read",
             "stream-read",
             json!({"path": "notes.rs"}),
-            Peek,
             Some(tools::read::definition()),
         );
         // Single view: the open toggle shows the live partial result.
@@ -568,7 +512,7 @@ mod view_dial {
     #[test]
     fn a_collapsed_block_shows_only_its_call_line() {
         let _g = lock();
-        let collapsed = strip_all(&build(Peek, json!({})).render(120));
+        let collapsed = strip_all(&build(json!({})).render(120));
         assert!(collapsed.contains("custom call"));
         assert!(!collapsed.contains("TRIMMED BODY"));
         assert!(!collapsed.contains("RESULT BODY"));
@@ -579,7 +523,7 @@ mod view_dial {
     #[test]
     fn an_open_block_shows_the_whole_result_body() {
         let _g = lock();
-        let mut c = build(Peek, json!({}));
+        let mut c = build(json!({}));
         c.set_expanded(true);
         let open = strip_all(&c.render(120));
         assert!(open.contains("custom call"));
@@ -590,93 +534,23 @@ mod view_dial {
     #[test]
     fn a_failure_settles_collapsed_and_the_toggle_shows_why_it_failed() {
         let _g = lock();
-        for view in [Outline, Peek] {
-            let def = ToolRenderDefinition {
-                render_call: call_renderer("custom call"),
-                render_result: result_renderer("WHY IT BROKE"),
-            };
-            let mut c = component(
-                "custom_tool",
-                "err",
-                json!({"command": "bun test"}),
-                view,
-                Some(def),
-            );
-            c.update_result(result("boom", true), false);
-            // A failed call settles collapsed and never opens itself.
-            assert!(
-                !strip_all(&c.render(120)).contains("WHY IT BROKE"),
-                "{view:?}"
-            );
-            c.set_expanded(true);
-            assert!(
-                strip_all(&c.render(120)).contains("WHY IT BROKE"),
-                "{view:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn outline_replaces_the_call_renderer_with_a_signal_row() {
-        let _g = lock();
-        let rendered = strip_all(&build(Outline, json!({"command": "npm run check"})).render(120));
-        assert!(!rendered.contains("custom call"));
-        assert!(!rendered.contains("TRIMMED BODY"));
-        assert!(rendered.contains("custom_to"));
-        assert!(rendered.contains("npm run check"));
-        assert!(rendered.contains("3 lines"));
-    }
-
-    #[test]
-    fn a_outline_row_stays_a_row_until_the_toggle_opens_it() {
-        let _g = lock();
-        let mut c = build(Outline, json!({"command": "npm run check"}));
-        assert!(strip_all(&c.render(120)).contains("npm run check"));
-        c.set_view(Peek);
-        let peeked = strip_all(&c.render(120));
-        assert!(peeked.contains("custom call"));
-        assert!(!peeked.contains("RESULT BODY"));
-        c.set_expanded(true);
-        assert!(strip_all(&c.render(120)).contains("RESULT BODY"));
-        c.set_view(Outline);
-        assert!(strip_all(&c.render(120)).contains("npm run check"));
-    }
-
-    #[test]
-    fn outline_rows_stack_without_the_separator_the_other_views_keep() {
-        let _g = lock();
-        let outline = build(Outline, json!({"command": "npm run check"})).render(120);
-        assert!(outline.iter().all(|l| !strip(l).trim().is_empty()));
-        let peek = build(Peek, json!({"command": "npm run check"})).render(120);
-        assert_eq!(strip(&peek[0]).trim(), "");
-    }
-
-    #[test]
-    fn outline_gives_a_self_rendering_tool_the_same_row_framing_as_every_other() {
-        let _g = lock();
         let def = ToolRenderDefinition {
             render_call: call_renderer("custom call"),
-            render_result: result_renderer("RESULT BODY"),
+            render_result: result_renderer("WHY IT BROKE"),
         };
         let mut c = component(
-            "self_tool",
-            "view-outline-self",
-            json!({"command": "npm run check"}),
-            Outline,
+            "custom_tool",
+            "err",
+            json!({"command": "bun test"}),
             Some(def),
         );
-        c.update_result(result("a\nb", false), false);
-        let self_row = strip_all(&c.render(120));
-        let plain_row = strip_all(&build(Outline, json!({"command": "npm run check"})).render(120));
-        assert_eq!(
-            self_row.find("npm run check"),
-            plain_row.find("npm run check")
-        );
-        assert_eq!(self_row.chars().count(), plain_row.chars().count());
-        c.set_view(Peek);
-        let peeked = strip_all(&c.render(120));
-        assert!(peeked.contains("custom call"));
-        assert!(!peeked.contains("to expand"));
+        c.update_result(result("boom", true), false);
+        // A failed call settles collapsed and never opens itself.
+        let shut = strip_all(&c.render(120));
+        assert!(!shut.contains("WHY IT BROKE"), "{shut}");
+        c.set_expanded(true);
+        let open = strip_all(&c.render(120));
+        assert!(open.contains("WHY IT BROKE"), "{open}");
     }
 
     #[test]
@@ -691,7 +565,6 @@ mod view_dial {
             "renderless_tool",
             "view-fallback",
             json!({"command": "npm run check"}),
-            Peek,
             Some(def),
         );
         c.update_result(result(&lines.join("\n"), false), false);
@@ -701,23 +574,6 @@ mod view_dial {
         let open = strip_all(&c.render(120));
         assert!(open.contains(&format!("line {}", PEEK_LINES + 4)), "{open}");
         assert!(!open.contains("more lines"), "{open}");
-    }
-
-    #[test]
-    fn set_view_switches_an_existing_block_live() {
-        let _g = lock();
-        let mut c = build(Outline, json!({"command": "npm run check"}));
-        assert!(!strip_all(&c.render(120)).contains("custom call"));
-        c.set_view(Peek);
-        let peeked = strip_all(&c.render(120));
-        assert!(peeked.contains("custom call"));
-        assert!(!peeked.contains("RESULT BODY"));
-        c.set_expanded(true);
-        assert!(strip_all(&c.render(120)).contains("RESULT BODY"));
-        c.set_view(Outline);
-        let folded = strip_all(&c.render(120));
-        assert!(!folded.contains("custom call"));
-        assert!(folded.contains("npm run check"));
     }
 }
 
@@ -729,7 +585,6 @@ mod freeze {
             "Read",
             id,
             json!({"path": "README.md"}),
-            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("hello world output", false), false);
@@ -743,7 +598,6 @@ mod freeze {
             "Read",
             "freeze-partial",
             json!({"path": "README.md"}),
-            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("partial", false), true);
@@ -789,7 +643,7 @@ mod freeze {
 fn chain_entry_counts_output_lines_without_the_trailing_newline() {
     let _g = lock();
     let counted = |output: &str| {
-        let mut c = component("Shell", "c1", json!({}), Peek, None);
+        let mut c = component("Shell", "c1", json!({}), None);
         c.update_result(result(output, false), false);
         c.chain_entry().output_lines
     };
@@ -810,7 +664,7 @@ mod result_fallback {
     #[test]
     fn counts_the_lines_left_out_without_the_trailing_newline() {
         let _g = lock();
-        let mut c = component("mystery", "1", json!({}), Peek, Some(base()));
+        let mut c = component("mystery", "1", json!({}), Some(base()));
         c.update_result(result("a\nb\nc\nd\ne\nf\ng\n", false), false);
         let shut = lines_of(&mut c, 80).join("\n");
         assert!(!shut.contains('a'), "{shut}");

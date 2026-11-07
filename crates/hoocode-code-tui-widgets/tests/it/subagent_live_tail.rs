@@ -6,7 +6,6 @@
 use hoocode_ai_types::Content;
 use hoocode_code_subagents::live::{apply, remember_run};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_tui_render::golden::render_golden;
@@ -30,10 +29,7 @@ fn agent_block() -> ToolExecutionComponent {
         "Agent",
         CALL,
         args,
-        ToolExecutionOptions {
-            view: ToolOutputView::Peek,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(registered_tool_definition("Agent")),
         CWD,
     );

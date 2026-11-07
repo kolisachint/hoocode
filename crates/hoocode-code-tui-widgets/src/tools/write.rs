@@ -9,11 +9,11 @@ use serde_json::{json, Value};
 
 use super::{text, trim_trailing_empty_lines};
 use crate::fold::more_lines_hint;
+use crate::fold::{line_budget, peek_block};
 use crate::render_utils::{
     arg_or, invalid_arg_text, normalize_display_text, replace_tabs, str_arg,
 };
 use crate::tool_execution::ToolRenderDefinition;
-use crate::tool_output_view::{line_budget, peek_block};
 use hoocode_home::shorten_path;
 
 /// Lines re-highlighted as one block while the content streams in.

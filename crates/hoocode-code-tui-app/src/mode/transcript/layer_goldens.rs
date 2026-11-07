@@ -19,12 +19,11 @@ use hoocode_ai_types::{
     ToolResultMessage, Usage,
 };
 use hoocode_code_agent_session::stats::{add_assistant_usage, AssistantUsageTotals};
-use hoocode_code_settings::ToolOutputView;
 use hoocode_code_subagents::live;
 use hoocode_code_tui_theme::{get_markdown_theme, init_theme};
 use hoocode_code_tui_widgets::outline::FlightItem;
+use hoocode_code_tui_widgets::tool_chain::ChainState;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolBlock, ToolChainComponent};
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
@@ -142,9 +141,9 @@ impl Replay {
             "Thinking...",
         ));
         {
-            let mut c = component.borrow_mut();
-            c.set_view(ToolOutputView::Peek);
-            c.set_outline_mission(self.t.current_mission());
+            component
+                .borrow_mut()
+                .set_outline_mission(self.t.current_mission());
         }
         self.t.note_assistant(&component);
         self.t.assistant_components.push(component.clone());
@@ -310,7 +309,6 @@ impl Replay {
             args,
             ToolExecutionOptions {
                 show_images: false,
-                view: ToolOutputView::Peek,
                 ..Default::default()
             },
             Some(registered_tool_definition(name)),
@@ -323,7 +321,7 @@ impl Replay {
         let chain = match &self.t.open_chain {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
-                let chain = handle(ToolChainComponent::new(ToolOutputView::Peek));
+                let chain = handle(ToolChainComponent::new());
                 self.t.chat.borrow_mut().add_child(as_component(&chain));
                 self.t.chains.push(chain.clone());
                 self.t.open_chain = Some(chain.clone());
@@ -331,21 +329,8 @@ impl Replay {
             }
         };
         chain.borrow_mut().add(block.clone());
-        if let Some(previous) = self.t.latest_block.replace(block.clone()) {
-            previous.borrow_mut().set_latest(false);
-        }
-        block.borrow_mut().set_latest(true);
-        let same = self
-            .t
-            .latest_chain
-            .as_ref()
-            .is_some_and(|c| Rc::ptr_eq(c, &chain));
-        if !same {
-            if let Some(previous) = self.t.latest_chain.replace(chain.clone()) {
-                previous.borrow_mut().set_latest(false);
-            }
-            chain.borrow_mut().set_latest(true);
-        }
+        self.t.latest_block.replace(block.clone());
+        self.t.latest_chain.replace(chain.clone());
         self.refresh();
     }
 
