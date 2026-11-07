@@ -446,10 +446,10 @@ fn the_strip_is_the_first_row_with_every_tab_and_the_hint() {
     plan_and_done_run();
     let mut panel = TaskPanelComponent::new();
     let strip_row = strip(&render(&mut panel, 120)[0]);
-    assert!(
-        strip_row.contains("plan 0/1 · agents 1/1 · ctrl+x g"),
-        "{strip_row}"
-    );
+    assert!(strip_row.contains("plan 0/1 · agents 1/1"), "{strip_row}");
+    // The hint is pinned right, not appended to the tabs.
+    assert!(strip_row.trim_end().ends_with("ctrl+x g"), "{strip_row}");
+    assert!(!strip_row.contains("agents 1/1 · ctrl+x g"), "{strip_row}");
     // Switching the shown tab keeps the same strip.
     panel.set_view(TaskPanelView::Subagents);
     let strip_row = strip(&render(&mut panel, 120)[0]);

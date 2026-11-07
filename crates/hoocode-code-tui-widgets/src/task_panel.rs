@@ -2,7 +2,8 @@
 //!
 //! Declutter spec (Dialogs, Tasks): the panel is a pane above the prompt.
 //! Unfocused it has no title: rows only, with one dim strip row first when
-//! more than one tab has rows (`plan 1/3 · agents 1/1 · mcp 1 · ctrl+g`).
+//! more than one tab has rows. The strip names the shown tab whole, folds
+//! the rest into `+N tabs`, and pins the `ctrl+x g` hint right.
 //! Focused it gets the `Tasks` chip with `/tasks · ctrl+g` and the strip
 //! after it, the pick marker and the hint row. Row glyphs: `◉` working,
 //! `○` queued, `●` done, `⊗` failed or cancelled. It draws the same at every
@@ -45,9 +46,9 @@ use hoocode_tui_glyphs::status;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_ratatui::{truncate_line, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::truncate_to_width;
+use hoocode_tui_util::{truncate_to_width, visible_width};
 
-use crate::pane::{hint_line, Pane, PaneStyle};
+use crate::pane::{fit_hint_line, Pane, PaneStyle};
 use crate::tool_row::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
@@ -336,33 +337,87 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
         .collect()
 }
 
-/// The tab strip: `plan 1/3 · agents 1/1 · mcp 1`. The shown tab reads in
-/// normal text, the others dim. With `hint` the dim `ctrl+g` ends it.
-fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool) -> Line<'static> {
+/// The tab strip: the shown tab in normal text, the other tabs dim, and
+/// the `ctrl+x g` hint pinned right. At narrow widths the trailing tabs
+/// collapse into `+N tabs` (`plan 1/3 · +3 tabs`), always keeping the shown
+/// tab visible; what still overflows the pane cuts.
+fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool, width: usize) -> Line<'static> {
     let st = PaneStyle::current();
+    let tabs = model.views();
+    let labels: Vec<String> = tabs
+        .iter()
+        .map(|tab| model.lens_stats(*tab).label(*tab).to_lowercase())
+        .collect();
+    let shown = tabs.iter().position(|tab| *tab == view).unwrap_or(0);
+    let hint_key = hint.then(|| key_hint_text("app.panel.focus"));
+    let hint_w = hint_key.as_deref().map(visible_width).unwrap_or(0);
+    // Cells for the strip content: the pane keeps a 2-column pad and the
+    // unfocused strip adds its own 2-column indent.
+    let budget = width.saturating_sub(4);
+    // The leading tabs shown whole; the rest collapse into `+N tabs`.
+    let mut shown_tabs = labels.len();
+    while shown_tabs > shown + 1
+        && !strip_fits(&labels, shown_tabs, hint_w, hint_key.is_some(), budget)
+    {
+        shown_tabs -= 1;
+    }
     let mut spans = Vec::new();
-    for (i, &tab) in model.views().iter().enumerate() {
+    for (i, label) in labels.iter().enumerate().take(shown_tabs) {
         if i > 0 {
             spans.push(Span::styled(" · ", st.dim_style()));
         }
-        let label = model.lens_stats(tab).label(tab).to_lowercase();
-        let style = if tab == view {
-            st.text_style()
-        } else {
-            st.dim_style()
-        };
-        spans.push(Span::styled(label, style));
-    }
-    if hint {
         spans.push(Span::styled(
-            format!(
-                " · {}",
-                hoocode_code_tui_keybindings::key_hint_text("app.panel.focus")
-            ),
-            st.dim_style(),
+            label.clone(),
+            if tabs[i] == view {
+                st.text_style()
+            } else {
+                st.dim_style()
+            },
         ));
     }
+    let hidden = labels.len().saturating_sub(shown_tabs);
+    if hidden > 0 {
+        if !spans.is_empty() {
+            spans.push(Span::styled(" · ", st.dim_style()));
+        }
+        spans.push(Span::styled(format!("+{hidden} tabs"), st.dim_style()));
+    }
+    if let Some(key) = hint_key {
+        let used: usize = spans.iter().map(|s| s.width()).sum();
+        let gap = budget.checked_sub(used + hint_w).unwrap_or(1);
+        spans.push(Span::raw(" ".repeat(gap)));
+        spans.push(Span::styled(key, st.dim_style()));
+    }
     Line::from(spans)
+}
+
+/// Whether `shown_tabs` leading tabs (plus `+N tabs` for the rest and the
+/// pinned hint) fit in `budget` cells with at least one space of pin gap.
+fn strip_fits(
+    labels: &[String],
+    shown_tabs: usize,
+    hint_w: usize,
+    hinted: bool,
+    budget: usize,
+) -> bool {
+    let mut used = 0;
+    for (i, label) in labels.iter().enumerate().take(shown_tabs) {
+        if i > 0 {
+            used += visible_width(" · ");
+        }
+        used += visible_width(label);
+    }
+    let hidden = labels.len().saturating_sub(shown_tabs);
+    if hidden > 0 {
+        if shown_tabs > 0 {
+            used += visible_width(" · ");
+        }
+        used += visible_width(&format!("+{hidden} tabs"));
+    }
+    if hinted {
+        used += 1 + hint_w;
+    }
+    used <= budget
 }
 
 /// `flatLensRows`: the plan, each linked subagent run nested under its item.
@@ -463,12 +518,14 @@ fn subagent_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
     rows
 }
 
-/// The status circle's token style in the flight plan.
+/// The status circle's token style in the flight plan. Only the glyph is
+/// coloured: a working row reads accent, a done row sits back dim (yellow
+/// is for blocking only).
 fn flight_status_style(status: TaskStatus) -> Style {
     let pal = Palette::current();
     match status {
-        TaskStatus::InProgress => pal.warn(),
-        TaskStatus::Done => pal.ok(),
+        TaskStatus::InProgress => pal.acc(),
+        TaskStatus::Done => pal.dim(),
         TaskStatus::Failed => pal.err(),
         // Not started reads faint (spec §3.1: `○`); a user-initiated
         // cancel is dim, not an error.
@@ -711,18 +768,18 @@ fn render_flight_plan(
             "/tasks · {}",
             hoocode_code_tui_keybindings::key_hint_text("app.panel.focus")
         );
-        pane.facts = tab_strip(model, view, false);
+        pane.facts = tab_strip(model, view, false, width);
         pane.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
         let owned = pick_hints(model, selected);
         let refs: Vec<(&str, &str)> = owned.iter().map(|(k, a)| (k.as_str(), *a)).collect();
-        pane.hint = hint_line(&refs);
+        pane.hint = fit_hint_line(&refs, false, width);
         pane
     } else {
         let mut pane = Pane::new("");
         // One tab needs no strip; several get one dim row first.
         if model.views().len() > 1 {
             let mut spans = vec![Span::raw("  ")];
-            spans.extend(tab_strip(model, view, true).spans);
+            spans.extend(tab_strip(model, view, true, width).spans);
             pane.top.push(Line::from(spans));
         }
         pane
