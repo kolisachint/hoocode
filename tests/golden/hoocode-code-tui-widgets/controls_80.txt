@@ -1,4 +1,4 @@
-  Keys  ?   plain   ctrl   leader   alt  124 bindings · 26 shown
+  Keys  ?   plain   ctrl   leader   alt  124 bindings · 25 shown
  prompt
  ctrl+x c  Copy the agent's last message to the clipboard
  ctrl+x y  Yank pop
@@ -21,7 +21,6 @@
  ctrl+x f  Queue follow-up message
  ctrl+x g  Show or hide the task panel
  ctrl+x h  Resume a session from history
- ctrl+x k  Show keyboard shortcuts
  ctrl+x l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)
  ctrl+x m  Cycle to next model
  ctrl+x o  Cycle tool output view (outline → peek → full)
@@ -113,31 +112,28 @@ r22 c0-8 fg=#e5e5e7 bg=#1e1e2a
 r22 c9-39 fg=#989898 bg=#1e1e2a
 r22 c40-79 fg=#e5e5e7 bg=#1e1e2a
 r23 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r23 c9-33 fg=#989898 bg=#1e1e2a
-r23 c34-79 fg=#e5e5e7 bg=#1e1e2a
+r23 c9-71 fg=#989898 bg=#1e1e2a
+r23 c72-79 fg=#e5e5e7 bg=#1e1e2a
 r24 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r24 c9-71 fg=#989898 bg=#1e1e2a
-r24 c72-79 fg=#e5e5e7 bg=#1e1e2a
+r24 c9-29 fg=#989898 bg=#1e1e2a
+r24 c30-79 fg=#e5e5e7 bg=#1e1e2a
 r25 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r25 c9-29 fg=#989898 bg=#1e1e2a
-r25 c30-79 fg=#e5e5e7 bg=#1e1e2a
+r25 c9-56 fg=#989898 bg=#1e1e2a
+r25 c57-79 fg=#e5e5e7 bg=#1e1e2a
 r26 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r26 c9-56 fg=#989898 bg=#1e1e2a
-r26 c57-79 fg=#e5e5e7 bg=#1e1e2a
+r26 c9-53 fg=#989898 bg=#1e1e2a
+r26 c54-79 fg=#e5e5e7 bg=#1e1e2a
 r27 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r27 c9-53 fg=#989898 bg=#1e1e2a
-r27 c54-79 fg=#e5e5e7 bg=#1e1e2a
+r27 c9-23 fg=#989898 bg=#1e1e2a
+r27 c24-79 fg=#e5e5e7 bg=#1e1e2a
 r28 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r28 c9-23 fg=#989898 bg=#1e1e2a
-r28 c24-79 fg=#e5e5e7 bg=#1e1e2a
-r29 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r29 c9-74 fg=#989898 bg=#1e1e2a
-r29 c75-79 fg=#e5e5e7 bg=#1e1e2a
-r30 c0-1 fg=#e5e5e7 bg=#2a2a36
-r30 c2-8 fg=#989898 bg=#2a2a36
-r30 c9-79 fg=#e5e5e7 bg=#2a2a36
-r31 c0-3 fg=#e5e5e7 bg=#1e1e2a
-r31 c4-12 fg=#989898 bg=#1e1e2a
-r31 c13-15 fg=#e5e5e7 bg=#1e1e2a
-r31 c16-21 fg=#989898 bg=#1e1e2a
-r31 c22-79 fg=#e5e5e7 bg=#1e1e2a
+r28 c9-74 fg=#989898 bg=#1e1e2a
+r28 c75-79 fg=#e5e5e7 bg=#1e1e2a
+r29 c0-1 fg=#e5e5e7 bg=#2a2a36
+r29 c2-8 fg=#989898 bg=#2a2a36
+r29 c9-79 fg=#e5e5e7 bg=#2a2a36
+r30 c0-3 fg=#e5e5e7 bg=#1e1e2a
+r30 c4-12 fg=#989898 bg=#1e1e2a
+r30 c13-15 fg=#e5e5e7 bg=#1e1e2a
+r30 c16-21 fg=#989898 bg=#1e1e2a
+r30 c22-79 fg=#e5e5e7 bg=#1e1e2a
