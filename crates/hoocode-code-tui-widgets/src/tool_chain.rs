@@ -369,14 +369,28 @@ impl ToolChainComponent {
     /// with its body under it at column 4, dim, and no rail.
     ///
     /// Consecutive body-less rows stay tight; a row that shows a body is
-    /// followed by one blank row, and one blank row opens the run. Peek shows
-    /// no body for Read, search and web calls or for a settled agent; an Edit
-    /// or Write its first four lines, a Shell call its last two (a failed
-    /// call its last four, any tool's error likewise); a body of four lines or
-    /// fewer shows whole. Every fold counts all the lines left out, the ones
-    /// the renderer already cut included. The full stop shows every line and
-    /// no fold. A subagent's own calls sit under its row, indented 3: the
-    /// failed ones at peek, every one at full.
+    /// followed by one blank row, and one blank row opens the run. A
+    /// collapsed block is its header row. The toggle opens the body whole;
+    /// the full stop opens every body. A subagent's own calls sit under its
+    /// row, indented 3, when it is open.
+
+    /// Flip a block's toggle by its position in the chain. A click the
+    /// hit-test placed calls this; an unknown index does nothing.
+    pub fn toggle_block(&mut self, index: usize) {
+        if let Some(block) = self.blocks.get(index) {
+            block.borrow_mut().toggle_expanded();
+        }
+    }
+
+    /// A block's header start row in the last render, for pinning a click or
+    /// a focus move on the header's row.
+    pub fn header_start_row(&self, index: usize) -> Option<usize> {
+        self.header_map
+            .iter()
+            .find(|hit| hit.block == index)
+            .map(|hit| hit.start)
+    }
+
     /// The block toggled by a click on `row` (a row of the last render),
     /// or `None` on a body row. Only header rows toggle.
     pub fn header_hit(&self, row: usize) -> Option<usize> {
@@ -542,6 +556,10 @@ impl ToolChainComponent {
 
 impl Component for ToolChainComponent {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
         Some(self)
     }
 

@@ -188,6 +188,23 @@ pub type ScrollStatusFormatter = Box<dyn Fn(&ScrollStatus) -> String>;
 /// Opens a clicked URL (`onHyperlink`).
 pub type HyperlinkHandler = Box<dyn FnMut(&str)>;
 
+/// A click on a transcript body cell (press and release on the same cell
+/// that holds no link and is not the scrollbar column). The rows are
+/// transcript buffer rows: `buffer_row` names the clicked row and `context`
+/// how many buffer rows sit above it on screen, so pinning keeps the row
+/// where the click found it. `width` is the transcript width the rows were
+/// laid out at.
+#[derive(Debug, Clone, Copy)]
+pub struct BodyClick {
+    pub buffer_row: i64,
+    pub context: i64,
+    pub width: u16,
+}
+
+/// Handles a [`BodyClick`] (`on_body_click`): the app toggles the tool block
+/// whose header holds the row and pins the view.
+pub type BodyClickHandler = Box<dyn FnMut(BodyClick)>;
+
 /// The indicator drawn when the app has not supplied its own
 /// (`defaultScrollStatus`): reverse video, position first, keys if they fit.
 /// One shared case-insensitive matcher for the scan count and the
@@ -438,6 +455,9 @@ pub struct Tui {
     scroll_view_lines: Option<Vec<String>>,
     /// Open the URL behind a clicked hyperlink. Unset, clicks do nothing.
     pub on_hyperlink: Option<HyperlinkHandler>,
+    /// A click on a transcript body cell. Unset, body clicks do nothing.
+    /// A link wins over the body; the scrollbar column pages on press.
+    pub on_body_click: Option<BodyClickHandler>,
     /// The pinned viewport: the transcript row at the top of the screen, or
     /// `None` to follow the tail. While pinned, the TUI paints a window of
     /// the buffer on the alternate screen.
@@ -533,6 +553,7 @@ impl Tui {
             pressed_cell: None,
             scroll_view_lines: None,
             on_hyperlink: None,
+            on_body_click: None,
             scroll_offset: None,
             scroll_total_lines: 0,
             scroll_status_formatter: Box::new(default_scroll_status),
@@ -1421,7 +1442,8 @@ impl Tui {
     }
 
     /// The wheel scrolls; a click (press and release on the same cell) opens
-    /// the link under it. Anything else is swallowed.
+    /// the link under it, else reports the body cell to `on_body_click`.
+    /// Anything else is swallowed.
     fn handle_mouse_event(&mut self, event: MouseEvent) {
         match event.kind {
             MouseEventKind::WheelUp => {
@@ -1438,15 +1460,23 @@ impl Tui {
             }
             MouseEventKind::Release => {
                 let pressed = self.pressed_cell.take();
-                if self.on_hyperlink.is_none() {
-                    return;
-                }
                 if pressed != Some((event.row, event.column)) {
                     return;
                 }
+                // A link wins over the body; the scrollbar column pages on
+                // press, so a release there reports nothing.
                 if let Some(url) = self.hyperlink_at_screen_cell(event.row, event.column) {
                     if let Some(cb) = &mut self.on_hyperlink {
                         cb(&url);
+                    }
+                    return;
+                }
+                if event.column == self.terminal.columns() as i64 {
+                    return;
+                }
+                if let Some(click) = self.buffer_click_at(event.row) {
+                    if let Some(cb) = &mut self.on_body_click {
+                        cb(click);
                     }
                 }
             }
@@ -1491,6 +1521,59 @@ impl Tui {
         } else if index > last {
             self.scroll_by_pages(1);
         }
+    }
+
+    /// The transcript buffer row behind a screen cell, with how many buffer
+    /// rows sit above it on screen (so pinning keeps the row where the click
+    /// found it). Mirrors [`Self::hyperlink_at_screen_cell`]'s windows: a
+    /// live buffer shorter than the screen is declined rather than guessed
+    /// at. `None` outside every window.
+    fn buffer_click_at(&self, row: i64) -> Option<BodyClick> {
+        let width = self.transcript_width();
+        if self.fullscreen {
+            // Only body rows carry the transcript's clicks; `row` is 1-based.
+            let (first_row, lines) = self.fullscreen_body_window.as_ref()?;
+            let buffer = row - 1 - first_row;
+            let len = lines.len() as i64;
+            if buffer < 0 || buffer >= len {
+                return None;
+            }
+            return Some(BodyClick {
+                buffer_row: buffer,
+                context: buffer.min(self.scroll_view_height() - 1).max(0),
+                width,
+            });
+        }
+        let pinned = self.scroll_offset.is_some();
+        let lines: &[String] = if pinned {
+            self.scroll_view_lines.as_deref()?
+        } else {
+            &self.previous_lines
+        };
+        if lines.is_empty() {
+            return None;
+        }
+        let view_height = self.scroll_view_height();
+        if pinned && row > view_height {
+            return None;
+        }
+        if !pinned && (lines.len() as i64) < self.terminal.rows() as i64 {
+            return None;
+        }
+        let top = if pinned {
+            self.scroll_offset.unwrap_or(0)
+        } else {
+            self.previous_viewport_top
+        };
+        let buffer = top + row - 1;
+        if buffer < 0 || buffer >= lines.len() as i64 {
+            return None;
+        }
+        Some(BodyClick {
+            buffer_row: buffer,
+            context: (buffer - top).max(0),
+            width,
+        })
     }
 
     /// The link on the screen cell a mouse report names, through the window

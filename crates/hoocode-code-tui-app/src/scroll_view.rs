@@ -26,6 +26,8 @@ use hoocode_code_tui_keybindings::key_hint_text;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
+use hoocode_code_tui_widgets::tool_execution::ToolExecutionComponent;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui};
 
@@ -123,6 +125,64 @@ pub fn jump_to_user_message(
     }
 }
 
+/// A header click waiting for the mode to act: the chain and block the
+/// header toggles, and where the header sat when clicked. The mode drains
+/// these after the TUI takes the event, while the layout still matches the
+/// painted frame the click mapped to.
+pub struct BlockToggle {
+    pub chain: ComponentHandle,
+    pub block: usize,
+    pub buffer_row: i64,
+    pub context: i64,
+}
+
+/// The base buffer row of `child` in `parent`'s last render at `width`.
+/// `None` before the first render, at another width, or when the child is
+/// gone.
+pub fn child_base(
+    parent: &Container,
+    child: &ComponentHandle,
+    width: u16,
+) -> Option<usize> {
+    let offsets = parent.child_row_offsets(width)?;
+    let children = parent.children();
+    if children.len() != offsets.len() {
+        return None;
+    }
+    children
+        .iter()
+        .position(|c| Rc::ptr_eq(c, child))
+        .map(|i| offsets[i])
+}
+
+/// Hit-test a transcript buffer row against the chat: the chain and block
+/// whose header holds it. Body rows and rows outside every chain are `None`
+/// (a click there does nothing).
+pub fn hit_chain(
+    chat: &Rc<RefCell<Container>>,
+    width: u16,
+    rel: usize,
+) -> Option<(ComponentHandle, usize)> {
+    let chat_ref = chat.borrow();
+    let offsets = chat_ref.child_row_offsets(width)?;
+    let children = chat_ref.children();
+    if children.len() != offsets.len() {
+        return None;
+    }
+    let i = offsets.iter().rposition(|o| *o <= rel)?;
+    if offsets.get(i + 1).is_some_and(|next| rel >= *next) {
+        return None;
+    }
+    let chain = children[i].clone();
+    let row = rel - offsets[i];
+    let block = chain
+        .borrow()
+        .as_any()?
+        .downcast_ref::<ToolChainComponent>()?
+        .header_hit(row)?;
+    Some((chain, block))
+}
+
 /// Plain typed text rather than a chord (control bytes and escapes are keys).
 fn is_typed_text(data: &str) -> bool {
     !data.is_empty() && data.chars().all(|c| (c as u32) >= 32 && c as u32 != 127)
@@ -199,6 +259,9 @@ pub struct ScrollView {
     chat: Rc<RefCell<Container>>,
     /// The full-screen body that holds the chat, when the screen has one.
     body: Option<Rc<RefCell<Container>>>,
+    /// The block `{` `}` move and `enter` opens (P2 renders its fill).
+    /// `ctrl+x u` and, later, a click set it; a toggle never clears it.
+    focused_block: Option<Rc<RefCell<ToolExecutionComponent>>>,
     is_user_message: IsUserMessage,
     /// The prompt holds no text: the plain arrows step the pinned view.
     editor_empty: EditorEmpty,
@@ -568,6 +631,7 @@ pub fn install_scroll_view(
         editor,
         chat,
         body,
+        focused_block: None,
         is_user_message,
         editor_empty,
         agent_busy,
