@@ -1,3 +1,3 @@
-Compacted turns 1–3 · grew 24 · 120 → 144 tokens · ctrl+x p for peek
+Compacted turns 1–3 · grew 24 · 120 → 144 tokens ·  for peek
 --- styles ---
 r0 c0-99 fg=#989898

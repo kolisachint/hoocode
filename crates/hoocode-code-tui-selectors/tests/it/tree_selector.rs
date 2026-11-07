@@ -493,7 +493,7 @@ fn fills_the_selected_row_to_the_full_width() {
     assert_eq!(visible_width(marked[0]), width as usize);
 }
 
-/// A list row with the pick marker (the input row's ` › ` is not a pick).
+/// A list row with the pick marker (the input row carries no ` › `).
 fn picked(line: &str) -> bool {
     line.contains('›') && !hoocode_tui_util::strip_vt_control_characters(line).contains("filter")
 }
@@ -525,8 +525,9 @@ fn session_tree_fits_within_the_width_and_fills_its_selected_row() {
     }
 }
 
-/// The key-hint row drops whole items from its end when the width is short:
-/// it never ends in `...` and never cuts an item mid-word.
+/// The key-hint row fits the width (spec §3): the move item drops first,
+/// then middle items; the cancel key never drops, and `…` truncates the
+/// last item only when nothing else fits.
 #[test]
 fn key_hints_drop_whole_items_when_the_width_is_short() {
     let _g = lock();
@@ -536,13 +537,14 @@ fn key_hints_drop_whole_items_when_the_width_is_short() {
         lines
             .into_iter()
             .map(|l| hoocode_tui_util::strip_vt_control_characters(&l))
-            .find(|l| l.contains("move"))
+            .find(|l| l.contains("esc close"))
             .expect("the key hints render")
     };
     let narrow = hint_row(s.render(40));
     assert!(visible_width(&narrow) <= 40, "{narrow:?}");
     assert!(!narrow.contains("..."), "{narrow:?}");
-    assert!(narrow.contains("move"), "{narrow:?}");
+    assert!(!narrow.contains("move"), "{narrow:?}");
+    assert!(narrow.contains("esc close"), "{narrow:?}");
     assert!(!narrow.contains("timestamps"), "{narrow:?}");
 
     let wide = hint_row(s.render(160));

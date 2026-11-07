@@ -2,7 +2,7 @@
 
  The suite takes a few minutes…
 
- ⊗ Shell ./scripts/integration.sh --all  stopped
+ ⊗ Shell scripts/integration.sh --all  stopped
 
  ⊗ stopped · 1.0s
 --- styles ---
@@ -12,7 +12,7 @@ r0 c63-79 bg=#2a2a36
 r2 c1-30 fg=#989898 italic
 r4 c1 fg=#989898
 r4 c3-7 fg=#e5e5e7 bold
-r4 c9-38 fg=#e5e5e7
-r4 c41-47 fg=#989898
+r4 c9-36 fg=#e5e5e7
+r4 c39-45 fg=#989898
 r6 c1 fg=#989898
 r6 c3-16 fg=#989898

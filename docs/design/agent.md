@@ -40,7 +40,6 @@ Numbers a contributor needs:
 | `CodeSearch` | `hoocode-code-tool-search` | on | Lexical search. |
 | `AskUserQuestion` | `hoocode-code-tools-optin` `ask_options.rs` | on | Dialog host is the TUI, or `NoUi` outside it. |
 | `CronCreate`, `CronList`, `CronDelete` | `hoocode-code-scheduler` | on, interactive only | Never in print, json, rpc or subagent runs. |
-| `DocSearch` | `hoocode-code-tools` `search_hoocode.rs`, registered in `hoocode-code-cli` `runtime.rs` | on | Searches live capabilities only (see DocSearch). |
 | `Agent`, `AgentOutput` | `hoocode-code-subagents` | on | `Agent` starts a subagent. `AgentOutput` reads its result. |
 | `ShellOutput`, `ShellKill` | `hoocode-code-tool-bash` `job_tools.rs` | on when `enableBackgroundShell` (default true) and interactive | Background shell jobs. |
 | `TodoWrite` | `hoocode-code-tools-optin` `todo.rs` | on (`enableTodoWrite`, default true) | Main session only. |

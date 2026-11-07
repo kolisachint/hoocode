@@ -82,7 +82,7 @@ fn check(name: &str, width: u16) {
     );
     assert!(
         text.lines()
-            .any(|l| l.starts_with(" › ") && l.contains("filter")),
+            .any(|l| l.starts_with(" ▏") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     assert!(

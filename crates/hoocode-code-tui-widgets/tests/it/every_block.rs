@@ -292,11 +292,11 @@ fn compaction_full_row_fits_at_80_with_the_hint() {
     );
 }
 
-/// At 70 the row fits but the hint drops.
+/// At 60 the full row fits but the hint drops.
 #[test]
 fn compaction_hint_drops_when_only_the_row_fits() {
     let _g = lock();
-    let rows = compaction(12_400, Some(3_100)).render(70);
+    let rows = compaction(12_400, Some(3_100)).render(60);
     let plain = strip(&rows[0]).trim_end().to_string();
     assert!(
         plain.contains("Compacted turns 1–3 · saved 9,300 · 12,400 → 3,100 tokens"),

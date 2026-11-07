@@ -257,7 +257,9 @@ fn custom_row_number_moves_without_answering() {
     c.handle_input("3");
     assert_eq!(*submitted.borrow(), None);
     let rendered = out(&mut c);
-    assert!(rendered.contains("› "), "{rendered}");
+    // On the custom row the input caret marks the answer row (the input
+    // row carries no `›` marker since the P6 pane grammar).
+    assert!(rendered.contains('▏'), "{rendered}");
     assert!(!rendered.contains("or type your own answer"), "{rendered}");
     // Typing then sends with enter on the next step.
     for key in ["m", "i", "n"] {

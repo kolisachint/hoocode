@@ -66,7 +66,9 @@ fn narrow_screens_stack_the_detail_under_the_rows() {
     let tools = lines.iter().position(|l| l.contains("Tools")).unwrap();
     let detail = lines
         .iter()
-        .position(|l| l.contains("per turn  4,140 tokens"))
+        // The stacked detail caps at three rows plus `…`: the Tools slice
+        // keeps its per-turn price line instead of the full surface note.
+        .position(|l| l.contains("tok/turn"))
         .expect("the detail renders");
     assert!(
         detail > tools,
