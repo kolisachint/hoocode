@@ -4570,3 +4570,156 @@ mod placeholder {
         assert_eq!(strip(&lines[0]).trim_end(), " ▸ hi");
     }
 }
+
+mod image_marker_atomic_behavior {
+    use super::*;
+
+    fn pasted(editor: &mut Editor) -> String {
+        editor.insert_image_at_cursor("/tmp/hoocode-clip-1a2b3c.png", "clipboard.png");
+        editor.get_text()
+    }
+
+    fn marker_in(text: &str) -> String {
+        let (s, e, _) = find_image_markers(text)[0];
+        text[s..e].to_string()
+    }
+
+    #[test]
+    fn inserts_an_atomic_image_marker_for_a_path() {
+        let mut editor = ed();
+        let text = pasted(&mut editor);
+        assert_eq!(text, "[image #1 · clipboard.png]");
+        assert!(is_image_marker(&marker_in(&text)));
+        assert!(!is_paste_marker(&marker_in(&text)));
+    }
+
+    #[test]
+    fn numbers_each_image_marker() {
+        let mut editor = ed();
+        pasted(&mut editor);
+        editor.handle_input("\r");
+        pasted(&mut editor);
+        // The counter restarts with the fresh prompt, like pastes.
+        assert_eq!(editor.get_text(), "[image #1 · clipboard.png]");
+    }
+
+    #[test]
+    fn numbers_two_markers_in_one_prompt() {
+        let mut editor = ed();
+        pasted(&mut editor);
+        editor.insert_image_at_cursor("/tmp/second.png", "second.png");
+        let text = editor.get_text();
+        let ids: Vec<u64> = find_image_markers(&text)
+            .into_iter()
+            .map(|(_, _, id)| id)
+            .collect();
+        assert_eq!(ids, vec![1, 2]);
+    }
+
+    #[test]
+    fn keeps_typed_spacing_before_the_marker() {
+        let mut editor = ed();
+        type_str(&mut editor, "see ");
+        pasted(&mut editor);
+        assert_eq!(editor.get_text(), "see [image #1 · clipboard.png]");
+    }
+
+    #[test]
+    fn treats_image_marker_as_single_unit_for_arrows() {
+        let mut editor = ed();
+        editor.handle_input("A");
+        let text = pasted(&mut editor);
+        let marker = marker_in(&text);
+        editor.handle_input("B");
+
+        editor.handle_input("\x01"); // Ctrl+A
+        editor.handle_input("\x1b[C"); // past "A"
+        editor.handle_input("\x1b[C"); // past marker
+        assert_eq!(editor.get_cursor(), (0, 1 + len16(&marker)));
+
+        editor.handle_input("\x1b[D"); // back over the marker
+        assert_eq!(editor.get_cursor(), (0, 1));
+        editor.handle_input("\x1b[D"); // past "A"
+        assert_eq!(editor.get_cursor(), (0, 0));
+    }
+
+    #[test]
+    fn treats_image_marker_as_single_unit_for_backspace() {
+        let mut editor = ed();
+        editor.handle_input("A");
+        let text = pasted(&mut editor);
+        let marker = marker_in(&text);
+        editor.handle_input("B");
+
+        editor.handle_input("\x01"); // Ctrl+A
+        editor.handle_input("\x1b[C"); // past "A"
+        editor.handle_input("\x1b[C"); // past marker
+        assert_eq!(editor.get_cursor(), (0, 1 + len16(&marker)));
+
+        editor.handle_input("\x7f");
+        assert_eq!(editor.get_text(), "AB");
+        assert_eq!(editor.get_cursor(), (0, 1));
+    }
+
+    #[test]
+    fn treats_image_marker_as_single_unit_for_word_movement() {
+        let mut editor = ed();
+        editor.handle_input("X");
+        editor.handle_input(" ");
+        let text = pasted(&mut editor);
+        let marker = marker_in(&text);
+        editor.handle_input(" ");
+        editor.handle_input("Y");
+
+        editor.handle_input("\x01"); // Ctrl+A
+        editor.handle_input("\x1b[1;5C"); // past "X"
+        assert_eq!(editor.get_cursor(), (0, 1));
+
+        // Ctrl+Right: skip whitespace + marker, stopping past it.
+        editor.handle_input("\x1b[1;5C");
+        assert_eq!(editor.get_cursor(), (0, 2 + len16(&marker)));
+    }
+
+    #[test]
+    fn submit_expands_the_marker_to_the_temp_path() {
+        let mut editor = ed();
+        let submitted = capture_submit(&mut editor);
+        type_str(&mut editor, "look at ");
+        pasted(&mut editor);
+        editor.handle_input("\r"); // Enter - submit
+
+        assert_eq!(
+            submitted.borrow().last().unwrap(),
+            "look at /tmp/hoocode-clip-1a2b3c.png"
+        );
+        assert_eq!(editor.get_text(), "");
+        assert_eq!(editor.get_expanded_text(), "");
+    }
+
+    #[test]
+    fn typed_marker_like_text_stays_plain_text() {
+        let mut editor = ed();
+        editor.set_text("[image #1 · x]");
+        assert_eq!(editor.get_expanded_text(), "[image #1 · x]");
+        // No valid image id: backspace deletes one character, not a marker.
+        editor.handle_input("\x7f");
+        assert_eq!(editor.get_text(), "[image #1 · x");
+    }
+
+    #[test]
+    fn sanitizes_the_display_name() {
+        let mut editor = ed();
+        editor.insert_image_at_cursor("/tmp/a.png]", "a]b\nc");
+        assert_eq!(editor.get_text(), "[image #1 · ab c]");
+        editor.insert_image_at_cursor("/tmp/b.png", "");
+        assert!(editor.get_text().ends_with("[image #2 · image]"));
+    }
+
+    #[test]
+    fn empty_path_is_a_no_op() {
+        let mut editor = ed();
+        editor.insert_image_at_cursor("", "clipboard.png");
+        assert_eq!(editor.get_text(), "");
+        assert!(find_image_markers(&editor.get_text()).is_empty());
+    }
+}
