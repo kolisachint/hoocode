@@ -714,7 +714,7 @@ fn tools_submenu(
         )
         .suffix(
             tool.tokens
-                .map(|t| format!("{} tokens", token_count(t as u64))),
+                .map(|t| format!("{} tok/turn", token_count(t as u64))),
         )
         .to_item()
     });
@@ -1275,13 +1275,19 @@ impl SurfaceLine {
         }
     }
 
-    /// The full count while it fits the title, else the short form.
+    /// The full count while it fits the title, the short form while it
+    /// fits, else nothing (facts drop at 40 columns, spec §3).
     fn count_for_width(&self, prefix: usize, width: usize) -> String {
         let full = self.count_text();
         if prefix + visible_width(&full) <= width {
             full
         } else {
-            self.short_text()
+            let short = self.short_text();
+            if short.is_empty() || prefix + visible_width(&short) <= width {
+                short
+            } else {
+                String::new()
+            }
         }
     }
 }
@@ -1735,7 +1741,7 @@ impl SettingsSelectorComponent {
                 )
                 .suffix(
                     initial_surface.as_ref().map(|s| {
-                        format!("{} tokens", token_count(s.tool_schema_tokens as u64))
+                        format!("{} tok/turn", token_count(s.tool_schema_tokens as u64))
                     }),
                 ),
             );
