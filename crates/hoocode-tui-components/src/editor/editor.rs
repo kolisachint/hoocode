@@ -25,8 +25,8 @@ use hoocode_tui_util::js_regex::{is_js_space, js_trim};
 use hoocode_tui_util::{is_punctuation_char, is_whitespace_char, visible_width};
 
 use super::word_wrap::{
-    find_paste_markers, is_paste_marker, len16, segment_with_markers, slice16, slice16_from,
-    word_wrap_segments, Segment,
+    find_image_markers, find_paste_markers, is_marker, len16, segment_with_all_markers, slice16,
+    slice16_from, word_wrap_segments, Segment,
 };
 use crate::autocomplete::{AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions};
 use crate::color::ColorFn;
@@ -243,6 +243,11 @@ pub struct Editor {
 
     pastes: BTreeMap<u64, String>,
     paste_counter: u64,
+    /// Pasted images: marker id to the temp file path the send payload
+    /// keeps. The composer shows `[image #N · name]` (S17), like the paste
+    /// marker.
+    images: BTreeMap<u64, String>,
+    image_counter: u64,
 
     paste_buffer: String,
     is_in_paste: bool,
@@ -314,6 +319,8 @@ impl Editor {
             reopen_on_walk: false,
             pastes: BTreeMap::new(),
             paste_counter: 0,
+            images: BTreeMap::new(),
+            image_counter: 0,
             paste_buffer: String::new(),
             is_in_paste: false,
             history: Vec::new(),
@@ -335,9 +342,13 @@ impl Editor {
         self.pastes.keys().copied().collect()
     }
 
-    /// Segment text with paste-marker awareness (valid ids only).
+    fn valid_image_ids(&self) -> HashSet<u64> {
+        self.images.keys().copied().collect()
+    }
+
+    /// Segment text with paste- and image-marker awareness (valid ids only).
     fn segment(&self, text: &str) -> Vec<Segment> {
-        segment_with_markers(text, &self.valid_paste_ids())
+        segment_with_all_markers(text, &self.valid_paste_ids(), &self.valid_image_ids())
     }
 
     fn current_line(&self) -> &str {
@@ -565,9 +576,26 @@ impl Editor {
         result
     }
 
-    /// Text with paste markers expanded to their content.
+    /// Text with paste and image markers expanded to their content: the
+    /// send payload keeps the temp image path (S17).
     pub fn get_expanded_text(&self) -> String {
-        self.expand_paste_markers(&self.state.lines.join("\n"))
+        self.expand_image_markers(&self.expand_paste_markers(&self.state.lines.join("\n")))
+    }
+
+    /// Replace each `[image #N · name]` marker with its temp path.
+    fn expand_image_markers(&self, text: &str) -> String {
+        let mut result = text.to_string();
+        for (image_id, path) in &self.images {
+            let markers: Vec<(usize, usize)> = find_image_markers(&result)
+                .into_iter()
+                .filter(|(_, _, id)| id == image_id)
+                .map(|(s, e, _)| (s, e))
+                .collect();
+            for (s, e) in markers.into_iter().rev() {
+                result.replace_range(s..e, path);
+            }
+        }
+        result
     }
 
     pub fn get_lines(&self) -> Vec<String> {
@@ -600,6 +628,46 @@ impl Editor {
         self.last_action = None;
         self.history_index = -1;
         self.insert_text_at_cursor_internal(text);
+    }
+
+    /// Insert a pasted image as one atomic `[image #N · name]` marker (S17),
+    /// like the paste marker. The temp `path` is what the send payload
+    /// keeps: submit expands the marker back to it. An empty `path` is a
+    /// no-op (no clipboard access, no image).
+    pub fn insert_image_at_cursor(&mut self, path: &str, name: &str) {
+        if path.is_empty() {
+            return;
+        }
+        self.cancel_autocomplete();
+        self.push_undo_snapshot();
+        self.last_action = None;
+        self.history_index = -1;
+        self.image_counter += 1;
+        let id = self.image_counter;
+        self.images.insert(id, path.to_string());
+        // Like the paste marker, the marker lands exactly at the cursor:
+        // the caller owns the placement.
+        let marker = format!("[image #{id} · {}]", Self::sanitize_image_name(name));
+        self.insert_text_at_cursor_internal(&marker);
+    }
+
+    /// A marker name is one line of printable text without `]`, which ends
+    /// the marker. Falls back to `image` so the marker is never empty.
+    fn sanitize_image_name(name: &str) -> String {
+        let clean: String = name
+            .chars()
+            .map(|c| match c {
+                '\n' | '\r' | '\t' => ' ',
+                _ => c,
+            })
+            .filter(|&c| c != ']' && (c as u32) >= 32)
+            .collect();
+        let clean = clean.trim().to_string();
+        if clean.is_empty() {
+            "image".to_string()
+        } else {
+            clean
+        }
     }
 
     /// Normalize line endings and expand tabs to 4 spaces.
@@ -800,7 +868,10 @@ impl Editor {
 
     fn submit_value(&mut self) {
         self.cancel_autocomplete();
-        let result = js_trim(&self.expand_paste_markers(&self.state.lines.join("\n"))).to_string();
+        let result = js_trim(
+            &self.expand_image_markers(&self.expand_paste_markers(&self.state.lines.join("\n"))),
+        )
+        .to_string();
         self.state = EditorState {
             lines: vec![String::new()],
             cursor_line: 0,
@@ -808,6 +879,8 @@ impl Editor {
         };
         self.pastes.clear();
         self.paste_counter = 0;
+        self.images.clear();
+        self.image_counter = 0;
         self.history_index = -1;
         self.scroll_offset = 0;
         self.undo_stack.clear();
@@ -1260,23 +1333,19 @@ impl Editor {
             |g: &Vec<Segment>, f: &dyn Fn(&str) -> bool| g.last().is_some_and(|s| f(&s.segment));
 
         // Skip trailing whitespace.
-        while last_is(&graphemes, &|s| {
-            !is_paste_marker(s) && is_whitespace_char(s)
-        }) {
+        while last_is(&graphemes, &|s| !is_marker(s) && is_whitespace_char(s)) {
             new_col -= len16(&graphemes.pop().unwrap().segment);
         }
         if let Some(last) = graphemes.last().map(|s| s.segment.clone()) {
-            if is_paste_marker(&last) {
+            if is_marker(&last) {
                 new_col -= len16(&graphemes.pop().unwrap().segment);
             } else if is_punctuation_char(&last) {
-                while last_is(&graphemes, &|s| {
-                    is_punctuation_char(s) && !is_paste_marker(s)
-                }) {
+                while last_is(&graphemes, &|s| is_punctuation_char(s) && !is_marker(s)) {
                     new_col -= len16(&graphemes.pop().unwrap().segment);
                 }
             } else {
                 while last_is(&graphemes, &|s| {
-                    !is_whitespace_char(s) && !is_punctuation_char(s) && !is_paste_marker(s)
+                    !is_whitespace_char(s) && !is_punctuation_char(s) && !is_marker(s)
                 }) {
                     new_col -= len16(&graphemes.pop().unwrap().segment);
                 }
@@ -1300,16 +1369,16 @@ impl Editor {
         let mut new_col = self.state.cursor_col;
 
         while let Some(s) =
-            iter.next_if(|s| !is_paste_marker(&s.segment) && is_whitespace_char(&s.segment))
+            iter.next_if(|s| !is_marker(&s.segment) && is_whitespace_char(&s.segment))
         {
             new_col += len16(&s.segment);
         }
         if let Some(first) = iter.peek().map(|s| s.segment.clone()) {
-            if is_paste_marker(&first) {
+            if is_marker(&first) {
                 new_col += len16(&first);
             } else if is_punctuation_char(&first) {
-                while let Some(s) = iter
-                    .next_if(|s| is_punctuation_char(&s.segment) && !is_paste_marker(&s.segment))
+                while let Some(s) =
+                    iter.next_if(|s| is_punctuation_char(&s.segment) && !is_marker(&s.segment))
                 {
                     new_col += len16(&s.segment);
                 }
@@ -1317,7 +1386,7 @@ impl Editor {
                 while let Some(s) = iter.next_if(|s| {
                     !is_whitespace_char(&s.segment)
                         && !is_punctuation_char(&s.segment)
-                        && !is_paste_marker(&s.segment)
+                        && !is_marker(&s.segment)
                 }) {
                     new_col += len16(&s.segment);
                 }

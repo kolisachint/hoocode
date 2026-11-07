@@ -120,6 +120,58 @@ pub fn is_paste_marker(segment: &str) -> bool {
         && match_paste_marker(segment, 0).is_some_and(|(len, _)| len == segment.len())
 }
 
+/// An image marker `[image #N · name]` starting at byte `at`: its byte
+/// length and id. The name runs to the first `]`, like the S17 composer
+/// marker (`[image #1 · clipboard.png]`).
+fn match_image_marker(text: &str, at: usize) -> Option<(usize, u64)> {
+    let rest = hoocode_tui_util::text_slice::suffix_from(text, at).strip_prefix("[image #")?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 {
+        return None;
+    }
+    let id: u64 = hoocode_tui_util::text_slice::prefix(rest, digits)
+        .parse()
+        .ok()?;
+    let name_part = hoocode_tui_util::text_slice::suffix_from(rest, digits).strip_prefix(" · ")?;
+    let close = name_part.find(']')?;
+    let name = hoocode_tui_util::text_slice::prefix(name_part, close);
+    if name.is_empty() || name.contains(['\n', '\r']) {
+        return None;
+    }
+    Some(("[image #".len() + digits + " · ".len() + name.len() + 1, id))
+}
+
+/// Every image marker in `text`, global and non-overlapping:
+/// `(byte start, byte end, id)`.
+pub fn find_image_markers(text: &str) -> Vec<(usize, usize, u64)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(rel) = hoocode_tui_util::text_slice::suffix_from(text, i).find("[image #") {
+        let at = i + rel;
+        match match_image_marker(text, at) {
+            Some((len, id)) => {
+                out.push((at, at + len, id));
+                i = at + len;
+            }
+            None => i = at + 1,
+        }
+    }
+    out
+}
+
+/// Whether a segment is an image marker (merged by
+/// [`segment_with_all_markers`]).
+pub fn is_image_marker(segment: &str) -> bool {
+    len16(segment) >= 14
+        && match_image_marker(segment, 0).is_some_and(|(len, _)| len == segment.len())
+}
+
+/// Whether a segment is any atomic composer marker: a paste marker or an
+/// image marker.
+pub fn is_marker(segment: &str) -> bool {
+    is_paste_marker(segment) || is_image_marker(segment)
+}
+
 fn base_segments(text: &str) -> Vec<Segment> {
     let mut index = 0;
     text.graphemes(true)
@@ -137,17 +189,37 @@ fn base_segments(text: &str) -> Vec<Segment> {
 /// Graphemes of `text`, with every paste marker whose id is in `valid_ids`
 /// merged into one atomic segment (`segmentWithMarkers`).
 pub fn segment_with_markers(text: &str, valid_ids: &HashSet<u64>) -> Vec<Segment> {
-    if valid_ids.is_empty() || !text.contains("[paste #") {
+    segment_with_all_markers(text, valid_ids, &HashSet::new())
+}
+
+/// Graphemes of `text`, with every paste marker whose id is in `paste_ids`
+/// and every image marker (`[image #N · name]`, S17) whose id is in
+/// `image_ids` merged into one atomic segment each.
+pub fn segment_with_all_markers(
+    text: &str,
+    paste_ids: &HashSet<u64>,
+    image_ids: &HashSet<u64>,
+) -> Vec<Segment> {
+    if (paste_ids.is_empty() || !text.contains("[paste #"))
+        && (image_ids.is_empty() || !text.contains("[image #"))
+    {
         return base_segments(text);
     }
-    let markers: Vec<(usize, usize)> = find_paste_markers(text)
+    let mut markers: Vec<(usize, usize)> = find_paste_markers(text)
         .into_iter()
-        .filter(|(_, _, id)| valid_ids.contains(id))
+        .filter(|(_, _, id)| paste_ids.contains(id))
         .map(|(s, e, _)| (index16(text, s), index16(text, e)))
         .collect();
+    markers.extend(
+        find_image_markers(text)
+            .into_iter()
+            .filter(|(_, _, id)| image_ids.contains(id))
+            .map(|(s, e, _)| (index16(text, s), index16(text, e))),
+    );
     if markers.is_empty() {
         return base_segments(text);
     }
+    markers.sort();
     let mut result = Vec::new();
     let mut marker_idx = 0;
     for seg in base_segments(text) {
@@ -224,7 +296,7 @@ pub fn word_wrap_segments(
         let grapheme = seg.segment.as_str();
         let g_width = visible_width(grapheme);
         let char_index = seg.index;
-        let is_ws = !is_paste_marker(grapheme) && is_whitespace_char(grapheme);
+        let is_ws = !is_marker(grapheme) && is_whitespace_char(grapheme);
 
         // Overflow check before advancing.
         if current_width + g_width > max_width {
@@ -286,7 +358,7 @@ pub fn word_wrap_segments(
 
         // Whitespace followed by non-whitespace is where a break is allowed.
         if let Some(next) = segments.get(i + 1) {
-            if is_ws && (is_paste_marker(&next.segment) || !is_whitespace_char(&next.segment)) {
+            if is_ws && (is_marker(&next.segment) || !is_whitespace_char(&next.segment)) {
                 wrap_opp_index = Some(next.index);
                 wrap_opp_width = current_width;
             }
