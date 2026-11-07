@@ -1,0 +1,6 @@
+
+ Background job job-1 needs input
+ Attach to answer it.
+--- styles ---
+r1 c1-32 fg=#f0c674 bold
+r2 c1-20 fg=#989898

@@ -75,6 +75,22 @@ fn numbered(prefix: &str, n: usize) -> String {
 
 const DIFF: &str = " 12     let mut cfg = Config::default();\n-14     let raw = read_file(path)?;\n-15     apply_env(&mut cfg);\n+14     apply_env(&mut cfg);\n+15     let raw = read_file(path)?;\n 16     parse_into(&mut cfg, &raw)?;\n 17     Ok(cfg)";
 
+/// The same run at 40 and 60 columns: the single-view width pins (UI-21 P0).
+/// Today's wrapping behaviour is pinned; P3 replaces it with the cut order.
+#[test]
+fn tool_rows_peek_40() {
+    let _g = lock();
+    let mut c = config_run(ToolOutputView::Peek);
+    assert_golden!("tool_rows_peek_40", render_golden(&mut c, 40));
+}
+
+#[test]
+fn tool_rows_peek_60() {
+    let _g = lock();
+    let mut c = config_run(ToolOutputView::Peek);
+    assert_golden!("tool_rows_peek_60", render_golden(&mut c, 60));
+}
+
 /// Read, Edit and Shell: the mockup's `peek` and `full` screens.
 fn config_run(view: ToolOutputView) -> ToolChainComponent {
     chain(
