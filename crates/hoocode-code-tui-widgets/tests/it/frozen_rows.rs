@@ -118,9 +118,8 @@ fn frozen_rows_keep_their_marks_and_facts() {
             "done Edit keeps green ● and +2 −2:\n{out}"
         );
         assert!(
-            out.lines().any(|r| {
-                r.starts_with(" ⊗ Shell ") && r.contains("exit 1")
-            }),
+            out.lines()
+                .any(|r| { r.starts_with(" ⊗ Shell ") && r.contains("exit 1") }),
             "failed Shell keeps red ⊗ and exit 1:\n{out}"
         );
         assert!(

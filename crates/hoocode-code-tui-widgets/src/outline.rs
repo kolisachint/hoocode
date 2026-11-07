@@ -279,7 +279,7 @@ fn failed_itself(block: &ToolBlock) -> bool {
 }
 
 /// The glyph of a batch's recap row: dim `⊗` when the user stopped a call,
-/// dim `●` while a call runs, red `⊗` for a folded turn whose calls failed,
+/// accent `◉` while a call runs, red `⊗` for a folded turn whose calls failed,
 /// else green `●`.
 fn batch_mark(blocks: &[ToolBlock], folded: bool) -> Mark {
     let entries = batch_entries(blocks);

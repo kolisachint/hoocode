@@ -258,7 +258,7 @@ fn an_outline_turn_lists_its_calls_under_the_whole_prompt() {
     // A running turn: its calls in one recap row, and no end line.
     assert_eq!(
         rows.last().unwrap(),
-        " ● Read a.rs · Edit a.rs · Shell cargo test",
+        " ◉ Read a.rs · Edit a.rs · Shell cargo test",
         "{rows:#?}"
     );
 
@@ -281,5 +281,10 @@ fn an_outline_turn_lists_its_calls_under_the_whole_prompt() {
         .iter()
         .map(|row| strip(row).trim_end().to_string())
         .collect();
-    assert_eq!(after, rows, "{after:#?}");
+    // Settled, the recap flips to the done mark; still no end line.
+    assert_eq!(
+        after.last().unwrap(),
+        " ● Read a.rs · Edit a.rs · Shell cargo test",
+        "{after:#?}"
+    );
 }

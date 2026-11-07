@@ -8,9 +8,6 @@
     … 3 more lines
 
  ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 8.2s
-    … 10 earlier lines
-    test config::tests::case_11
-    test config::tests::case_12
 --- styles ---
 r1 c1 fg=#b5bd68
 r1 c3-6 fg=#e5e5e7 bold
@@ -33,6 +30,3 @@ r9 c1 fg=#b5bd68
 r9 c3-7 fg=#e5e5e7 bold
 r9 c9-52 fg=#e5e5e7
 r9 c55-67 fg=#989898
-r10 c4-21 fg=#989898
-r11 c4-30 fg=#989898
-r12 c4-30 fg=#989898

@@ -1,10 +1,6 @@
 
  ⊗ Shell cargo test -p hoocode-code-tui-widgets
-    error[E0432]: unresolved import `crate::missing`
-    exit code 101
 --- styles ---
 r1 c1 fg=#d58181
 r1 c3-7 fg=#e5e5e7 bold
 r1 c9-46 fg=#e5e5e7
-r2 c4-51 fg=#989898
-r3 c4-16 fg=#989898

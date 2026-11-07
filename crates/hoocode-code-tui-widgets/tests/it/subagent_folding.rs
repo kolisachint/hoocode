@@ -182,6 +182,8 @@ fn output_peek(text: &'static str, width: u16) -> Vec<String> {
         is_error: false,
     };
     let component = block(Peek, 0, sub);
+    // Single view: the body opens on the toggle.
+    component.borrow_mut().set_expanded(true);
     let lines = component.borrow_mut().render(width);
     plain(lines)
 }
@@ -197,7 +199,7 @@ fn body_rows(lines: &[String]) -> Vec<&str> {
 }
 
 #[test]
-fn agent_output_peek_shows_three_summary_rows_then_how_many_are_left() {
+fn agent_output_open_shows_every_summary_row_whole() {
     let _g = lock();
     let body = "one\ntwo\nthree\nfour\nfive\nsix";
     let lines = output_peek(body, 60);
@@ -208,14 +210,9 @@ fn agent_output_peek_shows_three_summary_rows_then_how_many_are_left() {
         "{lines:?}"
     );
     let rows = body_rows(&lines);
-    assert_eq!(
-        rows.len(),
-        4,
-        "three rows and the more-lines row: {lines:?}"
-    );
+    assert_eq!(rows.len(), 6, "every row, no fold: {lines:?}");
     assert_eq!(rows[0], "one");
-    assert_eq!(rows[2], "three");
-    assert_eq!(rows[3], "… 3 more lines");
+    assert_eq!(rows[5], "six");
 }
 
 #[test]

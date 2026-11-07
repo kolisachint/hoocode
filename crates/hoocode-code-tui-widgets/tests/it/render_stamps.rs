@@ -131,9 +131,16 @@ fn a_chain_follows_its_view_and_its_blocks() {
     chain.borrow_mut().close(ChainState::Done);
     let mut container = Container::new();
     container.add_child(chain.clone());
+    // Single view: the row is its header until the toggle opens it.
     let peek = joined(&mut container, 100);
-    assert!(peek.contains("earlier lines"), "{peek}");
+    assert!(!peek.contains("row-01"), "{peek}");
+    assert!(!peek.contains("earlier lines"), "{peek}");
     assert_eq!(joined(&mut container, 100), peek);
+
+    block.borrow_mut().set_expanded(true);
+    let open = joined(&mut container, 100);
+    assert!(open.contains("row-01") && open.contains("row-30"), "{open}");
+    assert!(!open.contains("earlier lines"), "{open}");
 
     chain.borrow_mut().set_view(ToolOutputView::Full);
     let full = joined(&mut container, 100);
@@ -153,7 +160,10 @@ fn a_chain_follows_its_view_and_its_blocks() {
 
     chain.borrow_mut().set_view(ToolOutputView::Peek);
     let peek_again = joined(&mut container, 100);
-    assert!(peek_again.contains("earlier lines"), "{peek_again}");
+    assert!(
+        peek_again.contains("row-01") && !peek_again.contains("earlier lines"),
+        "{peek_again}"
+    );
 }
 
 #[test]

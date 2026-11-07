@@ -34,7 +34,12 @@ fn rows(details: Value, is_partial: bool, is_error: bool, output: &str) -> Vec<S
         is_partial,
     );
     let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
-    chain.add(Rc::new(RefCell::new(block)));
+    let handle = Rc::new(RefCell::new(block));
+    // Single view: bodies open on the toggle; the running row stays shut.
+    if !is_partial {
+        handle.borrow_mut().set_expanded(true);
+    }
+    chain.add(handle);
     chain.close(ChainState::Done);
     chain
         .render(80)
@@ -65,7 +70,7 @@ fn a_running_call_shows_no_facts_and_no_elapsed_row() {
     let _g = lock();
     // Partial output: the live clock lives in the status line, not the row.
     let rows = rows(json!({"durationMs": 1234}), true, false, "ok");
-    assert_eq!(rows[0], " ● Shell cargo test", "{rows:?}");
+    assert_eq!(rows[0], " ◉ Shell cargo test", "{rows:?}");
     assert!(!rows.iter().any(|r| r.contains("Elapsed")), "{rows:?}");
 }
 

@@ -22,7 +22,7 @@ pub const SUB_INDENT: usize = 3;
 pub enum Mark {
     /// Done: green `●`.
     Done,
-    /// Still running: dim `●`.
+    /// Still running: accent `◉` (single view, decision 4/9).
     Running,
     /// Failed: red `⊗`.
     Failed,
@@ -35,7 +35,7 @@ impl Mark {
     pub fn span(self, palette: &Palette) -> Span<'static> {
         match self {
             Mark::Done => Span::styled(status::DONE_STR.to_string(), palette.ok()),
-            Mark::Running => Span::styled(status::DONE_STR.to_string(), palette.dim()),
+            Mark::Running => Span::styled(status::RUNNING_STR.to_string(), palette.acc()),
             Mark::Failed => Span::styled(status::FAILED_STR.to_string(), palette.err()),
             Mark::Stopped => Span::styled(status::FAILED_STR.to_string(), palette.dim()),
         }

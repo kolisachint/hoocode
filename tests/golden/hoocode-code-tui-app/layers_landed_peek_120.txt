@@ -14,9 +14,6 @@
     … 3 more lines
 
  ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 8.2s
-    … 38 earlier lines
-    test config::tests::case_39 ... ok
-    test config::tests::case_40 ... ok
 
  The overrides now apply before the file is parsed, so an override can set the parser's own options.
 
@@ -59,8 +56,5 @@ r15 c1 fg=#b5bd68
 r15 c3-7 fg=#e5e5e7 bold
 r15 c9-52 fg=#e5e5e7
 r15 c55-67 fg=#989898
-r16 c4-21 fg=#989898
-r17 c4-37 fg=#989898
-r18 c4-37 fg=#989898
-r22 c30-41 fg=#5cc8bb
-r22 c87-97 fg=#5cc8bb
+r19 c30-41 fg=#5cc8bb
+r19 c87-97 fg=#5cc8bb

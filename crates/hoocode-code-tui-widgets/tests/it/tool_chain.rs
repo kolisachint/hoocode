@@ -134,7 +134,7 @@ fn outline_shows_a_live_step_for_the_call_still_running() {
     calls[2].pending = true;
     let chain = chain_of(Outline, calls, "c");
     let rows = mission(&chain, 100);
-    let recap: Vec<&String> = rows.iter().filter(|r| r.starts_with(" ● ")).collect();
+    let recap: Vec<&String> = rows.iter().filter(|r| r.starts_with(" ◉ ")).collect();
     assert_eq!(recap.len(), 1, "{rows:?}");
     assert!(recap[0].contains("CodeSearch"), "{rows:?}");
     assert!(
@@ -156,7 +156,7 @@ fn shows_the_calls_while_running_and_once_done() {
     let rows = mission(&running, 100);
     assert!(
         rows.iter()
-            .any(|r| r.starts_with(" ● ") && r.contains("Shell x")),
+            .any(|r| r.starts_with(" ◉ ") && r.contains("Shell x")),
         "{rows:?}"
     );
 
@@ -337,7 +337,7 @@ fn a_running_single_call_in_outline_reads_as_a_live_step() {
         "running1",
     );
     let out = mission(&chain, 100).join("\n");
-    assert!(out.contains(" ● Shell npm run"), "{out}");
+    assert!(out.contains(" ◉ Shell npm run"), "{out}");
     assert!(!out.contains("running"), "{out}");
 }
 
@@ -366,18 +366,21 @@ fn a_single_call_in_peek_is_still_its_own_block() {
         "peek1",
     );
     chain.close(ChainState::Done);
+    // Shut: ` ● Shell npm run check  exit 0` alone — no step number, no
+    // rail, no summary row, no body. The toggle opens the output at column 4.
+    let shut = render(&mut chain);
+    assert!(shut.contains(" ● Shell npm run check  exit 0"), "{shut}");
+    assert!(!shut.contains("l1"), "{shut}");
+    assert!(!shut.contains("1 call"), "{shut}");
+    assert!(!chain.is_summarised());
+    chain.tool_blocks()[0].borrow_mut().set_expanded(true);
     let out = render(&mut chain);
-    // Peek: ` ● Shell npm run check  exit 0` with its facts right after the
-    // subject, then the output at column 4 — no step number, no rail, no
-    // summary row.
     let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
     assert!(
         rows.windows(2)
             .any(|w| w == [" ● Shell npm run check  exit 0", "    l1"]),
         "{out}"
     );
-    assert!(!out.contains("1 call"), "{out}");
-    assert!(!chain.is_summarised());
 }
 
 #[test]
@@ -390,7 +393,7 @@ fn two_calls_with_one_running_show_the_live_step_in_outline() {
     assert!(chain.is_summarised());
     let out = mission(&chain, 100).join("\n");
     // The live recap names both calls, the settled one first.
-    assert!(out.contains(" ● CodeSearch"), "{out}");
+    assert!(out.contains(" ◉ CodeSearch"), "{out}");
     assert!(out.contains(" · Read src/keys.ts"), "{out}");
 }
 
@@ -509,7 +512,7 @@ fn a_background_call_is_in_the_recap_while_its_job_runs() {
     let rows = mission(&chain_with_job(ChainState::Done), 100);
     set_job_row("j1", None);
     assert!(
-        rows.iter().any(|r| r.starts_with(" ● Shell npm run")),
+        rows.iter().any(|r| r.starts_with(" ◉ Shell npm run")),
         "{rows:?}"
     );
 }
@@ -531,7 +534,7 @@ fn an_aborted_chain_keeps_a_live_background_job_running() {
     let rows = mission(&chain_with_job(ChainState::Interrupted), 100);
     set_job_row("j1", None);
     assert!(
-        rows.iter().any(|r| r.starts_with(" ● Shell npm run")),
+        rows.iter().any(|r| r.starts_with(" ◉ Shell npm run")),
         "{rows:?}"
     );
     assert!(rows.iter().all(|r| !r.starts_with(" ⊗ Shell")), "{rows:?}");

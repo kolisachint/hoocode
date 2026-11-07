@@ -206,10 +206,24 @@ fn sub_step_rows(
     }
 }
 
+/// One header row in the chain's last render: its first row and how many
+/// rows the header spans, with the block it toggles.
+#[derive(Debug, Clone, Copy)]
+pub struct HeaderHit {
+    /// First row of the header within the chain's rendered rows.
+    pub start: usize,
+    /// How many rows the header spans (wraps at narrow widths).
+    pub len: usize,
+    /// The block the header toggles.
+    pub block: usize,
+}
+
 pub struct ToolChainComponent {
     blocks: Vec<ToolBlock>,
     lead_ins: Vec<LeadIn>,
     view: ToolOutputView,
+    /// The header rows of the last render, for click-to-toggle.
+    header_map: Vec<HeaderHit>,
     state: ChainState,
     /// The newest run in the transcript; outline marks it.
     latest: bool,
@@ -227,6 +241,7 @@ impl ToolChainComponent {
             blocks: Vec::new(),
             lead_ins: Vec::new(),
             view,
+            header_map: Vec::new(),
             state: ChainState::Running,
             latest: false,
             orphan: false,
@@ -362,10 +377,20 @@ impl ToolChainComponent {
     /// the renderer already cut included. The full stop shows every line and
     /// no fold. A subagent's own calls sit under its row, indented 3: the
     /// failed ones at peek, every one at full.
+    /// The block toggled by a click on `row` (a row of the last render),
+    /// or `None` on a body row. Only header rows toggle.
+    pub fn header_hit(&self, row: usize) -> Option<usize> {
+        self.header_map
+            .iter()
+            .find(|hit| row >= hit.start && row < hit.start + hit.len)
+            .map(|hit| hit.block)
+    }
+
     fn peek_rows(&mut self, width: u16, palette: &Palette) -> Vec<String> {
         let w = width as usize;
         let full = self.view == ToolOutputView::Full;
         let mut out: Vec<String> = Vec::new();
+        let mut header_map = Vec::new();
         let mut spaced = true;
         for (i, block) in self.blocks.iter().enumerate() {
             for lead in self.lead_ins.iter().filter(|l| l.before == i) {
@@ -379,33 +404,47 @@ impl ToolChainComponent {
             if i == 0 || !spaced {
                 ensure_blank(&mut out);
             }
-            let (mark, facts, tool, failed) = {
+            let (mark, facts, tool, failed, open) = {
                 let b = block.borrow();
                 (
                     b.mark(),
                     b.facts(palette),
                     b.tool_name().to_string(),
                     b.is_error(),
+                    full || b.is_expanded(),
                 )
             };
+            let start = out.len();
             out.extend(tool_row::tool_rows(0, mark, &header, facts, w, palette));
+            header_map.push(HeaderHit {
+                start,
+                len: out.len() - start,
+                block: i,
+            });
 
+            // Single view: a collapsed block is its header row. The body
+            // (and an Agent call's child rows) opens on the toggle.
             let mut shown_body = false;
-            if tool == "Agent" {
+            if open && tool == "Agent" {
                 for sub in block.borrow().settled_sub_steps() {
-                    if full || sub.failure.is_some() {
-                        out.extend(sub_step_rows(&sub, w, palette));
-                        shown_body = true;
-                    }
+                    out.extend(sub_step_rows(&sub, w, palette));
+                    shown_body = true;
                 }
             }
+            // A frozen block's capture holds the open body; shut, the
+            // snapshot's header row is the whole row, as for a live block.
+            let captured = if !open && block.borrow().is_frozen() {
+                Vec::new()
+            } else {
+                parts.body
+            };
             let body = fold_body(
-                parts.body,
+                captured,
                 parts.tail,
                 parts.footer,
                 &tool,
                 failed,
-                full,
+                open,
                 w,
                 palette,
             );
@@ -415,12 +454,14 @@ impl ToolChainComponent {
             out.extend(parts.images);
             spaced = !shown_body;
         }
+        self.header_map = header_map;
         out
     }
 
     fn rows(&mut self, width: u16) -> Vec<String> {
         // One palette per render pass, passed down to every row.
         let palette = Palette::current();
+        self.header_map.clear();
         if !self.is_collapsed() {
             return self.peek_rows(width, &palette);
         }
@@ -500,6 +541,10 @@ impl ToolChainComponent {
 }
 
 impl Component for ToolChainComponent {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn render(&mut self, width: u16) -> Vec<String> {
         let rows = self.rows(width);
         if rows.is_empty() || !self.needs_lead_in() {

@@ -25,7 +25,8 @@ fn agent_block() -> ToolExecutionComponent {
         "description": "Find the footer code",
         "prompt": "Locate the footer renderer and list its inputs.",
     });
-    ToolExecutionComponent::new(
+    // Single view: the tail and the settled result open on the toggle.
+    let mut block = ToolExecutionComponent::new(
         "Agent",
         CALL,
         args,
@@ -35,7 +36,9 @@ fn agent_block() -> ToolExecutionComponent {
         },
         Some(registered_tool_definition("Agent")),
         CWD,
-    )
+    );
+    block.set_expanded(true);
+    block
 }
 
 fn event(value: Value) {

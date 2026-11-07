@@ -106,34 +106,50 @@ fn the_dial_steps_outline_peek_full_and_wraps() {
 }
 
 #[test]
-fn full_shows_a_long_tool_output_whole_while_peek_folds_it() {
+fn peek_collapses_while_the_toggle_and_full_show_a_long_tool_output_whole() {
     let _g = lock();
     let peek = render(&mut read_chain(Peek, 40), 100).join("\n");
-    assert!(peek.contains("row-01"), "{peek}");
-    assert!(!peek.contains("row-40"), "{peek}");
-    assert!(peek.contains("more lines"), "{peek}");
+    assert!(!peek.contains("row-01"), "{peek}");
+    assert!(!peek.contains("more line"), "{peek}");
+
+    let mut open = read_chain(Peek, 40);
+    open.tool_blocks()[0].borrow_mut().set_expanded(true);
+    let whole = render(&mut open, 100).join("\n");
+    for i in 1..=40 {
+        assert!(whole.contains(&format!("row-{i:02}")), "row {i}: {whole}");
+    }
+    assert!(!whole.contains("more line"), "{whole}");
+    assert!(!whole.contains('…'), "{whole}");
 
     let full = render(&mut read_chain(Full, 40), 100).join("\n");
     for i in 1..=40 {
         assert!(full.contains(&format!("row-{i:02}")), "row {i}: {full}");
     }
-    assert!(!full.contains("more line"), "{full}");
-    assert!(!full.contains('…'), "{full}");
 }
 
 #[test]
-fn the_chain_fold_reports_the_true_hidden_count_once() {
+fn a_collapsed_chain_hides_every_row_and_the_toggle_opens_them_all() {
     let _g = lock();
-    let rows = render(&mut read_chain(Peek, 40), 100);
-    let hints: Vec<&String> = rows.iter().filter(|r| r.contains("more line")).collect();
-    assert_eq!(hints.len(), 1, "the hint shows once: {rows:?}");
-    // 40 lines, the first four shown: 36 hidden. The block's own
-    // `… 35 more lines` is folded into the count, not shown next to it.
-    assert_eq!(parse_more_lines(hints[0]), Some(36));
+    let mut chain = read_chain(Peek, 40);
+    let shut = render(&mut chain, 100);
+    assert!(
+        !shut.iter().any(|r| r.contains("more line")),
+        "no fold hint while shut: {shut:?}"
+    );
+    assert!(
+        !shut.iter().any(|r| r.contains("row-0")),
+        "no body rows while shut: {shut:?}"
+    );
+    chain.tool_blocks()[0].borrow_mut().set_expanded(true);
+    let rows = render(&mut chain, 100);
     assert_eq!(
-        rows.iter().filter(|r| r.contains("row-0")).count(),
-        4,
+        rows.iter().filter(|r| r.contains("row-")).count(),
+        40,
         "{rows:?}"
+    );
+    assert!(
+        !rows.iter().any(|r| r.contains("more line")),
+        "open shows every row, no hint: {rows:?}"
     );
 }
 
@@ -163,6 +179,8 @@ fn a_long_tool_header_wraps_in_peek_and_full_instead_of_being_cut() {
             json!({ "command": command }),
             vec![Content::text("ok")],
         );
+        // Full opens every body; in peek the output follows the toggle.
+        shell.borrow_mut().set_expanded(view == Peek);
         let mut chain = chain_with(view, vec![shell]);
         let rows = render(&mut chain, 60);
         let joined = rows.join(" ");
@@ -175,8 +193,8 @@ fn a_long_tool_header_wraps_in_peek_and_full_instead_of_being_cut() {
         assert!(!rows.iter().any(|r| r.contains('…')), "{view:?}: {rows:?}");
         assert!(rows[0].contains("● Shell"), "the glyph leads: {rows:?}");
         assert!(rows.len() >= 3, "the header took several rows: {rows:?}");
-        // The wrapped header rows are not body: the output still follows.
-        assert!(joined.contains("ok"), "{rows:?}");
+        // The wrapped header rows are not body: the output follows whole.
+        assert!(rows.iter().any(|r| r.trim() == "ok"), "{view:?}: {rows:?}");
     }
 }
 
@@ -223,17 +241,18 @@ fn an_image_result_is_not_folded_with_the_body() {
         hyperlinks: false,
     });
     let mut chain = chain_with(Peek, vec![image_block(Peek)]);
+    chain.tool_blocks()[0].borrow_mut().set_expanded(true);
     let lines = chain.render(100);
-    // The body folds; the image rows after it do not.
-    let fold = lines
+    // The open body shows whole; the image still draws after the text.
+    let last_text = lines
         .iter()
-        .position(|l| strip(l).contains("more line"))
-        .expect("the text body folds");
+        .rposition(|l| strip(l).contains("row-08"))
+        .expect("the text body shows whole");
     assert!(
-        lines[fold + 1..]
+        lines[last_text + 1..]
             .iter()
             .any(|l| hoocode_tui_images::is_image_line(l)),
-        "the image draws after the fold: {lines:?}"
+        "the image draws after the body: {lines:?}"
     );
     hoocode_tui_images::set_capabilities(hoocode_tui_images::TerminalCapabilities {
         images: None,
@@ -246,7 +265,9 @@ fn an_image_result_is_not_folded_with_the_body() {
 fn the_image_placeholder_shows_when_the_terminal_draws_no_images() {
     let _g = lock();
     for view in [Peek, Full] {
-        let mut chain = chain_with(view, vec![image_block(view)]);
+        let block = image_block(view);
+        block.borrow_mut().set_expanded(true);
+        let mut chain = chain_with(view, vec![block]);
         let rows = render(&mut chain, 100);
         assert!(
             rows.iter().any(|r| r.contains("[Image: ")),
@@ -274,7 +295,14 @@ fn a_subagent_result_is_whole_in_full_and_summarised_in_peek() {
         )
     };
     let peek = render(&mut make(Peek), 80).join("\n");
-    assert!(!peek.contains("finding 12"), "{peek}");
+    assert!(!peek.contains("finding 01"), "{peek}");
+    let mut open = make(Peek);
+    open.tool_blocks()[0].borrow_mut().set_expanded(true);
+    let whole = render(&mut open, 80).join("\n");
+    for i in 1..=12 {
+        assert!(whole.contains(&format!("finding {i:02}")), "{whole}");
+    }
+    assert!(!whole.contains("more line"), "{whole}");
     let full = render(&mut make(Full), 80).join("\n");
     for i in 1..=12 {
         assert!(full.contains(&format!("finding {i:02}")), "{full}");
@@ -294,15 +322,9 @@ fn a_frozen_block_keeps_the_whole_output_for_the_full_stop() {
     shell.borrow_mut().freeze();
     let mut chain = chain_with(Peek, vec![shell.clone()]);
     let peek = render(&mut chain, 100).join("\n");
-    assert!(peek.contains("28 earlier lines"), "{peek}");
-    assert!(
-        peek.contains("row-30") && peek.contains("row-29"),
-        "peek shows the end of the output: {peek}"
-    );
-    assert!(
-        !peek.contains("row-01"),
-        "peek shows the end of the output only: {peek}"
-    );
+    assert!(!peek.contains("row-01"), "shut, no body: {peek}");
+    assert!(!peek.contains("earlier lines"), "shut, no hint: {peek}");
+    shell.borrow_mut().set_expanded(true);
     chain.set_view(Full);
     let full = render(&mut chain, 100).join("\n");
     for i in 1..=30 {
@@ -340,15 +362,14 @@ fn an_image_only_result_shows_just_its_placeholder() {
     {
         let tool = "mystery";
         let view = Peek;
-        let mut chain = chain_with(
+        let only = block(
             view,
-            vec![block(
-                view,
-                tool,
-                json!({"file_path": "shot.png"}),
-                vec![image.clone()],
-            )],
+            tool,
+            json!({"file_path": "shot.png"}),
+            vec![image.clone()],
         );
+        only.borrow_mut().set_expanded(true);
+        let mut chain = chain_with(view, vec![only]);
         let rows = render(&mut chain, 100);
         let body: Vec<&String> = rows.iter().filter(|r| r.contains("[Image: ")).collect();
         assert_eq!(body.len(), 1, "{tool}: {rows:?}");
@@ -406,19 +427,21 @@ fn shell_block(view: ToolOutputView, output: &str, is_error: bool) -> ToolBlock 
 #[test]
 fn a_shell_step_shows_the_end_of_its_output_and_counts_only_hidden_output_lines() {
     let _g = lock();
-    let mut chain = chain_with(Peek, vec![shell_block(Peek, &rows_of(40), false)]);
-    let rows = render(&mut chain, 100);
-    let hint = rows
-        .iter()
-        .position(|r| r.contains("earlier lines"))
-        .unwrap_or_else(|| panic!("no fold hint: {rows:?}"));
-    // 40 lines, the last two shown: 38 hidden.
-    assert_eq!(parse_more_lines(&rows[hint]), Some(38));
-    let shown: Vec<&String> = rows.iter().filter(|r| r.contains("row-")).collect();
-    assert_eq!(shown.len(), 2, "{rows:?}");
+    let block = shell_block(Peek, &rows_of(40), false);
+    let mut chain = chain_with(Peek, vec![block.clone()]);
+    let shut = render(&mut chain, 100);
+    assert!(shut[0].ends_with("exit 0 · 8.2s"), "{shut:?}");
     assert!(
-        rows[hint + 1].contains("row-39"),
-        "the hint sits above: {rows:?}"
+        !shut.iter().any(|r| r.contains("row-")),
+        "shut, no body: {shut:?}"
+    );
+    // The toggle opens the whole output: the tail, no hint, no `Took`.
+    block.borrow_mut().set_expanded(true);
+    let rows = render(&mut chain, 100);
+    assert_eq!(
+        rows.iter().filter(|r| r.contains("row-")).count(),
+        40,
+        "{rows:?}"
     );
     assert!(!rows.iter().any(|r| r.contains("Took")), "{rows:?}");
     assert!(!rows.iter().any(|r| r.contains("more line")), "{rows:?}");
@@ -431,7 +454,16 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     let output = "error[E0308]: mismatched types\n   --> src/lex.rs:88:21\n    |\n\
                   88  |     return Ok(Token::Str(text));\n    |\n\
                   error: could not compile `parser`\n\nCommand exited with code 1";
-    let mut chain = chain_with(Peek, vec![shell_block(Peek, output, true)]);
+    let block = shell_block(Peek, output, true);
+    let mut chain = chain_with(Peek, vec![block.clone()]);
+    let shut = render(&mut chain, 100);
+    assert!(
+        shut[0].contains('⊗') && shut[0].ends_with("exit 1 · 8.2s"),
+        "{shut:?}"
+    );
+    assert!(!shut.join("\n").contains("could not compile"), "{shut:?}");
+    // The toggle opens the whole failed output, head first.
+    block.borrow_mut().set_expanded(true);
     let rows = render(&mut chain, 100);
     assert!(
         rows[0].contains('⊗') && rows[0].ends_with("exit 1 · 8.2s"),
@@ -439,11 +471,11 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     );
     let joined = rows.join("\n");
     assert!(!joined.contains("HIT"), "{joined}");
-    // Seven lines: the last four show, two fall behind the hint.
-    assert!(joined.contains("… 2 earlier lines"), "{joined}");
+    assert!(!joined.contains("earlier lines"), "{joined}");
     assert!(joined.contains("error: could not compile"), "{joined}");
-    assert!(!joined.contains("Command exited"), "{joined}");
-    assert!(!joined.contains("mismatched types"), "{joined}");
+    assert!(joined.contains("mismatched types"), "{joined}");
+    // The exit line stays out of the body: the header names it.
+    assert!(!joined.contains("Command exited with code 1"), "{joined}");
 }
 
 #[test]
@@ -519,18 +551,22 @@ fn settled_agent(view: ToolOutputView, run: &str) -> ToolBlock {
 #[test]
 fn a_settled_agent_keeps_its_failed_calls_in_peek_and_every_call_in_full() {
     let _g = lock();
-    let mut peek = chain_with(Peek, vec![settled_agent(Peek, "it-agent-peek")]);
+    let agent = settled_agent(Peek, "it-agent-peek");
+    let mut peek = chain_with(Peek, vec![agent.clone()]);
+    let shut = render(&mut peek, 100).join("\n");
+    assert!(
+        !shut.contains("Found it"),
+        "a settled agent shows no body: {shut}"
+    );
+    assert!(!shut.contains("   ⊗ Grep"), "shut, no child rows: {shut}");
+    agent.borrow_mut().set_expanded(true);
     let rows = render(&mut peek, 100).join("\n");
     assert!(rows.contains("   ⊗ Grep"), "{rows}");
     assert!(rows.contains("bad regex"), "{rows}");
     assert!(!rows.contains("HIT"), "{rows}");
     assert!(
-        !rows.contains("Found it"),
-        "a settled agent shows no body: {rows}"
-    );
-    assert!(
-        !rows.contains("   ● Read"),
-        "peek shows problems only: {rows}"
+        rows.contains("   ● Read"),
+        "the toggle opens every call: {rows}"
     );
 
     let mut full = chain_with(Full, vec![settled_agent(Full, "it-agent-full")]);

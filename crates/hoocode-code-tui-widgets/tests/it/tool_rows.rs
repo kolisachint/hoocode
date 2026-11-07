@@ -212,7 +212,7 @@ fn tool_rows_agent_full_100() {
 }
 
 #[test]
-fn a_row_with_a_body_is_followed_by_one_blank_and_body_less_rows_stay_tight() {
+fn a_collapsed_run_is_tight_and_an_open_row_is_followed_by_one_blank() {
     let _g = lock();
     let mut c = config_run(ToolOutputView::Peek);
     let rows: Vec<String> = c
@@ -220,14 +220,23 @@ fn a_row_with_a_body_is_followed_by_one_blank_and_body_less_rows_stay_tight() {
         .iter()
         .map(|l| strip(l).trim_end().to_string())
         .collect();
-    // One blank opens the run; the Read row is tight against the Edit row.
+    // Collapsed: one blank opens the run; every row is its header.
     assert_eq!(rows[0], "", "{rows:?}");
     assert!(rows[1].starts_with(" ● Read "), "{rows:?}");
     assert!(rows[2].starts_with(" ● Edit "), "{rows:?}");
-    // Each row with a body is followed by exactly one blank row.
-    let shell = rows.iter().position(|r| r.starts_with(" ● Shell")).unwrap();
-    assert_eq!(rows[shell - 1], "", "{rows:?}");
-    assert_ne!(rows[shell - 2], "", "{rows:?}");
+    assert!(rows.iter().all(|r| !r.contains("test config")), "{rows:?}");
+    // An open row's body is followed by exactly one blank row.
+    let shell = c.tool_blocks()[2].clone();
+    shell.borrow_mut().set_expanded(true);
+    let rows: Vec<String> = c
+        .render(100)
+        .iter()
+        .map(|l| strip(l).trim_end().to_string())
+        .collect();
+    assert!(rows.iter().any(|r| r.contains("test config")), "{rows:?}");
+    let end = rows.iter().position(|r| r.contains("case_12")).unwrap();
+    // The open body runs to the end of the run: no trailing blank row.
+    assert_eq!(end + 1, rows.len(), "{rows:?}");
 }
 
 #[test]
@@ -315,38 +324,35 @@ fn a_long_label_wraps_and_the_facts_close_the_last_row() {
 }
 
 #[test]
-fn a_body_of_four_lines_or_fewer_shows_whole_and_a_longer_one_folds() {
+fn a_collapsed_row_shows_no_body_and_the_toggle_opens_it_whole() {
     let _g = lock();
     let view = ToolOutputView::Peek;
-    for (lines, hint) in [(4, None), (5, Some("… 3 earlier lines"))] {
-        let mut c = chain(
+    // Single view: every block starts as one row; the toggle opens the
+    // whole output, however long, with no fold hint.
+    for lines in [4, 12] {
+        let b = block(
             view,
-            vec![block(
-                view,
-                "Shell",
-                json!({"command": "x"}),
-                &numbered("row-", lines),
-                json!({}),
-                false,
-            )],
+            "Shell",
+            json!({"command": "x"}),
+            &numbered("row-", lines),
+            json!({}),
+            false,
         );
-        let out = strip(&c.render(100).join("\n"));
-        match hint {
-            None => {
-                assert!(out.contains("row-01") && out.contains("row-04"), "{out}");
-                assert!(!out.contains("earlier"), "{out}");
-            }
-            Some(hint) => {
-                assert!(out.contains(hint), "{out}");
-                assert!(out.contains("row-05") && out.contains("row-04"), "{out}");
-                assert!(!out.contains("row-03"), "{out}");
-            }
-        }
+        let mut c = chain(view, vec![b.clone()]);
+        let shut = strip(&c.render(100).join("\n"));
+        assert!(!shut.contains("row-01"), "{shut}");
+        b.borrow_mut().set_expanded(true);
+        let open = strip(&c.render(100).join("\n"));
+        assert!(
+            open.contains("row-01") && open.contains(&format!("row-{lines:02}")),
+            "{open}"
+        );
+        assert!(!open.contains("earlier"), "{open}");
     }
 }
 
 #[test]
-fn a_running_call_has_a_dim_dot_and_no_facts() {
+fn a_running_call_has_an_accent_fisheye_and_no_facts() {
     let _g = lock();
     let view = ToolOutputView::Peek;
     let b = ToolExecutionComponent::new(
@@ -366,7 +372,7 @@ fn a_running_call_has_a_dim_dot_and_no_facts() {
         .iter()
         .map(|l| strip(l).trim_end().to_string())
         .collect();
-    assert_eq!(rows[1], " ● Shell sleep 5", "{rows:?}");
+    assert_eq!(rows[1], " ◉ Shell sleep 5", "{rows:?}");
 }
 
 // ---- the user's `!` command ----

@@ -8,17 +8,14 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::support::lock;
-use hoocode_code_tui_app::notification_panel::{
-    NotificationKind, NotificationPanel,
-};
+use hoocode_code_tui_app::notification_panel::{NotificationKind, NotificationPanel};
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 
 fn panel() -> NotificationPanel {
     let now = Rc::new(Cell::new(Instant::now()));
     let clock = now.clone();
-    let mut p =
-        NotificationPanel::with_clock(|| {}, None, Rc::new(move || clock.get()));
+    let mut p = NotificationPanel::with_clock(|| {}, None, Rc::new(move || clock.get()));
     // Body-less notices belong in the status line while its slot is free;
     // pin the band copy instead.
     p.set_status_slot_free(false);

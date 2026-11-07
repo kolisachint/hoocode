@@ -367,7 +367,7 @@ fn a_running_turn_reads_its_calls_live_and_has_no_end_line() {
     let rows = rows("build it", &stats, 80);
     assert_eq!(
         rows,
-        vec![" › build it", "", " ● Read a.rs · Shell cargo build"],
+        vec![" › build it", "", " ◉ Read a.rs · Shell cargo build"],
         "{rows:#?}"
     );
 }
@@ -541,7 +541,7 @@ fn a_live_background_job_keeps_a_finished_turns_key_off() {
     assert!(stats.render_key().is_none());
     let rows = rows("serve", &stats, 80);
     task_store().remove_keyed(&key);
-    assert!(rows.contains(&" ● Shell npm run".to_string()), "{rows:#?}");
+    assert!(rows.contains(&" ◉ Shell npm run".to_string()), "{rows:#?}");
 }
 
 #[test]
