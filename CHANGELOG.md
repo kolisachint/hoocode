@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Notice heads use the glyph set.** A finish is a green `●`, a failure a red `⊗` with a dim reason, a cancel all dim; the `◦`, `✗` and `⊘` marks and the yellow `(partial)` are gone.
 - **The attached-run header takes `›`, and a skill block is its bold name only.** `› explore · Find the footer code · running · esc back`. The `◆` mark is gone.
 
+### Changed: glance-first subagent nudge (2026-11-08)
+- **A finished background subagent opens with its run.** The follow-up header is two lines: `› ● explore#4  audit the db layer · done · haiku-5-5`, then the machine line with the raw call id, the resume label and the pointer. The `Background agent … finished:` wrapper, the repeated verdict, the "Read the full result" narration, the still-running count and the full model slug are gone. Old headers still read.
+- **Notice heads name the run's target.** `● explore#4  audit the db layer · 1m27s · haiku-5-5`: the mark carries a finish so no word reads there, a failure keeps a dim `failed`, a cancel reads all dim with `cancelled`. Narrow rows shorten the target at a word; the facts never drop.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 
