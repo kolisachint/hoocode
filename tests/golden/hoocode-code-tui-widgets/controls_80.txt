@@ -1,4 +1,4 @@
-  Keys  ?   plain   ctrl   leader   alt  126 bindings · 23 shown
+  Keys  ?   plain   ctrl   leader   alt  128 bindings · 23 shown
  prompt
  ctrl+x c  Copy the agent's last message to the clipboard
  ctrl+x y  Yank pop

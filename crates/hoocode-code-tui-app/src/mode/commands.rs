@@ -303,8 +303,9 @@ impl Mode {
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
         self.add_to_chat(as_component(&handle(Text::new(
             format!(
-                "{}\n{}",
-                t.fg("accent", "✓ Debug log written"),
+                "{} {} \n{}",
+                t.fg("success", "●"),
+                t.bold("Debug log written"),
                 t.fg("muted", &path.to_string_lossy())
             ),
             1,

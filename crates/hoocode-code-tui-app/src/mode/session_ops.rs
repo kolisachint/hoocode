@@ -210,8 +210,9 @@ impl Mode {
                 self.render_current_session_state();
                 let t = theme();
                 let line = format!(
-                    "{} {}\n{}",
-                    t.fg("accent", "✓ Working directory"),
+                    "{} {} {}\n{}",
+                    t.fg("success", "●"),
+                    t.bold("Working directory"),
                     t.fg("muted", &result.cwd.to_string_lossy()),
                     t.fg(
                         "dim",
@@ -433,7 +434,7 @@ impl Mode {
                 "Session name (auto)"
             };
             let line = format!(
-                "{}  {} · {}",
+                "{} · {} · {}",
                 t.fg("dim", label),
                 self.session.display_name(),
                 t.fg("dim", "/name <name>")
@@ -545,7 +546,11 @@ impl Mode {
                 }
                 if announce {
                     self.add_to_chat(as_component(&handle(Spacer::new(1))));
-                    let line = theme().fg("accent", "✓ New session started");
+                    let line = format!(
+                        "{} {}",
+                        theme().fg("success", "●"),
+                        theme().bold("New session started")
+                    );
                     self.add_to_chat(as_component(&handle(Text::new(line, 1, 0))));
                 }
             }

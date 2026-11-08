@@ -217,6 +217,10 @@ const DELIBERATELY_UNSCOPED: &[&str] = &[
     "tui.input.copy",
     "app.exit",
     "app.clear",
+    // The quit card owns its keys while open: `k`/`l` also scroll lists
+    // and trees elsewhere, on purpose and never at the same time.
+    "app.quit.stop-jobs",
+    "app.quit.leave-running",
 ];
 
 fn manager() -> AppKeybindingsManager {
@@ -646,6 +650,7 @@ fn keeps_the_dials_off_each_others_keys() {
 fn families() -> Vec<(&'static str, Regex)> {
     [
         ("Flow", r"^app\.(interrupt|clear|exit|suspend)$"),
+        ("Quit", r"^app\.quit\."),
         ("Compose", r"^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)"),
         ("Recall", r"^app\.history\."),
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),

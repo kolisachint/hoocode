@@ -269,6 +269,20 @@
    "Suspend to background"
   ],
   [
+   "app.quit.stop-jobs",
+   [
+    "k"
+   ],
+   "Stop jobs and quit"
+  ],
+  [
+   "app.quit.leave-running",
+   [
+    "l"
+   ],
+   "Leave jobs running"
+  ],
+  [
    "app.editor.external",
    [
     "ctrl+x e"

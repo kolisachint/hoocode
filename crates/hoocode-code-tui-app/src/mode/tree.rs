@@ -142,6 +142,9 @@ impl Mode {
         }
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
         self.stop_working_loader();
+        // No pulse: the only spinner left is the compaction one (UI-4).
+        // The label still reads while the branch summarizes.
+        use hoocode_tui_components::LoaderIndicatorOptions;
         let mut loader = Loader::new(
             Box::new(|s: &str| theme().fg("accent", s)),
             Box::new(|s: &str| theme().fg("muted", s)),
@@ -149,7 +152,10 @@ impl Mode {
                 "Summarizing branch… ({} to cancel)",
                 key_text("app.interrupt")
             ),
-            None,
+            Some(LoaderIndicatorOptions {
+                frames: Some(vec![]),
+                interval_ms: None,
+            }),
         );
         loader.start();
         let loader = handle(loader);

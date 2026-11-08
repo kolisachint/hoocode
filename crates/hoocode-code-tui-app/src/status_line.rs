@@ -270,9 +270,9 @@ pub fn format_cost(cost: f64) -> Option<String> {
 struct Styles {
     ink: Style,
     dim: Style,
+    acc: Style,
     ok: Style,
     err: Style,
-    warn: Style,
     plan: Style,
 }
 
@@ -282,9 +282,9 @@ impl Styles {
             Self {
                 ink: pal.ink(),
                 dim: pal.dim(),
+                acc: pal.acc(),
                 ok: pal.ok(),
                 err: pal.err(),
-                warn: pal.warn(),
                 plan: bold(pal.dim()),
             }
         } else {
@@ -293,9 +293,9 @@ impl Styles {
             Self {
                 ink: plain,
                 dim: plain.add_modifier(Modifier::DIM),
+                acc: plain,
                 ok: plain,
                 err: plain,
-                warn: plain,
                 plan: bold(plain),
             }
         }
@@ -321,7 +321,7 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
     match slot {
         LeftSlot::Empty => {}
         LeftSlot::Working(elapsed) => {
-            out.push(span("◉", st.warn));
+            out.push(span("◉", st.acc));
             out.push(span(
                 format!(
                     " working · {} · {} stop",
@@ -361,7 +361,7 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
         }
         LeftSlot::ExtraUsage => {
             out.push(span("extra usage", st.dim));
-            out.push(span("  /settings", st.ink));
+            out.push(span(" · /settings", st.ink));
         }
         LeftSlot::SkipPermissions => {
             out.push(span("skip perms · mode rules apply", st.dim));
@@ -372,7 +372,7 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
                 keys_spans(&notice.keys, st, &mut out);
             }
             NoticeLevel::Warning => {
-                out.push(span(notice.message.clone(), st.warn));
+                out.push(span(notice.message.clone(), st.ink));
                 keys_spans(&notice.keys, st, &mut out);
             }
             NoticeLevel::Action => {

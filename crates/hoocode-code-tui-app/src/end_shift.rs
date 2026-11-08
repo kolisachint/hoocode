@@ -4,7 +4,7 @@
 //! stops them and quits, `l` leaves them running, `enter` is stop and quit,
 //! `esc` stays).
 
-use hoocode_code_tui_keybindings::key_hint_text;
+use hoocode_code_tui_keybindings::{key_hint_text, matches_app_key};
 use hoocode_code_tui_widgets::pane::{fit_hint_line, hint_line, Pane, PaneStyle};
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::{Line, Palette, Span};
@@ -234,15 +234,17 @@ impl Component for EndShiftJobsCard {
         pane.facts = Line::from(vec![Span::styled(self.facts(width), st.dim_style())]);
         pane.rows = self.rows();
         let cancel = key_hint_text("tui.select.cancel");
+        let stop = key_hint_text("app.quit.stop-jobs");
+        let leave = key_hint_text("app.quit.leave-running");
         // The copy shortens where the long row would overflow (mock §S5).
         let long = [
-            ("k", "stop jobs and quit"),
-            ("l", "leave them running"),
+            (stop.as_str(), "stop jobs and quit"),
+            (leave.as_str(), "leave them running"),
             (cancel.as_str(), "stay"),
         ];
         let short = [
-            ("k", "stop and quit"),
-            ("l", "leave"),
+            (stop.as_str(), "stop and quit"),
+            (leave.as_str(), "leave"),
             (cancel.as_str(), "stay"),
         ];
         let budget = width.saturating_sub(2);
@@ -259,8 +261,13 @@ impl Component for EndShiftJobsCard {
     fn handle_input(&mut self, data: &str) {
         match data {
             // The old default stays: enter brings every job down.
-            "\r" | "\n" | "k" => self.done(EndShiftJobsChoice::KillAll),
-            "l" => self.done(EndShiftJobsChoice::LeaveRunning),
+            "\r" | "\n" => self.done(EndShiftJobsChoice::KillAll),
+            _ if matches_app_key(data, "app.quit.stop-jobs") => {
+                self.done(EndShiftJobsChoice::KillAll)
+            }
+            _ if matches_app_key(data, "app.quit.leave-running") => {
+                self.done(EndShiftJobsChoice::LeaveRunning)
+            }
             "\x1b" => self.done(EndShiftJobsChoice::Stay),
             _ => {}
         }

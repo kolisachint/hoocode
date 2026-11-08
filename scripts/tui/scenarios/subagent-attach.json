@@ -75,7 +75,7 @@
     {
       "snapshot": "attached-running",
       "contains": [
-        "◆ general-purpose · Compute a product · running · Esc back",
+        "› general-purpose · Compute a product · running · esc back",
         "READ-ONLY"
       ],
       "not_contains": [
@@ -84,7 +84,7 @@
       ]
     },
     {
-      "wait_for": "· complete · Esc back",
+      "wait_for": "· complete · esc back",
       "timeout": 60
     },
     {
@@ -94,7 +94,7 @@
     {
       "snapshot": "attached-done",
       "contains": [
-        "◆ general-purpose · Compute a product · complete · Esc back",
+        "› general-purpose · Compute a product · complete · esc back",
         "42",
         "READ-ONLY"
       ],
@@ -106,7 +106,7 @@
       "keys": ["Escape"]
     },
     {
-      "wait_gone": "◆ general-purpose",
+      "wait_gone": "› general-purpose",
       "timeout": 10
     },
     {
@@ -146,7 +146,7 @@
       "keys": ["Enter"]
     },
     {
-      "wait_for": "◆ general-purpose · What is 6 times 7\\? Reply with the number only\\. · complete",
+      "wait_for": "› general-purpose · What is 6 times 7\\? Reply with the number only\\. · complete",
       "timeout": 10
     },
     {
@@ -156,7 +156,7 @@
     {
       "snapshot": "reattached",
       "contains": [
-        "◆ general-purpose · What is 6 times 7? Reply with the number only. · complete · Esc back",
+        "› general-purpose · What is 6 times 7? Reply with the number only. · complete · esc back",
         "42"
       ]
     }

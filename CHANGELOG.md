@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: stage-2 design sweep (2026-11-08)
+- **Rendered rows use the glyph set only.** The ask-options breadcrumb, the working-directory line, the new-session line and the debug-log line read `●` now; the status working `◉` is accent (never yellow for non-blocking) and status warnings read ink. The quit card's `k`/`l` come from the keymap (`app.quit.stop-jobs`, `app.quit.leave-running`, a new Quit family), so a rebound key shows its new name.
+- **Stale scene copy follows the row grammar.** The attach scenario waits read `› … · esc back`; the linked-run asserts read the type-first rows (`◉ explore  scan the repo  34s`); the tree summarizer draws no pulse — compaction keeps the only spinner (UI-4 closed); `/name` and status facts join with `·`. UI-9 closed: no stale binding claims in the user or map pages.
+
 ### Added: OSC 7501 program-status reports (2026-11-08)
 - **Any terminal now sees what hoocode is doing.** Alongside the Herdr CLI reports, the interactive mode emits OSC 7501 program-status sequences on stdout (`state=working|idle|blocked|done|error`, `app=hoocode`, a `kind` of `permission`/`question`/`auth` while blocked, `state=clear` on quit), so session pickers, tab headers and scripts can read the state instead of guessing from the title. Root record only, off on `TERM=dumb`; the Herdr reports themselves are unchanged.
 
