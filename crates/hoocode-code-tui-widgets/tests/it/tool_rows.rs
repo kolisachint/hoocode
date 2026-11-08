@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::support::{lock, strip};
+use crate::support::{lock, strip, strip_all};
 use hoocode_ai_types::Content;
 use hoocode_code_subagents::live::apply;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
@@ -21,8 +21,9 @@ use serde_json::{json, Value};
 
 const CWD: &str = "/work";
 
-fn block(
+fn block_with_id(
     tool: &str,
+    id: &str,
     args: Value,
     output: &str,
     details: Value,
@@ -32,7 +33,7 @@ fn block(
         builtin_tool_definition(tool).unwrap_or_else(|| registered_tool_definition(tool));
     let mut b = ToolExecutionComponent::new(
         tool,
-        "id",
+        id,
         args,
         ToolExecutionOptions::default(),
         Some(definition),
@@ -47,6 +48,16 @@ fn block(
         false,
     );
     Rc::new(RefCell::new(b))
+}
+
+fn block(
+    tool: &str,
+    args: Value,
+    output: &str,
+    details: Value,
+    is_error: bool,
+) -> Rc<RefCell<ToolExecutionComponent>> {
+    block_with_id(tool, "id", args, output, details, is_error)
 }
 
 fn chain(blocks: Vec<Rc<RefCell<ToolExecutionComponent>>>) -> ToolChainComponent {
@@ -394,4 +405,88 @@ fn user_bash_row_reads_like_a_tool_row() {
     let mut cancelled = BashExecutionComponent::new("sleep 99", false);
     cancelled.set_complete(None, true, None, None);
     assert_golden!("user_bash_cancelled_80", render_golden(&mut cancelled, 80));
+}
+
+/// The focused header draws the row grammar's selection: `›` in the gutter
+/// and the paneSel fill across the row (reverse video with no colour). An
+/// expanded focused block keeps both: the `›` header and the open body.
+#[test]
+fn a_focused_header_draws_the_gutter_and_band() {
+    let _g = lock();
+    let first = block_with_id(
+        "Read",
+        "call-1",
+        json!({"path": "src/a.ts"}),
+        "line one\nline two",
+        Value::Null,
+        false,
+    );
+    let second = block_with_id(
+        "Shell",
+        "call-2",
+        json!({"command": "npm test -- --watch"}),
+        "ok",
+        Value::Null,
+        false,
+    );
+    let mut c = chain(vec![first.clone(), second.clone()]);
+    // Unfocused: the gutter keeps column 0 and no row carries a fill.
+    let plain: Vec<String> = c.render(80);
+    assert_eq!(plain.len(), 3, "{plain:?}");
+    for row in &plain {
+        assert!(!strip(row).contains('›'), "{row}");
+        assert!(!row.contains("48;2"), "{row}");
+    }
+    // Focused: the second header draws `›` and the paneSel fill; the
+    // first header stays plain.
+    c.set_focused_call(Some("call-2"));
+    let rows: Vec<String> = c.render(80);
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    let stripped: Vec<String> = rows
+        .iter()
+        .map(|line| strip(line).trim().to_string())
+        .collect();
+    assert!(stripped[1].starts_with('●'), "{}", stripped[1]);
+    assert!(stripped[2].starts_with('›'), "{}", stripped[2]);
+    assert!(!rows[1].contains("48;2"), "{}", rows[1]);
+    assert!(rows[2].contains("48;2"), "{}", rows[2]);
+    // Expanded and focused compose: the body opens under the `›` header.
+    second.borrow_mut().set_expanded(true);
+    let rows: Vec<String> = c.render(80);
+    let text = strip_all(&rows);
+    assert!(text.contains("ok"), "{text}");
+    assert!(
+        strip(&rows[2]).trim_start().starts_with('›'),
+        "{}",
+        strip(&rows[2])
+    );
+    assert!(rows[2].contains("48;2"), "{}", rows[2]);
+    // With no colour the same row reads reverse video plus `›`.
+    let chalk = ChalkGuard::off();
+    let rows: Vec<String> = c.render(80);
+    drop(chalk);
+    assert!(
+        strip(&rows[2]).trim_start().starts_with('›'),
+        "{}",
+        strip(&rows[2])
+    );
+    assert!(!rows[2].contains("48;2"), "{}", rows[2]);
+    assert!(rows[2].contains("[0;7m"), "{}", rows[2]);
+}
+
+/// Disables chalk's colour switch until dropped, so the monochrome branch
+/// of a paint test restores the shared switch even on failure.
+struct ChalkGuard;
+
+impl ChalkGuard {
+    fn off() -> Self {
+        hoocode_code_tui_theme::chalk::set_enabled(false);
+        Self
+    }
+}
+
+impl Drop for ChalkGuard {
+    fn drop(&mut self) {
+        hoocode_code_tui_theme::chalk::set_enabled(true);
+    }
 }
