@@ -308,7 +308,8 @@ fn each_running_row_carries_its_own_live_timer_next_to_the_activity() {
     advance_clock_for_tests(34_000);
     let lines = render(&mut panel);
     let row = strip(find(&lines, "scan the repo"));
-    assert!(row.contains("⋯ CodeSearch · 34s"), "{row}");
+    assert!(!row.contains('⋯'), "{row}");
+    assert!(row.contains("explore  scan the repo  34s"), "{row}");
     panel.dispose();
 }
 
@@ -409,7 +410,7 @@ fn nests_a_linked_run_under_its_plan_item_in_the_flat_lens_and_counts_it() {
     assert_eq!(run_idx, todo_idx + 1, "{lines:#?}");
     assert!(lines[run_idx].contains("└─"));
     assert!(lines[run_idx].contains("explore"));
-    assert!(lines[run_idx].contains("⋯ CodeSearch"));
+    assert!(!lines[run_idx].contains('⋯'), "{lines:#?}");
     assert!(!lines.iter().any(|l| l.contains("free-floating run")));
     // The tab strip (top edge) counts the plan items only: the todo and the pending one, not the nested run.
     assert!(lines[0].contains("plan 0/2"), "{}", lines[0]);

@@ -192,19 +192,24 @@ pub fn turn_end(stats: &FlightStats) -> Option<TurnEnd> {
     }
 }
 
-/// The end line's spans: ` ⊗ failed · 5.0s` (`⊗` and `failed` red, the rest
+/// The end line's spans: ` ⊗ failed · 5.0s` (red `⊗`, the word and time
 /// dim) or ` ⊗ stopped · 2.0s` (all dim). Tokens and cost are the status
 /// line's.
 pub fn turn_end_spans(end: TurnEnd, time: Option<&str>, palette: &Palette) -> Vec<Span<'static>> {
-    let (word, style) = match end {
-        TurnEnd::Failed => ("failed", palette.err()),
-        TurnEnd::Stopped => ("stopped", palette.dim()),
+    // Red only on the mark; the word reads dim, failed and stopped alike.
+    let mark_style = match end {
+        TurnEnd::Failed => palette.err(),
+        TurnEnd::Stopped => palette.dim(),
+    };
+    let word = match end {
+        TurnEnd::Failed => "failed",
+        TurnEnd::Stopped => "stopped",
     };
     let mut spans = vec![
         blank(1),
-        span(status::FAILED_STR, style),
+        span(status::FAILED_STR, mark_style),
         blank(1),
-        span(word, style),
+        span(word, palette.dim()),
     ];
     if let Some(time) = time.filter(|t| !t.is_empty()) {
         spans.push(span(format!(" · {time}"), palette.dim()));

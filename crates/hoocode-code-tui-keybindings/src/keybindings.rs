@@ -54,6 +54,9 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             if windows { &[] } else { &["ctrl+z"] },
             "Suspend to background",
         ),
+        // ── Quit — leaving with jobs running
+        entry("app.quit.stop-jobs", &["k"], "Stop jobs and quit"),
+        entry("app.quit.leave-running", &["l"], "Leave jobs running"),
         // ── Compose — the message in your hands
         entry("app.editor.external", &["ctrl+x e"], "Open external editor"),
         entry(
@@ -151,10 +154,10 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         ),
         entry(
             "app.scroll.top",
-            &["g"],
+            &["home"],
             "Jump to the start of the transcript",
         ),
-        entry("app.scroll.bottom", &["G"], "Jump back to live output"),
+        entry("app.scroll.bottom", &["end"], "Jump back to live output"),
         entry("app.scroll.search", &["ctrl+x /"], "Search the transcript"),
         entry(
             "app.scroll.previousMessage",

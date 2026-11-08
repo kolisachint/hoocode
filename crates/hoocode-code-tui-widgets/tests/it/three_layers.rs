@@ -500,3 +500,127 @@ fn a_settled_agent_hides_its_calls_until_the_toggle_opens_them() {
     assert!(whole.contains("   ⊗ Grep"), "{whole}");
     assert!(!whole.contains("more line"), "{whole}");
 }
+
+/// Child rows of an open Agent call: one header row each, the failed one
+/// with its reason dim after two spaces. The mark sits at column 3, under
+/// the parent's tool column, like every nested row.
+fn child_rows(rows: &[String]) -> Vec<&String> {
+    rows.iter()
+        .filter(|r| r.starts_with("   ●") || r.starts_with("   ⊗"))
+        .collect()
+}
+
+#[test]
+fn agent_child_rows_are_single_header_rows() {
+    let _g = lock();
+    let agent = settled_agent("it-agent-child-rows");
+    agent.borrow_mut().set_expanded(true);
+    let mut chain = chain_with(vec![agent]);
+    let rows = render(&mut chain, 60);
+    let children = child_rows(&rows);
+    assert_eq!(children.len(), 2, "{rows:?}");
+    assert!(children.iter().all(|r| r.chars().count() <= 60), "{rows:?}");
+    assert!(children[0].starts_with("   ● Read"), "{rows:?}");
+    assert!(
+        children[1].starts_with("   ⊗ Grep x  bad regex"),
+        "{rows:?}"
+    );
+}
+
+/// An Agent block whose run (`run`) settled with a Shell child that failed
+/// with no output: its snippet is the exit trailer.
+fn settled_agent_shell_exit(run: &str) -> ToolBlock {
+    use hoocode_code_subagents::live::apply;
+    apply(run, &json!({"type": "task_started"}));
+    apply(
+        run,
+        &json!({"type": "tool_execution_start", "toolCallId": "s1", "toolName": "Shell", "args": {"command": "cargo test"}}),
+    );
+    apply(
+        run,
+        &json!({"type": "tool_execution_end", "toolCallId": "s1", "isError": true,
+                "result": {"content": [{"type": "text", "text": "Command exited with code 1"}]}}),
+    );
+    apply(run, &json!({"type": "task_done"}));
+    agent_block(run)
+}
+
+/// An open Agent row settled on the run calls, via an agent_block helper.
+fn agent_block(run: &str) -> ToolBlock {
+    let mut component = ToolExecutionComponent::new(
+        "Agent",
+        &format!("agent-{run}"),
+        json!({"subagent_type": "explore"}),
+        ToolExecutionOptions::default(),
+        None,
+        &cwd(),
+    );
+    component.update_result(
+        ToolResult {
+            content: vec![Content::text("Found it.")],
+            details: json!({ "poolTaskId": run }),
+            is_error: false,
+        },
+        false,
+    );
+    Rc::new(RefCell::new(component))
+}
+
+/// A failed Shell child with no output reads as the red exit fact, never
+/// as the trailer text for a reason.
+#[test]
+fn agent_child_shell_trailer_reads_as_the_exit_fact() {
+    let _g = lock();
+    let agent = settled_agent_shell_exit("it-agent-child-exit");
+    agent.borrow_mut().set_expanded(true);
+    let mut chain = chain_with(vec![agent]);
+    let rows = render(&mut chain, 100);
+    let children = child_rows(&rows);
+    assert_eq!(children.len(), 1, "{rows:?}");
+    assert!(
+        children[0].starts_with("   ⊗ Shell cargo test  exit 1"),
+        "{rows:?}"
+    );
+    assert!(!rows.join("\n").contains("Command exited"), "{rows:?}");
+}
+
+/// An Agent block whose run (`run`) settled with a Shell child whose long
+/// command and long reason cannot fit a narrow row.
+fn settled_agent_long_child(run: &str) -> ToolBlock {
+    use hoocode_code_subagents::live::apply;
+    let command = format!(
+        "cargo test {} -- --nocapture",
+        (1..=8)
+            .map(|i| format!("--flag-{i:02}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    apply(run, &json!({"type": "task_started"}));
+    apply(
+        run,
+        &json!({"type": "tool_execution_start", "toolCallId": "s1", "toolName": "Shell", "args": {"command": command}}),
+    );
+    apply(
+        run,
+        &json!({"type": "tool_execution_end", "toolCallId": "s1", "isError": true,
+                "result": {"content": [{"type": "text", "text": "error: could not compile `hoocode-parser` (lib target)"}]}}),
+    );
+    apply(run, &json!({"type": "task_done"}));
+    agent_block(run)
+}
+
+/// A long child row cuts to one row instead of wrapping: the target
+/// shortens first, then the reason cuts or drops.
+#[test]
+fn agent_child_long_row_cuts_instead_of_wrapping() {
+    let _g = lock();
+    let agent = settled_agent_long_child("it-agent-child-long");
+    agent.borrow_mut().set_expanded(true);
+    let mut chain = chain_with(vec![agent]);
+    let rows = render(&mut chain, 40);
+    let children = child_rows(&rows);
+    assert_eq!(children.len(), 1, "one row, never wrapped: {rows:?}");
+    assert!(children[0].starts_with("   ⊗ Shell"), "{rows:?}");
+    assert!(children[0].chars().count() <= 40, "the row fits: {rows:?}");
+    assert!(children[0].contains('…'), "something cut: {rows:?}");
+}

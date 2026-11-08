@@ -12,7 +12,7 @@ use hoocode_ai_types::Content;
 use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
 
 use hoocode_tui_ratatui::core::text::Span;
-use hoocode_tui_ratatui::Palette;
+use hoocode_tui_ratatui::{Palette, Style};
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::tool_execution::ToolExecutionComponent;
@@ -70,58 +70,94 @@ fn whole_body(mut body: Vec<String>, footer: Vec<String>) -> Vec<String> {
     body
 }
 
-/// A subagent's own call under its row, indented 3: `   ⊗ Grep \\"  reason`.
-/// A failed call reads in red with its reason after two spaces.
+/// A Shell exit trailer's code: only the exact line `Command exited with
+/// code 1` reads as the row's red `exit 1` fact. Anything after the code
+/// (a signal note, more output) keeps the text as the dim reason instead.
+fn shell_trailer_exit(text: &str) -> Option<i32> {
+    text.trim()
+        .strip_prefix("Command exited with code ")?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// A subagent's own call under its row, indented 3: `   ● Read path`,
+/// `   ⊗ Shell cmd  exit 1 · reason`. One row per call through the header
+/// cut order: the target shortens, then a failed call's reason cuts at a
+/// word (12+ columns) or drops; `exit N` never drops. Red only on the mark
+/// and the exit; the reason is dim.
 fn sub_step_rows(
     step: &hoocode_code_subagents::live::SettledStep,
     width: usize,
     palette: &Palette,
 ) -> Vec<String> {
-    let t = hoocode_code_tui_theme::theme();
+    if width == 0 {
+        return Vec::new();
+    }
     let plain = |text: &str| hoocode_tui_util::strip_vt_control_characters(text);
-    let subject = plain(&step.subject);
-    match step
+    let target = plain(&step.subject);
+    let reason = step
         .failure
         .as_deref()
         .map(plain)
-        .filter(|f| !f.trim().is_empty())
-    {
-        Some(reason) => {
-            let label = format!(
-                "{} {}",
-                t.fg("error", &t.bold(&step.tool)),
-                t.fg("error", &subject)
-            );
-            let facts = vec![Span::styled(reason.trim().to_string(), palette.err())];
-            tool_row::tool_rows(
-                tool_row::SUB_INDENT,
-                tool_row::Mark::Failed,
-                &label,
-                facts,
-                width,
-                palette,
-            )
-        }
-        None => {
-            let mark = if step.failure.is_some() {
-                tool_row::Mark::Failed
-            } else {
-                tool_row::Mark::Done
-            };
-            let label = format!(
-                "{} {}",
-                t.fg("text", &t.bold(&step.tool)),
-                t.fg("text", &subject)
-            );
-            tool_row::tool_rows(
-                tool_row::SUB_INDENT,
-                mark,
-                &label,
-                Vec::new(),
-                width,
-                palette,
-            )
-        }
+        .filter(|f| !f.trim().is_empty());
+    // A failed Shell with no output names only its exit trailer; the row
+    // grammar reads that as the red exit fact, with no dim reason after it.
+    let (primary, reason) = match reason {
+        Some(text) if step.tool == "Shell" => match shell_trailer_exit(&text) {
+            Some(code) => (vec![format!("exit {code}")], None),
+            None => (Vec::new(), Some(text)),
+        },
+        reason => (Vec::new(), reason),
+    };
+    let primaries: Vec<&str> = primary.iter().map(String::as_str).collect();
+    let mut spans = vec![Span::raw(" ".repeat(tool_row::SUB_INDENT))];
+    spans.extend(tool_row::header_spans(
+        if step.failure.is_some() {
+            tool_row::Mark::Failed
+        } else {
+            tool_row::Mark::Done
+        },
+        &step.tool,
+        target.trim(),
+        &primaries,
+        &[],
+        reason.as_deref(),
+        width.saturating_sub(tool_row::SUB_INDENT),
+        palette,
+    ));
+    vec![row(spans, width)]
+}
+
+/// Whether rows paint in monochrome (no colour): the focused fill is
+/// reverse video instead of paneSel.
+fn mono() -> bool {
+    !hoocode_code_tui_theme::chalk::enabled()
+}
+
+/// The header's gutter cell: `›` in accent on the focused row (bold with
+/// no colour), else the blank that keeps column 0.
+fn gutter_span(focused: bool, palette: &Palette) -> Span<'static> {
+    if !focused {
+        return Span::raw(" ".to_string());
+    }
+    let mut style = palette.acc();
+    if mono() {
+        style = hoocode_tui_ratatui::bold(style);
+    }
+    Span::styled("›".to_string(), style)
+}
+
+/// The focused row's band across every span of the header: paneSel with
+/// colour, reverse video without.
+fn paint_focused(spans: &mut [Span<'static>], palette: &Palette) {
+    let fill = if mono() {
+        hoocode_tui_ratatui::reversed(Style::default())
+    } else {
+        palette.bg("paneSel")
+    };
+    for span in spans.iter_mut() {
+        span.style = span.style.patch(fill);
     }
 }
 
@@ -142,6 +178,10 @@ pub struct ToolChainComponent {
     lead_ins: Vec<LeadIn>,
     /// The header rows of the last render, for click-to-toggle.
     header_map: Vec<HeaderHit>,
+    /// The focused tool call's id, if the transcript has one in this chain:
+    /// its header draws the `›` gutter and the paneSel fill. Synced from
+    /// the transcript focus after every key (see `mode/transcript/focus.rs`).
+    focused_call: Option<String>,
     state: ChainState,
     /// New whenever one of the fields above changes (the render stamp).
     rev: u64,
@@ -159,6 +199,7 @@ impl ToolChainComponent {
             blocks: Vec::new(),
             lead_ins: Vec::new(),
             header_map: Vec::new(),
+            focused_call: None,
             state: ChainState::Running,
             rev: fresh_stamp(),
         }
@@ -240,6 +281,21 @@ impl ToolChainComponent {
         }
     }
 
+    /// Which tool call draws focused in this chain (`None` clears it). Only
+    /// bumps the render stamp on a change.
+    pub fn set_focused_call(&mut self, call_id: Option<&str>) {
+        let next = call_id.map(str::to_string);
+        if self.focused_call != next {
+            self.focused_call = next;
+            self.rev = fresh_stamp();
+        }
+    }
+
+    /// The tool call drawing focused in this chain, if any.
+    pub fn focused_call(&self) -> Option<&str> {
+        self.focused_call.as_deref()
+    }
+
     /// A block's header start row in the last render, for pinning a click or
     /// a focus move on the header's row.
     pub fn header_start_row(&self, index: usize) -> Option<usize> {
@@ -283,7 +339,7 @@ impl ToolChainComponent {
             if i == 0 || !spaced {
                 ensure_blank(&mut out);
             }
-            let (mark, tool, target, primary, secondary, reason, open) = {
+            let (mark, tool, target, primary, secondary, reason, open, call_id) = {
                 let b = block.borrow();
                 let (target, primary, secondary, reason) = b.header_parts();
                 (
@@ -294,8 +350,14 @@ impl ToolChainComponent {
                     secondary,
                     reason,
                     b.is_expanded(),
+                    b.tool_call_id().to_string(),
                 )
             };
+            // The focused header carries the row grammar's selection: `›`
+            // in accent at column 0 and the paneSel fill across the row
+            // (reverse video with no colour). Expanded and focused compose:
+            // the body still opens under a focused header.
+            let focused = self.focused_call.as_deref() == Some(call_id.as_str());
             // Single view: the header is one row, never wrapped. Its facts
             // cut through `header_spans` (secondary drops first, then the
             // target, then the reason); the gutter keeps column 0.
@@ -303,7 +365,7 @@ impl ToolChainComponent {
             {
                 let primaries: Vec<&str> = primary.iter().map(String::as_str).collect();
                 let secondaries: Vec<&str> = secondary.iter().map(String::as_str).collect();
-                let mut spans = vec![Span::raw(" ".to_string())];
+                let mut spans = vec![gutter_span(focused, palette)];
                 spans.extend(tool_row::header_spans(
                     mark,
                     &tool,
@@ -314,6 +376,9 @@ impl ToolChainComponent {
                     w.saturating_sub(1),
                     palette,
                 ));
+                if focused {
+                    paint_focused(&mut spans, palette);
+                }
                 out.push(row(spans, w));
             }
             header_map.push(HeaderHit {
@@ -396,5 +461,30 @@ impl Component for ToolChainComponent {
         for lead in &self.lead_ins {
             lead.component.borrow_mut().invalidate();
         }
+    }
+}
+
+#[cfg(test)]
+mod shell_trailer_tests {
+    use super::*;
+
+    #[test]
+    fn only_the_exact_trailer_converts_to_an_exit_fact() {
+        assert_eq!(shell_trailer_exit("Command exited with code 1"), Some(1));
+        assert_eq!(
+            shell_trailer_exit("  Command exited with code 127  "),
+            Some(127)
+        );
+        // A suffixed trailer is a reason, not an exit fact.
+        assert_eq!(
+            shell_trailer_exit("Command exited with code 1 (signal: killed)"),
+            None
+        );
+        assert_eq!(
+            shell_trailer_exit("Command exited with code 1\nmore output"),
+            None
+        );
+        assert_eq!(shell_trailer_exit("exit 1"), None);
+        assert_eq!(shell_trailer_exit("Command exited with code"), None);
     }
 }

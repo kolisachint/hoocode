@@ -217,6 +217,10 @@ const DELIBERATELY_UNSCOPED: &[&str] = &[
     "tui.input.copy",
     "app.exit",
     "app.clear",
+    // The quit card owns its keys while open: `k`/`l` also scroll lists
+    // and trees elsewhere, on purpose and never at the same time.
+    "app.quit.stop-jobs",
+    "app.quit.leave-running",
 ];
 
 fn manager() -> AppKeybindingsManager {
@@ -287,10 +291,39 @@ fn has_alt(key: &str) -> bool {
     key.split('+').any(|p| p == "alt")
 }
 
+/// Action pairs sharing one global key on purpose (2026-11-08): the scroll
+/// view's interceptor sees input before the prompt editor, so Home/End
+/// jump the transcript (top/bottom) and never reach the editor's line
+/// start/end there. Ctrl+A and Ctrl+E still move to the line's start and
+/// end. The carve-out names the pairs, not the key prefix, so a third
+/// action landing on `home` or `end` still fails this test.
+const DELIBERATE_GLOBAL_OVERLAPS: &[(&str, &str, &str)] = &[
+    ("home", "tui.editor.cursorLineStart", "app.scroll.top"),
+    ("end", "tui.editor.cursorLineEnd", "app.scroll.bottom"),
+];
+
+/// Whether a `key: a + b` collision is one of the deliberate pairs above.
+fn is_deliberate_global_overlap(collision: &str) -> bool {
+    let Some((key, owners)) = collision.split_once(": ") else {
+        return false;
+    };
+    let mut owners: Vec<&str> = owners.split(" + ").collect();
+    owners.sort_unstable();
+    DELIBERATE_GLOBAL_OVERLAPS.iter().any(|(k, a, b)| {
+        let mut want = [*a, *b];
+        want.sort_unstable();
+        *k == key && owners == want
+    })
+}
+
 #[test]
 fn has_no_two_bindings_on_the_same_key_in_any_scope() {
     for (name, ids) in SCOPES {
-        assert_eq!(collisions_within(ids), Vec::<String>::new(), "{name}");
+        let mut found = collisions_within(ids);
+        if *name == "global" {
+            found.retain(|c| !is_deliberate_global_overlap(c));
+        }
+        assert_eq!(found, Vec::<String>::new(), "{name}");
     }
 }
 
@@ -617,6 +650,7 @@ fn keeps_the_dials_off_each_others_keys() {
 fn families() -> Vec<(&'static str, Regex)> {
     [
         ("Flow", r"^app\.(interrupt|clear|exit|suspend)$"),
+        ("Quit", r"^app\.quit\."),
         ("Compose", r"^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)"),
         ("Recall", r"^app\.history\."),
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),

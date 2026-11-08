@@ -1295,17 +1295,114 @@ fn create_background_placeholder_outcome(
     }
 }
 
-/// `createDefaultBackgroundResultMessage`.
-fn create_default_background_result_message(finalized: &FinalizedOutcome) -> AgentMessage {
-    let verb = if finalized.is_error {
-        "failed"
-    } else {
-        "finished"
+/// A background Agent result opens its body with the run's handle:
+/// `explore#4 ("what it was for") finished ✓ — …`. The handle's resume
+/// label, the description travelling with it, and the body's own verdict
+/// (its mark and its `done`/`failed`/`cancelled` word) for the result
+/// header; `None` when the body carries no handle — another background
+/// tool, or a shape this loop did not write — where the header keeps its
+/// current tool-and-call-id form. The call id is never altered: the
+/// transcript looks runs up by it.
+fn background_agent_handle(
+    result: &AgentToolResult,
+) -> Option<(String, String, &'static str, &'static str)> {
+    let first = result.content.iter().find_map(|block| match block {
+        Content::Text(text) => {
+            let line = text.text.lines().next()?.trim();
+            (!line.is_empty()).then(|| line.to_string())
+        }
+        _ => None,
+    })?;
+    let (label, rest) = first.split_once(' ')?;
+    if !label.contains('#') || label.contains(['"', '(', ')']) {
+        return None;
+    }
+    let (description, rest) = match rest.strip_prefix("(\"") {
+        Some(after) => {
+            let (description, after) = after.split_once("\")")?;
+            (description.to_string(), after.trim_start().to_string())
+        }
+        None => (String::new(), rest.to_string()),
     };
-    let header = format!(
-        "Background tool \"{}\" (id {}) {verb}:",
-        finalized.tool_call.name, finalized.tool_call.id
-    );
+    let (mark, word) = [
+        ("finished ✓", ("●", "done")),
+        ("failed ✗", ("⊗", "failed")),
+        ("cancelled ⊘", ("⊗", "cancelled")),
+    ]
+    .iter()
+    .find_map(|(verdict, mark_word)| rest.starts_with(verdict).then_some(*mark_word))?;
+    Some((label.to_string(), description, mark, word))
+}
+
+/// A description as a target: surrounding quotes go, the words stay.
+fn strip_surrounding_quotes(description: &str) -> String {
+    let trimmed = description.trim();
+    for quote in ['"', '\''] {
+        if trimmed.len() >= 2 && trimmed.starts_with(quote) && trimmed.ends_with(quote) {
+            let inner = &trimmed[quote.len_utf8()..trimmed.len() - quote.len_utf8()];
+            return inner.to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+/// The model's short name: no provider, no `claude-` prefix. Mirrors the
+/// transcript widget's `short_model`.
+fn short_model(id: &str) -> String {
+    let name = id.trim().rsplit('/').next().unwrap_or(id.trim());
+    name.strip_prefix("claude-").unwrap_or(name).to_string()
+}
+
+/// The short model name from the body's `[model: …]` marker; `None` when
+/// the body carries no marker. String ops only: no new deps for one marker.
+fn background_model(result: &AgentToolResult) -> Option<String> {
+    result.content.iter().find_map(|block| match block {
+        Content::Text(text) => {
+            let (_, after) = text.text.split_once("[model:")?;
+            let marker = after.split([',', ']']).next()?.trim();
+            (!marker.is_empty()).then(|| short_model(marker))
+        }
+        _ => None,
+    })
+}
+
+/// `createDefaultBackgroundResultMessage`: a two-line glance header, then
+/// the body unchanged. Line 1 is the run
+/// (`› ● explore#4  audit the db layer · done · haiku-5-5`); line 2 is the
+/// machine line: the raw call id verbatim — the transcript looks the run's
+/// elapsed time up by that exact string — the resume label, and where the
+/// full result sits. A result whose body carries no run handle keeps the
+/// tool-and-call-id line: another background tool, or a shape this loop did
+/// not write.
+fn create_default_background_result_message(finalized: &FinalizedOutcome) -> AgentMessage {
+    let header = match background_agent_handle(&finalized.result) {
+        Some((label, description, mark, word)) => {
+            let description = strip_surrounding_quotes(&description);
+            let target = if description.is_empty() {
+                String::new()
+            } else {
+                format!("  {description}")
+            };
+            let model = background_model(&finalized.result)
+                .map(|model| format!(" · {model}"))
+                .unwrap_or_default();
+            let id = &finalized.tool_call.id;
+            format!(
+                "› {mark} {label}{target} · {word}{model}\n  {id} · resume_task_id: {label} · full result below\n"
+            )
+        }
+        None => {
+            let verb = if finalized.is_error {
+                "failed"
+            } else {
+                "finished"
+            };
+            format!(
+                "Background tool \"{}\" (id {}) {verb}:",
+                finalized.tool_call.name, finalized.tool_call.id
+            )
+        }
+    };
     let mut content = vec![Content::text(header)];
     content.extend(finalized.result.content.iter().cloned());
     AgentMessage::User(UserMessage {

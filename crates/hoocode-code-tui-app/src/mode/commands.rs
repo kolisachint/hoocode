@@ -9,7 +9,7 @@ use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use hoocode_code_tui_theme::theme;
 use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
-use hoocode_tui_components::{Markdown, Spacer, Text};
+use hoocode_tui_components::{Spacer, Text};
 use hoocode_tui_render::{Tui, TuiEvent};
 use hoocode_tui_util::visible_width;
 
@@ -236,8 +236,8 @@ impl Mode {
         self.show_bordered_markdown("What's New", &markdown);
     }
 
-    /// `showStartupNoticesIfNeeded`: the entries new since the last run,
-    /// in full or as one line when the changelog is collapsed.
+    /// `showStartupNoticesIfNeeded`: the entries new since the last run, as
+    /// one line. The full markdown is only behind `/changelog`.
     pub(super) fn show_startup_notices(&mut self, changelog: Option<String>) {
         let Some(markdown) = changelog.filter(|m| !m.trim().is_empty()) else {
             return;
@@ -248,34 +248,17 @@ impl Mode {
         }
         self.add_to_chat(as_component(&handle(DynamicBorder::new(None))));
         let t = theme();
-        let collapse = self.session.settings().collapse_changelog();
-        if collapse {
-            let latest = CHANGELOG_VERSION
-                .captures(&markdown)
-                .map_or_else(|| VERSION.to_string(), |c| c[1].to_string());
-            self.add_to_chat(as_component(&handle(Text::new(
-                format!(
-                    "Updated to v{latest}. Use {} to view full changelog.",
-                    t.bold("/changelog")
-                ),
-                1,
-                0,
-            ))));
-        } else {
-            self.add_to_chat(as_component(&handle(Text::new(
-                t.bold(&t.fg("accent", "What's New")),
-                1,
-                0,
-            ))));
-            self.add_to_chat(as_component(&handle(Spacer::new(1))));
-            self.add_to_chat(as_component(&handle(Markdown::new(
-                markdown.trim(),
-                1,
-                0,
-                (self.markdown_theme())(),
-                None,
-            ))));
-        }
+        let latest = CHANGELOG_VERSION
+            .captures(&markdown)
+            .map_or_else(|| VERSION.to_string(), |c| c[1].to_string());
+        self.add_to_chat(as_component(&handle(Text::new(
+            format!(
+                "Updated to v{latest}. Use {} to view full changelog.",
+                t.bold("/changelog")
+            ),
+            1,
+            0,
+        ))));
         self.add_to_chat(as_component(&handle(DynamicBorder::new(None))));
     }
 
@@ -320,8 +303,9 @@ impl Mode {
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
         self.add_to_chat(as_component(&handle(Text::new(
             format!(
-                "{}\n{}",
-                t.fg("accent", "✓ Debug log written"),
+                "{} {} \n{}",
+                t.fg("success", "●"),
+                t.bold("Debug log written"),
                 t.fg("muted", &path.to_string_lossy())
             ),
             1,

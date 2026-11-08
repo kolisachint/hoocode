@@ -124,7 +124,7 @@ impl State {
             let q = &self.questions[i];
             pane.top.push(Line::from(vec![
                 Span::raw("  "),
-                Span::styled("✓ ", pal.ok()),
+                Span::styled("● ", pal.ok()),
                 Span::styled(
                     q.short.as_deref().unwrap_or(&q.question).to_string(),
                     st.dim_style(),

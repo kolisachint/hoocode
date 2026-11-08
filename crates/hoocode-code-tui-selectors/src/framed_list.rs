@@ -15,8 +15,10 @@ use std::rc::Rc;
 use hoocode_code_tui_theme::get_select_list_theme;
 use hoocode_code_tui_widgets::console::{hints, Console};
 use hoocode_tui_components::{SelectItem, SelectList, SelectListLayoutOptions};
-use hoocode_tui_ratatui::{bold, Line, Palette, Span};
+use hoocode_tui_glyphs::status;
+use hoocode_tui_ratatui::{bold, truncate_line, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
+use hoocode_tui_util::{truncate_at_word, visible_width};
 
 /// The pickers' primary column: at least 12 cells, at most 32. Still the
 /// [`SelectList`] column layout for the submenus that render the list
@@ -32,28 +34,155 @@ pub(crate) fn layout(min: usize, max: usize) -> SelectListLayoutOptions {
 /// What a pane shows beside the list for the selected item.
 pub type DetailFn = fn(&SelectItem) -> Vec<Line<'static>>;
 
+/// One depth-2 picker row on the U21/U22 row grammar (`docs/design/tui.md`
+/// "Row format"): `mark + bold name + ink target + dim facts joined with ·`.
+///
+/// The mark carries the state so a row never reads as colour alone: `●`
+/// (ok) for the row holding the state, `○` (dim) for the rest. The name
+/// never cuts; secondary facts drop whole, right-to-left; the target
+/// shortens at a word (a first word longer than the budget is cut hard,
+/// so a single long token still fits); primary facts never drop. A final
+/// `truncate_line` guard keeps the row within `width` no matter what. The
+/// cut order mirrors `tool_row::header_spans`, measured with visible
+/// widths. It lives here rather than reusing that helper because `Mark`
+/// has no `○` shape and picker facts keep their own colours (the green
+/// `configured`, the ink `on`, the warn `expired`).
+pub(crate) fn picker_row(
+    active: bool,
+    name: &str,
+    target: &str,
+    primary: Vec<(String, Style)>,
+    secondary: Vec<(String, Style)>,
+    width: usize,
+    pal: &Palette,
+) -> Line<'static> {
+    let (mark, mark_style) = if active {
+        (status::DONE_STR, pal.ok())
+    } else {
+        (status::TODO_STR, pal.dim())
+    };
+    let render_text = |target: &str, secs: &[(String, Style)]| -> String {
+        let mut out = format!("{mark} {name}");
+        if !target.is_empty() {
+            out.push(' ');
+            out.push_str(target);
+        }
+        let facts = fact_texts(&primary, secs);
+        if !facts.is_empty() {
+            out.push_str("  ");
+            out.push_str(&facts.join(" · "));
+        }
+        out
+    };
+    // Step 1: secondary facts drop whole, right to left.
+    let mut kept = secondary;
+    while visible_width(&render_text(target, &kept)) > width {
+        if kept.pop().is_none() {
+            break;
+        }
+    }
+    // Step 2: the target shortens at a word against the kept facts.
+    let mut short = target.to_string();
+    if visible_width(&render_text(&short, &kept)) > width {
+        let facts = fact_texts(&primary, &kept);
+        let facts_len = if facts.is_empty() {
+            0
+        } else {
+            2 + visible_width(&facts.join(" · "))
+        };
+        let head_len = visible_width(&format!("{mark} {name}"))
+            .saturating_add(if short.is_empty() { 0 } else { 1 });
+        short = truncate_at_word(target, width.saturating_sub(head_len + facts_len));
+    }
+    let mut spans = vec![
+        Span::styled(mark.to_string(), mark_style),
+        Span::raw(" ".to_string()),
+        Span::styled(name.to_string(), bold(pal.ink())),
+    ];
+    if !short.is_empty() {
+        spans.push(Span::raw(" ".to_string()));
+        spans.push(Span::styled(short, pal.ink()));
+    }
+    let mut first = true;
+    for (text, style) in primary.iter().chain(kept.iter()) {
+        if text.is_empty() {
+            continue;
+        }
+        if first {
+            spans.push(Span::raw("  ".to_string()));
+            first = false;
+        } else {
+            spans.push(Span::styled(" · ".to_string(), pal.dim()));
+        }
+        spans.push(Span::styled(text.clone(), *style));
+    }
+    truncate_line(&Line::from(spans), width)
+}
+
+/// The non-empty fact texts, primary then secondary, for measuring and
+/// joining (` · `).
+fn fact_texts<'a>(
+    primary: &'a [(String, Style)],
+    secondary: &'a [(String, Style)],
+) -> Vec<&'a str> {
+    primary
+        .iter()
+        .map(|(text, _)| text.as_str())
+        .chain(secondary.iter().map(|(text, _)| text.as_str()))
+        .filter(|text| !text.is_empty())
+        .collect()
+}
+
 /// One picker row (content only; the pane adds the ` › ` marker or gutter
-/// and the selection band): the label with its dim description.
-fn select_row(item: &SelectItem, pal: &Palette) -> Line<'static> {
-    let label = if item.label.is_empty() {
+/// and the selection band): `●`/`○` mark, the bold name, the ink target,
+/// and the dim facts. A thinking description's token parenthetical is its
+/// own fact (`Light reasoning (~2k tokens)` gives target `Light reasoning`
+/// and fact `~2k tokens`); `in use` is a fact, never colour alone. The
+/// selected row carries `●`: the cursor is the working state (the theme
+/// live-previews as it moves).
+fn select_row(item: &SelectItem, selected: bool, width: usize, pal: &Palette) -> Line<'static> {
+    let name = if item.label.is_empty() {
         item.value.clone()
     } else {
         item.label.clone()
     };
-    let mut spans = vec![Span::raw(label)];
-    if let Some(description) = item.description.as_deref() {
-        let single = description
-            .split(['\r', '\n'])
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ");
-        let single = single.trim();
-        if !single.is_empty() {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled(single.to_string(), pal.dim()));
-        }
+    let (target, facts) = split_description(item.description.as_deref());
+    let facts = facts.into_iter().map(|fact| (fact, pal.dim())).collect();
+    picker_row(selected, &name, &target, Vec::new(), facts, width, pal)
+}
+
+/// A description as an ink target plus dim facts: `in use` is a fact; a
+/// trailing `(…)` parenthetical splits off as its own fact; anything else
+/// stays the target.
+fn split_description(description: Option<&str>) -> (String, Vec<String>) {
+    let single = description
+        .map(|text| {
+            text.split(['\r', '\n'])
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
+    let Some(single) = single else {
+        return (String::new(), Vec::new());
+    };
+    if single == "in use" {
+        return (String::new(), vec!["in use".to_string()]);
     }
-    Line::from(spans)
+    if let Some((target, token)) = split_token_fact(&single) {
+        return (target, vec![token]);
+    }
+    (single, Vec::new())
+}
+
+/// `Light reasoning (~2k tokens)` → (`Light reasoning`, `~2k tokens`): a
+/// trailing parenthetical is its own fact. `None` without one.
+fn split_token_fact(text: &str) -> Option<(String, String)> {
+    let inner = text.strip_suffix(')')?;
+    let (target, token) = inner.rsplit_once('(')?;
+    let (target, token) = (target.trim(), token.trim());
+    (!target.is_empty() && !token.is_empty()).then(|| (target.to_string(), token.to_string()))
 }
 
 /// The theme picker's detail: the theme's name and description, then a
@@ -160,13 +289,20 @@ impl Component for FramedSelectList {
         let pal = Palette::current();
         let list = self.list.borrow();
         let mut console = Console::new(self.name.clone(), self.count.clone());
-        console.rows = list
-            .shown_items()
+        if let (Some(detail), Some(item)) = (self.detail, list.get_selected_item()) {
+            console.detail = detail(item);
+        }
+        // The detail is set before the rows: a split narrows the list
+        // column, and rows are built to that width.
+        let row_width = console.row_width(width as usize);
+        let shown = list.shown_items();
+        let selected = (!shown.is_empty()).then(|| list.selected_index().min(shown.len() - 1));
+        console.rows = shown
             .iter()
-            .map(|item| select_row(item, &pal))
+            .enumerate()
+            .map(|(i, item)| select_row(item, Some(i) == selected, row_width, &pal))
             .collect();
-        console.selected =
-            (!console.rows.is_empty()).then(|| list.selected_index().min(console.rows.len() - 1));
+        console.selected = selected;
         console.max_visible = Some(list.max_visible());
         if let Some(footer) = list.footer() {
             console.bottom = vec![Line::from(vec![Span::styled(
@@ -190,5 +326,29 @@ impl Component for FramedSelectList {
 
     fn handle_input(&mut self, data: &str) {
         self.list.borrow_mut().handle_input(data);
+    }
+}
+
+#[cfg(test)]
+mod picker_row_tests {
+    use super::*;
+
+    fn row_text(line: &Line<'static>) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn a_single_token_longer_than_the_budget_is_cut_to_width() {
+        let pal = Palette::current();
+        // A 40-cell token with no spaces: the old word-prefix fallback
+        // returned the whole token plus `…`, overrunning the row.
+        let target = "a".repeat(40);
+        let line = picker_row(false, "Name", &target, Vec::new(), Vec::new(), 20, &pal);
+        let text = row_text(&line);
+        assert!(visible_width(&text) <= 20, "{text}");
+        assert!(text.contains('…'), "{text}");
     }
 }

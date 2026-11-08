@@ -12,7 +12,7 @@ Status (2026-11-06): built. The look is the declutter (built 2026-11-04, PR #174
 | Everything is a block | Every item in the transcript and every dialog is a block with one grammar (below). |
 | Blocks are separated by one blank row | One blank row between blocks. None inside a block. A tool row with a body is followed by one blank row. Consecutive body-less tool rows stay tight. |
 | Separation by colour, not borders | Panes and the prompt use background steps and text weight. The only borders are in monochrome (see Accessibility). |
-| Glyph set from code | `crates/hoocode-tui-glyphs/src/lib.rs` (`status`): `●` done or call, `◉` working, `○` todo or queued, `⊗` failed, stopped or denied, `›` marker. Nothing else. No spinner: running is still and only the elapsed time moves. `◐` is not used (missing from JetBrainsMono Nerd Font Mono). |
+| Glyph set from code | `crates/hoocode-tui-glyphs/src/lib.rs` (`status`): `●` done or call, `◉` working, `○` todo or queued, `⊗` failed, stopped or denied, `›` marker. Nothing else. No spinner: running is still and only the elapsed time moves. The one spinner is the compaction loader. `◐` is not used (missing from JetBrainsMono Nerd Font Mono). |
 | Shape carries state | Each state has its own shape, so state reads under `NO_COLOR`. Colour is added on top. Never colour alone. |
 | The blocking thing is the only yellow | A permission or question title is yellow bold, the safe default is selected, and nothing else on screen is yellow. |
 | Block grammar | Mark, one space, bold name, target, two spaces, dim facts. Body at column 4, dim. Fold line `    … N more lines`. |
@@ -68,7 +68,7 @@ Full-screen is the default (`fullscreen` setting, default on). `HOOCODE_FULLSCRE
 
 Narrow terminal: the right side drops, in order, cost, session name, the word `context` (keep `42%`), model effort. The left side keeps its text and is cut last. The view name is always first on the right.
 
-Failed and stopped turns also end the transcript with a line: ` ⊗ failed · 5.0s` (`⊗` and `failed` red) or dim ` ⊗ stopped · 2.0s`. A successful turn writes nothing to the transcript.
+Failed and stopped turns also end the transcript with a line: ` ⊗ failed · 5.0s` (`⊗` red, `failed` dim) or dim ` ⊗ stopped · 2.0s`. A successful turn writes nothing to the transcript.
 
 ## Panes and dialogs
 
@@ -203,7 +203,7 @@ Leader rules: `ctrl+x` enters pending. The next key runs its action. Esc, a seco
 
 | Context | Keys |
 |---|---|
-| Scroll mode (after PgUp, no text focus) | `j` `k` line; PgUp PgDn page; `[` `]` previous or next message; `g` `G` top or bottom; `/` search; `q` or Esc back to the prompt |
+| Scroll mode (after PgUp, no text focus) | `j` `k` line; PgUp PgDn page; `[` `]` previous or next message; Home End top or bottom; `/` search; `q` or Esc back to the prompt |
 | Session picker | `p` path, `o` sort, `n` named filter, `r` rename, `x` delete (no confirm yet, see UI-10) |
 | Model picker | `s` save, `a` enable all, `x` clear all, `g` provider, `c` category |
 | Tree | `h` `l` fold, `e` edit label, `t` timestamps, `1`–`5` filters, `c` filter cycle |
@@ -516,6 +516,7 @@ Decided 2026-11-07; each answer is a dated row in the Decisions table below. The
 | 2026-11-07 | Failed row reason colour: dim; red only on `⊗` and `exit N`. |
 | 2026-11-07 | Running Shell while collapsed: one dim tail line, gone on settle. |
 | 2026-11-07 | No expand-all in v1: `ctrl+x o` is dropped (`ctrl+x u`, `{` `}`, `Enter`, `G live` cover it). Revisit on user ask. |
+| 2026-11-08 | Transcript top/bottom move off bare `g`/`G` onto Home/End, so no typed letter ever teleports the view (`g`/`G` type as usual now; rebind them in `keybindings.json` for the vim keys). Supersedes `G live` in the 2026-11-07 expand-all row. |
 | 2026-11-07 | A click while live pins the view; the header keeps its row. |
 | 2026-11-07 | Settings Tool output row is removed (caps live in `settings.json` only). `DocSearch` is removed with it: discovery via the prompt listing, `Read`, CLI help and user pages (AG-19 closed as No). |
 | 2026-11-07 | Pane clicks v1: click selects, `Enter` opens (e.g. attach a subagent run). No second-click pick. |
@@ -524,20 +525,21 @@ Decided 2026-11-07; each answer is a dated row in the Decisions table below. The
 | 2026-11-07 | Accepted verification deviations M1–M6 as built: M1 label +2; M2 body indent pinned at 8; M3 tok/turn kept in dense rows; M4 mdHeading yellow out of scope; M5 source +1 cell; M6 stale copy fixed. |
 | 2026-11-07 | Frozen-row theme lag is a known limitation: frozen blocks skip `invalidate`, so they keep the old palette until they scroll out. |
 | 2026-11-07 | Focus fill and click-pin ride the block `expanded` flag (`mode/transcript/focus.rs`). |
+| 2026-11-08 | Subagent-response nudge look (UI-1 closed): the loop header names the run's resume label (`Background agent explore#4 (id …) finished:`, old tool-and-id headers still parse); notice heads use the glyph set with dim words — green `●` on finish, red `⊗` on failure, all dim on cancel, `(partial)` dim; the attach header takes `›` with lowercase `esc back`; a skill block is its bold name only. |
+| 2026-11-08 | OSC 7501 program-status emission: the mode loop reports working/idle/blocked (+kind permission/question/auth)/done/error and clears on quit to any terminal, alongside the unchanged Herdr CLI path. Root record only (no subagent child ids in v1); off on `TERM=dumb`. |
+| 2026-11-08 | Pulse scope (UI-4 closed): the tree summarizer and the working indicator draw no frames; the compaction loader keeps the pulse as the only spinner, noted in Principles.
+| 2026-11-08 | Docs drift sweep (UI-9 closed): `docs/maps/ui.md` is Snapshot 2026-11-07 with the new attach header; no stale binding claims remain in `docs/user/` or `docs/maps/` (the one `ctrl+g` is a leader-config example). | |
 
 ## Open
 
 | ID | Item | Size | Trigger or gate | Design notes |
 |---|---|---|---|---|
-| UI-1 | Drift: `◆` is still drawn. Skill block `◆ skill: <name>` (`skill_block.rs:51`), attach header `◆ <type>` (`attach_view.rs:42,46`). Spec says `◆` is gone. | S | None | Pick one glyph from the set. A skill block has no state, so bold name only. The attach header takes `›`. Update the test `tests/it/attach_view.rs:18`, goldens `tests/golden/tui/subagent-attach/`, and `docs/maps/ui.md`. |
 | UI-2 | Drift: orphan goldens `tests/golden/tui/color-chrome/` (7 files). The scenario JSON was deleted. The files show HUD, SHIP, FUEL, CR. | S | None | Delete the directory. |
 | UI-3 | Plain-words guard is not in CI | S | None | Same item as EN-8 in README.md. |
-| UI-4 | Drift: the `○●` pulse is still drawn (`tui-components/src/loader.rs`, `DEFAULT_FRAMES`, `PULSE_INTERVAL_MS`). The spec says no spinner. | S | None | Drop it, or keep it for compaction only and say so in Principles. |
 | UI-5 | Gap: a printable leader is accepted. `leader_problem` (`code-tui-keybindings/src/config.rs`) refuses only sequences and Esc, Enter, Tab, Backspace. `"leader": "a"` would eat typing at the prompt. | S | None | Refuse a bare printable key (one character, no modifier), warn, and use `ctrl+x`. Add a test under `tests/it/`. Update the user page's leader rule. |
 | UI-6 | Pin dialogs and notices with component goldens. The text mockups were deleted on 2026-11-06, so dialogs and notices have no text copy until this lands | M | Next | Add a component golden for each dialog (permission, question, quit, models, settings, sessions, theme, tree, fork, log in, scoped models, keys, slash, files, task panel variants) and each notice (info, info with value, usage, warning). Light and mono: one each. Use `UPDATE_GOLDENS=1`. Also fix the comment at `code-tui-widgets/tests/it/tool_rows.rs:3`, which names the deleted mockups. |
 | UI-7 | Auto theme by OSC 11 (decision 2026-11-03). Not built: `auto` reads `COLORFGBG` and the macOS setting only. | M | User: in scope or drop | Send `ESC ] 11 ; ? BEL`, parse the `rgb:` reply with a short timeout, fall back to `COLORFGBG`. Re-check on the existing 60 s poll, or on focus. If dropped, say so in Decisions. |
 | UI-8 | Check `dusk`, `high-contrast` and `paper` against `theme_contrast.rs` (five themes are built; the earlier "dark and light only" decision is replaced) | S | None | Add the three to the contrast test if missing. |
-| UI-9 | Docs drift: `docs/maps/ui.md` header says "Snapshot 2026-10-17" and shows `◆ <type>` for attach. Old key names remain in old pages: Ctrl+G (task panel), Ctrl+N (attach), Ctrl+T (thinking), `alt+x` (session delete). | S | None | Update the header. Grep `docs/user/` and `docs/maps/` for `ctrl+[gnt]\b` and `alt+`. Match `docs/user/keybindings.md` to the app table (`code-tui-keybindings/src/keybindings.rs`). |
 | UI-10 | Session delete (`x` in the session picker, `app.session.delete`) deletes at once, with no confirm. | S | User decision | Add a yes or no step, as the other destructive lists do: `y` yes, `n` no, Esc cancel. |
 | UI-11 | Yank-pop (`ctrl+x y`) and redo (`ctrl+x z`) were in the keymap plan but are not bound. | S | User: bind or drop | Redo needs an undo stack in `tui-components` Editor. If dropped, delete from the plan. |
 | UI-12 | Verify the VS Code terminal does not take Ctrl+X before the default leader is final. | S | Manual check | If it does, keep the default and say so on the user page. |

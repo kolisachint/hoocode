@@ -3,18 +3,25 @@
 //! The text the model receives is unchanged. Only its drawing changes:
 //!
 //! ```text
-//! ◦ explore#4 finished ✓ · 1m27s · 4 still running        outline
-//! ◦ explore#4 finished ✓ · 1m27s · 4 still running        peek
+//! ● explore#4  Audit the db layer · 1m27s · haiku-5-5     outline
+//! ● explore#4  Audit the db layer · 1m27s · haiku-5-5     peek
 //!   │ Mapped the module and its three callers
 //!   model haiku-5-5 · effort high
 //! ```
+//!
+//! The head names the run's target (its description) with the elapsed
+//! time and the short model as facts; the mark carries a finish, so no
+//! word reads there. A failure keeps a dim `failed`, a cancel reads all
+//! dim with `cancelled`, and the still-running count is gone (the task
+//! panel owns live counts). Narrow rows shorten the target at a word;
+//! the facts never drop.
 //!
 //! Text that does not parse is not a notice: `parse_background_notice`
 //! returns `None` and the caller keeps the plain rendering.
 
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -44,19 +51,25 @@ pub struct BackgroundNotice {
     pub verdict: NoticeVerdict,
     /// The task stopped early and can be resumed.
     pub partial: bool,
-    /// The one-line summary of the answer; empty when there is none.
+    /// The one-line summary of the answer; empty when there is none. A
+    /// trailing `N still running.` machine trailer is stripped from it.
     pub summary: String,
-    /// Tasks still running when this one settled.
-    pub still_running: Option<usize>,
     /// The model's short name, e.g. `haiku-5-5`.
     pub model: Option<String>,
     /// The reasoning effort, e.g. `high`.
     pub effort: Option<String>,
 }
 
-/// `Background tool "Agent" (id …) finished:` and the body after it.
+/// The header and the body after it. New headers are the loop's two-line
+/// glance (`› ● explore#4  what it was for · done · haiku-5-5`, then the
+/// machine line with the raw call id verbatim, the resume label and the
+/// pointer); older session files carry the label-first paren-id form
+/// (`Background agent explore#4 (id …) finished:`) or the original
+/// tool-and-call-id form (`Background tool "Agent" (id …) finished:`),
+/// which both still parse. Either way the call id and the body are
+/// captured.
 static HEADER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?s)^Background tool "[^"]+" \(id ([^)]*)\) (?:finished|failed):\s*(.*)$"#)
+    Regex::new(r#"(?s)^(?:Background tool "[^"]+" \(id ([^)]*)\) (?:finished|failed):|Background agent \S+ \(([^)]*)\) (?:finished|failed):|› [●⊗] [^\n]*\n  (\S+) · resume_task_id: \S+ · full result below)\n?(.*)$"#)
         .expect("background header")
 });
 
@@ -67,9 +80,11 @@ static FIRST_LINE_RE: Lazy<Regex> = Lazy::new(|| {
         .expect("background first line")
 });
 
-/// ` 4 still running.` at the end of the summary.
-static STILL_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\s(\d+) still running\.$").expect("still running"));
+/// ` 4 still running.` at the end of the summary: a machine trailer,
+/// dropped like the model marker (the head never renders it — the task
+/// panel owns live counts — so it is stripped, never stored).
+static STILL_TAIL_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\s\d+ still running\.$").expect("still running tail"));
 
 /// `[model: anthropic/claude-haiku-5-5, effort high]`, anywhere in the text.
 static MODEL_RE: Lazy<Regex> =
@@ -88,11 +103,20 @@ fn short_model(id: &str) -> String {
 /// and so is the model marker, which moves to the peek's own line.
 pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
     let header = HEADER_RE.captures(text)?;
-    let call_id = header
-        .get(1)
-        .map(|m| m.as_str().trim().to_string())
-        .filter(|id| !id.is_empty());
-    let body = header.get(2)?.as_str();
+    // The new machine line's id travels verbatim: the elapsed lookup keys
+    // on that exact string, so it is never altered, split or trimmed. The
+    // older headers keep their trimmed key, as today.
+    let call_id = match header.get(3) {
+        Some(id) => Some(id.as_str().to_string()),
+        None => header
+            .get(1)
+            .or_else(|| header.get(2))
+            .map(|m| m.as_str().trim().to_string())
+            .filter(|id| !id.is_empty()),
+    };
+    // Group 4 is the body after the new two-line header; group 3 is the
+    // body after either older one-line header.
+    let body = header.get(4).or_else(|| header.get(3))?.as_str();
 
     let (model, effort) = match MODEL_RE.captures(body) {
         Some(caps) => (
@@ -111,13 +135,7 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
         _ => NoticeVerdict::Cancelled,
     };
     let rest = caps.get(5).map_or("", |m| m.as_str()).trim();
-    let (rest, still_running) = match STILL_RE.captures(rest) {
-        Some(caps) => (
-            STILL_RE.replace(rest, "").into_owned(),
-            caps[1].parse::<usize>().ok(),
-        ),
-        None => (rest.to_string(), None),
-    };
+    let rest = STILL_TAIL_RE.replace(rest, "");
     let summary = rest.trim();
     let summary = summary.strip_suffix('.').unwrap_or(summary).trim();
 
@@ -128,7 +146,6 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
         verdict,
         partial: caps.get(4).is_some(),
         summary: summary.to_string(),
-        still_running,
         model,
         effort,
     })
@@ -172,33 +189,80 @@ impl BackgroundNoticeComponent {
         self.expanded
     }
 
-    fn head_line(&self) -> String {
+    fn head_line(&self, width: usize) -> String {
         let t = theme();
         let notice = &self.notice;
-        let (word, tone) = match notice.verdict {
-            NoticeVerdict::Finished => ("finished ✓", "success"),
-            NoticeVerdict::Failed => ("✗ failed", "error"),
-            NoticeVerdict::Cancelled => ("⊘ cancelled", "dim"),
+        // The mark carries the verdict, as the tool-row done mark does: a
+        // green `●` for a finish (no word), a red `⊗` with a dim `failed`
+        // word, a dim `⊗` for a cancel with the whole row dim. `(partial)`
+        // is dim too: yellow is blocking only. The still-running count is
+        // gone: the task panel owns live counts.
+        let cancelled = notice.verdict == NoticeVerdict::Cancelled;
+        let (mark, mark_tone, word) = match notice.verdict {
+            NoticeVerdict::Finished => ("●", "success", None),
+            NoticeVerdict::Failed => ("⊗", "error", Some("failed")),
+            NoticeVerdict::Cancelled => ("⊗", "dim", Some("cancelled")),
         };
+        // A cancel dims the whole row; otherwise only the mark may be red.
+        let ink = |tone: &'static str| if cancelled { "dim" } else { tone };
+        let fact_tone = ink("muted");
         let mut line = format!(
-            "{} {} {}",
-            t.fg(tone, "◦"),
-            t.fg(label_color(&notice.label, "accent"), &notice.label),
-            t.fg(tone, word),
+            "{} {}",
+            t.fg(mark_tone, mark),
+            t.fg(ink(label_color(&notice.label, "accent")), &notice.label),
         );
-        if notice.partial {
-            line.push_str(&t.fg("warning", " (partial)"));
+        // The facts after the target never drop; the target shortens at a
+        // word when the row runs out of room.
+        let mut facts: Vec<String> = Vec::new();
+        if let Some(word) = word {
+            facts.push(word.to_string());
         }
-        let mut parts: Vec<String> = Vec::new();
         if let Some(elapsed) = &self.elapsed {
-            parts.push(elapsed.clone());
+            facts.push(elapsed.clone());
         }
-        if let Some(n) = notice.still_running.filter(|n| *n > 0) {
-            parts.push(format!("{n} still running"));
+        if let Some(model) = &notice.model {
+            facts.push(model.clone());
         }
-        for part in parts {
+        let separator = visible_width(" · ");
+        let facts_width: usize = facts
+            .iter()
+            .map(|fact| separator + visible_width(fact))
+            .sum();
+        let partial_width = if notice.partial {
+            " (partial)".len()
+        } else {
+            0
+        };
+        let gap_width = if notice.description.is_empty() && !notice.partial {
+            0
+        } else if notice.description.is_empty() {
+            1
+        } else {
+            2
+        };
+        let budget = width.saturating_sub(
+            2 + visible_width(&notice.label) + gap_width + partial_width + facts_width,
+        );
+        let target = truncate_at_word(&notice.description, budget);
+        if target.is_empty() {
+            if notice.partial {
+                line.push(' ');
+            }
+        } else {
+            line.push_str("  ");
+            line.push_str(&t.fg(ink("text"), &target));
+        }
+        if notice.partial {
+            line.push_str(&t.fg("dim", " (partial)"));
+        }
+        for (index, fact) in facts.iter().enumerate() {
             line.push_str(&t.fg("dim", " · "));
-            line.push_str(&t.fg("muted", &part));
+            let tone = if index == 0 && word.is_some() {
+                "dim"
+            } else {
+                fact_tone
+            };
+            line.push_str(&t.fg(tone, fact));
         }
         line
     }
@@ -212,7 +276,7 @@ impl Component for BackgroundNoticeComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
         let t = theme();
-        let mut lines = vec![self.head_line()];
+        let mut lines = vec![self.head_line(width)];
         if self.expanded {
             let summary = strip_markdown(&self.notice.summary);
             if !summary.is_empty() {

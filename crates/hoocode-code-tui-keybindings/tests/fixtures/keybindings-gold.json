@@ -269,6 +269,20 @@
    "Suspend to background"
   ],
   [
+   "app.quit.stop-jobs",
+   [
+    "k"
+   ],
+   "Stop jobs and quit"
+  ],
+  [
+   "app.quit.leave-running",
+   [
+    "l"
+   ],
+   "Leave jobs running"
+  ],
+  [
    "app.editor.external",
    [
     "ctrl+x e"
@@ -409,14 +423,14 @@
   [
    "app.scroll.top",
    [
-    "g"
+    "home"
    ],
    "Jump to the start of the transcript"
   ],
   [
    "app.scroll.bottom",
    [
-    "G"
+    "end"
    ],
    "Jump back to live output"
   ],

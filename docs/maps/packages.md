@@ -125,7 +125,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `agent-compaction` | Session compaction for hoocode agents | 3 | 1447 / 1319 | keep |
 | `agent-core` | Core agent runtime for hoocode agents | 2 | 2007 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3312 / 1042 | keep |
-| `agent-loop` | Agent loop for hoocode agents | 1 | 3346 / 424 | keep |
+| `agent-loop` | Agent loop for hoocode agents | 1 | 3555 / 424 | keep |
 | `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 1 | 1867 / 1666 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2409 / 0 | keep |
 | `agent-types` | Shared types for hoocode agents | 21 | 985 / 0 | keep |
@@ -169,11 +169,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25271 / 7470 | keep |
-| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 4 | 1981 / 2282 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9216 / 5003 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25985 / 7556 | keep |
+| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 4 | 1984 / 2327 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9408 / 5013 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2931 / 2950 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13237 / 10394 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13569 / 10847 | keep |
 
 ### TUI library (`tui-*`)
 

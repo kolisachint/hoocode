@@ -34,8 +34,10 @@
 
 use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
+use hoocode_code_settings::SettingsManager;
 use hoocode_code_task_store::{
     task_store, RowAction, Task, TaskAgent, TaskKind, TaskStatus, TaskStore,
 };
@@ -44,10 +46,9 @@ use hoocode_tui_glyphs::status;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_ratatui::{truncate_line, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 
 use crate::pane::{fit_hint_line, Pane, PaneStyle};
-use crate::tool_row::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
     // Mission Control circles (spec §2): hollow = not started, fisheye =
@@ -532,16 +533,17 @@ fn flight_status_style(status: TaskStatus) -> Style {
     }
 }
 
-/// The right detail of a flight-plan row: the waypoint's elapsed time,
-/// usage, live activity and run clock, the next firing, a warning note, or
-/// the armed-cancel ask. Plain text plus its style, laid out by
-/// [`flight_row`].
+/// A row's facts plus their style: the waypoint's elapsed time and run
+/// facts, the usage count, the next firing, a warning note, or the
+/// armed-cancel ask. Plain strings, laid out left to right by [`flight_row`];
+/// only the armed-cancel ask still pins right.
 fn flight_detail(
     task: &Task,
     owner: Option<&TaskAgent>,
     confirm: bool,
     now: u64,
-) -> Option<(String, Style)> {
+    scoped_aliases: &[(String, Option<String>)],
+) -> Option<(Vec<String>, Style)> {
     let pal = Palette::current();
     if confirm {
         let word = if task.kind() == TaskKind::Shell {
@@ -549,7 +551,7 @@ fn flight_detail(
         } else {
             "cancel"
         };
-        return Some((format!("press x again to {word}"), pal.warn()));
+        return Some((vec![format!("press x again to {word}")], pal.warn()));
     }
     if let Some(note) = &task.note {
         // A schedule row's failed run still says when the job fires next.
@@ -561,7 +563,7 @@ fn flight_detail(
         } else {
             pal.warn()
         };
-        return Some((format!("{note}{next}"), style));
+        return Some((vec![format!("{note}{next}")], style));
     }
     // A running shell job is a satellite (spec §4 r9/c7). It is spanned in
     // `flight_row`, not painted here: painting over `paint` output would
@@ -575,7 +577,7 @@ fn flight_detail(
                 "failed"
             };
             let next = schedule_next_in(task, now).unwrap_or_default();
-            return Some((format!("{word} · {next}"), pal.dim()));
+            return Some((vec![word.to_string(), next], pal.dim()));
         }
         TaskStatus::Done | TaskStatus::Failed => {
             let total: f64 = task
@@ -585,54 +587,29 @@ fn flight_detail(
                 .unwrap_or(0.0);
             if total > 0.0 {
                 return Some((
-                    format!("{} tokens", format_tokens(total as u64)),
+                    vec![format!("{} tokens", format_tokens(total as u64))],
                     pal.faint(),
                 ));
             }
         }
         TaskStatus::InProgress => {
-            let activity = owner
-                .and_then(|o| o.activity.as_deref())
-                .filter(|a| !a.is_empty())
-                .map(|a| format!("⋯ {a}"))
-                .unwrap_or_default();
-            let run_detail = owner.map(|o| describe_run(o, now)).unwrap_or_default();
-            let run_for = if is_delegated(task) {
-                format_duration_secs(task_elapsed_secs(task, now))
-            } else {
-                String::new()
-            };
-            let mut plain = String::new();
-            if !activity.is_empty() {
-                plain.push_str(&activity);
+            // No live activity: the row reads type, title, then facts
+            // (`explore  Trace the auth flow  12s · muse · 3:12 left`).
+            let mut facts: Vec<String> = Vec::new();
+            if is_delegated(task) {
+                facts.push(format_duration_secs(task_elapsed_secs(task, now)));
             }
-            if !run_for.is_empty() {
-                if !plain.is_empty() {
-                    plain.push_str(" · ");
-                }
-                plain.push_str(&run_for);
-            }
-            if !run_detail.is_empty() {
-                if !plain.is_empty() {
-                    plain.push_str(" · ");
-                }
-                plain.push_str(&run_detail);
-            }
-            if !plain.is_empty() {
-                let style = if activity.is_empty() {
-                    pal.faint()
-                } else {
-                    pal.acc()
-                };
-                return Some((plain, style));
+            facts.extend(describe_run(owner, now, scoped_aliases));
+            if !facts.is_empty() {
+                return Some((facts, pal.faint()));
             }
         }
         TaskStatus::Pending => {
             if let Some(next) = schedule_next_in(task, now) {
-                return Some((next, pal.dim()));
+                return Some((vec![next], pal.dim()));
             }
         }
-        TaskStatus::Cancelled => return Some(("cancelled".to_string(), pal.dim())),
+        TaskStatus::Cancelled => return Some((vec!["cancelled".to_string()], pal.dim())),
     }
     None
 }
@@ -650,6 +627,45 @@ fn schedule_next_in(task: &Task, now: u64) -> Option<String> {
     ))
 }
 
+/// A flight row's facts after two spaces: drop facts last-first (deadline,
+/// then model, then clock) while the row is too wide, then cut the title at
+/// a word boundary. Facts never wrap; the row never exceeds `inner`.
+fn append_flight_facts(
+    row: &mut Line<'static>,
+    title: String,
+    title_style: Style,
+    facts: &[String],
+    fact_style: Style,
+    inner: usize,
+) {
+    let left_width: usize = row.spans.iter().map(|s| s.width()).sum();
+    let mut kept = facts.len();
+    while kept > 0 {
+        let width =
+            left_width + visible_width(&title) + 2 + visible_width(&facts[..kept].join(" · "));
+        if width <= inner {
+            break;
+        }
+        kept -= 1;
+    }
+    let mut budget = inner.saturating_sub(left_width);
+    if kept > 0 {
+        budget = budget.saturating_sub(2 + visible_width(&facts[..kept].join(" · ")));
+    }
+    row.spans
+        .push(Span::styled(truncate_at_word(&title, budget), title_style));
+    if kept > 0 {
+        row.spans.push(Span::raw("  "));
+        row.spans
+            .push(Span::styled(facts[..kept].join(" · "), fact_style));
+    }
+    // A pathological left side (a tag wider than `inner`) is cut hard.
+    let width: usize = row.spans.iter().map(|s| s.width()).sum();
+    if width > inner {
+        *row = truncate_line(row, inner);
+    }
+}
+
 /// The right detail of a row, laid out like every other one: the row keeps
 /// the room the detail needs, then a gap, then the detail spans.
 fn append_detail(row: &mut Line<'static>, detail: Vec<Span<'static>>, inner: usize) {
@@ -664,8 +680,11 @@ fn append_detail(row: &mut Line<'static>, detail: Vec<Span<'static>>, inner: usi
     row.spans.extend(detail);
 }
 /// One flight-plan row (content only; the console adds the `›` marker or
-/// gutter and the selection band): the status circle, the owner glyph and
-/// tag where they disambiguate, the title, and the right detail.
+/// gutter and the selection band): the status circle, the lowercase type tag
+/// where it disambiguates, the title, then two spaces and the facts, for
+/// example `◉ explore  Trace the auth flow  12s · muse · 3:12 left`. Narrow
+/// rows drop facts last-first (deadline, model, clock); the title cuts last.
+/// Only the armed-cancel ask still pins right.
 fn flight_row(
     task: &Task,
     owner: Option<&TaskAgent>,
@@ -673,6 +692,7 @@ fn flight_row(
     confirm: bool,
     inner: usize,
     now: u64,
+    scoped_aliases: &[(String, Option<String>)],
 ) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![
@@ -686,8 +706,8 @@ fn flight_row(
         spans.push(Span::styled(tree_prefix.to_string(), pal.faint()));
     }
     let is_mcp = task.kind() == TaskKind::Mcp;
-    // An agent or MCP row names its source, then two spaces: `explore  Trace
-    // the auth flow`.
+    // An agent or MCP row names its type first, lowercased, then two spaces:
+    // `explore  Trace the auth flow`.
     let tag = if is_mcp {
         Some((
             task.subagent_mode.as_deref().unwrap_or("mcp").to_string(),
@@ -696,7 +716,7 @@ fn flight_row(
     } else {
         task.subagent_mode
             .as_ref()
-            .map(|mode| (mode.to_string(), pal.style(agent_color_for(mode))))
+            .map(|mode| (mode.to_lowercase(), pal.style(agent_color_for(mode))))
     };
     if let Some((tag, style)) = tag {
         spans.push(Span::styled(tag, style));
@@ -707,27 +727,24 @@ fn flight_row(
         TaskStatus::Done | TaskStatus::Cancelled => pal.dim(),
         TaskStatus::Failed | TaskStatus::InProgress | TaskStatus::Pending => Style::default(),
     };
-    spans.push(Span::styled(task.title.clone(), title_style));
-    let mut row = Line::from(spans);
-    // A running shell job shows its clock: `sleep 60  4s`.
-    if !confirm
-        && task.note.is_none()
-        && task.kind() == TaskKind::Shell
-        && task.status == TaskStatus::InProgress
-    {
-        let elapsed = task_elapsed_secs(task, now) as u64;
-        append_detail(
-            &mut row,
-            vec![Span::styled(short_dur(elapsed), pal.dim())],
-            inner,
-        );
+    let title = task.title.clone();
+    // The armed-cancel ask keeps its right-pinned read.
+    if confirm {
+        let mut row = Line::from(spans);
+        row.spans.push(Span::styled(title, title_style));
+        if let Some((facts, fact_style)) = flight_detail(task, owner, confirm, now, scoped_aliases)
+        {
+            let detail = truncate_to_width(&facts.join(" · "), inner, "…", false);
+            append_detail(&mut row, vec![Span::styled(detail, fact_style)], inner);
+        }
         return row;
     }
-    let Some((detail, detail_style)) = flight_detail(task, owner, confirm, now) else {
+    let mut row = Line::from(spans);
+    let Some((facts, fact_style)) = flight_detail(task, owner, false, now, scoped_aliases) else {
+        row.spans.push(Span::styled(title, title_style));
         return row;
     };
-    let detail = truncate_to_width(&detail, inner, "…", false);
-    append_detail(&mut row, vec![Span::styled(detail, detail_style)], inner);
+    append_flight_facts(&mut row, title, title_style, &facts, fact_style, inner);
     row
 }
 
@@ -755,6 +772,7 @@ fn render_flight_plan(
     width: usize,
     now: u64,
     max_rows: usize,
+    scoped_aliases: &[(String, Option<String>)],
 ) -> Vec<String> {
     let st = PaneStyle::current();
     let ids = model.row_ids(view);
@@ -792,6 +810,7 @@ fn render_flight_plan(
                 confirming == Some(row.id),
                 row_inner,
                 now,
+                scoped_aliases,
             )
         })
         .collect();
@@ -1186,6 +1205,7 @@ impl Component for TaskPanelComponent {
             width as usize,
             now,
             row_cap(self.screen_rows),
+            saved_scoped_aliases(),
         )
     }
 
@@ -1208,24 +1228,106 @@ impl Component for TaskPanelComponent {
     }
 }
 
-/// `attempt 2 · anthropic/claude-opus-5 · 3:12 left` — the three facts that
-/// explain a run, and the outcome once it has one.
-fn describe_run(owner: &TaskAgent, now: u64) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(attempt) = owner.attempt.filter(|n| *n > 1) {
-        parts.push(format!("attempt {attempt}"));
+/// The saved `scopedModels` entries the widget matches models against:
+/// `(pattern, alias)`, in saved order.
+static SCOPED_MODEL_ALIASES: OnceLock<Vec<(String, Option<String>)>> = OnceLock::new();
+
+/// The saved entries, read once per process from the global settings and the
+/// project settings (the project list replaces the global one). A settings
+/// change mid-run shows after a restart. Read once at the render boundary
+/// and threaded through as a parameter, so the row builders below stay pure
+/// functions of their inputs (and tests pin hermetic entries instead).
+fn saved_scoped_aliases() -> &'static Vec<(String, Option<String>)> {
+    SCOPED_MODEL_ALIASES.get_or_init(|| {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        SettingsManager::create_default(&cwd)
+            .scoped_models()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|entry| (entry.model, entry.alias))
+            .collect()
+    })
+}
+
+/// The short name for a run's model: the saved `scopedModels` alias when an
+/// entry names this `provider/id`, else the last path segment, so
+/// `opencode-go/muse-spark-1.3-contributor` reads `muse-spark-1.3-contributor`.
+/// The widget cannot see the app's concrete scoped list, so it matches the
+/// saved entries itself: an exact entry first, then the first glob entry with
+/// an alias, so a later entry still fills in the alias the first left unset.
+/// `[...]` classes are not matched (exact entries only). The entries come
+/// from the caller (the component passes [`saved_scoped_aliases`]), so this
+/// stays a pure function of its inputs.
+fn model_alias(model: &str, entries: &[(String, Option<String>)]) -> String {
+    if let Some(alias) = scoped_alias_for(model, entries) {
+        return alias;
     }
-    if let Some(model) = owner.model.as_deref().filter(|m| !m.is_empty()) {
-        parts.push(model.to_string());
+    model.rsplit('/').next().unwrap_or(model).to_string()
+}
+
+/// The first alias among `entries` whose pattern names `model`, if any.
+fn scoped_alias_for(model: &str, entries: &[(String, Option<String>)]) -> Option<String> {
+    entries
+        .iter()
+        .filter(|(pattern, _)| {
+            pattern.eq_ignore_ascii_case(model) || scoped_glob_matches(pattern, model)
+        })
+        .filter_map(|(_, alias)| alias.clone())
+        .find(|alias| !alias.is_empty())
+}
+
+/// A case-insensitive glob match for model references: `*` stays within a `/`
+/// segment, `?` takes one character but not `/`, `**` crosses segments.
+fn scoped_glob_matches(pattern: &str, text: &str) -> bool {
+    let pattern: Vec<char> = pattern.to_lowercase().chars().collect();
+    let text: Vec<char> = text.to_lowercase().chars().collect();
+    glob_inner(&pattern, &text)
+}
+
+fn glob_inner(pattern: &[char], text: &[char]) -> bool {
+    let Some((&head, rest)) = pattern.split_first() else {
+        return text.is_empty();
+    };
+    match head {
+        '*' => {
+            let cross = rest.first() == Some(&'*');
+            let rest = if cross { &rest[1..] } else { rest };
+            let mut index = 0;
+            loop {
+                if glob_inner(rest, &text[index..]) {
+                    return true;
+                }
+                if index >= text.len() {
+                    return false;
+                }
+                if !cross && text[index] == '/' {
+                    return false;
+                }
+                index += 1;
+            }
+        }
+        '?' => match text.split_first() {
+            Some((&first, tail)) if first != '/' => glob_inner(rest, tail),
+            _ => false,
+        },
+        want => match text.split_first() {
+            Some((&first, tail)) if first == want => glob_inner(rest, tail),
+            _ => false,
+        },
     }
-    if let Some(deadline) = owner.deadline_at.filter(|d| *d > now) {
-        parts.push(format!(
-            "{} left",
-            format_duration_secs(((deadline - now) / 1000) as f64)
-        ));
-    }
+}
+
+/// `attempt 2 · muse · 3:12 left` — the facts that explain a run, highest
+/// priority first. The outcome replaces them once the run has one.
+fn describe_run(
+    owner: Option<&TaskAgent>,
+    now: u64,
+    scoped_aliases: &[(String, Option<String>)],
+) -> Vec<String> {
+    let Some(owner) = owner else {
+        return Vec::new();
+    };
     if let Some(outcome) = owner.outcome.as_deref().filter(|o| !o.is_empty()) {
-        parts.clear();
         let mut line = outcome.to_string();
         if let Some(confidence) = owner.confidence {
             line.push_str(&format!(" · {confidence:.1}"));
@@ -1237,9 +1339,22 @@ fn describe_run(owner: &TaskAgent, now: u64) -> String {
                 truncate_to_width(&one_line, 48, "…", false)
             ));
         }
-        parts.push(line);
+        return vec![line];
     }
-    parts.join(" · ")
+    let mut facts: Vec<String> = Vec::new();
+    if let Some(attempt) = owner.attempt.filter(|n| *n > 1) {
+        facts.push(format!("attempt {attempt}"));
+    }
+    if let Some(model) = owner.model.as_deref().filter(|m| !m.is_empty()) {
+        facts.push(model_alias(model, scoped_aliases));
+    }
+    if let Some(deadline) = owner.deadline_at.filter(|d| *d > now) {
+        facts.push(format!(
+            "{} left",
+            format_duration_secs(((deadline - now) / 1000) as f64)
+        ));
+    }
+    facts
 }
 
 #[cfg(test)]
@@ -1527,5 +1642,63 @@ mod row_model_tests {
         let mut model = RowModel::default();
         model.sync(&store);
         assert!(model.task(999).is_none());
+    }
+
+    fn scoped(pattern: &str, alias: Option<&str>) -> (String, Option<String>) {
+        (pattern.to_string(), alias.map(str::to_string))
+    }
+
+    #[test]
+    fn scoped_alias_prefers_the_first_alias_that_names_the_model() {
+        let entries = vec![
+            scoped("other/model", Some("other")),
+            scoped("mock/pinned", None),
+            scoped("mock/*", Some("mocked")),
+        ];
+        // An exact entry without an alias does not block the later glob's.
+        assert_eq!(
+            scoped_alias_for("mock/pinned", &entries).as_deref(),
+            Some("mocked")
+        );
+        assert_eq!(
+            scoped_alias_for("mock/other", &entries).as_deref(),
+            Some("mocked")
+        );
+        assert_eq!(scoped_alias_for("elsewhere/thing", &entries), None);
+    }
+
+    #[test]
+    fn scoped_glob_stays_within_a_segment_unless_doubled() {
+        assert!(scoped_glob_matches("mock/*", "mock/pinned"));
+        assert!(!scoped_glob_matches("mock/*", "mock/a/b"));
+        assert!(scoped_glob_matches("mock/**", "mock/a/b"));
+        assert!(scoped_glob_matches("*/pinned", "MOCK/pinned"));
+        assert!(!scoped_glob_matches("mock/p?n", "mock/pinned"));
+        assert!(scoped_glob_matches("mock/p?n", "mock/pin"));
+    }
+
+    #[test]
+    fn model_alias_uses_the_entries_then_falls_back_to_the_tail() {
+        // Hermetic entries: no saved settings are read, so the alias and
+        // the fallback chain stay pinned whatever the machine holds.
+        let entries = vec![scoped("mock/*", Some("mocked"))];
+        assert_eq!(model_alias("mock/pinned", &entries), "mocked");
+        assert_eq!(
+            model_alias("test-fixture-xyzzy/test-model-xyzzy", &entries),
+            "test-model-xyzzy"
+        );
+        assert_eq!(
+            model_alias("test-fixture-xyzzy/test-model-xyzzy", &[]),
+            "test-model-xyzzy"
+        );
+    }
+
+    #[test]
+    fn flight_titles_cut_at_a_word_with_an_ellipsis() {
+        assert_eq!(truncate_at_word("map the repo", 12), "map the repo");
+        assert_eq!(truncate_at_word("map the repo", 7), "map…");
+        assert_eq!(truncate_at_word("map the repo", 0), "");
+        // No space in budget: a hard cut is the only fit.
+        assert_eq!(truncate_at_word("supercalifragilistic", 5), "supe…");
     }
 }

@@ -18,7 +18,6 @@ use hoocode_code_agent_session::stats::{
 use hoocode_code_resources::skill_blocks::parse_skill_block;
 use hoocode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
 use hoocode_code_tui_keybindings::key_text;
-use hoocode_code_tui_theme::{apply_block_fill, BlockFill};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_code_tui_widgets::background_notice::{
     parse_background_notice, BackgroundNoticeComponent,
@@ -38,7 +37,6 @@ use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_code_tui_widgets::trajectory::{self, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
-use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
@@ -680,10 +678,15 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `showError`: a filled error block in the chat, headline over detail.
+    /// `showError`: dim band rows in the chat (no fill, no red): the error's
+    /// text, then its fix, at most 3 rows — the last ends in `…` when cut.
+    /// None of these errors blocks: the turn keeps running and the prompt
+    /// keeps working, so nothing here is red (blocking states are the
+    /// yellow permission and question dialogs).
     pub(super) fn show_error(&mut self, message: &str) {
+        const MAX_ERROR_ROWS: usize = 3;
         let mut lines = message.split('\n');
-        let title = format!("Error: {}", lines.next().unwrap_or(""));
+        let title = lines.next().unwrap_or("");
         let mut body: Vec<&str> = lines.collect();
         // A wait measured in days is a dead end: say what to do about it.
         if is_long_retry_delay_error(Some(message)) {
@@ -691,7 +694,29 @@ impl Mode {
                 "Switch to another model with /model, or wait for the provider's quota to reset.",
             );
         }
-        self.show_block(BlockFill::ToolErrorBg, "error", &title, &body);
+        let t = theme();
+        let mut rows: Vec<String> = std::iter::once(title)
+            .chain(body)
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        if rows.len() > MAX_ERROR_ROWS {
+            rows.truncate(MAX_ERROR_ROWS);
+            let last = rows.pop().unwrap_or_default();
+            rows.push(format!("{last}…"));
+        }
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        for row in rows {
+            // A row that already carries escapes keeps its own colour.
+            let styled = if row.contains("\x1b[") {
+                row
+            } else {
+                t.fg("dim", &row)
+            };
+            self.add_to_chat(as_component(&handle(Text::new(styled, 1, 0))));
+        }
+        self.dirty.set(true);
     }
 
     /// The startup/reload listing and the session's own state.
@@ -1294,29 +1319,6 @@ impl Mode {
         for block in &freezable[..excess] {
             block.borrow_mut().freeze();
         }
-    }
-
-    /// `showNotice`: a filled warning block in the chat, for warnings that
-    /// cost money if ignored (`showBlock`).
-    pub(super) fn show_notice(&mut self, title: &str, body: &[&str]) {
-        self.show_block(BlockFill::WarningBg, "warning", title, body);
-    }
-
-    /// `showBlock`: a filled block in the chat, bold title over muted lines.
-    fn show_block(&mut self, fill: BlockFill, fg: &str, title: &str, body: &[&str]) {
-        let t = theme();
-        let mut block = BoxComponent::new(1, 1, None);
-        apply_block_fill(&mut block, fill);
-        block.add_child(as_component(&handle(Text::new(
-            t.bold(&t.fg(fg, title)),
-            0,
-            0,
-        ))));
-        for line in body {
-            block.add_child(as_component(&handle(Text::new(t.fg("muted", line), 0, 0))));
-        }
-        self.add_to_chat(as_component(&handle(Spacer::new(1))));
-        self.add_to_chat(as_component(&handle(block)));
     }
 
     /// Every tool block in the transcript.

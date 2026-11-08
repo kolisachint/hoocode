@@ -1,7 +1,7 @@
   Tasks  /tasks · ctrl+x g  shell 1/3
  › ● cargo build --release
-   ⊗ cargo test -p nope                                                exit 101
-   ⊗ sleep 600                                                        cancelled
+   ⊗ cargo test -p nope  exit 101
+   ⊗ sleep 600  cancelled
  ↑↓ move · ←→ tab · enter open output · esc back
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
@@ -16,16 +16,16 @@ r1 c5-25 fg=#989898 bg=#233239
 r1 c26-79 fg=#e5e5e7 bg=#233239
 r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r2 c3 fg=#d58181 bg=#1e1e2a
-r2 c4-70 fg=#e5e5e7 bg=#1e1e2a
-r2 c71-78 fg=#d58181 bg=#1e1e2a
-r2 c79 fg=#e5e5e7 bg=#1e1e2a
+r2 c4-24 fg=#e5e5e7 bg=#1e1e2a
+r2 c25-32 fg=#d58181 bg=#1e1e2a
+r2 c33-79 fg=#e5e5e7 bg=#1e1e2a
 r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r3 c3 fg=#989898 bg=#1e1e2a
 r3 c4 fg=#e5e5e7 bg=#1e1e2a
 r3 c5-13 fg=#989898 bg=#1e1e2a
-r3 c14-69 fg=#e5e5e7 bg=#1e1e2a
-r3 c70-78 fg=#989898 bg=#1e1e2a
-r3 c79 fg=#e5e5e7 bg=#1e1e2a
+r3 c14-15 fg=#e5e5e7 bg=#1e1e2a
+r3 c16-24 fg=#989898 bg=#1e1e2a
+r3 c25-79 fg=#e5e5e7 bg=#1e1e2a
 r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r4 c3-10 fg=#989898 bg=#1e1e2a
 r4 c11-12 fg=#e5e5e7 bg=#1e1e2a

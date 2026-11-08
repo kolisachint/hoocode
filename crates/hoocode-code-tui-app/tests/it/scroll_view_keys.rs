@@ -158,6 +158,8 @@ const PAGE_UP: &str = "\x1b[5~";
 const PAGE_DOWN: &str = "\x1b[6~";
 const UP: &str = "\x1b[A";
 const DOWN: &str = "\x1b[B";
+const HOME: &str = "\x1b[H";
+const END: &str = "\x1b[F";
 const ESCAPE: &str = "\x1b";
 const WHEEL_UP: &str = "\x1b[<64;1;1M";
 const SHIFT_UP: &str = "\x1b[1;2A";
@@ -244,8 +246,8 @@ fn a_picker_lets_page_up_pin_the_view() {
 
 #[test]
 fn a_picker_keeps_its_letters_and_the_pinned_view_stays() {
-    // `g` and `G` are the transcript's over an empty prompt (K-P4), not a
-    // picker's: under a picker they go to the picker, and the pin stays.
+    // `g` and `G` are plain typed text now, not transcript keys: under a
+    // picker they go to the picker, and the pin stays.
     let mut h = pinned();
     let seen = with_picker(&mut h);
     let before = h.top();
@@ -292,17 +294,32 @@ fn q_leaves_the_pinned_view_over_an_empty_prompt() {
 }
 
 #[test]
-fn g_and_capital_g_go_to_the_top_and_back_to_live() {
+fn home_and_end_go_to_the_top_and_back_to_live() {
     let mut h = pinned();
-    h.send("g");
-    assert_eq!(h.top(), 0, "g is the top");
-    h.send("G");
-    assert!(!h.ui.scroll_pinned(), "G is live");
+    h.send(HOME);
+    assert_eq!(h.top(), 0, "home is the top");
+    h.send(END);
+    assert!(!h.ui.scroll_pinned(), "end is live");
     assert_eq!(
         h.text(),
         "",
-        "G is a key, not a letter typed into the prompt"
+        "end is a key, not a letter typed into the prompt"
     );
+}
+
+#[test]
+fn bare_g_and_capital_g_type_into_the_prompt_instead_of_jumping() {
+    // The old vim keys are unbound: pinned and empty, `g` goes back to live
+    // and types instead of jumping to the top, and `G` types its capital.
+    let mut h = pinned();
+    h.send("g");
+    assert!(!h.ui.scroll_pinned(), "g no longer pins the view");
+    assert_eq!(h.text(), "g");
+    h.send(PAGE_UP);
+    assert!(h.ui.scroll_pinned(), "page up pins again");
+    h.send("G");
+    assert!(!h.ui.scroll_pinned(), "G no longer jumps to live");
+    assert_eq!(h.text(), "gG");
 }
 
 #[test]

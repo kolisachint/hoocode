@@ -1,8 +1,7 @@
 //! U21 P2 transcript focus keys (Muse-only, fast): `{` `}` queue for the
 //! mode instead of unpinning, `enter`/`y` queue only while a block is
-//! focused, `esc` clears the focus and stays pinned, `G` goes back to live,
-//! hints name the focused keys, and the teaching notice shows once per
-//! version.
+//! focused, `esc` clears the focus and stays pinned, `End` goes back to live,
+//! and the pinned hint row names the focused keys.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -12,8 +11,8 @@ use std::time::Duration;
 
 use hoocode_ai_types::Content;
 use hoocode_code_tui_app::scroll_view::{
-    format_scroll_status, install_scroll_view, scroll_slot, take_focus_notice, FocusIntent,
-    ScrollView, TranscriptFocus,
+    format_scroll_status, install_scroll_view, scroll_slot, FocusIntent, ScrollView,
+    TranscriptFocus,
 };
 use hoocode_code_tui_app::status_line::StatusLineData;
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
@@ -31,6 +30,7 @@ const WIDTH: u16 = 100;
 const HEIGHT: u16 = 30;
 const ENTER: &str = "\r";
 const ESCAPE: &str = "\x1b";
+const END: &str = "\x1b[F";
 
 struct SilentTerminal {
     alternate: Arc<AtomicBool>,
@@ -253,7 +253,7 @@ fn focusing_keys_do_not_fire_inside_an_open_search() {
     assert_eq!(h.ui.scroll_search_query(), "{");
 }
 
-// --- esc and G --------------------------------------------------------------
+// --- esc and End --------------------------------------------------------------
 
 #[test]
 fn escape_with_a_focus_clears_it_and_stays_pinned() {
@@ -273,19 +273,19 @@ fn escape_without_a_focus_leaves_the_view_as_before() {
 }
 
 #[test]
-fn g_clears_the_focus_and_goes_back_to_live() {
+fn end_clears_the_focus_and_goes_back_to_live() {
     let mut h = setup(false);
     h.focus.borrow_mut().focus("call-9");
-    h.send("G");
+    h.send(END);
     assert!(!h.ui.scroll_pinned());
     assert!(!h.focus.borrow().is_focused());
 }
 
 #[test]
-fn g_goes_back_to_live_while_busy() {
+fn end_goes_back_to_live_while_busy() {
     let mut h = setup(true);
     h.focus.borrow_mut().focus("call-9");
-    h.send("G");
+    h.send(END);
     assert!(!h.ui.scroll_pinned());
     assert!(!h.focus.borrow().is_focused());
 }
@@ -375,30 +375,4 @@ fn the_focused_status_row_reads_the_focus_keys() {
     assert!(row.contains("enter open"), "{row}");
     assert!(row.contains("y copy"), "{row}");
     assert!(row.contains("esc clear"), "{row}");
-}
-
-// --- one-time notice ------------------------------------------------------------
-
-#[test]
-fn the_focus_notice_shows_once_per_version() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let state = dir.path().join("keybindings-state.json");
-    let first = take_focus_notice(&state, "9.9.9").expect("notice");
-    assert!(first.contains("{ }"), "{first}");
-    assert!(first.contains("enter"), "{first}");
-    assert!(first.contains("G"), "{first}");
-    assert!(take_focus_notice(&state, "9.9.9").is_none());
-    assert!(take_focus_notice(&state, "9.9.10").is_some());
-}
-
-#[test]
-fn the_focus_notice_keeps_the_other_state_keys() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let state = dir.path().join("keybindings-state.json");
-    std::fs::write(&state, r#"{"altNoticeVersion": "9.9.9"}"#).expect("seed");
-    take_focus_notice(&state, "9.9.9");
-    let record: Value =
-        serde_json::from_str(&std::fs::read_to_string(&state).expect("read")).expect("json");
-    assert_eq!(record["altNoticeVersion"], json!("9.9.9"));
-    assert_eq!(record["transcriptFocusNoticeVersion"], json!("9.9.9"));
 }

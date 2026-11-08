@@ -162,6 +162,13 @@ pub struct StatusLineData {
     /// No working provider: left slot `⊗ not signed in  /login`, right side
     /// shows only the session.
     pub signed_out: bool,
+    /// Anthropic subscription auth may bill paid extra usage: dim
+    /// `extra usage  /settings`, until the setting turns it off. Persistent:
+    /// it stays until the trigger goes away, never times out.
+    pub extra_usage: bool,
+    /// `--skip-permissions`: dim `skip perms · mode rules apply`.
+    /// Persistent like `extra_usage`.
+    pub skip_permissions: bool,
     pub plan_mode: bool,
     pub session: Option<String>,
     pub model: Option<String>,
@@ -177,31 +184,40 @@ pub struct StatusLineData {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LeftSlot {
     Empty,
+    Working(Duration),
     Search(SearchInfo),
     Scroll(ScrollInfo),
-    Working(Duration),
     Notice(StatusNotice),
+    ExtraUsage,
+    SkipPermissions,
     NotSignedIn,
     Turn(TurnResult),
 }
 
 impl StatusLineData {
-    /// The left slot by priority: search, scrolled, working, a live notice,
-    /// not signed in, the last turn's result. (Not signed in outranks the
-    /// result and yields to working; a notice waits behind working, which
-    /// keeps the slot.)
+    /// The left slot by priority: the running timer, scrolled or search
+    /// position, a live one-row notice, the persistent extra-usage and
+    /// skip-permissions rows, not signed in, the last turn's result. (Not
+    /// signed in outranks the result and yields to working; a notice waits
+    /// behind working, which keeps the slot.)
     pub fn left_slot(&self) -> LeftSlot {
+        if let Some(elapsed) = self.working {
+            return LeftSlot::Working(elapsed);
+        }
         if let Some(search) = &self.search {
             return LeftSlot::Search(search.clone());
         }
         if let Some(scroll) = &self.scroll {
             return LeftSlot::Scroll(scroll.clone());
         }
-        if let Some(elapsed) = self.working {
-            return LeftSlot::Working(elapsed);
-        }
         if let Some(notice) = self.notice.as_ref().filter(|n| !n.expired()) {
             return LeftSlot::Notice(notice.clone());
+        }
+        if self.extra_usage {
+            return LeftSlot::ExtraUsage;
+        }
+        if self.skip_permissions {
+            return LeftSlot::SkipPermissions;
         }
         if self.signed_out {
             return LeftSlot::NotSignedIn;
@@ -254,9 +270,9 @@ pub fn format_cost(cost: f64) -> Option<String> {
 struct Styles {
     ink: Style,
     dim: Style,
+    acc: Style,
     ok: Style,
     err: Style,
-    warn: Style,
     plan: Style,
 }
 
@@ -266,9 +282,9 @@ impl Styles {
             Self {
                 ink: pal.ink(),
                 dim: pal.dim(),
+                acc: pal.acc(),
                 ok: pal.ok(),
                 err: pal.err(),
-                warn: pal.warn(),
                 plan: bold(pal.dim()),
             }
         } else {
@@ -277,9 +293,9 @@ impl Styles {
             Self {
                 ink: plain,
                 dim: plain.add_modifier(Modifier::DIM),
+                acc: plain,
                 ok: plain,
                 err: plain,
-                warn: plain,
                 plan: bold(plain),
             }
         }
@@ -305,7 +321,7 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
     match slot {
         LeftSlot::Empty => {}
         LeftSlot::Working(elapsed) => {
-            out.push(span("◉", st.warn));
+            out.push(span("◉", st.acc));
             out.push(span(
                 format!(
                     " working · {} · {} stop",
@@ -335,7 +351,7 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
                 } else {
                     "calls"
                 };
-                out.push(span(format!("{} failed {noun}", turn.failed_calls), st.err));
+                out.push(span(format!("{} failed {noun}", turn.failed_calls), st.dim));
             }
         }
         LeftSlot::NotSignedIn => {
@@ -343,13 +359,20 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
             out.push(span(" not signed in", st.dim));
             out.push(span("  /login", st.ink));
         }
+        LeftSlot::ExtraUsage => {
+            out.push(span("extra usage", st.dim));
+            out.push(span(" · /settings", st.ink));
+        }
+        LeftSlot::SkipPermissions => {
+            out.push(span("skip perms · mode rules apply", st.dim));
+        }
         LeftSlot::Notice(notice) => match notice.level {
             NoticeLevel::Info => {
                 out.push(span(notice.message.clone(), st.ink));
                 keys_spans(&notice.keys, st, &mut out);
             }
             NoticeLevel::Warning => {
-                out.push(span(notice.message.clone(), st.warn));
+                out.push(span(notice.message.clone(), st.ink));
                 keys_spans(&notice.keys, st, &mut out);
             }
             NoticeLevel::Action => {

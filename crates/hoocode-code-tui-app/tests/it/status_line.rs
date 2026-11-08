@@ -155,6 +155,24 @@ fn warning_notice() {
 }
 
 #[test]
+fn extra_usage_is_a_dim_row_with_the_settings_off_switch() {
+    let mut data = base();
+    data.extra_usage = true;
+    golden("status_line_extra_usage_100x1", data, 100);
+}
+
+#[test]
+fn skip_permissions_is_a_dim_row_below_extra_usage() {
+    let mut data = base();
+    data.extra_usage = true;
+    data.skip_permissions = true;
+    assert_eq!(data.left_slot(), LeftSlot::ExtraUsage);
+    data.extra_usage = false;
+    assert_eq!(data.left_slot(), LeftSlot::SkipPermissions);
+    golden("status_line_skip_permissions_100x1", data, 100);
+}
+
+#[test]
 fn notices_time_out_but_actions_do_not() {
     let mut data = base();
     data.last_turn = Some(done());

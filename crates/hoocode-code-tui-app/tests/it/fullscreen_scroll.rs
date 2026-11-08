@@ -200,6 +200,7 @@ fn screen() -> Screen {
 const SHIFT_UP: &str = "\x1b[1;2A";
 const SHIFT_DOWN: &str = "\x1b[1;2B";
 const PAGE_UP: &str = "\x1b[5~";
+const END: &str = "\x1b[F";
 const WHEEL_UP: &str = "\x1b[<64;1;1M";
 /// A left press on the last column, screen row 3 (the first body row).
 const PRESS_SCROLLBAR_TOP: &str = "\x1b[<0;100;3M";
@@ -250,16 +251,16 @@ fn jump_to_user_message_finds_the_chat_inside_the_body() {
 }
 
 #[test]
-fn capital_g_returns_to_live_and_page_up_pins() {
+fn end_returns_to_live_and_page_up_pins() {
     let mut s = screen();
     s.send(PAGE_UP);
     assert!(s.ui.scroll_pinned(), "page up pins");
-    s.send("G");
-    assert!(s.ui.get_scroll_position().is_none(), "G is live");
+    s.send(END);
+    assert!(s.ui.get_scroll_position().is_none(), "end is live");
     assert_eq!(
         s.text(),
         "",
-        "G is a key, not a letter typed into the prompt"
+        "end is a key, not a letter typed into the prompt"
     );
 }
 

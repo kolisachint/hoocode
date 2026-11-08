@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: stage-2 design sweep (2026-11-08)
+- **Rendered rows use the glyph set only.** The ask-options breadcrumb, the working-directory line, the new-session line and the debug-log line read `●` now; the status working `◉` is accent (never yellow for non-blocking) and status warnings read ink. The quit card's `k`/`l` come from the keymap (`app.quit.stop-jobs`, `app.quit.leave-running`, a new Quit family), so a rebound key shows its new name.
+- **Stale scene copy follows the row grammar.** The attach scenario waits read `› … · esc back`; the linked-run asserts read the type-first rows (`◉ explore  scan the repo  34s`); the tree summarizer draws no pulse — compaction keeps the only spinner (UI-4 closed); `/name` and status facts join with `·`. UI-9 closed: no stale binding claims in the user or map pages.
+
+### Added: OSC 7501 program-status reports (2026-11-08)
+- **Any terminal now sees what hoocode is doing.** Alongside the Herdr CLI reports, the interactive mode emits OSC 7501 program-status sequences on stdout (`state=working|idle|blocked|done|error`, `app=hoocode`, a `kind` of `permission`/`question`/`auth` while blocked, `state=clear` on quit), so session pickers, tab headers and scripts can read the state instead of guessing from the title. Root record only, off on `TERM=dumb`; the Herdr reports themselves are unchanged.
+
+### Removed: focus-keys one-time notice (2026-11-08)
+- **Focusing a tool block no longer shows the one-time key notice.** The pinned hint row (`enter open · y copy · esc clear`) already teaches the keys, so the prose notice and its per-version state key are gone.
+
+### Fixed: transcript top/bottom move to Home/End (2026-11-08)
+- **Bare `g` and `G` no longer teleport the transcript.** They typed nothing anywhere: pinned with an empty prompt, `g` jumped to the top and `G` back to live, eating the letter. `app.scroll.top` is now `Home` and `app.scroll.bottom` is `End`, so no typed letter ever moves the view. Bind `g`/`G` back in `keybindings.json` for the vim keys.
+
+### Fixed: Agent child rows read as header rows (2026-11-08)
+- **A subagent's own calls read as one cut row each.** They wrapped and read all red; now the target shortens first, then a failed call's reason cuts at a word or drops, and red stays on `⊗` (plus `exit N` when a Shell call fails with no output). Success children read `   ● Read path`, failed ones `   ⊗ Grep pattern  reason` with the reason dim.
+
+### Changed: session surfaces read as transcript facts (2026-11-08)
+- **`/info` is one flat list.** The `Session Info`, `Messages`, `Tokens` and `Cost` titles are gone; every row is a dim label with its value, and the full session-file path still shows.
+- **`/name` reads as a fact** (`Session name (auto)  ember-mesa · /name <name>`).
+- **`/import` usage and empty `/copy` results are dim transcript rows** (`Usage: /import <path.jsonl>`, `nothing to copy yet`) instead of red errors.
+
+### Changed: quieter startup notices (2026-11-08)
+- **Persistent state lives in the status line.** Extra-usage and skip-permissions are dim status rows (no timeout); skill/prompt/theme conflicts collapse to one dim row with details behind the toggle. No more yellow chat blocks for non-blocking info.
+- **One startup voice.** Dead tip entries are gone, the changelog starts as one line, and the update notice follows the 3 s info rule.
+
+### Changed: quieter errors, truer hints (2026-11-08)
+- **Red only on `⊗` and `exit N`.** The turn-end `failed` word, the `N failed call(s)` count, the failed Model error text and the error blocks are all dim now; the glyph (and `exit N`) keeps the red. Error rows read as dim band rows (at most 3) with the error and what to do about it. The failed Model block keeps every fact (`gave up · 6 attempts · 6.2s`) with the key that sends again.
+- **Hint rows match the other panes.** The extension prompt reads `move · open · close`, like every other picker. Hint keys always come from the keymap, so a rebound key shows the new key.
+
+### Changed: task-panel flight rows (2026-11-08)
+- **Agent rows read type first.** A running subagent row is `◉ explore  Trace the auth flow  12s · muse · 3:12 left`: the type, then the title, then the facts. The live tool activity is gone, and the row carries the model's short scoped alias instead of the full `provider/id`.
+- **Facts sit after the title.** Token counts, schedule firings, notes and `cancelled` follow the title after two spaces instead of pinning right. Narrow rows drop the deadline first, then the model, then the clock, and cut the title at a word boundary last.
+
+### Changed: subagent-response nudge (2026-11-08)
+- **A finished background subagent names its run.** The follow-up header reads `Background agent explore#4 (toolu_01Hx7) finished:` instead of `Background tool "Agent" (id toolu_01Hx7) finished:`, so the notice matches the run's handle. Old session files still read.
+- **Notice heads use the glyph set.** A finish is a green `●`, a failure a red `⊗` with a dim reason, a cancel all dim; the `◦`, `✗` and `⊘` marks and the yellow `(partial)` are gone.
+- **The attached-run header takes `›`, and a skill block is its bold name only.** `› explore · Find the footer code · running · esc back`. The `◆` mark is gone.
+
+### Changed: selector rows finish the row grammar (2026-11-08)
+- **Theme submenu rows read like the other pickers.** The Theme pane inside `/settings` draws `● dark  in use` (mark, bold name, dim fact) on the shared row grammar instead of a bare label; facts cut right-to-left at narrow widths.
+- **The session delete confirm is dim, not red.** `Delete session?` reads as dim text with `enter confirm · esc cancel`, like the quit card; red stays for blocking errors.
+
+### Changed: glance-first subagent nudge (2026-11-08)
+- **A finished background subagent opens with its run.** The follow-up header is two lines: `› ● explore#4  audit the db layer · done · haiku-5-5`, then the machine line with the raw call id, the resume label and the pointer. The `Background agent … finished:` wrapper, the repeated verdict, the "Read the full result" narration, the still-running count and the full model slug are gone. Old headers still read.
+- **Notice heads name the run's target.** `● explore#4  audit the db layer · 1m27s · haiku-5-5`: the mark carries a finish so no word reads there, a failure keeps a dim `failed`, a cancel reads all dim with `cancelled`. Narrow rows shorten the target at a word; the facts never drop.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 

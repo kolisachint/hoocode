@@ -67,6 +67,14 @@ impl Mode {
             session.session_manager().entries(),
         )
         .cost;
+        // Persistent rows: extra usage while the model bills through Anthropic
+        // subscription auth (the setting turns it off), skip permissions
+        // while the flag is on. Both yield to a live notice and to asking.
+        let extra_usage = !asking
+            && model
+                .as_ref()
+                .is_some_and(|m| session.uses_anthropic_subscription_auth(m));
+        let skip_permissions = !asking && self.footer_data.get_skip_permissions();
         StatusLineData {
             working,
             notice: if asking {
@@ -82,6 +90,8 @@ impl Mode {
                 self.last_turn.clone()
             },
             signed_out,
+            extra_usage,
+            skip_permissions,
             plan_mode: self.footer_data.get_active_mode() == "plan",
             session: Some(session.display_name()).filter(|name| !name.is_empty()),
             model: model.map(|m| m.id.clone()),

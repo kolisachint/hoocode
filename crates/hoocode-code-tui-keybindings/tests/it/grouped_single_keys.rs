@@ -64,15 +64,26 @@ fn a_global_binding_takes_the_key_only_from_global_actions() {
 
 #[test]
 fn a_capital_letter_in_the_file_is_shift_and_moves_its_key() {
-    // "G" in keybindings.json is Shift+g, the key that types a capital G, the
-    // same key as the default. Binding it to top takes it from the bottom action.
-    let (_dir, m) =
-        installed(r#"{"bindings": [{"context": "Scroll", "bindings": {"G": "app.scroll.top"}}]}"#);
+    // "G" in keybindings.json is Shift+g, the key that types a capital G.
+    // Binding it to top takes it from the bottom action, which no longer
+    // uses it: the defaults are Home and End. Binding the bare vim keys back
+    // is how users restore them.
+    let (_dir, m) = installed(
+        r#"{"bindings": [{"context": "Scroll", "bindings": {"G": "app.scroll.top", "g": "app.scroll.bottom"}}]}"#,
+    );
     assert!(m.warnings().is_empty(), "{:?}", m.warnings());
     let live = get_keybindings();
     assert!(live.matches("G", "app.scroll.top"));
+    assert!(live.matches("g", "app.scroll.bottom"));
     assert!(!live.matches("G", "app.scroll.bottom"));
-    assert!(live.matches("g", "app.scroll.top"), "the default g stays");
+    assert!(
+        live.matches("\x1b[H", "app.scroll.top"),
+        "the home default stays"
+    );
+    assert!(
+        live.matches("\x1b[F", "app.scroll.bottom"),
+        "the end default stays"
+    );
 }
 
 #[test]

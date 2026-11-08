@@ -79,13 +79,12 @@ fn key_tips_name_the_live_binding() {
 }
 
 #[test]
-fn the_default_rotation_leaves_out_features_hoocode_does_not_ship() {
-    let available: Vec<String> = available_tips().into_iter().map(|t| t.id).collect();
-    for id in UNAVAILABLE_TIP_IDS {
-        assert!(tips().iter().any(|t| t.id == *id), "{id} is a hoocode tip");
-        assert!(!available.iter().any(|a| a == id));
+fn the_rotation_has_no_dead_entries_for_commands_that_do_not_run() {
+    // Retired ids (`learn`, `skills`, `canvas`, `cost`) are gone with their
+    // text: old "seen" records for them simply never match a tip.
+    for id in ["learn", "skills", "canvas", "cost"] {
+        assert!(!tips().iter().any(|t| t.id == id), "{id} was retired");
     }
-    assert_eq!(available.len(), tips().len() - UNAVAILABLE_TIP_IDS.len());
 }
 
 // --- TipRotation ----------------------------------------------------------
@@ -388,7 +387,7 @@ fn rotation_tips_name_only_commands_that_run() {
         .map(|c| c.name)
         .collect();
     known.extend(["mode", "plan", "grill", "goal", "approve"]);
-    for tip in available_tips() {
+    for tip in tips() {
         let mut text = tip.note.clone().unwrap_or_default();
         if let Some(TipBody::Static(rows)) = &tip.body {
             text.push(' ');

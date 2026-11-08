@@ -119,10 +119,7 @@ use self::{auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, tra
 
 pub use self::events::plan_settle_outcome;
 pub use self::input::{at_file_finder, command_path_argument};
-pub use self::models::{
-    claim_anthropic_subscription_warning, ANTHROPIC_SUBSCRIPTION_AUTH_BODY,
-    ANTHROPIC_SUBSCRIPTION_AUTH_TITLE,
-};
+pub use self::models::claim_anthropic_subscription_warning;
 
 /// How the mode is started.
 pub struct InteractiveOptions {
@@ -429,6 +426,9 @@ struct Mode {
     chime: ChimeDebounce,
     /// Reports state to Herdr when hoocode runs in a Herdr pane (set in `run`).
     herdr: Option<crate::herdr::Reporter>,
+    /// Reports OSC 7501 program status to this terminal's stdout (set in
+    /// `run`; `None` on a dumb terminal). Runs everywhere, not just Herdr.
+    osc: Option<crate::herdr::OscReporter>,
     /// How many selectors asked for by `DialogRequest::Select` (the permission
     /// gate's questions) wait for their answer.
     dialog_select: Rc<Cell<u32>>,
@@ -506,7 +506,6 @@ struct Mode {
     clearance_queue: ClearanceQueue,
     end_shift_card: Option<OpenEndShift>,
     end_shift_jobs_card: Option<OpenEndShiftJobs>,
-    anthropic_warning_shown: bool,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
     last_escape: Option<Instant>,
     /// The summarizing tree navigation in flight, by its number (Escape cancels it).
@@ -942,6 +941,7 @@ impl Mode {
             turn_timer,
             chime: ChimeDebounce::default(),
             herdr: None,
+            osc: None,
             dialog_select: Rc::new(Cell::new(0)),
             update_notice: options.update_notice,
             hide_thinking_block,
@@ -987,7 +987,6 @@ impl Mode {
             clearance_queue: ClearanceQueue::default(),
             end_shift_card: None,
             end_shift_jobs_card: None,
-            anthropic_warning_shown: false,
             settings_changes: Rc::default(),
             last_escape: None,
             tree_navigation: None,
@@ -1341,8 +1340,9 @@ impl Mode {
         let mut input = self.tui.start();
         self.install_interrupt_hook();
         // Only the interactive mode reports to Herdr: print, RPC and subagent
-        // runs never build a reporter.
+        // runs never build a reporter. OSC 7501 goes to any terminal.
         self.herdr = crate::herdr::Reporter::from_process_env();
+        self.osc = crate::herdr::OscReporter::from_process_env();
         // A stop hoocode did not ask for, ended by `fg`: the loop restores the
         // UI (`tick_external_resume`). Held until the loop ends.
         #[cfg(unix)]
@@ -1381,11 +1381,6 @@ impl Mode {
         self.show_keymap_startup_notes();
         // Messages after the resource listing, as the pin orders them.
         self.render_initial_messages();
-        if self.footer_data.get_skip_permissions() {
-            self.show_record(
-                "Skip permissions is on: tools run without asking (mode rules still apply).",
-            );
-        }
         // First run: no working provider. The Log in pane opens on its own;
         // Esc leaves `⊗ not signed in  /login` in the status line.
         if self.session.model().is_none() {
@@ -1393,7 +1388,6 @@ impl Mode {
         }
         self.setup_autocomplete_provider();
         self.update_available_provider_count();
-        self.maybe_warn_about_anthropic_subscription_auth(None);
 
         let tx = Mutex::new(self.tx.clone());
         set_dialog_sink(Some(Box::new(move |request| {
@@ -1750,6 +1744,11 @@ impl Mode {
         // resume command.
         if let Some(herdr) = self.herdr.as_mut() {
             herdr.finish(self.user_quit);
+        }
+        // OSC 7501 goes to every terminal, not just Herdr: drop the root
+        // record so no stale working/blocked badge outlives the program.
+        if let Some(osc) = self.osc.as_mut() {
+            osc.clear();
         }
         set_dialog_sink(None);
         hoocode_code_subagents::instance::set_live_sink(None);

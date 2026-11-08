@@ -1,6 +1,6 @@
 //! The `<skill …>` block a `/skill:name` message carries, as the transcript
-//! draws it. Collapsed, one row: `skill <name>` with the name in bold (no
-//! mark: a skill block has no state). Expanded, the body follows, whole.
+//! draws it. Collapsed, one row: the name in bold (no mark and no prefix:
+//! a skill block has no state). Expanded, the body follows, whole.
 //! One toggle (`expanded`); the transcript flips it in place.
 
 use hoocode_code_tui_theme::theme;
@@ -29,7 +29,7 @@ impl SkillBlockComponent {
         this
     }
 
-    /// The block's own toggle; collapsed is the `skill <name>` row,
+    /// The block's own toggle; collapsed is the bold-name row,
     /// expanded the whole body.
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
@@ -43,7 +43,7 @@ impl SkillBlockComponent {
 
     fn rebuild(&mut self) {
         let t = theme();
-        let row = format!("skill {}", t.fg("customMessageText", &t.bold(&self.name)));
+        let row = t.fg("customMessageText", &t.bold(&self.name)).to_string();
         // Expanded, the whole body: the toggle opens the block.
         let content = if self.expanded {
             let body = self.body.trim();

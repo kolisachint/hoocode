@@ -1317,6 +1317,118 @@ async fn foreground_and_background_results_keep_source_order() {
     assert_eq!(results[1], ("fg-1".to_string(), "fg:F".to_string()));
 }
 
+fn finalized_outcome(call_id: &str, name: &str, body: &str, is_error: bool) -> FinalizedOutcome {
+    FinalizedOutcome {
+        tool_call: AgentToolCall {
+            id: call_id.into(),
+            name: name.into(),
+            arguments: serde_json::json!({}),
+        },
+        result: AgentToolResult {
+            content: vec![Content::text(body)],
+            details: serde_json::json!({}),
+            terminate: false,
+        },
+        is_error,
+        duration: None,
+    }
+}
+
+#[test]
+fn background_result_header_names_the_runs_resume_label() {
+    let finalized = finalized_outcome(
+        "toolu_01Hx7",
+        "Agent",
+        "explore#4 (\"audit the db layer\") finished ✓ — Mapped it.\n\
+         Read the full result with AgentOutput(\"explore#4\").\n\
+         [model: anthropic/claude-haiku-5-5, effort high]\n\
+         resume_task_id: explore#4",
+        false,
+    );
+    let message = create_default_background_result_message(&finalized);
+    match message {
+        AgentMessage::User(user) => assert_eq!(
+            text_of(&user.content.blocks()),
+            "› ● explore#4  audit the db layer · done · haiku-5-5\n\
+             \u{20}\u{20}toolu_01Hx7 · resume_task_id: explore#4 · full result below\n\
+             explore#4 (\"audit the db layer\") finished ✓ — Mapped it.\n\
+             Read the full result with AgentOutput(\"explore#4\").\n\
+             [model: anthropic/claude-haiku-5-5, effort high]\n\
+             resume_task_id: explore#4"
+        ),
+        other => panic!("a background result is a user message, got {other:?}"),
+    }
+
+    // A failed dispatch reads `failed` with the red mark, and a cancelled
+    // one reads `cancelled`: the body's own verdict, not the error flag.
+    let failed = finalized_outcome(
+        "toolu_09zz",
+        "Agent",
+        "explore#1 failed ✗ — provider timed out after 95s",
+        true,
+    );
+    let message = create_default_background_result_message(&failed);
+    match message {
+        AgentMessage::User(user) => assert_eq!(
+            text_of(&user.content.blocks()),
+            "› ⊗ explore#1 · failed\n\
+             \u{20}\u{20}toolu_09zz · resume_task_id: explore#1 · full result below\n\
+             explore#1 failed ✗ — provider timed out after 95s"
+        ),
+        other => panic!("a background result is a user message, got {other:?}"),
+    }
+    let cancelled = finalized_outcome(
+        "toolu_0cxl",
+        "Agent",
+        "explore#3 (\"trace it\") cancelled ⊘ — cancelled before it started",
+        true,
+    );
+    let message = create_default_background_result_message(&cancelled);
+    match message {
+        AgentMessage::User(user) => assert_eq!(
+            text_of(&user.content.blocks()),
+            "› ⊗ explore#3  trace it · cancelled\n\
+             \u{20}\u{20}toolu_0cxl · resume_task_id: explore#3 · full result below\n\
+             explore#3 (\"trace it\") cancelled ⊘ — cancelled before it started"
+        ),
+        other => panic!("a background result is a user message, got {other:?}"),
+    }
+}
+
+#[test]
+fn background_result_header_strips_quotes_around_the_description() {
+    let finalized = finalized_outcome(
+        "toolu_01Q",
+        "Agent",
+        "explore#7 (\"'quoted target'\") finished ✓ — Mapped it.",
+        false,
+    );
+    let message = create_default_background_result_message(&finalized);
+    match message {
+        AgentMessage::User(user) => assert!(
+            text_of(&user.content.blocks()).starts_with("› ● explore#7  quoted target · done\n"),
+            "{}",
+            text_of(&user.content.blocks())
+        ),
+        other => panic!("a background result is a user message, got {other:?}"),
+    }
+}
+
+#[test]
+fn background_result_header_falls_back_without_a_run_handle() {
+    // Another background tool's body carries no `type#n` handle: the header
+    // keeps its tool-and-call-id form.
+    let finalized = finalized_outcome("bg-1", "bg", "bg-result: hello", false);
+    let message = create_default_background_result_message(&finalized);
+    match message {
+        AgentMessage::User(user) => assert_eq!(
+            text_of(&user.content.blocks()),
+            "Background tool \"bg\" (id bg-1) finished:bg-result: hello"
+        ),
+        other => panic!("a background result is a user message, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn create_background_result_message_shapes_the_follow_up() {
     let bg = background_tool("bg", |args| Ok(echo_result("bg-result: ", &args)));

@@ -88,17 +88,13 @@ fn expired_providers(models: &[Model], readiness: impl Fn(&str) -> AuthReadiness
         .collect()
 }
 
-/// The notice for Anthropic subscription auth (`ANTHROPIC_SUBSCRIPTION_AUTH_*`).
-pub const ANTHROPIC_SUBSCRIPTION_AUTH_TITLE: &str = "Anthropic subscription";
-
-pub const ANTHROPIC_SUBSCRIPTION_AUTH_BODY: &[&str] = &[
-    "Billed per token as extra usage, not against plan limits.",
-    "Turn off in /settings → Anthropic extra usage.",
-];
-
-/// The once-per-session latch of `maybeWarnAboutAnthropicSubscriptionAuth`:
-/// true when the notice should show now. `uses_subscription_auth` is asked
-/// only while the latch is open, and a `false` leaves it open.
+/// The once-per-session latch behind the Anthropic subscription-auth
+/// warning: true when the notice should show now. `uses_subscription_auth`
+/// is asked only while the latch is open, and a `false` leaves it open.
+///
+/// Kept for the latch's unit tests; the warning itself now lives in the
+/// status line's left slot (`StatusLineData::extra_usage`), which follows
+/// the trigger continuously instead of firing once.
 pub fn claim_anthropic_subscription_warning(
     shown: &mut bool,
     uses_subscription_auth: impl FnOnce() -> bool,
@@ -133,22 +129,6 @@ impl Mode {
         self.footer_data
             .set_available_provider_count(providers.len());
         self.dirty.set(true);
-    }
-
-    /// `maybeWarnAboutAnthropicSubscriptionAuth`: once per session.
-    pub(super) fn maybe_warn_about_anthropic_subscription_auth(&mut self, model: Option<Model>) {
-        let Some(model) = model.or_else(|| self.session.model()) else {
-            return;
-        };
-        let session = self.session.clone();
-        if claim_anthropic_subscription_warning(&mut self.anthropic_warning_shown, || {
-            session.uses_anthropic_subscription_auth(&model)
-        }) {
-            self.show_notice(
-                ANTHROPIC_SUBSCRIPTION_AUTH_TITLE,
-                ANTHROPIC_SUBSCRIPTION_AUTH_BODY,
-            );
-        }
     }
 
     /// `cycleModel`.
@@ -188,7 +168,6 @@ impl Mode {
                     },
                     &format!("Switched to {name}{thinking}"),
                 );
-                self.maybe_warn_about_anthropic_subscription_auth(Some(result.model));
             }
         }
     }
@@ -215,7 +194,6 @@ impl Mode {
                 // The HUD shows the model: the frame must follow it.
                 self.dirty.set(true);
                 self.show_status(&format!("Model: {}", model.id));
-                self.maybe_warn_about_anthropic_subscription_auth(Some(model));
             }
             Err(error) => self.show_error(&error.to_string()),
         }
