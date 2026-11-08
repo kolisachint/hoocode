@@ -246,7 +246,9 @@ fn explore_run() -> u64 {
 }
 
 #[test]
-fn an_in_progress_subagent_row_shows_the_owners_live_tool_activity() {
+fn an_in_progress_subagent_row_leads_with_type_and_clock() {
+    // The live activity (`⋯ CodeSearch · …`) is gone: the row reads type,
+    // title, then facts (`explore  Trace the auth flow  12s`).
     let _g = lock();
     explore_agent("CodeSearch");
     explore_run();
@@ -254,9 +256,15 @@ fn an_in_progress_subagent_row_shows_the_owners_live_tool_activity() {
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
     let row = find(&lines, "trace the auth flow");
-    assert!(row.contains("⋯ CodeSearch · "), "{row}");
-    let after = row.split("⋯ CodeSearch · ").nth(1).unwrap();
-    assert!(after.starts_with(|c: char| c.is_ascii_digit()), "{row}");
+    assert!(!row.contains('⋯'), "{row}");
+    assert!(
+        row.contains("explore  trace the auth flow  "),
+        "type, two spaces, title, two spaces: {row}"
+    );
+    let inner_row = inner(row).to_string();
+    assert!(inner_row.ends_with('s'), "{row}");
+    let clock = inner_row.rsplit(' ').next().unwrap();
+    assert!(clock.trim_end_matches('s').parse::<f64>().is_ok(), "{row}");
 }
 
 #[test]
@@ -1040,9 +1048,10 @@ fn reset_preserves_main_agents_with_stats_but_drops_settled_subagent_runs() {
     assert!(store.agents().iter().any(|a| a.id == "main-ag"));
 }
 
-/// The live row explains the run: which attempt, which model, how long left.
-/// Before this, a slow run said `⋯ read · 4:12` and nothing about why it was
-/// slow or which model it had actually landed on.
+/// The live row explains the run: which attempt, which model alias, how long
+/// left (`explore  map the repo  12s · attempt 2 · pinned · 3:12 left`). A
+/// slow run used to say `⋯ read · 4:12` and nothing about why it was slow or
+/// which model it had actually landed on.
 #[test]
 fn a_running_row_shows_attempt_model_and_the_deadline_counting_down() {
     let _g = lock();
@@ -1063,12 +1072,79 @@ fn a_running_row_shows_attempt_model_and_the_deadline_counting_down() {
     );
     let lines = render(&mut TaskPanelComponent::new(), 160);
     let row = find(&lines, "map the repo");
+    // The full slug never shows: the row carries the short alias instead.
     assert!(row.contains("attempt 2"), "{row:?}");
-    assert!(row.contains("mock/pinned"), "{row:?}");
+    assert!(row.contains("pinned"), "{row:?}");
+    assert!(!row.contains("mock/pinned"), "{row:?}");
+    assert!(!row.contains('⋯'), "{row:?}");
     assert!(
         row.contains("left"),
         "the deadline should count down: {row:?}"
     );
+    let attempt = row.find("attempt 2").unwrap();
+    let alias = row.find("pinned").unwrap();
+    let left = row.find("left").unwrap();
+    assert!(attempt < alias && alias < left, "{row:?}");
+}
+
+#[test]
+fn a_narrow_agent_row_drops_facts_before_cutting_the_title() {
+    // Cut order: the deadline drops first, then the model, then the clock;
+    // the title cuts last, at a word boundary, never mid-word.
+    let _g = lock();
+    let now = hoocode_code_task_store::now_ms();
+    let run = create_with("map the repo", sub("explore"));
+    set(run, TaskStatus::InProgress);
+    task_store().upsert_agent(
+        "subagent",
+        "subagent",
+        TaskAgentKind::Subagent,
+        TaskAgentPatch {
+            attempt: Some(2),
+            model: Some("mock/pinned".into()),
+            deadline_at: Some(now + 192_000),
+            ..Default::default()
+        },
+    );
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Subagents);
+    // Wide: every fact shows, type first.
+    let wide = plain(&mut panel, 120);
+    let row = find(&wide, "map the repo");
+    assert!(row.contains("explore  map the repo  "), "{row}");
+    assert!(row.contains("attempt 2"), "{row}");
+    assert!(row.contains("pinned") && row.contains("left"), "{row}");
+    // The deadline drops first.
+    let mid = plain(&mut panel, 56);
+    let row = find(&mid, "map the repo");
+    assert!(row.contains("attempt 2") && row.contains("pinned"), "{row}");
+    assert!(!row.contains("left"), "{row}");
+    // Then the model.
+    let narrower = plain(&mut panel, 48);
+    let row = find(&narrower, "map the repo");
+    assert!(row.contains("attempt 2"), "{row}");
+    assert!(!row.contains("pinned"), "{row}");
+    assert!(!row.contains("left"), "{row}");
+    // Then the attempt; only the clock is left.
+    let narrow = plain(&mut panel, 36);
+    let row = find(&narrow, "map the repo");
+    assert!(!row.contains("pinned"), "{row}");
+    assert!(!row.contains("attempt 2"), "{row}");
+    assert!(!row.contains("left"), "{row}");
+    assert!(inner(row).ends_with('s'), "{row}");
+    // Then the clock; the title cuts last, at a word, with `…`.
+    let tight = plain(&mut panel, 22);
+    let row = find(&tight, "map");
+    assert!(!row.contains('·'), "{row}");
+    assert!(row.contains("map…"), "{row}");
+    for width in [22u16, 30, 36, 48, 56, 120] {
+        for line in plain(&mut panel, width) {
+            assert!(
+                visible_width(&line) <= usize::from(width),
+                "{width}: {line}"
+            );
+        }
+    }
 }
 
 /// A finished row says how it ended and why, which a stopwatch cannot: a run
@@ -1820,7 +1896,7 @@ fn focused_rows_use_mission_circles_and_one_status_glyph_per_shell_job() {
     let mut panel = focused();
     panel.set_view(TaskPanelView::Shell);
     let shell_lines = plain(&mut panel, 120);
-    // One status glyph, then the title; the satellite mark sits in the right detail.
+    // One status glyph, then the title; a settled row carries no facts.
     let job_row = find(&shell_lines, "sleep 60");
     assert!(job_row.contains("○ sleep 60"), "{job_row}");
     assert!(!job_row.contains('⌁'), "{job_row}");
@@ -1842,7 +1918,7 @@ fn focused_rows_use_mission_circles_and_one_status_glyph_per_shell_job() {
 
 #[test]
 fn running_shell_rows_carry_their_clock() {
-    // A running job reads `sleep 60  4s`: the command, its clock on the right.
+    // A running job reads `sleep 60  4s`: the command, then two spaces and its clock.
     let _g = lock();
     let job = task_store().create(
         "sleep 60",
