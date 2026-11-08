@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Red only on `⊗` and `exit N`.** The turn-end `failed` word, the `N failed call(s)` count, the failed Model error text and the error blocks are all dim now; the glyph (and `exit N`) keeps the red. Error rows read as dim band rows (at most 3) with the error and what to do about it. The failed Model block keeps every fact (`gave up · 6 attempts · 6.2s`) with the key that sends again.
 - **Hint rows match the other panes.** The extension prompt reads `move · open · close`, like every other picker. Hint keys always come from the keymap, so a rebound key shows the new key.
 
+### Changed: task-panel flight rows (2026-11-08)
+- **Agent rows read type first.** A running subagent row is `◉ explore  Trace the auth flow  12s · muse · 3:12 left`: the type, then the title, then the facts. The live tool activity is gone, and the row carries the model's short scoped alias instead of the full `provider/id`.
+- **Facts sit after the title.** Token counts, schedule firings, notes and `cancelled` follow the title after two spaces instead of pinning right. Narrow rows drop the deadline first, then the model, then the clock, and cut the title at a word boundary last.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 
