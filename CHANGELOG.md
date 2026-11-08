@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: Agent child rows read as header rows (2026-11-08)
+- **A subagent's own calls read as one cut row each.** They wrapped and read all red; now the target shortens first, then a failed call's reason cuts at a word or drops, and red stays on `⊗` (plus `exit N` when a Shell call fails with no output). Success children read `   ● Read path`, failed ones `   ⊗ Grep pattern  reason` with the reason dim.
+
 ### Fixed: transcript top/bottom move to Home/End (2026-11-08)
 - **Bare `g` and `G` no longer teleport the transcript.** They typed nothing anywhere: pinned with an empty prompt, `g` jumped to the top and `G` back to live, eating the letter. `app.scroll.top` is now `Home` and `app.scroll.bottom` is `End`, so no typed letter ever moves the view. Bind `g`/`G` back in `keybindings.json` for the vim keys.
 

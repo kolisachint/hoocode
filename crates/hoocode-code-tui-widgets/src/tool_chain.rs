@@ -70,59 +70,63 @@ fn whole_body(mut body: Vec<String>, footer: Vec<String>) -> Vec<String> {
     body
 }
 
-/// A subagent's own call under its row, indented 3: `   ⊗ Grep \\"  reason`.
-/// A failed call reads in red with its reason after two spaces.
+/// A Shell exit trailer's code: `Command exited with code 1` reads as the
+/// row's red `exit 1` fact, never as the dim reason.
+fn shell_trailer_exit(text: &str) -> Option<i32> {
+    text.trim()
+        .strip_prefix("Command exited with code ")?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// A subagent's own call under its row, indented 3: `   ● Read path`,
+/// `   ⊗ Shell cmd  exit 1 · reason`. One row per call through the header
+/// cut order: the target shortens, then a failed call's reason cuts at a
+/// word (12+ columns) or drops; `exit N` never drops. Red only on the mark
+/// and the exit; the reason is dim.
 fn sub_step_rows(
     step: &hoocode_code_subagents::live::SettledStep,
     width: usize,
     palette: &Palette,
 ) -> Vec<String> {
-    let t = hoocode_code_tui_theme::theme();
+    if width == 0 {
+        return Vec::new();
+    }
     let plain = |text: &str| hoocode_tui_util::strip_vt_control_characters(text);
-    let subject = plain(&step.subject);
-    match step
+    let target = plain(&step.subject);
+    let reason = step
         .failure
         .as_deref()
         .map(plain)
-        .filter(|f| !f.trim().is_empty())
-    {
-        Some(reason) => {
-            let label = format!(
-                "{} {}",
-                t.fg("error", &t.bold(&step.tool)),
-                t.fg("error", &subject)
-            );
-            let facts = vec![Span::styled(reason.trim().to_string(), palette.err())];
-            tool_row::tool_rows(
-                tool_row::SUB_INDENT,
-                tool_row::Mark::Failed,
-                &label,
-                facts,
-                width,
-                palette,
-            )
-        }
-        None => {
-            let mark = if step.failure.is_some() {
-                tool_row::Mark::Failed
-            } else {
-                tool_row::Mark::Done
-            };
-            let label = format!(
-                "{} {}",
-                t.fg("text", &t.bold(&step.tool)),
-                t.fg("text", &subject)
-            );
-            tool_row::tool_rows(
-                tool_row::SUB_INDENT,
-                mark,
-                &label,
-                Vec::new(),
-                width,
-                palette,
-            )
-        }
-    }
+        .filter(|f| !f.trim().is_empty());
+    // A failed Shell with no output names only its exit trailer; the row
+    // grammar reads that as the red exit fact, with no dim reason after it.
+    let (primary, reason) = match reason {
+        Some(text) if step.tool == "Shell" => match shell_trailer_exit(&text) {
+            Some(code) => (vec![format!("exit {code}")], None),
+            None => (Vec::new(), Some(text)),
+        },
+        reason => (Vec::new(), reason),
+    };
+    let primaries: Vec<&str> = primary.iter().map(String::as_str).collect();
+    let mut spans = vec![Span::raw(" ".repeat(tool_row::SUB_INDENT))];
+    spans.extend(tool_row::header_spans(
+        if step.failure.is_some() {
+            tool_row::Mark::Failed
+        } else {
+            tool_row::Mark::Done
+        },
+        &step.tool,
+        target.trim(),
+        &primaries,
+        &[],
+        reason.as_deref(),
+        width.saturating_sub(tool_row::SUB_INDENT),
+        palette,
+    ));
+    vec![row(spans, width)]
 }
 
 /// Whether rows paint in monochrome (no colour): the focused fill is
