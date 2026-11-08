@@ -426,6 +426,9 @@ struct Mode {
     chime: ChimeDebounce,
     /// Reports state to Herdr when hoocode runs in a Herdr pane (set in `run`).
     herdr: Option<crate::herdr::Reporter>,
+    /// Reports OSC 7501 program status to this terminal's stdout (set in
+    /// `run`; `None` on a dumb terminal). Runs everywhere, not just Herdr.
+    osc: Option<crate::herdr::OscReporter>,
     /// How many selectors asked for by `DialogRequest::Select` (the permission
     /// gate's questions) wait for their answer.
     dialog_select: Rc<Cell<u32>>,
@@ -938,6 +941,7 @@ impl Mode {
             turn_timer,
             chime: ChimeDebounce::default(),
             herdr: None,
+            osc: None,
             dialog_select: Rc::new(Cell::new(0)),
             update_notice: options.update_notice,
             hide_thinking_block,
@@ -1336,8 +1340,9 @@ impl Mode {
         let mut input = self.tui.start();
         self.install_interrupt_hook();
         // Only the interactive mode reports to Herdr: print, RPC and subagent
-        // runs never build a reporter.
+        // runs never build a reporter. OSC 7501 goes to any terminal.
         self.herdr = crate::herdr::Reporter::from_process_env();
+        self.osc = crate::herdr::OscReporter::from_process_env();
         // A stop hoocode did not ask for, ended by `fg`: the loop restores the
         // UI (`tick_external_resume`). Held until the loop ends.
         #[cfg(unix)]
@@ -1739,6 +1744,11 @@ impl Mode {
         // resume command.
         if let Some(herdr) = self.herdr.as_mut() {
             herdr.finish(self.user_quit);
+        }
+        // OSC 7501 goes to every terminal, not just Herdr: drop the root
+        // record so no stale working/blocked badge outlives the program.
+        if let Some(osc) = self.osc.as_mut() {
+            osc.clear();
         }
         set_dialog_sink(None);
         hoocode_code_subagents::instance::set_live_sink(None);

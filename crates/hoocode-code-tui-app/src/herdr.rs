@@ -50,6 +50,295 @@ impl AgentState {
     }
 }
 
+/// OSC 7501 program-status reports
+/// (<https://www.superlogical.com/rex/docs/build/program-status.md>):
+/// `ESC ] 7501 ; pairs ST`, so any terminal picks up the
+/// working/idle/blocked/done/error state, not just Herdr. Each report
+/// replaces its record completely, so `app` goes on every report. v1 uses
+/// the root record only: subagent child ids (`explore#4`) cannot be
+/// expressed, since `#` is outside the id charset, and mangling them into
+/// charset buys nothing with no consumer reading child records.
+///
+/// The builders are pure; [`OscReporter`] writes them to stdout with the
+/// same send-only-on-change rule as [`Reporter`].
+/// The state an OSC 7501 report carries. Herdr's [`AgentState`] has no
+/// `done`/`error`: a settled turn keeps reporting `idle` there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OscState {
+    Working,
+    Idle,
+    Blocked,
+    Done,
+    Error,
+    Clear,
+}
+
+impl OscState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OscState::Working => "working",
+            OscState::Idle => "idle",
+            OscState::Blocked => "blocked",
+            OscState::Done => "done",
+            OscState::Error => "error",
+            OscState::Clear => "clear",
+        }
+    }
+}
+
+/// Why the agent is blocked. Only sent with [`OscState::Blocked`] (the spec
+/// ignores it otherwise, so the builder drops it there).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OscKind {
+    /// A permission card or permission-gate selector waits for a decision.
+    Permission,
+    /// An `AskUserQuestion` pane or typed-answer dialog waits for a reply.
+    Question,
+    /// A login flow waits for the user (a token, a browser step).
+    Auth,
+}
+
+impl OscKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OscKind::Permission => "permission",
+            OscKind::Question => "question",
+            OscKind::Auth => "auth",
+        }
+    }
+}
+
+/// Whole-report cap: a longer report is discarded whole by the terminal.
+pub const OSC_MAX_BYTES: usize = 4096;
+
+/// Whether `s` fits the `app` charset (`[A-Za-z0-9_.+-]{1,32}`).
+fn osc_token_ok(s: &str) -> bool {
+    (1..=32).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'+' | b'-'))
+}
+
+/// Whether `id` fits the id grammar: `/`-separated [`osc_token_ok`]
+/// segments, at most 8 levels and 128 bytes.
+fn osc_id_ok(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id.split('/').count() <= 8
+        && id.split('/').all(osc_token_ok)
+}
+
+/// The single line a `title`/`msg` may carry: the first line, with control
+/// characters removed (one would make a terminal discard the whole report).
+fn osc_text(text: &str) -> String {
+    text.lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// Standard base64 with padding (the spec leaves padding optional, so padded
+/// output decodes everywhere). Hand-rolled: no workspace crate this crate may
+/// reuse offers it, and a ~100-byte report does not justify a dependency.
+fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let mut n: u32 = 0;
+        for (i, &b) in chunk.iter().enumerate() {
+            n |= (b as u32) << (8 * (2 - i));
+        }
+        for i in 0..chunk.len() + 1 {
+            out.push(ALPHABET[((n >> (6 * (3 - i))) & 0x3F) as usize] as char);
+        }
+        for _ in chunk.len()..3 {
+            out.push('=');
+        }
+    }
+    out
+}
+
+/// Assembles one report from already-cleaned parts (no cap applied).
+fn osc_assemble(
+    state: OscState,
+    kind: Option<OscKind>,
+    app: &str,
+    title: Option<&str>,
+    msg: Option<&str>,
+    id: Option<&str>,
+) -> String {
+    let mut pairs = vec![format!("state={}", state.as_str())];
+    if state == OscState::Blocked {
+        if let Some(kind) = kind {
+            pairs.push(format!("kind={}", kind.as_str()));
+        }
+    }
+    if let Some(id) = id.filter(|id| osc_id_ok(id)) {
+        pairs.push(format!("id={id}"));
+    }
+    if osc_token_ok(app) {
+        pairs.push(format!("app={app}"));
+    }
+    if let Some(title) = title {
+        pairs.push(format!("title={}", base64_encode(title.as_bytes())));
+    }
+    if let Some(msg) = msg {
+        pairs.push(format!("msg={}", base64_encode(msg.as_bytes())));
+    }
+    format!("\x1b]7501;{}\x1b\\", pairs.join(":"))
+}
+
+/// Builds one OSC 7501 sequence (`ESC ] 7501 ; … ST`, no trailing newline).
+/// `kind` is sent only with `Blocked`; an invalid `app`/`id` is dropped; an
+/// empty `title`/`msg` is dropped. A `msg` too long for the 4096-byte cap is
+/// shortened on a char boundary (then dropped, then the title too), so the
+/// report always fits what a terminal accepts.
+pub fn osc_report(
+    state: OscState,
+    kind: Option<OscKind>,
+    app: &str,
+    title: Option<&str>,
+    msg: Option<&str>,
+    id: Option<&str>,
+) -> String {
+    let title = title.map(osc_text).filter(|t| !t.is_empty());
+    let mut msg = msg.map(osc_text).filter(|m| !m.is_empty());
+    let mut seq = osc_assemble(state, kind, app, title.as_deref(), msg.as_deref(), id);
+    if seq.len() <= OSC_MAX_BYTES {
+        return seq;
+    }
+    while seq.len() > OSC_MAX_BYTES {
+        let Some(m) = msg.take() else { break };
+        let mut cut = m.len() / 2;
+        while cut > 0 && !m.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        msg = m.get(..cut).filter(|s| !s.is_empty()).map(str::to_string);
+        seq = osc_assemble(state, kind, app, title.as_deref(), msg.as_deref(), id);
+    }
+    if seq.len() <= OSC_MAX_BYTES {
+        return seq;
+    }
+    // Still too long (a giant title): drop the title too. State, kind, id
+    // and app are bounded by their grammars, so this always fits.
+    osc_assemble(state, kind, app, None, None, id)
+}
+
+/// What the mode loop sees, reduced to the OSC report decision.
+pub struct OscInput {
+    /// A clearance card or permission-gate selector waits for a decision.
+    pub permission: bool,
+    /// An `AskUserQuestion` options pane waits for an answer.
+    pub question: bool,
+    /// A typed-answer dialog waits for text.
+    pub typed_answer: bool,
+    /// A login flow waits for the user.
+    pub login: bool,
+    /// A prompt, run or compaction is in flight.
+    pub working: bool,
+    /// The last settled turn ended `Done`.
+    pub last_done: bool,
+    /// The last settled turn ended `Failed` (`Stopped` counts as neither:
+    /// an interrupted program reports `idle`).
+    pub last_failed: bool,
+}
+
+/// Maps [`OscInput`] to the report: blocked (highest priority first) with
+/// its kind and the line the terminal shows, else working, else done/error
+/// from the settled turn, else idle.
+pub fn osc_decide(input: &OscInput) -> (OscState, Option<OscKind>, Option<&'static str>) {
+    if input.permission {
+        (
+            OscState::Blocked,
+            Some(OscKind::Permission),
+            Some("Waiting for a permission decision"),
+        )
+    } else if input.question || input.typed_answer {
+        // An options pane and a typed-answer dialog both wait for a reply.
+        (
+            OscState::Blocked,
+            Some(OscKind::Question),
+            Some("Waiting for an answer"),
+        )
+    } else if input.login {
+        (
+            OscState::Blocked,
+            Some(OscKind::Auth),
+            Some("Waiting for sign-in"),
+        )
+    } else if input.working {
+        (OscState::Working, None, None)
+    } else if input.last_done {
+        (OscState::Done, None, None)
+    } else if input.last_failed {
+        (OscState::Error, None, None)
+    } else {
+        (OscState::Idle, None, None)
+    }
+}
+
+/// OSC 7501 emission to this terminal's stdout: built on the UI thread at
+/// report time (a report is ~100 bytes; no thread needed), sent only on
+/// change like [`Reporter`]. Nothing Herdr-specific: this runs in any
+/// terminal, and stays off only on a dumb one.
+pub struct OscReporter {
+    write: Box<dyn FnMut(&str)>,
+    last: Option<String>,
+}
+
+impl OscReporter {
+    pub fn new(write: Box<dyn FnMut(&str)>) -> Self {
+        Self { write, last: None }
+    }
+
+    /// Writes sequences to this process's stdout.
+    pub fn stdout() -> Self {
+        Self::new(Box::new(|seq| {
+            use std::io::Write as _;
+            let mut out = std::io::stdout();
+            let _ = out.write_all(seq.as_bytes());
+            let _ = out.flush();
+        }))
+    }
+
+    /// The reporter for this process: `None` on a dumb terminal, where
+    /// escape sequences would show as noise.
+    pub fn from_process_env() -> Option<Self> {
+        Self::from_vars(|name| std::env::var(name).ok())
+    }
+
+    /// [`Self::from_process_env`] on an injected environment (tests).
+    pub fn from_vars(get: impl Fn(&str) -> Option<String>) -> Option<Self> {
+        if get("TERM").as_deref() == Some("dumb") {
+            return None;
+        }
+        Some(Self::stdout())
+    }
+
+    /// Reports the agent's state now. `app` repeats on every report (each
+    /// report replaces its record); v1 keeps the root record with no title.
+    /// Sends only when the sequence differs from the last one sent.
+    pub fn update(&mut self, state: OscState, kind: Option<OscKind>, msg: Option<&str>) {
+        let seq = osc_report(state, kind, SOURCE, None, msg, None);
+        if self.last.as_deref() == Some(&seq) {
+            return;
+        }
+        (self.write)(&seq);
+        self.last = Some(seq);
+    }
+
+    /// The loop ended: drop the root record, whatever it says. Always sent:
+    /// a stale `blocked` badge must not outlive the program.
+    pub fn clear(&mut self) {
+        let seq = osc_report(OscState::Clear, None, SOURCE, None, None, None);
+        (self.write)(&seq);
+        self.last = Some(seq);
+    }
+}
+
 /// The pane this process runs in, from `HERDR_*`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HerdrEnv {
@@ -616,6 +905,337 @@ mod tests {
             }),
             Some(PathBuf::from("/s")),
         )
+    }
+
+    fn osc() -> (Rc<RefCell<Vec<String>>>, OscReporter) {
+        let out = Rc::new(RefCell::new(Vec::new()));
+        let sink = out.clone();
+        let reporter = OscReporter::new(Box::new(move |seq: &str| {
+            sink.borrow_mut().push(seq.to_string());
+        }));
+        (out, reporter)
+    }
+
+    #[test]
+    fn base64_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+        // Multibyte UTF-8 round-trips byte-wise.
+        assert_eq!(base64_encode("rx → idle".as_bytes()), "cngg4oaSIGlkbGU=");
+    }
+
+    #[test]
+    fn osc_report_shapes() {
+        assert_eq!(
+            osc_report(OscState::Working, None, "hoocode", None, None, None),
+            "\x1b]7501;state=working:app=hoocode\x1b\\"
+        );
+        assert_eq!(
+            osc_report(OscState::Idle, None, "hoocode", None, None, None),
+            "\x1b]7501;state=idle:app=hoocode\x1b\\"
+        );
+        assert_eq!(
+            osc_report(
+                OscState::Blocked,
+                Some(OscKind::Permission),
+                "hoocode",
+                None,
+                Some("Waiting for a permission decision"),
+                None
+            ),
+            "\x1b]7501;state=blocked:kind=permission:app=hoocode:\
+             msg=V2FpdGluZyBmb3IgYSBwZXJtaXNzaW9uIGRlY2lzaW9u\x1b\\"
+        );
+        assert_eq!(
+            osc_report(
+                OscState::Blocked,
+                Some(OscKind::Question),
+                "hoocode",
+                None,
+                Some("Waiting for an answer"),
+                None
+            ),
+            "\x1b]7501;state=blocked:kind=question:app=hoocode:\
+             msg=V2FpdGluZyBmb3IgYW4gYW5zd2Vy\x1b\\"
+        );
+        assert_eq!(
+            osc_report(
+                OscState::Blocked,
+                Some(OscKind::Auth),
+                "hoocode",
+                None,
+                Some("Waiting for sign-in"),
+                None
+            ),
+            "\x1b]7501;state=blocked:kind=auth:app=hoocode:msg=V2FpdGluZyBmb3Igc2lnbi1pbg==\x1b\\"
+        );
+        assert_eq!(
+            osc_report(OscState::Done, None, "hoocode", None, None, None),
+            "\x1b]7501;state=done:app=hoocode\x1b\\"
+        );
+        assert_eq!(
+            osc_report(OscState::Error, None, "hoocode", None, None, None),
+            "\x1b]7501;state=error:app=hoocode\x1b\\"
+        );
+        assert_eq!(
+            osc_report(OscState::Clear, None, "hoocode", None, None, None),
+            "\x1b]7501;state=clear:app=hoocode\x1b\\"
+        );
+        // No trailing newline: the sequence ends at ST.
+        assert!(!osc_report(OscState::Idle, None, "hoocode", None, None, None).ends_with('\n'));
+    }
+
+    #[test]
+    fn osc_report_drops_kind_off_blocked() {
+        assert_eq!(
+            osc_report(
+                OscState::Working,
+                Some(OscKind::Permission),
+                "hoocode",
+                None,
+                None,
+                None
+            ),
+            osc_report(OscState::Working, None, "hoocode", None, None, None)
+        );
+    }
+
+    #[test]
+    fn osc_report_keeps_text_single_line_without_controls() {
+        // Only the first line survives; control characters are stripped.
+        let seq = osc_report(
+            OscState::Error,
+            None,
+            "hoocode",
+            None,
+            Some("boom\nsecond line"),
+            None,
+        );
+        assert_eq!(
+            seq,
+            format!(
+                "\x1b]7501;state=error:app=hoocode:msg={}\x1b\\",
+                base64_encode(b"boom")
+            )
+        );
+        let seq = osc_report(
+            OscState::Working,
+            None,
+            "hoocode",
+            None,
+            Some("a\tb\x7fc"),
+            None,
+        );
+        assert!(seq.contains(&base64_encode(b"abc")));
+        // An empty-after-cleaning message is dropped, not sent empty.
+        assert_eq!(
+            osc_report(OscState::Idle, None, "hoocode", None, Some("\n"), None),
+            osc_report(OscState::Idle, None, "hoocode", None, None, None)
+        );
+    }
+
+    #[test]
+    fn osc_report_drops_invalid_app_and_id() {
+        assert_eq!(
+            osc_report(OscState::Idle, None, "hoo code", None, None, None),
+            "\x1b]7501;state=idle\x1b\\"
+        );
+        assert_eq!(
+            osc_report(
+                OscState::Idle,
+                None,
+                "hoocode",
+                None,
+                None,
+                Some("explore#4")
+            ),
+            osc_report(OscState::Idle, None, "hoocode", None, None, None)
+        );
+        assert_eq!(
+            osc_report(
+                OscState::Idle,
+                None,
+                "hoocode",
+                Some("US East"),
+                None,
+                Some("us-east")
+            ),
+            format!(
+                "\x1b]7501;state=idle:id=us-east:app=hoocode:title={}\x1b\\",
+                base64_encode("US East".as_bytes())
+            )
+        );
+    }
+
+    #[test]
+    fn osc_report_caps_at_4096_bytes() {
+        let big = "x".repeat(6000);
+        let seq = osc_report(OscState::Working, None, "hoocode", None, Some(&big), None);
+        assert!(seq.len() <= OSC_MAX_BYTES);
+        assert!(seq.starts_with("\x1b]7501;state=working:app=hoocode"));
+        assert!(seq.ends_with("\x1b\\"));
+        // A giant title alone cannot break the cap either.
+        let seq = osc_report(
+            OscState::Idle,
+            None,
+            "hoocode",
+            Some(&big),
+            Some(&big),
+            None,
+        );
+        assert!(seq.len() <= OSC_MAX_BYTES);
+        assert!(seq.ends_with("\x1b\\"));
+    }
+
+    #[test]
+    fn osc_decide_maps_states_and_kinds() {
+        let base = OscInput {
+            permission: false,
+            question: false,
+            typed_answer: false,
+            login: false,
+            working: false,
+            last_done: false,
+            last_failed: false,
+        };
+        assert_eq!(osc_decide(&base), (OscState::Idle, None, None));
+        assert_eq!(
+            osc_decide(&OscInput {
+                working: true,
+                ..base
+            }),
+            (OscState::Working, None, None)
+        );
+        assert_eq!(
+            osc_decide(&OscInput {
+                permission: true,
+                working: true,
+                ..base
+            }),
+            (
+                OscState::Blocked,
+                Some(OscKind::Permission),
+                Some("Waiting for a permission decision")
+            )
+        );
+        assert_eq!(
+            osc_decide(&OscInput {
+                question: true,
+                ..base
+            }),
+            (
+                OscState::Blocked,
+                Some(OscKind::Question),
+                Some("Waiting for an answer")
+            )
+        );
+        assert_eq!(
+            osc_decide(&OscInput {
+                typed_answer: true,
+                ..base
+            }),
+            (
+                OscState::Blocked,
+                Some(OscKind::Question),
+                Some("Waiting for an answer")
+            )
+        );
+        assert_eq!(
+            osc_decide(&OscInput {
+                login: true,
+                ..base
+            }),
+            (
+                OscState::Blocked,
+                Some(OscKind::Auth),
+                Some("Waiting for sign-in")
+            )
+        );
+        // A question outranks a login; a login outranks a running turn.
+        assert_eq!(
+            osc_decide(&OscInput {
+                question: true,
+                login: true,
+                ..base
+            })
+            .1,
+            Some(OscKind::Question)
+        );
+        assert_eq!(
+            osc_decide(&OscInput {
+                login: true,
+                working: true,
+                ..base
+            })
+            .1,
+            Some(OscKind::Auth)
+        );
+        assert_eq!(
+            osc_decide(&OscInput {
+                last_done: true,
+                ..base
+            }),
+            (OscState::Done, None, None)
+        );
+        assert_eq!(
+            osc_decide(&OscInput {
+                last_failed: true,
+                ..base
+            }),
+            (OscState::Error, None, None)
+        );
+    }
+
+    #[test]
+    fn osc_reporter_sends_only_changes_then_clears() {
+        let (out, mut osc) = osc();
+        osc.update(OscState::Working, None, None);
+        osc.update(OscState::Working, None, None);
+        assert_eq!(out.borrow().len(), 1);
+        osc.update(OscState::Idle, None, None);
+        assert_eq!(out.borrow().len(), 2);
+        assert_eq!(
+            out.borrow()[1],
+            osc_report(OscState::Idle, None, SOURCE, None, None, None)
+        );
+        // A kind change is a change; repeating the record is not.
+        osc.update(
+            OscState::Blocked,
+            Some(OscKind::Permission),
+            Some("Waiting for a permission decision"),
+        );
+        osc.update(
+            OscState::Blocked,
+            Some(OscKind::Permission),
+            Some("Waiting for a permission decision"),
+        );
+        assert_eq!(out.borrow().len(), 3);
+        osc.clear();
+        assert_eq!(
+            out.borrow()[3],
+            osc_report(OscState::Clear, None, SOURCE, None, None, None)
+        );
+    }
+
+    #[test]
+    fn osc_reporter_stays_off_on_a_dumb_terminal() {
+        assert!(OscReporter::from_vars(|_| None).is_some());
+        assert!(OscReporter::from_vars(|name| if name == "TERM" {
+            Some("xterm-256color".into())
+        } else {
+            None
+        })
+        .is_some());
+        assert!(OscReporter::from_vars(|name| if name == "TERM" {
+            Some("dumb".into())
+        } else {
+            None
+        })
+        .is_none());
     }
 
     #[test]

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: OSC 7501 program-status reports (2026-11-08)
+- **Any terminal now sees what hoocode is doing.** Alongside the Herdr CLI reports, the interactive mode emits OSC 7501 program-status sequences on stdout (`state=working|idle|blocked|done|error`, `app=hoocode`, a `kind` of `permission`/`question`/`auth` while blocked, `state=clear` on quit), so session pickers, tab headers and scripts can read the state instead of guessing from the title. Root record only, off on `TERM=dumb`; the Herdr reports themselves are unchanged.
+
 ### Removed: focus-keys one-time notice (2026-11-08)
 - **Focusing a tool block no longer shows the one-time key notice.** The pinned hint row (`enter open · y copy · esc clear`) already teaches the keys, so the prose notice and its per-version state key are gone.
 

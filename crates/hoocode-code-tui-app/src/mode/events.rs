@@ -18,8 +18,9 @@ use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::AssistantMessageComponent;
 use hoocode_tui_components::Loader;
 
-use crate::herdr::AgentState;
+use crate::herdr::{AgentState, OscInput};
 use crate::startup_progress;
+use crate::status_line::TurnOutcome;
 
 use super::retry::retry_notice_text;
 use super::retry::RETRY_CANCELLED;
@@ -126,12 +127,38 @@ impl Mode {
     /// question or an options pane waits for the user, working while a
     /// prompt, run or compaction is in flight, else idle. The session id and
     /// file go with it, so a `/new`, resume or fork re-reports the resume
-    /// command.
+    /// command. The same pass also emits OSC 7501 program status to stdout
+    /// (any terminal; off on dumb), with the same send-only-on-change rule:
+    /// the Herdr blocked states plus typed-answer dialogs and login flows
+    /// (with kinds), and done/error from the last settled turn.
     pub(super) fn sync_herdr(&mut self) {
+        let osc = if self.osc.is_some() {
+            let (last_done, last_failed) = match &self.last_turn {
+                Some(turn) if turn.outcome == TurnOutcome::Done => (true, false),
+                Some(turn) if turn.outcome == TurnOutcome::Failed => (false, true),
+                _ => (false, false),
+            };
+            Some(crate::herdr::osc_decide(&OscInput {
+                permission: self.clearance.is_some()
+                    || (self.dialog_select.get() > 0
+                        && matches!(self.picker, Some(ActivePicker::Selector(..)))),
+                question: self.ask_options.is_some(),
+                typed_answer: self.editor_dialog.is_some(),
+                login: self.login.is_some(),
+                working: self.agent_busy() || self.compaction_loader.is_some(),
+                last_done,
+                last_failed,
+            }))
+        } else {
+            None
+        };
+        if let (Some(reporter), Some((state, kind, message))) = (self.osc.as_mut(), osc) {
+            reporter.update(state, kind, message);
+        }
         if self.herdr.is_none() {
             return;
         }
-        let (state, message) = if self.clearance.is_some() {
+        let (state, message): (AgentState, Option<&str>) = if self.clearance.is_some() {
             (
                 AgentState::Blocked,
                 Some("Waiting for a permission decision"),
