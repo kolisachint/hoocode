@@ -13,11 +13,10 @@ use std::rc::Rc;
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::Content;
 use hoocode_code_media::clipboard::{copy_to_clipboard, SystemClipboardHost};
-use hoocode_code_paths::{agent_dir, VERSION};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 
 use super::super::*;
-use crate::scroll_view::{capture_top, reanchor_top, take_focus_notice, FocusIntent};
+use crate::scroll_view::{capture_top, reanchor_top, FocusIntent};
 
 /// What focusing the newest block pins: the tail, so the block is on screen.
 fn pin_to_tail(mode: &mut Mode) {
@@ -120,11 +119,11 @@ fn sync_chain_focus(mode: &mut Mode) {
     }
 }
 
-/// Focus `block`: remember it, teach the keys once, and show its header.
+/// Focus `block`: remember it and show its header. The pinned hint row
+/// (`enter open · y copy · esc clear`) teaches the keys.
 fn set_focus(mode: &mut Mode, block: &ToolBlock) {
     let call_id = block.borrow().tool_call_id().to_string();
     mode.focus.borrow_mut().focus(&call_id);
-    maybe_show_focus_notice(mode);
     if !mode.tui.scroll_pinned() {
         pin_to_tail(mode);
     } else if let Some(chain) = focus_chain(mode, block) {
@@ -146,17 +145,6 @@ fn step_target(count: usize, current: Option<usize>, next: bool) -> Result<usize
         Some(i) if next => Ok((i + 1).min(count - 1)),
         Some(i) => Ok(i.saturating_sub(1)),
         None => Ok(if next { 0 } else { count - 1 }),
-    }
-}
-
-/// The one-time focus-keys notice, once per version. The state file keeps its
-/// other keys (such as the Alt notice): the write merges, it never replaces.
-fn maybe_show_focus_notice(mode: &mut Mode) {
-    if let Some(notice) = take_focus_notice(
-        &agent_dir().join(hoocode_code_tui_keybindings::STATE_FILE_NAME),
-        VERSION,
-    ) {
-        mode.show_status(&notice);
     }
 }
 

@@ -266,35 +266,6 @@ impl TranscriptFocus {
     }
 }
 
-/// The state file's key for the focus-keys notice (one per version).
-const FOCUS_NOTICE_KEY: &str = "transcriptFocusNoticeVersion";
-
-/// The one-time focus-keys notice for `version`, shown from `state` (the
-/// keybindings state file). `None` once this version has seen it. The file
-/// keeps its other keys: the write merges the notice's key in.
-pub fn take_focus_notice(state: &std::path::Path, version: &str) -> Option<String> {
-    let text = std::fs::read_to_string(state).unwrap_or_default();
-    let mut record: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(&text).unwrap_or_default();
-    if record.get(FOCUS_NOTICE_KEY).and_then(|v| v.as_str()) == Some(version) {
-        return None;
-    }
-    record.insert(
-        FOCUS_NOTICE_KEY.to_string(),
-        serde_json::Value::String(version.to_string()),
-    );
-    if let Some(dir) = state.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    // A write that fails means the notice may show again next focus. That is
-    // harmless, so the error is not reported.
-    let _ = std::fs::write(state, serde_json::Value::Object(record).to_string());
-    Some(
-        "Tool blocks: { } move between calls, enter opens, y copies the raw output, esc clears, End goes live."
-            .to_string(),
-    )
-}
-
 /// A pinned-view transcript key the mode runs after the pass: the scroll
 /// view queues it and stays dumb, so the mode keeps the chains, the session
 /// and the clipboard. Esc and G clear the shared focus themselves, so they
