@@ -197,6 +197,17 @@ fn tool_rows_agent_full_100() {
     assert_golden!("tool_rows_agent_full_100", render_golden(&mut c, 100));
 }
 
+/// An open Agent row: the settled children read as one header row each at
+/// indent 3, the failed one with its dim reason after two spaces.
+#[test]
+fn tool_rows_agent_open_100() {
+    let _g = lock();
+    let agent = settled_agent("tool-rows-agent-open");
+    agent.borrow_mut().set_expanded(true);
+    let mut c = chain(vec![agent]);
+    assert_golden!("tool_rows_agent_open_100", render_golden(&mut c, 100));
+}
+
 #[test]
 fn a_collapsed_run_is_tight_and_an_open_row_is_followed_by_one_blank() {
     let _g = lock();
