@@ -1296,12 +1296,6 @@ impl Mode {
         }
     }
 
-    /// `showNotice`: a filled warning block in the chat, for warnings that
-    /// cost money if ignored (`showBlock`).
-    pub(super) fn show_notice(&mut self, title: &str, body: &[&str]) {
-        self.show_block(BlockFill::WarningBg, "warning", title, body);
-    }
-
     /// `showBlock`: a filled block in the chat, bold title over muted lines.
     fn show_block(&mut self, fill: BlockFill, fg: &str, title: &str, body: &[&str]) {
         let t = theme();

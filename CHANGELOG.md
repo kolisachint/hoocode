@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: quieter startup notices (2026-11-08)
+- **Persistent notices live in the status line.** Extra-usage, skip-permissions and conflict notices are dim status rows with 3 s/8 s timeouts instead of yellow chat blocks; tips lost their dead entries and the changelog starts collapsed.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 

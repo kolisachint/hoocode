@@ -89,7 +89,8 @@ impl Mode {
                     &title,
                     &body,
                     None,
-                    Some(Duration::from_secs(15)),
+                    // Info rule: a one-row notice shows 3 s.
+                    Some(Duration::from_secs(3)),
                     Some("update"),
                 );
                 self.dirty.set(true);

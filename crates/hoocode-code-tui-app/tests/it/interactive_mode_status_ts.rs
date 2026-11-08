@@ -145,7 +145,9 @@ fn still_shows_diagnostics_on_quiet_startup_when_requested() {
         false,
         true,
     );
-    assert!(out.contains("[Skill conflicts]"), "{out}");
+    assert!(out.contains("1 conflict, first wins"), "{out}");
+    assert!(out.contains("/reload"), "{out}");
+    assert!(!out.contains("[Skill conflicts]"), "{out}");
     assert!(!out.contains("[Skills]"));
 }
 

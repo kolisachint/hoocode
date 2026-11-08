@@ -303,12 +303,12 @@ fn format_diagnostics(
         let Some(first) = list[0].collision.as_ref() else {
             continue;
         };
-        lines.push(t.fg("warning", &format!("  \"{name}\" collision:")));
+        lines.push(t.fg("dim", &format!("  \"{name}\" collision:")));
         lines.push(t.fg(
             "dim",
             &format!(
                 "    {} {}",
-                t.fg("success", "✓"),
+                t.fg("success", "●"),
                 format_path_with_source(
                     &first.winner_path,
                     find_source_info(&first.winner_path, infos)
@@ -321,7 +321,7 @@ fn format_diagnostics(
                     "dim",
                     &format!(
                         "    {} {} (skipped)",
-                        t.fg("warning", "✗"),
+                        t.fg("dim", "⊗"),
                         format_path_with_source(
                             &c.loser_path,
                             find_source_info(&c.loser_path, infos)
@@ -332,10 +332,11 @@ fn format_diagnostics(
         }
     }
     for d in others {
+        // Conflicts never block: dim, never yellow. Errors keep their red.
         let color = if d.kind == DiagnosticType::Error {
             "error"
         } else {
-            "warning"
+            "dim"
         };
         match &d.path {
             Some(path) => {
@@ -347,6 +348,46 @@ fn format_diagnostics(
         }
     }
     lines.join("\n")
+}
+
+/// The collapsed conflicts row and its detail text: one dim row
+/// (`N conflicts, first wins  /reload`, never yellow, no brackets), with the
+/// per-path listing for the details toggle. `None` when there is nothing.
+fn conflict_summary(
+    listing: &ResourceListing,
+    source_infos: &[(String, SourceInfo)],
+) -> (Option<String>, Option<String>) {
+    let t = theme();
+    let groups: Vec<(&str, &[ResourceDiagnostic])> = [
+        ("skills", listing.skill_diagnostics.as_slice()),
+        ("prompts", listing.prompt_diagnostics.as_slice()),
+        ("themes", listing.theme_diagnostics.as_slice()),
+    ]
+    .into_iter()
+    .filter(|(_, diagnostics)| !diagnostics.is_empty())
+    .collect();
+    let total: usize = groups
+        .iter()
+        .map(|(_, diagnostics)| diagnostics.len())
+        .sum();
+    if total == 0 {
+        return (None, None);
+    }
+    let noun = if total == 1 { "conflict" } else { "conflicts" };
+    let summary = format!(
+        "  {}  {}",
+        t.fg("dim", &format!("{total} {noun}, first wins")),
+        t.fg("ink", "/reload"),
+    );
+    let mut parts = Vec::new();
+    for (label, diagnostics) in &groups {
+        parts.push(format!(
+            "{}\n{}",
+            t.fg("dim", &format!("Conflicts ({label}):")),
+            format_diagnostics(diagnostics, source_infos),
+        ));
+    }
+    (Some(summary), Some(parts.join("\n\n")))
 }
 
 fn handle<C: hoocode_tui_render::Component + 'static>(c: C) -> ComponentHandle {
@@ -621,6 +662,17 @@ pub fn show_loaded_resources_with_details(
                 .join("\n");
             detail_sections.push(format!("{}\n{list}", section_header("MCP")));
         }
+        if show_diagnostics {
+            let (summary, detail) = conflict_summary(listing, &source_infos);
+            if let Some(summary) = summary {
+                out.push(handle(Text::new(summary, 0, 0)));
+            }
+            // The per-path listing stays one toggle away (or `/reload`,
+            // which re-renders the listing).
+            if let Some(detail) = detail {
+                detail_sections.push(detail);
+            }
+        }
         if !detail_sections.is_empty() {
             let details = detail_sections.join("\n\n");
             let block = Rc::new(RefCell::new(ExpandableText::new(
@@ -640,22 +692,12 @@ pub fn show_loaded_resources_with_details(
         }
     }
 
-    if show_diagnostics {
-        for (title, diagnostics) in [
-            ("[Skill conflicts]", &listing.skill_diagnostics),
-            ("[Prompt conflicts]", &listing.prompt_diagnostics),
-            ("[Theme conflicts]", &listing.theme_diagnostics),
-        ] {
-            if diagnostics.is_empty() {
-                continue;
-            }
-            let lines = format_diagnostics(diagnostics, &source_infos);
-            out.push(handle(Text::new(
-                format!("{}\n{lines}", t.fg("warning", title)),
-                0,
-                0,
-            )));
-            out.push(handle(Spacer::new(1)));
+    // Quiet startup still names the conflicts when asked (no toggle down
+    // here: `/reload` re-renders the listing with the details behind it).
+    if !show_listing && show_diagnostics {
+        let (summary, _) = conflict_summary(listing, &source_infos);
+        if let Some(summary) = summary {
+            out.push(handle(Text::new(summary, 0, 0)));
         }
     }
     LoadedResources {
