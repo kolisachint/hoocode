@@ -12,7 +12,7 @@
 //!
 //! ```text
 //!  ⊗ Model  529 upstream overloaded
-//!    gave up after 6 attempts in 6.2s · send again to retry
+//!    gave up · 6 attempts · 6.2s  enter send again
 //! ```
 //!
 //! `events.rs` calls these from the session events. The methods are on
@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{AssistantMessage, StopReason};
 use hoocode_code_agent_session::format::format_duration_secs;
+use hoocode_code_tui_keybindings::key_hint_text;
 use hoocode_code_tui_theme::theme;
 use hoocode_code_tui_widgets::tool_chain::ToolBlock;
 use hoocode_code_tui_widgets::AssistantMessageComponent;
@@ -73,12 +74,14 @@ pub(crate) fn failed_attempts_before(
     failed
 }
 
-/// The body under the failed Model block: how many attempts, how long.
+/// The body under the failed Model block: the facts (verb, attempts,
+/// elapsed). The key that sends again joins in `add_model_error`, from the
+/// keymap.
 pub(crate) fn model_error_body(attempts: u64, elapsed: Duration, cancelled: bool) -> String {
     let verb = if cancelled { "stopped" } else { "gave up" };
     let plural = if attempts == 1 { "" } else { "s" };
     format!(
-        "{verb} after {attempts} attempt{plural} in {} · send again to retry",
+        "{verb} · {attempts} attempt{plural} · {}",
         format_duration_secs(elapsed.as_secs_f64())
     )
 }
@@ -178,11 +181,12 @@ impl Transcript {
     }
 
     /// The failed Model block: a spacer, the `⊗ Model` row (the glyph red,
-    /// the name bold, the error after two spaces) and the dim body under it:
+    /// the name bold, the provider's error dimmed but word for word) and the
+    /// dim facts under it, with the key that sends again:
     ///
     /// ```text
     ///  ⊗ Model  529 upstream overloaded
-    ///    gave up after 6 attempts in 6.2s · send again to retry
+    ///    gave up · 6 attempts · 6.2s  enter send again
     /// ```
     pub(super) fn add_model_error(&mut self, title: &str, body: &str) {
         let t = theme();
@@ -192,13 +196,18 @@ impl Transcript {
                 "{} {}  {}",
                 t.fg("error", "⊗"),
                 t.bold(&t.fg("toolTitle", "Model")),
-                t.fg("error", title)
+                t.fg("muted", title)
             ),
             1,
             0,
         )))));
         block.add_child(as_component(&Rc::new(RefCell::new(Text::new(
-            t.fg("muted", &format!("  {body}")),
+            format!(
+                "{}  {} {}",
+                t.fg("muted", &format!("  {body}")),
+                t.fg("text", &key_hint_text("tui.input.submit")),
+                t.fg("muted", "send again")
+            ),
             1,
             0,
         )))));
@@ -321,8 +330,11 @@ mod tests {
         assert_eq!(text.matches("⊗ Model").count(), 1, "{text}");
         assert_eq!(text.matches("529 upstream overloaded").count(), 1, "{text}");
         assert!(!text.contains("Error: 529"), "{text}");
-        assert!(text.contains("gave up after 7 attempts in"), "{text}");
-        assert!(text.contains("· send again to retry"), "{text}");
+        assert!(text.contains("gave up · 7 attempts"), "{text}");
+        assert!(text.contains("send again"), "{text}");
+        // The resend key comes from the keymap, never typed literally.
+        assert!(text.contains("enter send again"), "{text}");
+        assert!(!text.contains("send again to retry"), "{text}");
         assert_eq!(text.matches('⊗').count(), 1, "one Model row: {text}");
         assert!(t.attempt_error.is_none());
         assert!(t.assistant_components.is_empty());
@@ -351,7 +363,7 @@ mod tests {
         let text = chat_text(&t.chat);
         assert_eq!(text.matches("⊗ Model").count(), 1, "{text}");
         assert!(text.contains("503 service unavailable"), "{text}");
-        assert!(text.contains("stopped after 1 attempt in"), "{text}");
+        assert!(text.contains("stopped · 1 attempt"), "{text}");
         assert!(!text.contains("backoff doubles"), "{text}");
     }
 
@@ -444,11 +456,11 @@ mod tests {
     fn the_body_counts_attempts_and_reads_the_elapsed_time() {
         assert_eq!(
             model_error_body(6, Duration::from_millis(6_200), false),
-            "gave up after 6 attempts in 6.2s · send again to retry"
+            "gave up · 6 attempts · 6.2s"
         );
         assert_eq!(
             model_error_body(1, Duration::from_millis(900), true),
-            "stopped after 1 attempt in 0.9s · send again to retry"
+            "stopped · 1 attempt · 0.9s"
         );
     }
 }

@@ -16,7 +16,7 @@ use hoocode_code_tui_theme::theme;
 use hoocode_code_tui_widgets::tool_chain::ChainState;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::AssistantMessageComponent;
-use hoocode_tui_components::{Loader, Spacer, Text};
+use hoocode_tui_components::Loader;
 
 use crate::herdr::AgentState;
 use crate::startup_progress;
@@ -370,12 +370,8 @@ impl Mode {
             if manual {
                 self.show_error(&error);
             } else {
-                self.add_to_chat(as_component(&handle(Spacer::new(1))));
-                self.add_to_chat(as_component(&handle(Text::new(
-                    theme().fg("error", &error),
-                    1,
-                    0,
-                ))));
+                // Background work failed: a dim line, never red.
+                self.show_record(&error);
             }
         }
     }

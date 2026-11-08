@@ -680,10 +680,15 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `showError`: a filled error block in the chat, headline over detail.
+    /// `showError`: dim band rows in the chat (no fill, no red): the error's
+    /// text, then its fix, at most 3 rows — the last ends in `…` when cut.
+    /// None of these errors blocks: the turn keeps running and the prompt
+    /// keeps working, so nothing here is red (blocking states are the
+    /// yellow permission and question dialogs).
     pub(super) fn show_error(&mut self, message: &str) {
+        const MAX_ERROR_ROWS: usize = 3;
         let mut lines = message.split('\n');
-        let title = format!("Error: {}", lines.next().unwrap_or(""));
+        let title = lines.next().unwrap_or("");
         let mut body: Vec<&str> = lines.collect();
         // A wait measured in days is a dead end: say what to do about it.
         if is_long_retry_delay_error(Some(message)) {
@@ -691,7 +696,29 @@ impl Mode {
                 "Switch to another model with /model, or wait for the provider's quota to reset.",
             );
         }
-        self.show_block(BlockFill::ToolErrorBg, "error", &title, &body);
+        let t = theme();
+        let mut rows: Vec<String> = std::iter::once(title)
+            .chain(body)
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        if rows.len() > MAX_ERROR_ROWS {
+            rows.truncate(MAX_ERROR_ROWS);
+            let last = rows.pop().unwrap_or_default();
+            rows.push(format!("{last}…"));
+        }
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        for row in rows {
+            // A row that already carries escapes keeps its own colour.
+            let styled = if row.contains("\x1b[") {
+                row
+            } else {
+                t.fg("dim", &row)
+            };
+            self.add_to_chat(as_component(&handle(Text::new(styled, 1, 0))));
+        }
+        self.dirty.set(true);
     }
 
     /// The startup/reload listing and the session's own state.

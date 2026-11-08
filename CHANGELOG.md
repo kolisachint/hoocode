@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Persistent state lives in the status line.** Extra-usage and skip-permissions are dim status rows (no timeout); skill/prompt/theme conflicts collapse to one dim row with details behind the toggle. No more yellow chat blocks for non-blocking info.
 - **One startup voice.** Dead tip entries are gone, the changelog starts as one line, and the update notice follows the 3 s info rule.
 
+### Changed: quieter errors, truer hints (2026-11-08)
+- **Red only on `⊗` and `exit N`.** The turn-end `failed` word, the `N failed call(s)` count, the failed Model error text and the error blocks are all dim now; the glyph (and `exit N`) keeps the red. Error rows read as dim band rows (at most 3) with the error and what to do about it. The failed Model block keeps every fact (`gave up · 6 attempts · 6.2s`) with the key that sends again.
+- **Hint rows match the other panes.** The extension prompt reads `move · open · close`, like every other picker. Hint keys always come from the keymap, so a rebound key shows the new key.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 

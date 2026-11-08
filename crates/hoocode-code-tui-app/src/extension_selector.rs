@@ -174,7 +174,7 @@ impl ExtensionSelectorComponent {
                 format!("{}/{}", key_text("app.list.up"), key_text("app.list.down")),
                 "move".to_string(),
             ),
-            (key_text("tui.select.confirm"), "select".to_string()),
+            (key_text("tui.select.confirm"), "open".to_string()),
         ];
         for (id, label) in [
             ("app.dialog.yes", "yes"),
@@ -258,9 +258,9 @@ impl Component for ExtensionSelectorComponent {
         let confirm = key_hint_text("tui.select.confirm");
         let cancel = key_hint_text("tui.select.cancel");
         console.hint = hints(&[
-            (moves.as_str(), "navigate"),
-            (confirm.as_str(), "select"),
-            (cancel.as_str(), "cancel"),
+            (moves.as_str(), "move"),
+            (confirm.as_str(), "open"),
+            (cancel.as_str(), "close"),
         ]);
         if self.help {
             console.bottom = self.help_rows();

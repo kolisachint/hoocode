@@ -54,7 +54,7 @@ fn draws_the_title_in_the_border_the_options_and_the_hints() {
     assert!(lines.iter().any(|l| l.contains("  No (block)")));
     assert!(lines
         .iter()
-        .any(|l| l.contains("navigate") && l.contains("select") && l.contains("cancel")));
+        .any(|l| l.contains("move") && l.contains("open") && l.contains("close")));
 }
 
 #[test]
