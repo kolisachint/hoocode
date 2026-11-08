@@ -15,10 +15,9 @@
 //! [`TipsController::deadline`] says when to poll next. The clock is
 //! injectable for tests.
 //!
-//! Rows for features hoocode does not ship (`/learn`, `/new-skill`, `/canvas`,
-//! `/cost`) stay in [`tips`] with their ids, so "seen" records stay valid, but are
-//! left out of the rotation by [`available_tips`]. A tip names only commands that
-//! run.
+//! A tip names only commands that run. Tip ids are stable forever: ids
+//! retired from the rotation (no command to teach) simply never match, so
+//! old "seen" records stay valid without any compat code.
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -172,26 +171,15 @@ pub fn tips() -> Vec<Tip> {
                 "An AGENTS.md at the repo root is read every session. Rules, conventions, gotchas.",
             ])
             .note("AGENTS.md"),
-        Tip::new("learn", "It can write its own AGENTS.md")
-            .rows(&[
-                "/learn reads your past sessions and proposes rules from what actually kept happening.",
-            ])
-            .note("/learn"),
         Tip::new("plugins", "One-click plugins")
             .rows(&[
                 "/plugin installs from marketplaces into this project or your user config.",
                 "From the shell: hoocode install <name>@<marketplace>.",
             ])
             .note("/plugin"),
-        Tip::new("skills", "Skills are just a folder and a SKILL.md")
-            .rows(&["/new-skill scaffolds one. /reload picks it up without restarting."])
-            .note("/new-skill"),
         Tip::new("subagent", "Hand a side-quest to a subagent")
             .rows(&["/subagent <mode> <task> runs it in its own context and reports back."])
             .note("/subagent"),
-        Tip::new("canvas", "Canvases put a UI in the terminal")
-            .rows(&["/canvas opens one. /new-canvas starts your own."])
-            .note("/canvas"),
         Tip::new("export", "Take the session with you")
             .rows(&["/export <file>.jsonl writes the session to a file. /import opens one again."])
             .note("/export"),
@@ -210,9 +198,6 @@ pub fn tips() -> Vec<Tip> {
         Tip::new("reload", "No need to restart")
             .rows(&["/reload re-reads keybindings, skills, prompts and themes."])
             .note("/reload"),
-        Tip::new("cost", "Know what a turn cost")
-            .rows(&["/cost breaks down tokens and spend for this session."])
-            .note("/cost"),
         Tip::new("issues", "Something broken or missing?")
             .rows(&[
                 "Open an issue — bug reports and feature ideas are both welcome.",
@@ -220,17 +205,6 @@ pub fn tips() -> Vec<Tip> {
             ])
             .with_moments(&[Idle]),
     ]
-}
-
-/// Tip ids whose feature hoocode does not ship yet; see the module docs.
-pub const UNAVAILABLE_TIP_IDS: &[&str] = &["learn", "skills", "canvas", "cost"];
-
-/// [`tips`] without [`UNAVAILABLE_TIP_IDS`]: the default rotation.
-pub fn available_tips() -> Vec<Tip> {
-    tips()
-        .into_iter()
-        .filter(|tip| !UNAVAILABLE_TIP_IDS.contains(&tip.id.as_str()))
-        .collect()
 }
 
 /// `STAR_NUDGE`: not a tip, an ask, with its own budget.
@@ -274,10 +248,10 @@ pub struct TipRotation {
 }
 
 impl TipRotation {
-    /// A rotation over `tips` (default: [`available_tips`]).
+    /// A rotation over `tips` (the default).
     pub fn new(options: TipRotationOptions, tips: Option<Vec<Tip>>) -> Self {
         Self {
-            tips: tips.unwrap_or_else(available_tips),
+            tips: tips.unwrap_or_else(self::tips),
             opts: options,
             shown_this_session: HashSet::new(),
             since_star_nudge: 0,

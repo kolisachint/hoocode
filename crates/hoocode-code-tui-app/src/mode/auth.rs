@@ -422,13 +422,11 @@ impl Mode {
                     model.id,
                     path.display()
                 ));
-                self.maybe_warn_about_anthropic_subscription_auth(Some(model));
             }
             None => {
                 self.show_record(&format!("{label}. Credentials saved to {}", path.display()));
-                match error {
-                    Some(error) => self.show_error(&error),
-                    None => self.maybe_warn_about_anthropic_subscription_auth(None),
+                if let Some(error) = error {
+                    self.show_error(&error);
                 }
             }
         }
