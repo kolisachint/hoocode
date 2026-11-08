@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: session surfaces read as transcript facts (2026-11-08)
+- **`/info` is one flat list.** The `Session Info`, `Messages`, `Tokens` and `Cost` titles are gone; every row is a dim label with its value, and the full session-file path still shows.
+- **`/name` reads as a fact** (`Session name (auto)  ember-mesa · /name <name>`).
+- **`/import` usage and empty `/copy` results are dim transcript rows** (`Usage: /import <path.jsonl>`, `nothing to copy yet`) instead of red errors.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 

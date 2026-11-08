@@ -9,6 +9,8 @@ use hoocode_code_media::clipboard_image::{
 use hoocode_code_media::markdown_to_html::markdown_to_html;
 use hoocode_code_media::rich_clipboard::{copy_rich_to_clipboard, CopyFlavour, RichPayload};
 use hoocode_code_paths::{APP_NAME, APP_TITLE};
+use hoocode_code_tui_theme::theme;
+use hoocode_tui_components::{Spacer, Text};
 
 use super::*;
 
@@ -68,11 +70,13 @@ impl Mode {
             self.session.get_last_assistant_text()
         };
         let Some(markdown) = markdown.filter(|m| !m.is_empty()) else {
-            self.show_error(if whole || turns.is_some() {
-                "Nothing in this session to copy yet."
-            } else {
-                "No agent messages to copy yet."
-            });
+            let t = theme();
+            self.add_to_chat(as_component(&handle(Spacer::new(1))));
+            self.add_to_chat(as_component(&handle(Text::new(
+                t.fg("dim", "nothing to copy yet"),
+                1,
+                0,
+            ))));
             return;
         };
 
