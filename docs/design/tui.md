@@ -526,6 +526,7 @@ Decided 2026-11-07; each answer is a dated row in the Decisions table below. The
 | 2026-11-07 | Frozen-row theme lag is a known limitation: frozen blocks skip `invalidate`, so they keep the old palette until they scroll out. |
 | 2026-11-07 | Focus fill and click-pin ride the block `expanded` flag (`mode/transcript/focus.rs`). |
 | 2026-11-08 | Subagent-response nudge look (UI-1 closed): the loop header names the run's resume label (`Background agent explore#4 (id …) finished:`, old tool-and-id headers still parse); notice heads use the glyph set with dim words — green `●` on finish, red `⊗` on failure, all dim on cancel, `(partial)` dim; the attach header takes `›` with lowercase `esc back`; a skill block is its bold name only. |
+| 2026-11-08 | OSC 7501 program-status emission: the mode loop reports working/idle/blocked (+kind permission/question/auth)/done/error and clears on quit to any terminal, alongside the unchanged Herdr CLI path. Root record only (no subagent child ids in v1); off on `TERM=dumb`. |
 
 ## Open
 
