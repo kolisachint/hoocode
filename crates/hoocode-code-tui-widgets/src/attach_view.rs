@@ -1,6 +1,6 @@
 //! The attached view's two rows (T3.3). While the screen shows a subagent
-//! run's transcript, the header row sits above it (`◆ explore ·
-//! <description> · <state> · Esc back`), and the prompt's place at the
+//! run's transcript, the header row sits above it (`› explore ·
+//! <description> · <state> · esc back`), and the prompt's place at the
 //! bottom shows a hint: the view is read-only, and Esc goes back to the
 //! session. The prompt's stand-in takes the keyboard, so typed text goes
 //! nowhere.
@@ -34,16 +34,16 @@ impl AttachHeader {
     }
 
     /// The row's text at `width`, unstyled. The description gives way first,
-    /// so the state and `Esc back` stay on screen. The `◆` marker is the
+    /// so the state and `esc back` stay on screen. The `›` marker is the
     /// attached view's own (spec §4 c3); the parent mission and step number
     /// are not threaded yet, so the state word stays.
     pub fn text(&self, width: usize) -> String {
         let back = key_hint_text("app.subagent.detach");
-        let fixed = format!("◆ {} ·  · {} · {back} back", self.agent_type, self.state);
+        let fixed = format!("› {} ·  · {} · {back} back", self.agent_type, self.state);
         let room = width.saturating_sub(visible_width(&fixed));
         let description = truncate_to_width(&self.description, room, "…", false);
         let line = format!(
-            "◆ {} · {} · {} · {back} back",
+            "› {} · {} · {} · {back} back",
             self.agent_type, description, self.state
         );
         // A row too narrow for the fixed parts still fits the screen.

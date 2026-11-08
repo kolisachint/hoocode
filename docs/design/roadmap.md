@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-07): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 111 open items: 44 next, 21 need a user decision, 46 deferred behind a trigger or gate.
+Status (2026-11-08): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 110 open items: 43 next, 21 need a user decision, 46 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
@@ -25,6 +25,7 @@ Rule: when the user asks to implement, ask which item first. The top of Next is 
 | Themes | Five built-in themes, JSON tokens, user themes, hot reload. Plan T-1 to T-6. 2026-11 | [tui.md](tui.md) |
 | Keybindings | Leader Ctrl+X, bare-letter lists, no Alt in defaults, grouped `keybindings.json`. Plan K-0 to K-10. 2026-11 | [tui.md](tui.md) |
 | Single view | One row per tool call, click or Enter to expand in place; one pane grammar; yellow only for blocking. UI-21 + UI-22, phases P0–P6 on branch `feat/u21-u22`. 2026-11-07 | [tui.md](tui.md) |
+| Subagent nudge | The loop header names the run's resume label; notice heads in `●`/`⊗` with dim words; the attach header takes `›` with `esc back`; a skill block is its bold name only. UI-1, 2026-11-08 | [tui.md](tui.md) |
 
 ## Next
 
@@ -39,46 +40,45 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 5. [RT-4](runtime.md#open) `SessionManager` `by_id` index (S)
 6. [RT-5](runtime.md#open) One process-wide HTTP client (S)
 7. [SA-4](subagents.md#open) Re-run `--matrix` and `--soak 600` after the cancel and tree-kill rounds (S)
-8. [UI-1](tui.md#open) Drift: `◆` is still drawn in skill and attach blocks (S)
-9. [UI-6](tui.md#open) Component goldens for every dialog and notice (M). The dialog and notice mockups were deleted, so pin them first
+8. [UI-6](tui.md#open) Component goldens for every dialog and notice (M). The dialog and notice mockups were deleted, so pin them first
 
 ### Then
 
-10. [RT-6](runtime.md#open) CodeSearch: compile term regexes once (S)
-11. [RT-7](runtime.md#open) UserMessageComponent: render stamp at construction (S)
-12. [RT-8](runtime.md#open) `ShellOutput` wait on a Condvar (S)
-13. [RT-9](runtime.md#open) `MessageUpdate` sets dirty (S)
-14. [RT-10](runtime.md#open) Approvals stop freezing the batch (L)
-15. [RT-11](runtime.md#open) Tool progress: latest per call id (M)
-16. [RT-12](runtime.md#open) SSE 16 MiB cap in provider decoders (S). Rule debt.
-17. [RT-13](runtime.md#open) Cap unbounded channels outside the runtime (M). Rule debt.
-18. [RT-14](runtime.md#open) LLM first-byte and idle deadline (S). Rule debt.
-19. [RT-15](runtime.md#open) Compaction off io and tools (M). Rule debt.
-20. [RT-16](runtime.md#open) Step 0: measured 10 and 15 turn baseline (S). Gates RT-17 to RT-20.
-21. [RT-28](runtime.md#open) Input-thread panic restarts the reader (S)
-22. [RT-33](runtime.md#open) Clear render caches on memory shed (S)
-23. [RT-34](runtime.md#open) Test the hard-limit turn abort (S)
-24. [RT-35](runtime.md#open) One tool output truncation default (S)
-25. [RT-36](runtime.md#open) One `home_dir` (S)
-26. [EN-8](README.md#open) and [UI-3](tui.md#open) Run the plain-words check in CI `guards`. Same item (S)
-27. [EN-1](README.md#open) Wire the Stop and PostToolUse hooks (S)
-28. [EN-2](README.md#open) `[workspace.lints]` (S)
-29. [EN-3](README.md#open) Hygiene job: `cargo machete` and `cargo deny` (S)
-30. [EN-7](README.md#open) MSRV job on Rust 1.88 (S)
-31. [AG-3](agent.md#open) Delete the dead `packages` setting (S)
-32. [AG-4](agent.md#open) Drop Copilot and `.agents-plugin` plugin markers (S)
-33. [AG-5](agent.md#open) Rewrite the plugin-authoring skill text (S)
-34. [AG-6](agent.md#open) Fix the TUI plugin tool list (S)
-35. [AG-17](agent.md#open) Remove the `/learn` tip. The decision says no (S)
-36. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
-37. [UI-2](tui.md#open) Delete the orphan `color-chrome` goldens (S)
-38. [UI-4](tui.md#open) Drop the `○●` pulse loader, or keep it for compaction only (S)
-39. [UI-5](tui.md#open) Refuse a printable leader key (S)
-40. [UI-8](tui.md#open) Add `dusk`, `high-contrast` and `paper` to the contrast test (S)
-41. [UI-9](tui.md#open) Fix docs drift in maps and user pages (S)
-42. [UI-20](tui.md#open) Rename the `*_ts*.rs` test files (S, optional)
-43. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
-44. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
+9. [RT-6](runtime.md#open) CodeSearch: compile term regexes once (S)
+10. [RT-7](runtime.md#open) UserMessageComponent: render stamp at construction (S)
+11. [RT-8](runtime.md#open) `ShellOutput` wait on a Condvar (S)
+12. [RT-9](runtime.md#open) `MessageUpdate` sets dirty (S)
+13. [RT-10](runtime.md#open) Approvals stop freezing the batch (L)
+14. [RT-11](runtime.md#open) Tool progress: latest per call id (M)
+15. [RT-12](runtime.md#open) SSE 16 MiB cap in provider decoders (S). Rule debt.
+16. [RT-13](runtime.md#open) Cap unbounded channels outside the runtime (M). Rule debt.
+17. [RT-14](runtime.md#open) LLM first-byte and idle deadline (S). Rule debt.
+18. [RT-15](runtime.md#open) Compaction off io and tools (M). Rule debt.
+19. [RT-16](runtime.md#open) Step 0: measured 10 and 15 turn baseline (S). Gates RT-17 to RT-20.
+20. [RT-28](runtime.md#open) Input-thread panic restarts the reader (S)
+21. [RT-33](runtime.md#open) Clear render caches on memory shed (S)
+22. [RT-34](runtime.md#open) Test the hard-limit turn abort (S)
+23. [RT-35](runtime.md#open) One tool output truncation default (S)
+24. [RT-36](runtime.md#open) One `home_dir` (S)
+25. [EN-8](README.md#open) and [UI-3](tui.md#open) Run the plain-words check in CI `guards`. Same item (S)
+26. [EN-1](README.md#open) Wire the Stop and PostToolUse hooks (S)
+27. [EN-2](README.md#open) `[workspace.lints]` (S)
+28. [EN-3](README.md#open) Hygiene job: `cargo machete` and `cargo deny` (S)
+29. [EN-7](README.md#open) MSRV job on Rust 1.88 (S)
+30. [AG-3](agent.md#open) Delete the dead `packages` setting (S)
+31. [AG-4](agent.md#open) Drop Copilot and `.agents-plugin` plugin markers (S)
+32. [AG-5](agent.md#open) Rewrite the plugin-authoring skill text (S)
+33. [AG-6](agent.md#open) Fix the TUI plugin tool list (S)
+34. [AG-17](agent.md#open) Remove the `/learn` tip. The decision says no (S)
+35. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
+36. [UI-2](tui.md#open) Delete the orphan `color-chrome` goldens (S)
+37. [UI-4](tui.md#open) Drop the `○●` pulse loader, or keep it for compaction only (S)
+38. [UI-5](tui.md#open) Refuse a printable leader key (S)
+39. [UI-8](tui.md#open) Add `dusk`, `high-contrast` and `paper` to the contrast test (S)
+40. [UI-9](tui.md#open) Fix docs drift in maps and user pages (S)
+41. [UI-20](tui.md#open) Rename the `*_ts*.rs` test files (S, optional)
+42. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
+43. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
 45–46. [UI-21 + UI-22](tui.md#proposed-single-view-ui-21-ui-22) Single view + pane grammar: done 2026-11-07, phases P0–P6 on branch `feat/u21-u22` (see Built).
 
 ## Needs a user decision

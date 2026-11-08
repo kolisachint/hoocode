@@ -1295,6 +1295,38 @@ fn create_background_placeholder_outcome(
     }
 }
 
+/// A background Agent result opens its body with the run's handle:
+/// `explore#4 ("what it was for") finished ✓ — …`. The handle's resume
+/// label (and the description travelling with it) for the result header;
+/// `None` when the body carries no handle — another background tool, or a
+/// shape this loop did not write — where the header keeps its current
+/// tool-and-call-id form. The call id is never altered: the transcript
+/// looks runs up by it.
+fn background_agent_handle(result: &AgentToolResult) -> Option<(String, String)> {
+    let first = result.content.iter().find_map(|block| match block {
+        Content::Text(text) => {
+            let line = text.text.lines().next()?.trim();
+            (!line.is_empty()).then(|| line.to_string())
+        }
+        _ => None,
+    })?;
+    let (label, rest) = first.split_once(' ')?;
+    if !label.contains('#') || label.contains(['"', '(', ')']) {
+        return None;
+    }
+    let (description, rest) = match rest.strip_prefix("(\"") {
+        Some(after) => {
+            let (description, after) = after.split_once("\")")?;
+            (description.to_string(), after.trim_start().to_string())
+        }
+        None => (String::new(), rest.to_string()),
+    };
+    let settled = ["finished ✓", "failed ✗", "cancelled ⊘"]
+        .iter()
+        .any(|verdict| rest.starts_with(verdict));
+    settled.then(|| (label.to_string(), description))
+}
+
 /// `createDefaultBackgroundResultMessage`.
 fn create_default_background_result_message(finalized: &FinalizedOutcome) -> AgentMessage {
     let verb = if finalized.is_error {
@@ -1302,10 +1334,16 @@ fn create_default_background_result_message(finalized: &FinalizedOutcome) -> Age
     } else {
         "finished"
     };
-    let header = format!(
-        "Background tool \"{}\" (id {}) {verb}:",
-        finalized.tool_call.name, finalized.tool_call.id
-    );
+    let header = match background_agent_handle(&finalized.result) {
+        Some((label, _description)) => format!(
+            "Background agent {label} ({}) {verb}:",
+            finalized.tool_call.id
+        ),
+        None => format!(
+            "Background tool \"{}\" (id {}) {verb}:",
+            finalized.tool_call.name, finalized.tool_call.id
+        ),
+    };
     let mut content = vec![Content::text(header)];
     content.extend(finalized.result.content.iter().cloned());
     AgentMessage::User(UserMessage {

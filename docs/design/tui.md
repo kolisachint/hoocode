@@ -524,12 +524,12 @@ Decided 2026-11-07; each answer is a dated row in the Decisions table below. The
 | 2026-11-07 | Accepted verification deviations M1–M6 as built: M1 label +2; M2 body indent pinned at 8; M3 tok/turn kept in dense rows; M4 mdHeading yellow out of scope; M5 source +1 cell; M6 stale copy fixed. |
 | 2026-11-07 | Frozen-row theme lag is a known limitation: frozen blocks skip `invalidate`, so they keep the old palette until they scroll out. |
 | 2026-11-07 | Focus fill and click-pin ride the block `expanded` flag (`mode/transcript/focus.rs`). |
+| 2026-11-08 | Subagent-response nudge look (UI-1 closed): the loop header names the run's resume label (`Background agent explore#4 (id …) finished:`, old tool-and-id headers still parse); notice heads use the glyph set with dim words — green `●` on finish, red `⊗` on failure, all dim on cancel, `(partial)` dim; the attach header takes `›` with lowercase `esc back`; a skill block is its bold name only. |
 
 ## Open
 
 | ID | Item | Size | Trigger or gate | Design notes |
 |---|---|---|---|---|
-| UI-1 | Drift: `◆` is still drawn. Skill block `◆ skill: <name>` (`skill_block.rs:51`), attach header `◆ <type>` (`attach_view.rs:42,46`). Spec says `◆` is gone. | S | None | Pick one glyph from the set. A skill block has no state, so bold name only. The attach header takes `›`. Update the test `tests/it/attach_view.rs:18`, goldens `tests/golden/tui/subagent-attach/`, and `docs/maps/ui.md`. |
 | UI-2 | Drift: orphan goldens `tests/golden/tui/color-chrome/` (7 files). The scenario JSON was deleted. The files show HUD, SHIP, FUEL, CR. | S | None | Delete the directory. |
 | UI-3 | Plain-words guard is not in CI | S | None | Same item as EN-8 in README.md. |
 | UI-4 | Drift: the `○●` pulse is still drawn (`tui-components/src/loader.rs`, `DEFAULT_FRAMES`, `PULSE_INTERVAL_MS`). The spec says no spinner. | S | None | Drop it, or keep it for compaction only and say so in Principles. |

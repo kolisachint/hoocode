@@ -88,8 +88,8 @@ fn omit_hides_thinking_despite_the_toggle() {
     assert_eq!(c.render(60), Vec::<String>::new());
 }
 
-/// Collapsed, the skill block is one row with the name in bold and no mark;
-/// expanded, the whole body.
+/// Collapsed, the skill block is one row: the name in bold, no mark and no
+/// prefix; expanded, the whole body.
 #[test]
 fn skill_row_has_no_mark_and_toggles_to_the_whole_body() {
     let _g = lock();
@@ -103,7 +103,7 @@ fn skill_row_has_no_mark_and_toggles_to_the_whole_body() {
         .map(|l| strip(l).trim_end().to_string())
         .filter(|l| !l.is_empty())
         .collect();
-    assert_eq!(rows, vec!["skill write-tests"], "{rows:?}");
+    assert_eq!(rows, vec!["write-tests"], "{rows:?}");
     assert!(!rows.join("").contains('◆'));
 
     block.set_expanded(true);
@@ -319,7 +319,7 @@ fn compaction_label_cuts_before_the_primary_fact() {
     assert!(plain.contains('…'), "{plain:?}");
 }
 
-const HEADER: &str = "Background tool \"Agent\" (id toolu_01Hx7) finished:";
+const HEADER: &str = "Background agent explore#4 (toolu_01Hx7) finished:";
 
 /// The notice toggle reads back what it was set to.
 #[test]
