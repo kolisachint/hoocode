@@ -8,7 +8,7 @@
    Plugins      3 settings            Changes persist across sessions.
    Images       2 settings
    Learning     5 settings            per turn  4,140 tokens
-   Advanced     8 settings            prompt    1,430 tokens
+   Advanced     7 settings            prompt    1,430 tokens
                                       tools     2,710 tokens
                                       Read 162 · Shell 128
  ▏ filter

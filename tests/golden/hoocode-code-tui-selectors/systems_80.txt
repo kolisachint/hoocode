@@ -8,7 +8,7 @@
    Plugins      3 settings
    Images       2 settings
    Learning     5 settings
-   Advanced     8 settings
+   Advanced     7 settings
  Tools
  current   1 on
  price     2,710 tok/turn

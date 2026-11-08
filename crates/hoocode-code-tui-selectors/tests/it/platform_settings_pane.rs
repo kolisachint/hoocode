@@ -141,7 +141,6 @@ fn leaves_no_setting_stranded_outside_every_category() {
         "auto-resize-images",
         "block-images",
         "quiet-startup",
-        "collapse-changelog",
         "install-telemetry",
         "skill-commands",
         "warnings",

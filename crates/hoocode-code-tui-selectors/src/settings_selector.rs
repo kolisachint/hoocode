@@ -1527,12 +1527,6 @@ impl SettingsSelectorComponent {
             config.hide_thinking_block,
         ));
         leaves.push(Leaf::toggle(
-            "collapse-changelog",
-            "Collapse changelog",
-            "Show condensed changelog after updates",
-            config.collapse_changelog,
-        ));
-        leaves.push(Leaf::toggle(
             "quiet-startup",
             "Quiet startup",
             "Disable verbose printing at startup",
@@ -1977,7 +1971,6 @@ impl SettingsSelectorComponent {
             ids(&[
                 "quiet-startup",
                 "tips",
-                "collapse-changelog",
                 "install-telemetry",
                 "skill-commands",
                 "warnings",

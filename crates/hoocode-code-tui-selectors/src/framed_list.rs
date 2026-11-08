@@ -16,9 +16,9 @@ use hoocode_code_tui_theme::get_select_list_theme;
 use hoocode_code_tui_widgets::console::{hints, Console};
 use hoocode_tui_components::{SelectItem, SelectList, SelectListLayoutOptions};
 use hoocode_tui_glyphs::status;
-use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{bold, truncate_line, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::visible_width;
+use hoocode_tui_util::{truncate_at_word, visible_width};
 
 /// The pickers' primary column: at least 12 cells, at most 32. Still the
 /// [`SelectList`] column layout for the submenus that render the list
@@ -40,11 +40,12 @@ pub type DetailFn = fn(&SelectItem) -> Vec<Line<'static>>;
 /// The mark carries the state so a row never reads as colour alone: `●`
 /// (ok) for the row holding the state, `○` (dim) for the rest. The name
 /// never cuts; secondary facts drop whole, right-to-left; the target
-/// shortens at a word (never below 12 cells); primary facts never drop.
-/// The cut order mirrors `tool_row::header_spans`, measured with visible
-/// widths so a row built to [`Console::row_width`] is never cut by the
-/// pane. It lives here rather than reusing that helper because `Mark` has
-/// no `○` shape and picker facts keep their own colours (the green
+/// shortens at a word (a first word longer than the budget is cut hard,
+/// so a single long token still fits); primary facts never drop. A final
+/// `truncate_line` guard keeps the row within `width` no matter what. The
+/// cut order mirrors `tool_row::header_spans`, measured with visible
+/// widths. It lives here rather than reusing that helper because `Mark`
+/// has no `○` shape and picker facts keep their own colours (the green
 /// `configured`, the ink `on`, the warn `expired`).
 pub(crate) fn picker_row(
     active: bool,
@@ -91,7 +92,7 @@ pub(crate) fn picker_row(
         };
         let head_len = visible_width(&format!("{mark} {name}"))
             .saturating_add(if short.is_empty() { 0 } else { 1 });
-        short = shorten_target(target, width.saturating_sub(head_len + facts_len));
+        short = truncate_at_word(target, width.saturating_sub(head_len + facts_len));
     }
     let mut spans = vec![
         Span::styled(mark.to_string(), mark_style),
@@ -115,7 +116,7 @@ pub(crate) fn picker_row(
         }
         spans.push(Span::styled(text.clone(), *style));
     }
-    Line::from(spans)
+    truncate_line(&Line::from(spans), width)
 }
 
 /// The non-empty fact texts, primary then secondary, for measuring and
@@ -130,50 +131,6 @@ fn fact_texts<'a>(
         .chain(secondary.iter().map(|(text, _)| text.as_str()))
         .filter(|text| !text.is_empty())
         .collect()
-}
-
-/// Whole leading words of `text` that fit in `avail` cells.
-fn keep_words(text: &str, avail: usize) -> String {
-    let mut kept = String::new();
-    for word in text.split_whitespace() {
-        let cand = if kept.is_empty() {
-            word.to_string()
-        } else {
-            format!("{kept} {word}")
-        };
-        if visible_width(&cand) > avail {
-            break;
-        }
-        kept = cand;
-    }
-    kept
-}
-
-/// A prose target cuts at a word, never below a 12-cell whole-word
-/// prefix (the pane cuts what still overflows).
-fn shorten_target(target: &str, avail: usize) -> String {
-    if visible_width(target) <= avail {
-        return target.to_string();
-    }
-    let kept = keep_words(target, avail.saturating_sub(1));
-    if visible_width(&kept) >= 12 {
-        return format!("{kept}…");
-    }
-    let mut min = String::new();
-    for word in target.split_whitespace() {
-        min = if min.is_empty() {
-            word.to_string()
-        } else {
-            format!("{min} {word}")
-        };
-        if visible_width(&min) >= 12 {
-            break;
-        }
-    }
-    if min.is_empty() {
-        return target.to_string();
-    }
-    format!("{min}…")
 }
 
 /// One picker row (content only; the pane adds the ` › ` marker or gutter
@@ -369,5 +326,29 @@ impl Component for FramedSelectList {
 
     fn handle_input(&mut self, data: &str) {
         self.list.borrow_mut().handle_input(data);
+    }
+}
+
+#[cfg(test)]
+mod picker_row_tests {
+    use super::*;
+
+    fn row_text(line: &Line<'static>) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn a_single_token_longer_than_the_budget_is_cut_to_width() {
+        let pal = Palette::current();
+        // A 40-cell token with no spaces: the old word-prefix fallback
+        // returned the whole token plus `…`, overrunning the row.
+        let target = "a".repeat(40);
+        let line = picker_row(false, "Name", &target, Vec::new(), Vec::new(), 20, &pal);
+        let text = row_text(&line);
+        assert!(visible_width(&text) <= 20, "{text}");
+        assert!(text.contains('…'), "{text}");
     }
 }

@@ -90,6 +90,7 @@ fn render_at(text: &str, expanded: bool, width: u16) -> Vec<String> {
 
 #[test]
 fn parses_a_done_notice() {
+    // The `4 still running.` machine trailer never reaches the summary.
     let notice = parse_background_notice(&done_text(SUMMARY, " 4 still running."));
     assert_eq!(
         notice,
@@ -100,7 +101,6 @@ fn parses_a_done_notice() {
             verdict: NoticeVerdict::Finished,
             partial: false,
             summary: SUMMARY.into(),
-            still_running: Some(4),
             model: None,
             effort: None,
         })
@@ -113,7 +113,6 @@ fn parses_a_failed_notice() {
     assert_eq!(notice.label, "explore#1");
     assert_eq!(notice.verdict, NoticeVerdict::Failed);
     assert_eq!(notice.summary, "provider timed out after 95s");
-    assert_eq!(notice.still_running, None);
 }
 
 #[test]
@@ -126,9 +125,11 @@ fn parses_a_cancelled_notice() {
 }
 
 #[test]
-fn still_running_is_absent_when_nothing_else_runs() {
+fn a_trailing_running_count_never_reaches_the_summary() {
+    let tailed =
+        parse_background_notice(&done_text(SUMMARY, " 4 still running.")).expect("a done notice");
+    assert_eq!(tailed.summary, SUMMARY);
     let notice = parse_background_notice(&done_text(SUMMARY, "")).expect("a done notice");
-    assert_eq!(notice.still_running, None);
     assert_eq!(notice.summary, SUMMARY);
 }
 

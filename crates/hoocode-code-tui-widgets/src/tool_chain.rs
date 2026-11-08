@@ -70,13 +70,13 @@ fn whole_body(mut body: Vec<String>, footer: Vec<String>) -> Vec<String> {
     body
 }
 
-/// A Shell exit trailer's code: `Command exited with code 1` reads as the
-/// row's red `exit 1` fact, never as the dim reason.
+/// A Shell exit trailer's code: only the exact line `Command exited with
+/// code 1` reads as the row's red `exit 1` fact. Anything after the code
+/// (a signal note, more output) keeps the text as the dim reason instead.
 fn shell_trailer_exit(text: &str) -> Option<i32> {
     text.trim()
         .strip_prefix("Command exited with code ")?
-        .split_whitespace()
-        .next()?
+        .trim()
         .parse()
         .ok()
 }
@@ -461,5 +461,30 @@ impl Component for ToolChainComponent {
         for lead in &self.lead_ins {
             lead.component.borrow_mut().invalidate();
         }
+    }
+}
+
+#[cfg(test)]
+mod shell_trailer_tests {
+    use super::*;
+
+    #[test]
+    fn only_the_exact_trailer_converts_to_an_exit_fact() {
+        assert_eq!(shell_trailer_exit("Command exited with code 1"), Some(1));
+        assert_eq!(
+            shell_trailer_exit("  Command exited with code 127  "),
+            Some(127)
+        );
+        // A suffixed trailer is a reason, not an exit fact.
+        assert_eq!(
+            shell_trailer_exit("Command exited with code 1 (signal: killed)"),
+            None
+        );
+        assert_eq!(
+            shell_trailer_exit("Command exited with code 1\nmore output"),
+            None
+        );
+        assert_eq!(shell_trailer_exit("exit 1"), None);
+        assert_eq!(shell_trailer_exit("Command exited with code"), None);
     }
 }

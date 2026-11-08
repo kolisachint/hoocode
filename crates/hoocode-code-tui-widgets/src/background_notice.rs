@@ -51,10 +51,9 @@ pub struct BackgroundNotice {
     pub verdict: NoticeVerdict,
     /// The task stopped early and can be resumed.
     pub partial: bool,
-    /// The one-line summary of the answer; empty when there is none.
+    /// The one-line summary of the answer; empty when there is none. A
+    /// trailing `N still running.` machine trailer is stripped from it.
     pub summary: String,
-    /// Tasks still running when this one settled.
-    pub still_running: Option<usize>,
     /// The model's short name, e.g. `haiku-5-5`.
     pub model: Option<String>,
     /// The reasoning effort, e.g. `high`.
@@ -81,9 +80,11 @@ static FIRST_LINE_RE: Lazy<Regex> = Lazy::new(|| {
         .expect("background first line")
 });
 
-/// ` 4 still running.` at the end of the summary.
-static STILL_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\s(\d+) still running\.$").expect("still running"));
+/// ` 4 still running.` at the end of the summary: a machine trailer,
+/// dropped like the model marker (the head never renders it — the task
+/// panel owns live counts — so it is stripped, never stored).
+static STILL_TAIL_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\s\d+ still running\.$").expect("still running tail"));
 
 /// `[model: anthropic/claude-haiku-5-5, effort high]`, anywhere in the text.
 static MODEL_RE: Lazy<Regex> =
@@ -134,13 +135,7 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
         _ => NoticeVerdict::Cancelled,
     };
     let rest = caps.get(5).map_or("", |m| m.as_str()).trim();
-    let (rest, still_running) = match STILL_RE.captures(rest) {
-        Some(caps) => (
-            STILL_RE.replace(rest, "").into_owned(),
-            caps[1].parse::<usize>().ok(),
-        ),
-        None => (rest.to_string(), None),
-    };
+    let rest = STILL_TAIL_RE.replace(rest, "");
     let summary = rest.trim();
     let summary = summary.strip_suffix('.').unwrap_or(summary).trim();
 
@@ -151,7 +146,6 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
         verdict,
         partial: caps.get(4).is_some(),
         summary: summary.to_string(),
-        still_running,
         model,
         effort,
     })

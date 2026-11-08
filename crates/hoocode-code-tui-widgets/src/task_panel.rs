@@ -542,6 +542,7 @@ fn flight_detail(
     owner: Option<&TaskAgent>,
     confirm: bool,
     now: u64,
+    scoped_aliases: &[(String, Option<String>)],
 ) -> Option<(Vec<String>, Style)> {
     let pal = Palette::current();
     if confirm {
@@ -598,7 +599,7 @@ fn flight_detail(
             if is_delegated(task) {
                 facts.push(format_duration_secs(task_elapsed_secs(task, now)));
             }
-            facts.extend(describe_run(owner, now));
+            facts.extend(describe_run(owner, now, scoped_aliases));
             if !facts.is_empty() {
                 return Some((facts, pal.faint()));
             }
@@ -691,6 +692,7 @@ fn flight_row(
     confirm: bool,
     inner: usize,
     now: u64,
+    scoped_aliases: &[(String, Option<String>)],
 ) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![
@@ -730,14 +732,15 @@ fn flight_row(
     if confirm {
         let mut row = Line::from(spans);
         row.spans.push(Span::styled(title, title_style));
-        if let Some((facts, fact_style)) = flight_detail(task, owner, confirm, now) {
+        if let Some((facts, fact_style)) = flight_detail(task, owner, confirm, now, scoped_aliases)
+        {
             let detail = truncate_to_width(&facts.join(" · "), inner, "…", false);
             append_detail(&mut row, vec![Span::styled(detail, fact_style)], inner);
         }
         return row;
     }
     let mut row = Line::from(spans);
-    let Some((facts, fact_style)) = flight_detail(task, owner, false, now) else {
+    let Some((facts, fact_style)) = flight_detail(task, owner, false, now, scoped_aliases) else {
         row.spans.push(Span::styled(title, title_style));
         return row;
     };
@@ -769,6 +772,7 @@ fn render_flight_plan(
     width: usize,
     now: u64,
     max_rows: usize,
+    scoped_aliases: &[(String, Option<String>)],
 ) -> Vec<String> {
     let st = PaneStyle::current();
     let ids = model.row_ids(view);
@@ -806,6 +810,7 @@ fn render_flight_plan(
                 confirming == Some(row.id),
                 row_inner,
                 now,
+                scoped_aliases,
             )
         })
         .collect();
@@ -1200,6 +1205,7 @@ impl Component for TaskPanelComponent {
             width as usize,
             now,
             row_cap(self.screen_rows),
+            saved_scoped_aliases(),
         )
     }
 
@@ -1228,7 +1234,9 @@ static SCOPED_MODEL_ALIASES: OnceLock<Vec<(String, Option<String>)>> = OnceLock:
 
 /// The saved entries, read once per process from the global settings and the
 /// project settings (the project list replaces the global one). A settings
-/// change mid-run shows after a restart.
+/// change mid-run shows after a restart. Read once at the render boundary
+/// and threaded through as a parameter, so the row builders below stay pure
+/// functions of their inputs (and tests pin hermetic entries instead).
 fn saved_scoped_aliases() -> &'static Vec<(String, Option<String>)> {
     SCOPED_MODEL_ALIASES.get_or_init(|| {
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -1247,9 +1255,11 @@ fn saved_scoped_aliases() -> &'static Vec<(String, Option<String>)> {
 /// The widget cannot see the app's concrete scoped list, so it matches the
 /// saved entries itself: an exact entry first, then the first glob entry with
 /// an alias, so a later entry still fills in the alias the first left unset.
-/// `[...]` classes are not matched (exact entries only).
-fn model_alias(model: &str) -> String {
-    if let Some(alias) = scoped_alias_for(model, saved_scoped_aliases()) {
+/// `[...]` classes are not matched (exact entries only). The entries come
+/// from the caller (the component passes [`saved_scoped_aliases`]), so this
+/// stays a pure function of its inputs.
+fn model_alias(model: &str, entries: &[(String, Option<String>)]) -> String {
+    if let Some(alias) = scoped_alias_for(model, entries) {
         return alias;
     }
     model.rsplit('/').next().unwrap_or(model).to_string()
@@ -1309,7 +1319,11 @@ fn glob_inner(pattern: &[char], text: &[char]) -> bool {
 
 /// `attempt 2 · muse · 3:12 left` — the facts that explain a run, highest
 /// priority first. The outcome replaces them once the run has one.
-fn describe_run(owner: Option<&TaskAgent>, now: u64) -> Vec<String> {
+fn describe_run(
+    owner: Option<&TaskAgent>,
+    now: u64,
+    scoped_aliases: &[(String, Option<String>)],
+) -> Vec<String> {
     let Some(owner) = owner else {
         return Vec::new();
     };
@@ -1332,7 +1346,7 @@ fn describe_run(owner: Option<&TaskAgent>, now: u64) -> Vec<String> {
         facts.push(format!("attempt {attempt}"));
     }
     if let Some(model) = owner.model.as_deref().filter(|m| !m.is_empty()) {
-        facts.push(model_alias(model));
+        facts.push(model_alias(model, scoped_aliases));
     }
     if let Some(deadline) = owner.deadline_at.filter(|d| *d > now) {
         facts.push(format!(
@@ -1664,15 +1678,18 @@ mod row_model_tests {
     }
 
     #[test]
-    fn model_alias_falls_back_to_the_last_path_segment() {
-        // No saved entry names this fixture id, so the short id is its tail.
+    fn model_alias_uses_the_entries_then_falls_back_to_the_tail() {
+        // Hermetic entries: no saved settings are read, so the alias and
+        // the fallback chain stay pinned whatever the machine holds.
+        let entries = vec![scoped("mock/*", Some("mocked"))];
+        assert_eq!(model_alias("mock/pinned", &entries), "mocked");
         assert_eq!(
-            scoped_alias_for("test-fixture-xyzzy/test-model-xyzzy", &[]),
-            None
+            model_alias("test-fixture-xyzzy/test-model-xyzzy", &entries),
+            "test-model-xyzzy"
         );
         assert_eq!(
-            "test-fixture-xyzzy/test-model-xyzzy".rsplit('/').next(),
-            Some("test-model-xyzzy")
+            model_alias("test-fixture-xyzzy/test-model-xyzzy", &[]),
+            "test-model-xyzzy"
         );
     }
 
