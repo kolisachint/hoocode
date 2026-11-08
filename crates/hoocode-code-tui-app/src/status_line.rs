@@ -335,7 +335,7 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
                 } else {
                     "calls"
                 };
-                out.push(span(format!("{} failed {noun}", turn.failed_calls), st.err));
+                out.push(span(format!("{} failed {noun}", turn.failed_calls), st.dim));
             }
         }
         LeftSlot::NotSignedIn => {
