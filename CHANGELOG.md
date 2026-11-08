@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: selector rows finish the row grammar (2026-11-08)
+- **Theme submenu rows read like the other pickers.** The Theme pane inside `/settings` draws `● dark  in use` (mark, bold name, dim fact) on the shared row grammar instead of a bare label; facts cut right-to-left at narrow widths.
+- **The session delete confirm is dim, not red.** `Delete session?` reads as dim text with `enter confirm · esc cancel`, like the quit card; red stays for blocking errors.
+
 ### Fixed: transcript top/bottom move to Home/End (2026-11-08)
 - **Bare `g` and `G` no longer teleport the transcript.** They typed nothing anywhere: pinned with an empty prompt, `g` jumped to the top and `G` back to live, eating the letter. `app.scroll.top` is now `Home` and `app.scroll.bottom` is `End`, so no typed letter ever moves the view. Bind `g`/`G` back in `keybindings.json` for the vim keys.
 

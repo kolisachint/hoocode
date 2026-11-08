@@ -189,14 +189,16 @@ impl SessionSelectorHeader {
         ]
     }
 
-    /// The hint row's prompt states: the delete prompt, the interrupted-run
-    /// choice or the timed status while one is up (the row spans the pane,
-    /// so long prompts are not cut by a split). None in the normal state:
-    /// the caller draws four keys and `f1 more` from [`all_hints`].
+    /// The hint row's prompt states: the delete prompt (dim, like the
+    /// quit card: a confirm is not an error, so no red), the
+    /// interrupted-run choice or the timed status while one is up (the row
+    /// spans the pane, so long prompts are not cut by a split). None in the
+    /// normal state: the caller draws four keys and `f1 more` from
+    /// [`all_hints`].
     fn hint_prompt(&self) -> Option<Line<'static>> {
         let pal = Palette::current();
         if self.confirming_delete {
-            let mut spans = vec![Span::styled("Delete session? ".to_string(), pal.err())];
+            let mut spans = vec![Span::styled("Delete session? ".to_string(), pal.dim())];
             spans.extend(
                 hints(&[
                     (key_hint_text("tui.select.confirm").as_str(), "confirm"),
