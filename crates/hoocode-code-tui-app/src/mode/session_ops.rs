@@ -329,7 +329,13 @@ impl Mode {
     /// confirm.
     pub(super) fn handle_import_command(&mut self, text: &str) {
         let Some(input) = command_path_argument(text, "/import") else {
-            self.show_error("Usage: /import <path.jsonl>");
+            let t = theme();
+            self.add_to_chat(as_component(&handle(Spacer::new(1))));
+            self.add_to_chat(as_component(&handle(Text::new(
+                t.fg("dim", "Usage: /import <path.jsonl>"),
+                1,
+                0,
+            ))));
             return;
         };
         let title = format!("Import session\nReplace current session with {input}?");
@@ -422,15 +428,15 @@ impl Mode {
         let t = theme();
         if name.is_empty() {
             let label = if self.session.session_name().is_some() {
-                "Session name:"
+                "Session name"
             } else {
-                "Session name (auto):"
+                "Session name (auto)"
             };
             let line = format!(
-                "{} {}  {}",
+                "{}  {} · {}",
                 t.fg("dim", label),
                 self.session.display_name(),
-                t.fg("dim", "/name <name> to change")
+                t.fg("dim", "/name <name>")
             );
             self.add_to_chat(as_component(&handle(Spacer::new(1))));
             self.add_to_chat(as_component(&handle(Text::new(line, 1, 0))));
@@ -450,7 +456,7 @@ impl Mode {
         let stats = self.session.get_session_stats();
         let t = theme();
         let dim = |s: &str| t.fg("dim", s);
-        let mut info = format!("{}\n\n", t.bold("Session Info"));
+        let mut info = String::new();
         let name_label = if self.session.session_name().is_some() {
             "Name:"
         } else {
@@ -465,14 +471,12 @@ impl Mode {
             dim("File:"),
             stats.session_file.as_deref().unwrap_or("In-memory")
         );
-        info += &format!("{} {}\n\n", dim("ID:"), stats.session_id);
-        info += &format!("{}\n", t.bold("Messages"));
+        info += &format!("{} {}\n", dim("ID:"), stats.session_id);
         info += &format!("{} {}\n", dim("User:"), stats.user_messages);
         info += &format!("{} {}\n", dim("Assistant:"), stats.assistant_messages);
         info += &format!("{} {}\n", dim("Tool Calls:"), stats.tool_calls);
         info += &format!("{} {}\n", dim("Tool Results:"), stats.tool_results);
-        info += &format!("{} {}\n\n", dim("Total:"), stats.total_messages);
-        info += &format!("{}\n", t.bold("Tokens"));
+        info += &format!("{} {}\n", dim("Total:"), stats.total_messages);
         info += &format!("{} {}\n", dim("Input:"), group_digits(stats.tokens.input));
         info += &format!("{} {}\n", dim("Output:"), group_digits(stats.tokens.output));
         if stats.tokens.cache_read > 0 {
@@ -491,7 +495,6 @@ impl Mode {
         }
         info += &format!("{} {}\n", dim("Total:"), group_digits(stats.tokens.total));
         if stats.cost > 0.0 {
-            info += &format!("\n{}\n", t.bold("Cost"));
             info += &format!("{} {:.4}", dim("Total:"), stats.cost);
         }
         self.add_to_chat(as_component(&handle(Spacer::new(1))));

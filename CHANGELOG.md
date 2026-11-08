@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed: transcript top/bottom move to Home/End (2026-11-08)
 - **Bare `g` and `G` no longer teleport the transcript.** They typed nothing anywhere: pinned with an empty prompt, `g` jumped to the top and `G` back to live, eating the letter. `app.scroll.top` is now `Home` and `app.scroll.bottom` is `End`, so no typed letter ever moves the view. Bind `g`/`G` back in `keybindings.json` for the vim keys.
 
+### Changed: session surfaces read as transcript facts (2026-11-08)
+- **`/info` is one flat list.** The `Session Info`, `Messages`, `Tokens` and `Cost` titles are gone; every row is a dim label with its value, and the full session-file path still shows.
+- **`/name` reads as a fact** (`Session name (auto)  ember-mesa · /name <name>`).
+- **`/import` usage and empty `/copy` results are dim transcript rows** (`Usage: /import <path.jsonl>`, `nothing to copy yet`) instead of red errors.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 
