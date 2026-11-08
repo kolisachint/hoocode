@@ -11,7 +11,8 @@ use std::time::Duration;
 
 use hoocode_ai_types::Content;
 use hoocode_code_tui_app::scroll_view::{
-    format_scroll_status, install_scroll_view, scroll_slot, FocusIntent, ScrollView, TranscriptFocus,
+    format_scroll_status, install_scroll_view, scroll_slot, FocusIntent, ScrollView,
+    TranscriptFocus,
 };
 use hoocode_code_tui_app::status_line::StatusLineData;
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
@@ -375,4 +376,3 @@ fn the_focused_status_row_reads_the_focus_keys() {
     assert!(row.contains("y copy"), "{row}");
     assert!(row.contains("esc clear"), "{row}");
 }
-
