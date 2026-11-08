@@ -151,10 +151,10 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         ),
         entry(
             "app.scroll.top",
-            &["g"],
+            &["home"],
             "Jump to the start of the transcript",
         ),
-        entry("app.scroll.bottom", &["G"], "Jump back to live output"),
+        entry("app.scroll.bottom", &["end"], "Jump back to live output"),
         entry("app.scroll.search", &["ctrl+x /"], "Search the transcript"),
         entry(
             "app.scroll.previousMessage",

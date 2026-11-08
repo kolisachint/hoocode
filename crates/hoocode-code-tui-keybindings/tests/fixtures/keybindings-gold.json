@@ -409,14 +409,14 @@
   [
    "app.scroll.top",
    [
-    "g"
+    "home"
    ],
    "Jump to the start of the transcript"
   ],
   [
    "app.scroll.bottom",
    [
-    "G"
+    "end"
    ],
    "Jump back to live output"
   ],

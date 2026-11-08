@@ -287,10 +287,24 @@ fn has_alt(key: &str) -> bool {
     key.split('+').any(|p| p == "alt")
 }
 
+/// Keys two global actions share on purpose (2026-11-08): the scroll view's
+/// interceptor sees input before the prompt editor, so Home/End jump the
+/// transcript (top/bottom) and never reach the editor's line start/end
+/// there. Ctrl+A and Ctrl+E still move to the line's start and end.
+const DELIBERATE_GLOBAL_OVERLAPS: &[&str] = &["home", "end"];
+
 #[test]
 fn has_no_two_bindings_on_the_same_key_in_any_scope() {
     for (name, ids) in SCOPES {
-        assert_eq!(collisions_within(ids), Vec::<String>::new(), "{name}");
+        let mut found = collisions_within(ids);
+        if *name == "global" {
+            found.retain(|c| {
+                !DELIBERATE_GLOBAL_OVERLAPS
+                    .iter()
+                    .any(|k| c.starts_with(&format!("{k}:")))
+            });
+        }
+        assert_eq!(found, Vec::<String>::new(), "{name}");
     }
 }
 

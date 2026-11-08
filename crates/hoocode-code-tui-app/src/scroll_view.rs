@@ -290,7 +290,7 @@ pub fn take_focus_notice(state: &std::path::Path, version: &str) -> Option<Strin
     // harmless, so the error is not reported.
     let _ = std::fs::write(state, serde_json::Value::Object(record).to_string());
     Some(
-        "Tool blocks: { } move between calls, enter opens, y copies the raw output, esc clears, G goes live."
+        "Tool blocks: { } move between calls, enter opens, y copies the raw output, esc clears, End goes live."
             .to_string(),
     )
 }
@@ -489,7 +489,8 @@ impl ScrollView {
     /// keys move the transcript. Never un-pins, so an open question stays
     /// readable while the reader is up in the history.
     fn handle_picker(&mut self, ui: &mut Tui, data: &str) -> bool {
-        // Letters are the picker's (K-P4): `g` there is a picker key, not the top.
+        // Letters are the picker's (K-P4): typed text goes to the picker,
+        // while Home/End and the paging keys move the transcript.
         if is_key_release(data) || is_typed_text(data) {
             return false;
         }
@@ -602,7 +603,7 @@ impl ScrollView {
 
         // U21 single view (P2): the transcript focus keys, over an empty prompt
         // and outside a search. They queue for the mode (which owns the chains)
-        // instead of unpinning; esc and G clear the shared focus themselves.
+        // instead of unpinning; esc and End clear the shared focus themselves.
         // With no focus set, enter and y keep their old behaviour below.
         if !ui.scroll_search_active() && (self.editor_empty)() {
             if matches(data, "app.scroll.bottom") && self.focus_is_set() {
@@ -643,7 +644,7 @@ impl ScrollView {
         if plain_line && !(self.editor_empty)() {
             return false;
         }
-        // A bare letter (j, k, g, G, [, ], q) steps the view only over an empty
+        // A bare letter (j, k, [, ], q) steps the view only over an empty
         // prompt (K-P4). Otherwise it goes back to live and types.
         if is_typed_text(data) && !(self.editor_empty)() {
             ui.scroll_to_live();

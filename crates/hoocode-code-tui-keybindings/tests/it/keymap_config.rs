@@ -132,24 +132,24 @@ fn null_and_none_unbind_a_key_in_its_context_only() {
     let (_dir, m) = load(
         r#"{
             "bindings": [
-                {"context": "Prompt", "bindings": {"g": null}},
+                {"context": "Prompt", "bindings": {"home": null}},
                 {"context": "Scroll", "bindings": {"j": "none"}}
             ]
         }"#,
     );
     assert!(m.warnings().is_empty(), "{:?}", m.warnings());
-    // The default keeps g for the top of the transcript. Prompt unbinds it.
-    assert!(m.get_keys("app.scroll.top").contains(&"g".to_string()));
-    assert_eq!(m.action_for_key(Context::Prompt, "g"), None);
-    assert!(m.action_for_key(Context::Scroll, "g").is_some());
+    // The default keeps home for the top of the transcript. Prompt unbinds it.
+    assert!(m.get_keys("app.scroll.top").contains(&"home".to_string()));
+    assert_eq!(m.action_for_key(Context::Prompt, "home"), None);
+    assert!(m.action_for_key(Context::Scroll, "home").is_some());
     assert_eq!(m.action_for_key(Context::Scroll, "j"), None);
 }
 
 #[test]
 fn a_global_unbind_applies_to_every_context() {
-    let (_dir, m) = load(r#"{"bindings": [{"context": "Global", "bindings": {"g": null}}]}"#);
-    assert_eq!(m.action_for_key(Context::Prompt, "g"), None);
-    assert_eq!(m.action_for_key(Context::Scroll, "g"), None);
+    let (_dir, m) = load(r#"{"bindings": [{"context": "Global", "bindings": {"home": null}}]}"#);
+    assert_eq!(m.action_for_key(Context::Prompt, "home"), None);
+    assert_eq!(m.action_for_key(Context::Scroll, "home"), None);
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn a_sequence_must_start_with_the_leader() {
 fn an_unknown_context_is_skipped_with_a_warning() {
     let (_dir, m) = load(r#"{"bindings": [{"context": "Nope", "bindings": {"g": null}}]}"#);
     assert!(m.warnings().iter().any(|w| w.contains("unknown context")));
-    assert!(m.get_keys("app.scroll.top").contains(&"g".to_string()));
+    assert!(m.get_keys("app.scroll.top").contains(&"home".to_string()));
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn bad_json_does_not_crash_and_gives_the_defaults() {
     assert_eq!(m.leader().id(), "ctrl+x");
     assert!(m.warnings().iter().any(|w| w.contains("not valid JSON")));
     // The defaults still answer.
-    assert!(m.get_keys("app.scroll.top").contains(&"g".to_string()));
+    assert!(m.get_keys("app.scroll.top").contains(&"home".to_string()));
 }
 
 #[test]
@@ -289,12 +289,12 @@ fn a_group_or_binding_of_the_wrong_shape_is_skipped() {
         r#"{"bindings": [
             "not an object",
             {"context": "Prompt", "bindings": ["not", "an", "object"]},
-            {"context": "Prompt", "bindings": {"g": 5}},
+            {"context": "Prompt", "bindings": {"ctrl+r": 5}},
             {"context": "Prompt", "bindings": {"": "app.clear"}}
         ]}"#,
     );
     assert!(
-        m.action_for_key(Context::Prompt, "g").is_some(),
+        m.action_for_key(Context::Prompt, "ctrl+r").is_some(),
         "defaults survive bad groups"
     );
     assert!(m.warnings().len() >= 3, "{:?}", m.warnings());

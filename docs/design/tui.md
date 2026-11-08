@@ -203,7 +203,7 @@ Leader rules: `ctrl+x` enters pending. The next key runs its action. Esc, a seco
 
 | Context | Keys |
 |---|---|
-| Scroll mode (after PgUp, no text focus) | `j` `k` line; PgUp PgDn page; `[` `]` previous or next message; `g` `G` top or bottom; `/` search; `q` or Esc back to the prompt |
+| Scroll mode (after PgUp, no text focus) | `j` `k` line; PgUp PgDn page; `[` `]` previous or next message; Home End top or bottom; `/` search; `q` or Esc back to the prompt |
 | Session picker | `p` path, `o` sort, `n` named filter, `r` rename, `x` delete (no confirm yet, see UI-10) |
 | Model picker | `s` save, `a` enable all, `x` clear all, `g` provider, `c` category |
 | Tree | `h` `l` fold, `e` edit label, `t` timestamps, `1`–`5` filters, `c` filter cycle |
@@ -516,6 +516,7 @@ Decided 2026-11-07; each answer is a dated row in the Decisions table below. The
 | 2026-11-07 | Failed row reason colour: dim; red only on `⊗` and `exit N`. |
 | 2026-11-07 | Running Shell while collapsed: one dim tail line, gone on settle. |
 | 2026-11-07 | No expand-all in v1: `ctrl+x o` is dropped (`ctrl+x u`, `{` `}`, `Enter`, `G live` cover it). Revisit on user ask. |
+| 2026-11-08 | Transcript top/bottom move off bare `g`/`G` onto Home/End, so no typed letter ever teleports the view (`g`/`G` type as usual now; rebind them in `keybindings.json` for the vim keys). Supersedes `G live` in the 2026-11-07 expand-all row. |
 | 2026-11-07 | A click while live pins the view; the header keeps its row. |
 | 2026-11-07 | Settings Tool output row is removed (caps live in `settings.json` only). `DocSearch` is removed with it: discovery via the prompt listing, `Read`, CLI help and user pages (AG-19 closed as No). |
 | 2026-11-07 | Pane clicks v1: click selects, `Enter` opens (e.g. attach a subagent run). No second-click pick. |

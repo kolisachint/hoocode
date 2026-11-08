@@ -127,7 +127,9 @@ a header toggles it open. With the view pinned and the prompt empty:
 - **`{`** and **`}`** focus the previous or next block.
 - **y** copies the focused block's raw output, never the rendered rows.
 - **Esc** clears the focus only. It never stops a turn.
-- **G** goes back to live and clears the focus.
+- **Home** jumps to the start of the transcript; **End** goes back to live and
+  clears the focus. (`g` and `G` type as usual now; bind them back to
+  `app.scroll.top` and `app.scroll.bottom` in `keybindings.json` for the vim keys.)
 - **Ctrl+X u** focuses the newest block and pins the view, from the prompt.
 
 There is no expand-all in v1: open the blocks you need. The focus is not saved,
