@@ -12,7 +12,7 @@ use hoocode_ai_types::Content;
 use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
 
 use hoocode_tui_ratatui::core::text::Span;
-use hoocode_tui_ratatui::Palette;
+use hoocode_tui_ratatui::{Palette, Style};
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::tool_execution::ToolExecutionComponent;
@@ -125,6 +125,38 @@ fn sub_step_rows(
     }
 }
 
+/// Whether rows paint in monochrome (no colour): the focused fill is
+/// reverse video instead of paneSel.
+fn mono() -> bool {
+    !hoocode_code_tui_theme::chalk::enabled()
+}
+
+/// The header's gutter cell: `›` in accent on the focused row (bold with
+/// no colour), else the blank that keeps column 0.
+fn gutter_span(focused: bool, palette: &Palette) -> Span<'static> {
+    if !focused {
+        return Span::raw(" ".to_string());
+    }
+    let mut style = palette.acc();
+    if mono() {
+        style = hoocode_tui_ratatui::bold(style);
+    }
+    Span::styled("›".to_string(), style)
+}
+
+/// The focused row's band across every span of the header: paneSel with
+/// colour, reverse video without.
+fn paint_focused(spans: &mut [Span<'static>], palette: &Palette) {
+    let fill = if mono() {
+        hoocode_tui_ratatui::reversed(Style::default())
+    } else {
+        palette.bg("paneSel")
+    };
+    for span in spans.iter_mut() {
+        span.style = span.style.patch(fill);
+    }
+}
+
 /// One header row in the chain's last render: its first row and how many
 /// rows the header spans, with the block it toggles.
 #[derive(Debug, Clone, Copy)]
@@ -142,6 +174,10 @@ pub struct ToolChainComponent {
     lead_ins: Vec<LeadIn>,
     /// The header rows of the last render, for click-to-toggle.
     header_map: Vec<HeaderHit>,
+    /// The focused tool call's id, if the transcript has one in this chain:
+    /// its header draws the `›` gutter and the paneSel fill. Synced from
+    /// the transcript focus after every key (see `mode/transcript/focus.rs`).
+    focused_call: Option<String>,
     state: ChainState,
     /// New whenever one of the fields above changes (the render stamp).
     rev: u64,
@@ -159,6 +195,7 @@ impl ToolChainComponent {
             blocks: Vec::new(),
             lead_ins: Vec::new(),
             header_map: Vec::new(),
+            focused_call: None,
             state: ChainState::Running,
             rev: fresh_stamp(),
         }
@@ -240,6 +277,21 @@ impl ToolChainComponent {
         }
     }
 
+    /// Which tool call draws focused in this chain (`None` clears it). Only
+    /// bumps the render stamp on a change.
+    pub fn set_focused_call(&mut self, call_id: Option<&str>) {
+        let next = call_id.map(str::to_string);
+        if self.focused_call != next {
+            self.focused_call = next;
+            self.rev = fresh_stamp();
+        }
+    }
+
+    /// The tool call drawing focused in this chain, if any.
+    pub fn focused_call(&self) -> Option<&str> {
+        self.focused_call.as_deref()
+    }
+
     /// A block's header start row in the last render, for pinning a click or
     /// a focus move on the header's row.
     pub fn header_start_row(&self, index: usize) -> Option<usize> {
@@ -283,7 +335,7 @@ impl ToolChainComponent {
             if i == 0 || !spaced {
                 ensure_blank(&mut out);
             }
-            let (mark, tool, target, primary, secondary, reason, open) = {
+            let (mark, tool, target, primary, secondary, reason, open, call_id) = {
                 let b = block.borrow();
                 let (target, primary, secondary, reason) = b.header_parts();
                 (
@@ -294,8 +346,14 @@ impl ToolChainComponent {
                     secondary,
                     reason,
                     b.is_expanded(),
+                    b.tool_call_id().to_string(),
                 )
             };
+            // The focused header carries the row grammar's selection: `›`
+            // in accent at column 0 and the paneSel fill across the row
+            // (reverse video with no colour). Expanded and focused compose:
+            // the body still opens under a focused header.
+            let focused = self.focused_call.as_deref() == Some(call_id.as_str());
             // Single view: the header is one row, never wrapped. Its facts
             // cut through `header_spans` (secondary drops first, then the
             // target, then the reason); the gutter keeps column 0.
@@ -303,7 +361,7 @@ impl ToolChainComponent {
             {
                 let primaries: Vec<&str> = primary.iter().map(String::as_str).collect();
                 let secondaries: Vec<&str> = secondary.iter().map(String::as_str).collect();
-                let mut spans = vec![Span::raw(" ".to_string())];
+                let mut spans = vec![gutter_span(focused, palette)];
                 spans.extend(tool_row::header_spans(
                     mark,
                     &tool,
@@ -314,6 +372,9 @@ impl ToolChainComponent {
                     w.saturating_sub(1),
                     palette,
                 ));
+                if focused {
+                    paint_focused(&mut spans, palette);
+                }
                 out.push(row(spans, w));
             }
             header_map.push(HeaderHit {

@@ -48,10 +48,15 @@ fn focus_chain(mode: &Mode, block: &ToolBlock) -> Option<Rc<RefCell<ToolChainCom
         .cloned()
 }
 
-/// Scroll the focused block's chain into view (chain granularity: the block
-/// rows live inside the widget). A row already comfortably in view stays
-/// where it is. Nothing when the layout is not ready yet.
-fn scroll_chain_into_view(mode: &mut Mode, chain: &Rc<RefCell<ToolChainComponent>>) {
+/// Scroll the focused block's header into view: the block's header row
+/// (from the last render) over the chain's base. Falls back to the chain's
+/// base when the header row is not placed yet. A row already comfortably in
+/// view stays where it is. Nothing when the layout is not ready yet.
+fn scroll_chain_into_view(
+    mode: &mut Mode,
+    chain: &Rc<RefCell<ToolChainComponent>>,
+    block: &ToolBlock,
+) {
     let width = mode.tui.transcript_width();
     let chat = &mode.transcript.chat;
     let index = match chat
@@ -92,10 +97,30 @@ fn scroll_chain_into_view(mode: &mut Mode, chain: &Rc<RefCell<ToolChainComponent
         }
         None => rel,
     };
-    mode.tui.scroll_to_row((target as i64).max(0), None);
+    // The block's header row when the last render placed it; the chain's
+    // base otherwise (never a silent no-op).
+    let header = chain
+        .borrow()
+        .tool_blocks()
+        .iter()
+        .position(|b| Rc::ptr_eq(b, block))
+        .and_then(|index| chain.borrow().header_start_row(index))
+        .unwrap_or(0);
+    mode.tui
+        .scroll_to_row(((target + header) as i64).max(0), None);
 }
 
-/// Focus `block`: remember it, teach the keys once, and show its chain.
+/// Push the transcript focus into every chain, so the focused header draws
+/// the `›` gutter and the paneSel fill. Runs from `set_focus` and after
+/// every key (esc and G clear the shared state from the scroll view).
+fn sync_chain_focus(mode: &mut Mode) {
+    let focused = mode.focus.borrow().focused_call().map(str::to_string);
+    for chain in &mode.transcript.chains {
+        chain.borrow_mut().set_focused_call(focused.as_deref());
+    }
+}
+
+/// Focus `block`: remember it, teach the keys once, and show its header.
 fn set_focus(mode: &mut Mode, block: &ToolBlock) {
     let call_id = block.borrow().tool_call_id().to_string();
     mode.focus.borrow_mut().focus(&call_id);
@@ -103,9 +128,25 @@ fn set_focus(mode: &mut Mode, block: &ToolBlock) {
     if !mode.tui.scroll_pinned() {
         pin_to_tail(mode);
     } else if let Some(chain) = focus_chain(mode, block) {
-        scroll_chain_into_view(mode, &chain);
+        scroll_chain_into_view(mode, &chain, block);
     }
+    sync_chain_focus(mode);
     mode.dirty.set(true);
+}
+
+/// Where `{`/`}` lands from `current` among `count` blocks: the next index,
+/// or which end is already focused (named instead of re-focusing).
+fn step_target(count: usize, current: Option<usize>, next: bool) -> Result<usize, &'static str> {
+    if count == 0 {
+        return Err("No tool calls to focus yet.");
+    }
+    match current {
+        Some(i) if next && i + 1 >= count => Err("Already on the newest tool call."),
+        Some(i) if !next && i == 0 => Err("Already on the oldest tool call."),
+        Some(i) if next => Ok((i + 1).min(count - 1)),
+        Some(i) => Ok(i.saturating_sub(1)),
+        None => Ok(if next { 0 } else { count - 1 }),
+    }
 }
 
 /// The one-time focus-keys notice, once per version. The state file keeps its
@@ -131,10 +172,11 @@ impl Mode {
                 FocusIntent::Copy => self.copy_focused(),
             }
         }
+        sync_chain_focus(self);
     }
 
-    /// Focus the block `intent` names; done blocks are the only ones listed.
-    /// With no blocks, say so instead of moving.
+    /// Focus the next or previous block; the ends say so instead of
+    /// re-focusing. With no blocks, say so instead of moving.
     fn focus_step(&mut self, next: bool) {
         let blocks = focus_blocks(self);
         if blocks.is_empty() {
@@ -147,15 +189,11 @@ impl Mode {
                 .iter()
                 .position(|b| b.borrow().tool_call_id() == call)
         });
-        let at = match index {
-            Some(i) if next => (i + 1).min(blocks.len() - 1),
-            Some(i) => i.saturating_sub(1),
-            None => {
-                if next {
-                    0
-                } else {
-                    blocks.len() - 1
-                }
+        let at = match step_target(blocks.len(), index, next) {
+            Ok(at) => at,
+            Err(ends) => {
+                self.show_status(ends);
+                return;
             }
         };
         let block = blocks[at].clone();
@@ -281,5 +319,30 @@ impl Mode {
             Ok(bytes) => self.show_status(&format!("Copied {subject} ({bytes} bytes).")),
             Err(reason) => self.show_error(&format!("Could not copy the {subject}: {reason}.")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::step_target;
+
+    #[test]
+    fn stepping_past_either_end_names_it() {
+        assert_eq!(
+            step_target(0, None, true),
+            Err("No tool calls to focus yet.")
+        );
+        assert_eq!(step_target(3, None, true), Ok(0));
+        assert_eq!(step_target(3, None, false), Ok(2));
+        assert_eq!(step_target(3, Some(0), true), Ok(1));
+        assert_eq!(step_target(3, Some(1), false), Ok(0));
+        assert_eq!(
+            step_target(3, Some(2), true),
+            Err("Already on the newest tool call.")
+        );
+        assert_eq!(
+            step_target(3, Some(0), false),
+            Err("Already on the oldest tool call.")
+        );
     }
 }
