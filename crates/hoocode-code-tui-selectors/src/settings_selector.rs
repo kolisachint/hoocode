@@ -798,7 +798,7 @@ fn tool_settings_submenu(
                  toolOutput.maxBytes and toolOutput.maxLines."
                     .into(),
             ),
-            current_value: "Enter expands".into(),
+            current_value: format!("{} expands", key_display_text("tui.select.confirm")),
             value_suffix: None,
             keywords: None,
             values: None,

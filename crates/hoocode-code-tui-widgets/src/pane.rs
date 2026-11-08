@@ -768,8 +768,6 @@ pub fn fit_hint_line(hints: &[(&str, &str)], more: bool, width: usize) -> Line<'
                         && *key != confirm.as_str()
                         && *key != cancel.as_str()
                         && *key != help.as_str()
-                        && *key != "enter"
-                        && *key != "esc"
                 })
             });
         let Some(at) = drop else {
