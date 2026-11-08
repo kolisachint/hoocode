@@ -16,7 +16,7 @@ use hoocode_code_tui_widgets::console::{help_rows, query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::{get_keybindings, matches_key};
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 
 use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
@@ -249,56 +249,59 @@ impl State {
         ]
     }
 
-    /// The selected row's facts after its name: the model's own name and
-    /// provider, then the effort, category and alias set on it.
-    fn row_facts(item: &Item) -> String {
-        let mut parts = vec![item.model.name.clone(), item.model.provider.clone()];
+    /// The selected row's facts after the `on`: the set alias, effort
+    /// and category, each its own `·` fact.
+    fn row_facts(item: &Item, pal: &Palette) -> Vec<(String, Style)> {
+        let mut facts = Vec::new();
+        if let Some(alias) = &item.extras.alias {
+            facts.push((format!("alias {alias}"), pal.dim()));
+        }
         if let Some(effort) = &item.extras.effort {
-            parts.push(format!("effort {effort}"));
+            facts.push((format!("effort {effort}"), pal.dim()));
         }
         if let Some(category) = item.extras.category {
-            parts.push(category.as_str().to_string());
+            facts.push((category.as_str().to_string(), pal.dim()));
         }
-        if let Some(alias) = &item.extras.alias {
-            parts.push(format!("alias {alias}"));
-        }
-        parts.join(" · ")
+        facts
     }
 
-    /// The pane rows: the id padded to the widest, `on` / `off`, and on the
-    /// selected row its facts. Returns the rows and the selection in them.
-    fn console_rows(&self) -> (Vec<Line<'static>>, Option<usize>) {
+    /// The pane rows: `● id  on · alias · effort · category`. The mark
+    /// carries the switch (`●` on, `○` off) so it never reads as colour
+    /// alone; `on`/`off` keeps its ink/dim colour. Full facts only on the
+    /// selected row; `on`/`off` is primary and never drops, the rest drop
+    /// right-to-left. Returns the rows and the selection in them.
+    fn console_rows(&self, row_width: usize) -> (Vec<Line<'static>>, Option<usize>) {
         let pal = Palette::current();
         let window = self.cursor.window();
         let selected = self.cursor.selected();
-        let id_width = self
-            .filtered
-            .iter()
-            .map(|item| item.model.id.chars().count())
-            .max()
-            .unwrap_or(0);
         let all_enabled = self.enabled.is_none();
         let rows = window
             .clone()
             .map(|i| {
                 let item = &self.filtered[i];
                 let on = all_enabled || item.enabled;
-                let mut spans = vec![
-                    Span::raw(format!("{:<id_width$}", item.model.id)),
-                    Span::raw("  "),
-                    // `on` is ink and `off` dim: green means done, so it
-                    // no longer stands in for a switch (mock §S7).
+                let primary = vec![(
                     if on {
-                        Span::styled("on ".to_string(), pal.ink())
+                        "on".to_string()
                     } else {
-                        Span::styled("off".to_string(), pal.dim())
+                        "off".to_string()
                     },
-                ];
-                if i == selected {
-                    spans.push(Span::raw("  "));
-                    spans.push(Span::styled(Self::row_facts(item), pal.dim()));
-                }
-                Line::from(spans)
+                    if on { pal.ink() } else { pal.dim() },
+                )];
+                let secondary = if i == selected {
+                    Self::row_facts(item, &pal)
+                } else {
+                    Vec::new()
+                };
+                crate::framed_list::picker_row(
+                    on,
+                    &item.model.id,
+                    "",
+                    primary,
+                    secondary,
+                    row_width,
+                    &pal,
+                )
             })
             .collect();
         (rows, window.clone().position(|i| i == selected))
@@ -496,7 +499,9 @@ impl Component for ScopedModelsSelectorComponent {
         let state = self.state.borrow();
         let mut console = Console::new("Scoped models · /scoped-models", state.count_text());
         console.query = Some(query_row(&self.query(), self.focused));
-        let (rows, selected) = state.console_rows();
+        // Rows are built to the list width (no detail column splits here).
+        let row_width = console.row_width(width as usize);
+        let (rows, selected) = state.console_rows(row_width);
         console.rows = rows;
         console.selected = selected;
         if state.filtered.is_empty() {

@@ -62,9 +62,10 @@ fn full_ids(models: &[Model]) -> Vec<String> {
         .collect()
 }
 
-/// The model id on each list row, in order (the row format: id, then the
-/// price, then an `expired` marker). `price` picks the rows: the detail
-/// column beside the list prints on the same lines. The test models are free.
+/// The model id on each list row, in order (the row format: mark, id,
+/// then the price, then the `expired` fact). `price` picks the rows: the
+/// detail column beside the list prints on the same lines. The test models
+/// are free.
 fn listed_ids(rendered: &str, price: &str) -> Vec<String> {
     rendered
         .lines()
@@ -75,7 +76,11 @@ fn listed_ids(rendered: &str, price: &str) -> Vec<String> {
             let trimmed = trimmed.strip_suffix(['│', '┃']).unwrap_or(trimmed).trim();
             let trimmed = trimmed.strip_prefix(SELECT_CURSOR).unwrap_or(trimmed);
             let mut cols = trimmed.split_whitespace();
-            let id = cols.next()?;
+            // Depth-2 rows carry their state as the mark (`●`/`○`).
+            let mut id = cols.next()?;
+            if id == "●" || id == "○" {
+                id = cols.next()?;
+            }
             // The detail column prints on the same lines as the first rows.
             if ["name", "provider", "context", "price", "thinking"].contains(&id) {
                 return None;
@@ -95,7 +100,13 @@ fn row_for<'a>(rendered: &'a str, id: &str) -> &'a str {
             let trimmed = trimmed.strip_prefix(['│', '┃']).unwrap_or(trimmed);
             let trimmed = trimmed.strip_suffix(['│', '┃']).unwrap_or(trimmed).trim();
             let trimmed = trimmed.strip_prefix(SELECT_CURSOR).unwrap_or(trimmed);
-            trimmed.split_whitespace().next() == Some(id)
+            let mut cols = trimmed.split_whitespace();
+            // Depth-2 rows carry their state as the mark (`●`/`○`).
+            let mut first = cols.next();
+            if first == Some("●") || first == Some("○") {
+                first = cols.next();
+            }
+            first == Some(id)
         })
         .unwrap_or_else(|| panic!("no row for {id} in:\n{rendered}"))
 }

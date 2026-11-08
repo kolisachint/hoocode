@@ -21,9 +21,8 @@ use hoocode_code_tui_widgets::console::{query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::visible_width;
 
 /// Whether a provider signs in with an API key rather than a subscription
 /// (`isApiKeyLoginProvider`). `built_in_provider_ids` defaults to every
@@ -92,16 +91,18 @@ struct State {
 }
 
 impl State {
-    /// The auth state after the provider name, as styled spans
-    /// (`formatStatusIndicator`): plain words, `configured` in green.
-    fn status_spans(&self, provider: &AuthSelectorProvider) -> Vec<Span<'static>> {
+    /// The auth state as row facts: `configured` plus the source
+    /// (`env NAME`, `runtime API key`, …), or `not configured`. The bool
+    /// says whether the row holds the state (`●` while configured).
+    /// The words match the filter text, so typing still narrows.
+    fn status_facts(&self, provider: &AuthSelectorProvider) -> (bool, Vec<(String, Style)>) {
         let pal = Palette::current();
         let stored = self.auth.get(&provider.id).map(|c| match c {
             AuthCredential::OAuth(_) => AuthType::OAuth,
             AuthCredential::ApiKey { .. } => AuthType::ApiKey,
         });
         if stored == Some(provider.auth_type) {
-            return vec![Span::styled("configured", pal.ok())];
+            return (true, vec![("configured".to_string(), pal.ok())]);
         }
         if let Some(stored) = stored {
             // Still configured, so still green: yellow is for blocking only.
@@ -109,9 +110,9 @@ impl State {
                 AuthType::OAuth => "subscription configured",
                 AuthType::ApiKey => "API key configured",
             };
-            return vec![Span::styled(label, pal.ok())];
+            return (true, vec![(label.to_string(), pal.ok())]);
         }
-        let not_configured = || vec![Span::styled("not configured", pal.dim())];
+        let not_configured = || (false, vec![("not configured".to_string(), pal.dim())]);
         if provider.auth_type != AuthType::ApiKey {
             return not_configured();
         }
@@ -126,10 +127,10 @@ impl State {
             Some(AuthSource::ModelsJsonCommand) => "command in models.json".to_string(),
             _ => return not_configured(),
         };
-        vec![
-            Span::styled("configured", pal.ok()),
-            Span::styled(format!("  {source}"), pal.dim()),
-        ]
+        (
+            true,
+            vec![("configured".to_string(), pal.ok()), (source, pal.dim())],
+        )
     }
 
     fn filter(&mut self, query: &str) {
@@ -149,19 +150,28 @@ impl State {
 }
 
 /// One provider row (content only; the pane adds the ` › ` marker or
-/// gutter and the selection band): the name padded to `name_width`, then
-/// the auth state.
+/// gutter and the selection band): `● name  configured · env NAME`. The
+/// mark carries the state (`●` configured, `○` not) so it never reads as
+/// colour alone; the facts keep their words and colours. The first fact
+/// is primary and never drops, the source drops first.
 fn provider_row(
     provider: &AuthSelectorProvider,
-    name_width: usize,
-    status: Vec<Span<'static>>,
+    configured: bool,
+    facts: Vec<(String, Style)>,
+    width: usize,
 ) -> Line<'static> {
-    let mut spans = vec![
-        Span::raw(format!("{:<name_width$}", provider.name)),
-        Span::raw("  ".to_string()),
-    ];
-    spans.extend(status);
-    Line::from(spans)
+    let pal = Palette::current();
+    let mut facts = facts.into_iter();
+    let primary = facts.next().map(|fact| vec![fact]).unwrap_or_default();
+    crate::framed_list::picker_row(
+        configured,
+        &provider.name,
+        "",
+        primary,
+        facts.collect(),
+        width,
+        &pal,
+    )
 }
 
 /// `1 provider`, `N providers`.
@@ -253,16 +263,15 @@ impl Component for OAuthSelectorComponent {
         let mut console = Console::new(name, count);
         console.query = Some(query_row(&query, state.focused));
         let selected = state.cursor.selected();
-        let name_width = state
-            .filtered
-            .iter()
-            .map(|p| visible_width(&p.name))
-            .max()
-            .unwrap_or(0);
+        // Rows are built to the list width (no detail column splits here).
+        let row_width = console.row_width(width as usize);
         console.rows = state
             .filtered
             .iter()
-            .map(|provider| provider_row(provider, name_width, state.status_spans(provider)))
+            .map(|provider| {
+                let (configured, facts) = state.status_facts(provider);
+                provider_row(provider, configured, facts, row_width)
+            })
             .collect();
         console.selected = (!state.filtered.is_empty()).then_some(selected);
         console.max_visible = Some(state.cursor.max_visible());
