@@ -1,8 +1,7 @@
 //! U21 P2 transcript focus keys (Muse-only, fast): `{` `}` queue for the
 //! mode instead of unpinning, `enter`/`y` queue only while a block is
 //! focused, `esc` clears the focus and stays pinned, `End` goes back to live,
-//! hints name the focused keys, and the teaching notice shows once per
-//! version.
+//! and the pinned hint row names the focused keys.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -12,8 +11,7 @@ use std::time::Duration;
 
 use hoocode_ai_types::Content;
 use hoocode_code_tui_app::scroll_view::{
-    format_scroll_status, install_scroll_view, scroll_slot, take_focus_notice, FocusIntent,
-    ScrollView, TranscriptFocus,
+    format_scroll_status, install_scroll_view, scroll_slot, FocusIntent, ScrollView, TranscriptFocus,
 };
 use hoocode_code_tui_app::status_line::StatusLineData;
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
@@ -378,28 +376,3 @@ fn the_focused_status_row_reads_the_focus_keys() {
     assert!(row.contains("esc clear"), "{row}");
 }
 
-// --- one-time notice ------------------------------------------------------------
-
-#[test]
-fn the_focus_notice_shows_once_per_version() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let state = dir.path().join("keybindings-state.json");
-    let first = take_focus_notice(&state, "9.9.9").expect("notice");
-    assert!(first.contains("{ }"), "{first}");
-    assert!(first.contains("enter"), "{first}");
-    assert!(first.contains("End"), "{first}");
-    assert!(take_focus_notice(&state, "9.9.9").is_none());
-    assert!(take_focus_notice(&state, "9.9.10").is_some());
-}
-
-#[test]
-fn the_focus_notice_keeps_the_other_state_keys() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let state = dir.path().join("keybindings-state.json");
-    std::fs::write(&state, r#"{"altNoticeVersion": "9.9.9"}"#).expect("seed");
-    take_focus_notice(&state, "9.9.9");
-    let record: Value =
-        serde_json::from_str(&std::fs::read_to_string(&state).expect("read")).expect("json");
-    assert_eq!(record["altNoticeVersion"], json!("9.9.9"));
-    assert_eq!(record["transcriptFocusNoticeVersion"], json!("9.9.9"));
-}

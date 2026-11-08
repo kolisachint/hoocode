@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed: focus-keys one-time notice (2026-11-08)
+- **Focusing a tool block no longer shows the one-time key notice.** The pinned hint row (`enter open · y copy · esc clear`) already teaches the keys, so the prose notice and its per-version state key are gone.
+
 ### Fixed: transcript top/bottom move to Home/End (2026-11-08)
 - **Bare `g` and `G` no longer teleport the transcript.** They typed nothing anywhere: pinned with an empty prompt, `g` jumped to the top and `G` back to live, eating the letter. `app.scroll.top` is now `Home` and `app.scroll.bottom` is `End`, so no typed letter ever moves the view. Bind `g`/`G` back in `keybindings.json` for the vim keys.
 
