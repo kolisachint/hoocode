@@ -13,12 +13,10 @@
     -  14     let raw = read_file(path)?;
     -  15     apply_env(&mut cfg);
     +  14     apply_env(&mut cfg);
-    … 3 more lines
+    +  15     let raw = read_file(path)?;
+    … 2 more lines
 
- ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 8.2s
-    … 38 earlier lines
-    test config::tests::case_39 ... ok
-    test config::tests::case_40 ... ok
+ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 40 lines · 8.2s
 
  The overrides now apply before the file is parsed, so an override can set the
  parser's own options.
@@ -55,8 +53,7 @@ r9 c23-30 fg=#989898
 r10 c1 fg=#b5bd68
 r10 c3-6 fg=#e5e5e7 bold
 r10 c8-20 fg=#e5e5e7
-r10 c23-24 fg=#b5bd68
-r10 c26-27 fg=#d58181
+r10 c23-27 fg=#989898
 r11 c4-45 fg=#989898
 r12 c4 fg=#d58181
 r12 c5-40 fg=#989898
@@ -64,13 +61,12 @@ r13 c4 fg=#d58181
 r13 c5-33 fg=#989898
 r14 c4 fg=#b5bd68
 r14 c5-33 fg=#989898
-r15 c4-17 fg=#989898
-r17 c1 fg=#b5bd68
-r17 c3-7 fg=#e5e5e7 bold
-r17 c9-52 fg=#e5e5e7
-r17 c55-67 fg=#989898
-r18 c4-21 fg=#989898
-r19 c4-37 fg=#989898
-r20 c4-37 fg=#989898
-r25 c30-41 fg=#5cc8bb
-r26 c12-22 fg=#5cc8bb
+r15 c4 fg=#b5bd68
+r15 c5-40 fg=#989898
+r16 c4-17 fg=#989898
+r18 c1 fg=#b5bd68
+r18 c3-7 fg=#e5e5e7 bold
+r18 c9-52 fg=#e5e5e7
+r18 c55-78 fg=#989898
+r23 c30-41 fg=#5cc8bb
+r24 c12-22 fg=#5cc8bb

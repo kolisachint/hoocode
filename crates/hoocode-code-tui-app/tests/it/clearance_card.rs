@@ -89,7 +89,7 @@ fn shell_card_shows_title_command_access_and_options() {
     );
     assert!(rows[6].contains("or type a reply"), "row 6: {:?}", rows[6]);
     assert!(
-        rows[7].contains("1–3 pick · y yes · n no · a always (enter) · e edit first"),
+        rows[7].contains("1–3 pick · y yes · n no · e edit"),
         "row 7: {:?}",
         rows[7]
     );
@@ -269,7 +269,7 @@ fn a_types_when_no_always_row_is_offered() {
     card.handle_input("a");
     assert_eq!(*answered.borrow(), None);
     let rows = rows(&mut card, 100);
-    assert!(rows.iter().any(|row| row.contains("› a")), "{rows:?}");
+    assert!(rows.iter().any(|row| row == " a"), "{rows:?}");
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn y_a_n_type_into_a_reply_that_has_text() {
     }
     assert_eq!(*answered.borrow(), None, "letters join the reply");
     let rows = rows(&mut card, 100);
-    assert!(rows.iter().any(|row| row.contains("› wayn")), "{rows:?}");
+    assert!(rows.iter().any(|row| row == " wayn"), "{rows:?}");
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn typed_text_becomes_the_abort_reason() {
     }
     assert_eq!(*answered.borrow(), None);
     let rows = rows(&mut card, 100);
-    assert!(rows.iter().any(|row| row.contains("› why")), "{rows:?}");
+    assert!(rows.iter().any(|row| row == " why"), "{rows:?}");
     card.handle_input("\r");
     assert_eq!(
         *answered.borrow(),
@@ -341,7 +341,7 @@ fn e_edits_and_enter_revises() {
     let (mut card, answered) = card(shell_info("$ echo hi"));
     card.handle_input("e");
     let rows = rows(&mut card, 100);
-    assert!(rows.iter().any(|row| row.contains("› echo hi")), "{rows:?}");
+    assert!(rows.iter().any(|row| row == " echo hi"), "{rows:?}");
     assert!(rows.iter().any(|row| row.contains("echo hi")), "{rows:?}");
     card.handle_input("!");
     card.handle_input("\r");
@@ -359,8 +359,5 @@ fn esc_cancels_the_edit() {
     card.handle_input("\x1b");
     assert_eq!(*answered.borrow(), None);
     let rows = rows(&mut card, 100);
-    assert!(
-        rows.iter().any(|row| row.contains("e edit first")),
-        "{rows:?}"
-    );
+    assert!(rows.iter().any(|row| row.contains("e edit")), "{rows:?}");
 }

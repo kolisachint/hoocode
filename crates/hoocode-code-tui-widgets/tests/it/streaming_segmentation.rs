@@ -6,7 +6,6 @@ use std::rc::Rc;
 use crate::support::lock;
 use hoocode_code_tui_theme::get_markdown_theme;
 use hoocode_code_tui_widgets::segment_streaming_markdown;
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_tui_components::{Markdown, Spacer};
 use hoocode_tui_render::{Component, Container};
 use hoocode_tui_util::strip_vt_control_characters;
@@ -133,7 +132,7 @@ const STREAMED_DOC: &str = "# Plan\n\nIntro with **bold** and `code` words.\n\n-
 
 /// A message streamed one char at a time draws, at every step, exactly what a
 /// fresh settled render of the same text draws.
-fn stream_matches_fresh_render(view: ToolOutputView) {
+fn stream_matches_fresh_render() {
     use hoocode_ai_types::{AssistantMessage, Content};
     use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
 
@@ -143,7 +142,6 @@ fn stream_matches_fresh_render(view: ToolOutputView) {
         ..Default::default()
     };
     let mut streamed = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
-    streamed.set_view(view);
     let mut text = String::new();
     for ch in STREAMED_DOC.chars() {
         text.push(ch);
@@ -151,7 +149,6 @@ fn stream_matches_fresh_render(view: ToolOutputView) {
         // Draw every step, as frames do: this fills the per-block caches.
         let got = streamed.render(width);
         let mut fresh = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
-        fresh.set_view(view);
         fresh.update_content(&message(&text), false);
         let want = fresh.render(width);
         assert_eq!(got, want, "after {} chars: {:?}", text.len(), text);
@@ -159,19 +156,7 @@ fn stream_matches_fresh_render(view: ToolOutputView) {
 }
 
 #[test]
-fn streamed_peek_matches_fresh_render_at_every_char() {
+fn streamed_matches_fresh_render_at_every_char() {
     let _g = lock();
-    stream_matches_fresh_render(ToolOutputView::Peek);
-}
-
-#[test]
-fn streamed_full_view_matches_fresh_render_at_every_char() {
-    let _g = lock();
-    stream_matches_fresh_render(ToolOutputView::Full);
-}
-
-#[test]
-fn streamed_outline_view_matches_fresh_render_at_every_char() {
-    let _g = lock();
-    stream_matches_fresh_render(ToolOutputView::Outline);
+    stream_matches_fresh_render();
 }

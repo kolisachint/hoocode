@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-06): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 113 open items: 46 next, 21 need a user decision, 46 deferred behind a trigger or gate.
+Status (2026-11-07): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 111 open items: 44 next, 21 need a user decision, 46 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
@@ -24,6 +24,7 @@ Rule: when the user asks to implement, ask which item first. The top of Next is 
 | TUI plan | T0 goldens, T2 subagent storage, T3 live attach, T4 panel tabs, T5 background shell. Phase S replaced by the declutter. 2026-10 | [tui.md](tui.md) |
 | Themes | Five built-in themes, JSON tokens, user themes, hot reload. Plan T-1 to T-6. 2026-11 | [tui.md](tui.md) |
 | Keybindings | Leader Ctrl+X, bare-letter lists, no Alt in defaults, grouped `keybindings.json`. Plan K-0 to K-10. 2026-11 | [tui.md](tui.md) |
+| Single view | One row per tool call, click or Enter to expand in place; one pane grammar; yellow only for blocking. UI-21 + UI-22, phases P0–P6 on branch `feat/u21-u22`. 2026-11-07 | [tui.md](tui.md) |
 
 ## Next
 
@@ -78,16 +79,7 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 42. [UI-20](tui.md#open) Rename the `*_ts*.rs` test files (S, optional)
 43. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
 44. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
-45. [UI-21](tui.md#proposed-single-view-ui-21-ui-22) Single view: one row per tool call, click or Enter to expand (L). Proposed, not decided: the 9 decisions in [tui.md](tui.md#proposed-single-view-ui-21-ui-22) come first. Mockup: `docs/assets/mockups/tui-single-view.html`. Phases:
-    - P0 Pin (S): the tui.md rows, roadmap rows, UI-6 dialog goldens, transcript goldens at 40 and 60, and the failing frozen-row test in `crates/hoocode-code-tui-widgets/tests/it/frozen_rows.rs` (new). The test fails until P1.
-    - P1 The feel (M): `RowSnapshot` at freeze; `◉` accent; per-block `expanded`; header click via `on_body_click` in `tui-render` and `tool_chain.rs`; pin on a live click; `ctrl+x o`. Crates: `code-tui-widgets`, `tui-render`, `code-tui-app`, `code-tui-keybindings`.
-    - P2 Keys (M): `{` `}` `enter` `y` `esc` in the pinned view, `ctrl+x u`, focus fill, hints, `G live` while busy, one-time notice, `/perf` check. Crates: `code-tui-app`, `code-tui-keybindings`.
-    - P3 Rows (M to L): structured header, cut order, Shell fact order, web, todo and compaction facts, width goldens at 40, 60, 80 and 120. Files: `tool_row.rs`, `tool_execution.rs`, `tools/web.rs`, `tools/todo.rs`, `custom_message.rs`.
-    - P4 Every block (M): thinking, summaries, skill, notice, `!` and startup details on one toggle; running Shell tail line; running Agent live tail. Files: `assistant_message.rs`, `custom_message.rs`, `skill_block.rs`, `background_notice.rs`, `bash_execution.rs` (widgets), `crates/hoocode-code-tui-app/src/resource_display.rs`.
-    - P5 Remove the dial (L): the removals in tui.md, with `docs/user/`, tui.md and `docs/maps/ui.md`, in one commit. Crates: `code-settings`, `code-tui-selectors`, `code-tui-widgets`, `code-tui-app`, goldens.
-46. [UI-22](tui.md#proposed-single-view-ui-21-ui-22) Pane grammar: one layout for every pane; yellow only for blocking (S, then M). Proposed with UI-21. Phase P6: (a) yellow for blocking only, S; (b) copy fixes, S; (c) grammar in `pane.rs` and `console.rs` (no bold selection, fixed detail column, hint helper), M; (d) S22 and S23 on one text-block helper, M; (e) S17 image marker in the composer, M. Crates: `code-tui-theme`, `code-tui-widgets`, `code-tui-selectors`, `code-tui-app`, `tui-components`.
-
-TUI work for both items is done by Haiku subagents, one step per subagent, per [tui.md](tui.md#how-tui-work-is-done).
+45–46. [UI-21 + UI-22](tui.md#proposed-single-view-ui-21-ui-22) Single view + pane grammar: done 2026-11-07, phases P0–P6 on branch `feat/u21-u22` (see Built).
 
 ## Needs a user decision
 

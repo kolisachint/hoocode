@@ -118,22 +118,6 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             &["ctrl+x T"],
             "Cycle thinking level backward",
         ),
-        // ── Read — what you see of what it did
-        entry(
-            "app.view.cycleForward",
-            &["ctrl+x o"],
-            "Cycle tool output view (outline → peek → full)",
-        ),
-        entry(
-            "app.view.cycleBackward",
-            &["ctrl+x O"],
-            "Cycle tool output view backward",
-        ),
-        entry(
-            "app.tools.expand",
-            &["ctrl+x p"],
-            "Step tool output: outline → peek → full → outline",
-        ),
         entry(
             "app.thinking.toggle",
             &["ctrl+x b"],
@@ -242,6 +226,31 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "app.scroll.searchPrevious",
             &["p"],
             "Previous search match (pinned view)",
+        ),
+        entry(
+            "app.scroll.focusPrevious",
+            &["{"],
+            "Focus the previous tool block (pinned view)",
+        ),
+        entry(
+            "app.scroll.focusNext",
+            &["}"],
+            "Focus the next tool block (pinned view)",
+        ),
+        entry(
+            "app.scroll.expandFocused",
+            &["enter"],
+            "Toggle the focused tool block (pinned view)",
+        ),
+        entry(
+            "app.scroll.copyFocused",
+            &["y"],
+            "Copy the focused block's raw output (pinned view)",
+        ),
+        entry(
+            "app.scroll.focusNewest",
+            &["ctrl+x u"],
+            "Focus the newest tool block and pin the view",
         ),
         entry(
             "app.panel.nextTab",

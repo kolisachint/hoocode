@@ -18,7 +18,7 @@ use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::text::{Line, Span};
 use hoocode_tui_ratatui::{Palette, RatatuiComponent};
 use hoocode_tui_render::{Component, Container};
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 
 fn custom_text_markdown(text: &str, markdown_theme: MarkdownTheme) -> Markdown {
     Markdown::new(
@@ -101,6 +101,11 @@ impl CustomMessageComponent {
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
         self.rebuild();
+    }
+
+    /// Whether the block's own toggle (UI-21 P4) is open.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
     }
 
     fn rebuild(&mut self) {
@@ -210,6 +215,11 @@ impl BranchSummaryMessageComponent {
         self.update_display();
     }
 
+    /// Whether the block's own toggle (UI-21 P4) is open.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
+    }
+
     fn update_display(&mut self) {
         let body = format!("**Branch Summary**\n\n{}", self.message.summary);
         self.sheet = summary_sheet(
@@ -232,15 +242,20 @@ impl Component for BranchSummaryMessageComponent {
     }
 }
 
-/// The compaction row's text: the turns folded into one summary, with the
-/// real token counts. `earlier turns` covers summaries from before
+/// The compaction row's parts (UI-21 P4 cut order): the label, the primary
+/// fact (never dropped: `saved N`, `grew N`, or `from N tokens` when the
+/// range is unknown), and the token range (secondary: dropped first when
+/// the row is too wide). `earlier turns` covers summaries from before
 /// compaction knew the transcript's turns.
-pub(crate) fn jettison_text(message: &CompactionSummaryMessage) -> String {
+pub(crate) fn jettison_parts(
+    message: &CompactionSummaryMessage,
+) -> (String, String, Option<String>) {
     let range = match message.mission_range {
         Some((first, last)) if first == last => format!("turn {first}"),
         Some((first, last)) => format!("turns {first}–{last}"),
         None => "earlier turns".to_string(),
     };
+    let label = format!("Compacted {range}");
     match (message.tokens_before, message.tokens_after) {
         (before, Some(after)) if before > 0 => {
             let change = if after >= before {
@@ -248,16 +263,20 @@ pub(crate) fn jettison_text(message: &CompactionSummaryMessage) -> String {
             } else {
                 format!("saved {}", group_digits(before - after))
             };
-            format!(
-                "Compacted {range} into one summary · {} → {} tokens ({change})",
-                group_digits(before),
-                group_digits(after)
-            )
+            let range = format!("{} → {} tokens", group_digits(before), group_digits(after));
+            (label, change, Some(range))
         }
-        (before, _) => format!(
-            "Compacted {range} into one summary · from {} tokens",
-            group_digits(before)
-        ),
+        (before, _) => (label, format!("from {} tokens", group_digits(before)), None),
+    }
+}
+
+/// The compaction row's text: the label, the primary fact, then the token
+/// range.
+pub(crate) fn jettison_text(message: &CompactionSummaryMessage) -> String {
+    let (label, primary, secondary) = jettison_parts(message);
+    match secondary {
+        Some(range) => format!("{label} · {primary} · {range}"),
+        None => format!("{label} · {primary}"),
     }
 }
 
@@ -288,6 +307,35 @@ fn jettison_spans(text: &str, hint: &str, width: usize, pal: &Palette) -> Vec<Sp
         push_vio(" ".repeat(width - used), &mut spans);
     }
     spans
+}
+
+/// The folded compaction row with the UI-21 cut order: the full
+/// `label · primary · secondary` row when it fits (with the hint when that
+/// fits too), else the row without its secondary token range, else the
+/// label cut short with the primary `saved N` fact kept while it fits on
+/// its own. Past that the row is cut short as before.
+fn jettison_cut_row(message: &CompactionSummaryMessage, hint: String, width: usize) -> Vec<String> {
+    let (label, primary, secondary) = jettison_parts(message);
+    let short = format!("{label} · {primary}");
+    if let Some(range) = &secondary {
+        let full = format!("{short} · {range}");
+        if visible_width(&full) <= width {
+            return jettison_row(full, hint, width);
+        }
+    }
+    if visible_width(&short) <= width {
+        return jettison_row(short, hint, width);
+    }
+    let keep = format!(" · {primary}");
+    let keep_width = visible_width(&keep);
+    if keep_width < width {
+        // Cut at a word; `truncate_at_word` leaves plain text plain (its
+        // reset only closes a style the input opened), so no escape lands
+        // in the ratatui spans.
+        let cut = truncate_at_word(&label, width - keep_width);
+        return jettison_row(format!("{cut}{keep}"), hint, width);
+    }
+    jettison_row(short, hint, width)
 }
 
 /// The folded compaction row: one ratatui line, `width` cells wide.
@@ -335,6 +383,11 @@ impl CompactionSummaryMessageComponent {
         self.update_display();
     }
 
+    /// Whether the block's own toggle (UI-21 P4) is open.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
+    }
+
     fn update_display(&mut self) {
         // The sheet is the expanded view; folded, the message is the
         // compaction row drawn with ratatui.
@@ -355,11 +408,7 @@ impl Component for CompactionSummaryMessageComponent {
         if self.expanded {
             return self.sheet.render(width);
         }
-        jettison_row(
-            jettison_text(&self.message),
-            peek_hint_text(),
-            width as usize,
-        )
+        jettison_cut_row(&self.message, peek_hint_text(), width as usize)
     }
 
     fn invalidate(&mut self) {

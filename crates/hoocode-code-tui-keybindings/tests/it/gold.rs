@@ -12,18 +12,12 @@ fn gold() -> Value {
 #[cfg(not(windows))]
 #[test]
 fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() {
-    /// Declared divergence from the pin (2026-10-09, user decision: ctrl+o steps
-    /// the tool output dial like alt+o; 2026-10-31: the tab order
+    /// Declared divergence from the pin (2026-10-31: the tab order
     /// lists Shell, and the tab entry drops "skips empty tabs"). The pinned descriptions
     /// below describe the old dials; ours describe the new ones. An expected
     /// row is rewritten only when its pinned text matches exactly, and every
     /// entry must match, so a stale entry fails instead of rotting.
     const DECLARED: &[(&str, &str, &str)] = &[
-        (
-            "app.tools.expand",
-            "Jump to the full view from wherever you are, and back again",
-            "Step tool output: outline → peek → full → outline",
-        ),
         (
             "app.tasks.cycleForward",
             "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)",
@@ -117,7 +111,7 @@ fn formats_key_text_like_hoocode() {
 #[test]
 fn orders_a_config_like_hoocode() {
     let raw: serde_json::Map<String, Value> = serde_json::from_value(serde_json::json!({
-        "zzz": "x", "app.tools.expand": "ctrl+y",
+        "zzz": "x",
         "app.interrupt": "escape", "aaa": 1, "tui.editor.undo": "ctrl+z"
     }))
     .unwrap();
@@ -129,6 +123,6 @@ fn orders_a_config_like_hoocode() {
         .map(|e| e.id)
         .filter(|id| raw.contains_key(*id))
         .collect();
-    assert_eq!(order[..3], known[..]);
-    assert_eq!(order[3..], ["aaa", "zzz"]);
+    assert_eq!(order[..2], known[..]);
+    assert_eq!(order[2..], ["aaa", "zzz"]);
 }

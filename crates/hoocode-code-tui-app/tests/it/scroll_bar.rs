@@ -23,7 +23,6 @@ impl Component for BarLine {
 
 fn base() -> StatusLineData {
     StatusLineData {
-        view: "peek".into(),
         session: Some("amber-harbor".into()),
         model: Some("claude-haiku-5-5".into()),
         context_percent: Some(42.0),
@@ -70,14 +69,14 @@ fn searching(query: &str, typing: bool, count: usize) -> ScrollStatus {
 /// The status row, plain, at 100 columns.
 fn row(status: &ScrollStatus) -> String {
     AppKeybindingsManager::default().install();
-    plain(&format_scroll_status(status, &base()))
+    plain(&format_scroll_status(status, &base(), false))
 }
 
 #[test]
 fn scrolled_golden() {
     let _g = lock(Some("dark"));
     AppKeybindingsManager::default().install();
-    let mut line = BarLine(format_scroll_status(&scrolled(false), &base()));
+    let mut line = BarLine(format_scroll_status(&scrolled(false), &base(), false));
     assert_golden!("scroll_rewind_100x1", render_golden(&mut line, 100));
 }
 
@@ -88,6 +87,7 @@ fn search_golden() {
     let mut line = BarLine(format_scroll_status(
         &searching("beta item 25", false, 1),
         &base(),
+        false,
     ));
     assert_golden!("scroll_scan_100x1", render_golden(&mut line, 100));
 }
@@ -101,8 +101,8 @@ fn scrolled_shows_the_range_new_lines_and_the_live_key() {
         "{text:?}"
     );
     assert!(
-        // Too wide for the cost at 100 columns: it drops first.
-        text.ends_with("peek · amber-harbor · claude-haiku-5-5 · 42% context"),
+        // The view word is gone, so the cost fits at 100 columns.
+        text.ends_with("amber-harbor · claude-haiku-5-5 · 42% context · $1.23"),
         "{text:?}"
     );
 }

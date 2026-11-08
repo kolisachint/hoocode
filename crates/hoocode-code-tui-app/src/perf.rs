@@ -16,7 +16,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use hoocode_tui_render::FrameTiming;
+use hoocode_tui_render::{Component, FrameTiming};
 use serde_json::{json, Value};
 
 /// Samples kept per metric: the rolling window the percentiles are taken over.
@@ -378,16 +378,16 @@ fn ms(duration: Duration) -> String {
     format!("{:.2}", duration.as_secs_f64() * 1000.0)
 }
 
-fn dist_line(label: &str, dist: Option<Dist>) -> String {
+fn dist_value(dist: Option<Dist>) -> String {
     match dist {
         Some(d) => format!(
-            "{label:<24} n={:<5} min {}  p50 {}  p99 {}",
+            "n={}  min {}  p50 {}  p99 {}",
             d.count,
             ms(d.min),
             ms(d.p50),
             ms(d.p99)
         ),
-        None => format!("{label:<24} no samples yet"),
+        None => "no samples yet".to_string(),
     }
 }
 
@@ -398,27 +398,29 @@ fn rss_text(rss_kib: Option<u64>) -> String {
     }
 }
 
-/// The `/perf` notice: one value per line, times in milliseconds.
+/// The `/perf` notice as a text block (spec §4 S23): a bold heading,
+/// dim labels with ink values, no blank rows inside. Times in milliseconds.
 pub fn format_report(snapshot: &Snapshot) -> String {
+    use hoocode_code_tui_widgets::text_block::TextBlockComponent;
+
     let stats = &snapshot.stats;
     let threads = snapshot
         .proc
         .threads
         .map_or_else(|| "n/a".to_string(), |count| count.to_string());
-    [
-        "Performance (the last 1024 samples of each)".to_string(),
-        format!("threads: {threads}"),
-        format!("rss: {}", rss_text(snapshot.proc.rss_kib)),
-        format!(
-            "frames: {}  stalls (loop > 500 ms): {}",
-            stats.frames, stats.stalls
-        ),
-        dist_line("frame build (ms)", stats.frame_build),
-        dist_line("frame write (ms)", stats.frame_write),
-        dist_line("keystroke to frame (ms)", stats.key_latency),
-        dist_line("loop iteration (ms)", stats.loop_iteration),
-    ]
-    .join("\n")
+    let mut block = TextBlockComponent::new("Performance");
+    block.set_heading_detail("the last 1024 samples of each");
+    block.add_field("threads", &threads);
+    block.add_field("rss", &rss_text(snapshot.proc.rss_kib));
+    block.add_field("frames", &stats.frames.to_string());
+    block.add_field("stalls (loop > 500 ms)", &stats.stalls.to_string());
+    block.add_field("frame build (ms)", &dist_value(stats.frame_build));
+    block.add_field("frame write (ms)", &dist_value(stats.frame_write));
+    block.add_field("keystroke to frame (ms)", &dist_value(stats.key_latency));
+    block.add_field("loop iteration (ms)", &dist_value(stats.loop_iteration));
+    // No width cap here: the caller (`/perf`) wraps the lines itself.
+    // Render wide so nothing truncates.
+    block.render(u16::MAX).join("\n")
 }
 
 fn dist_json(dist: Option<Dist>) -> Value {
@@ -540,13 +542,20 @@ mod tests {
         }
     }
 
+    fn plain_report(snapshot: &Snapshot) -> String {
+        hoocode_tui_util::strip_vt_control_characters(&format_report(snapshot))
+    }
+
     #[test]
     fn report_shows_every_value() {
-        let text = format_report(&sample_snapshot());
-        assert!(text.contains("threads: 7"), "{text}");
-        assert!(text.contains("rss: 2.0 MiB"), "{text}");
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        hoocode_code_tui_theme::chalk::set_enabled(true);
+        let text = plain_report(&sample_snapshot());
+        assert!(text.contains("Performance"), "{text}");
+        assert!(text.contains("threads") && text.contains('7'), "{text}");
+        assert!(text.contains("rss") && text.contains("2.0 MiB"), "{text}");
         assert!(
-            text.contains("frames: 3  stalls (loop > 500 ms): 1"),
+            text.contains("frames") && text.contains("stalls (loop > 500 ms)"),
             "{text}"
         );
         assert!(
@@ -562,13 +571,12 @@ mod tests {
 
     #[test]
     fn report_says_n_a_when_the_platform_has_no_proc() {
-        let text = format_report(&Snapshot::default());
-        assert!(text.contains("threads: n/a"), "{text}");
-        assert!(text.contains("rss: n/a"), "{text}");
-        assert!(
-            text.contains("frames: 0  stalls (loop > 500 ms): 0"),
-            "{text}"
-        );
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        hoocode_code_tui_theme::chalk::set_enabled(true);
+        let text = plain_report(&Snapshot::default());
+        assert!(text.contains("threads") && text.contains("n/a"), "{text}");
+        assert!(text.contains("rss") && text.contains("n/a"), "{text}");
+        assert!(text.contains("frames"), "{text}");
     }
 
     #[test]

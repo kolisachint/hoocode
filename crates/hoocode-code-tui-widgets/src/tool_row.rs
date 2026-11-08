@@ -22,7 +22,7 @@ pub const SUB_INDENT: usize = 3;
 pub enum Mark {
     /// Done: green `●`.
     Done,
-    /// Still running: dim `●`.
+    /// Still running: accent `◉` (single view, decision 4/9).
     Running,
     /// Failed: red `⊗`.
     Failed,
@@ -35,7 +35,7 @@ impl Mark {
     pub fn span(self, palette: &Palette) -> Span<'static> {
         match self {
             Mark::Done => Span::styled(status::DONE_STR.to_string(), palette.ok()),
-            Mark::Running => Span::styled(status::DONE_STR.to_string(), palette.dim()),
+            Mark::Running => Span::styled(status::RUNNING_STR.to_string(), palette.acc()),
             Mark::Failed => Span::styled(status::FAILED_STR.to_string(), palette.err()),
             Mark::Stopped => Span::styled(status::FAILED_STR.to_string(), palette.dim()),
         }
@@ -91,6 +91,298 @@ pub fn short_dur(secs: u64) -> String {
     } else {
         format!("{}m{}s", secs / 60, secs % 60)
     }
+}
+
+// ---- Structured header + cut order (UI-21 P3 header slice) ----
+//
+// One line: mark, bold tool, target, two spaces, facts. Shell fact order is
+// `exit · size · duration`: the exit is primary, size then duration are
+// secondary (dropped right-to-left, so the duration goes first).
+//
+// Cut order for a header that is still too wide: (1) secondary facts drop
+// whole, right to left; (2) the target shortens to its minimum, a path
+// dropping whole leading directories and keeping the file name, a command
+// cutting at a word; (3) a failed row's reason cuts at a word, keeping 12+
+// columns; (4) otherwise the reason drops and the target takes the space
+// back. Primary facts never drop.
+//
+// Matches the `width_single_view` executable contract (`fit_header`) on the
+// `agent/u21-width` branch; no deviation.
+
+/// Grid cells of a header string: fixtures are ASCII except `…`, one cell each.
+fn header_cells(s: &str) -> usize {
+    s.chars().count()
+}
+
+/// Whole leading words of `text` that fit in `avail` cells.
+fn keep_words(text: &str, avail: usize) -> String {
+    let mut kept = String::new();
+    for w in text.split_whitespace() {
+        let cand = if kept.is_empty() {
+            w.to_string()
+        } else {
+            format!("{kept} {w}")
+        };
+        if header_cells(&cand) > avail {
+            break;
+        }
+        kept = cand;
+    }
+    kept
+}
+
+/// Smallest whole-word command prefix at 12+ cells, then `…`: the target
+/// minimum for a command.
+fn min_command(cmd: &str) -> String {
+    let mut kept = String::new();
+    for w in cmd.split_whitespace() {
+        kept = if kept.is_empty() {
+            w.to_string()
+        } else {
+            format!("{kept} {w}")
+        };
+        if header_cells(&kept) >= 12 {
+            break;
+        }
+    }
+    format!("{kept}…")
+}
+
+/// A file name longer than the row cuts in the middle, keeping the extension.
+fn middle_cut(name: &str, avail: usize) -> String {
+    if header_cells(name) <= avail {
+        return name.to_string();
+    }
+    if avail == 0 {
+        return String::new();
+    }
+    if avail == 1 {
+        return "…".to_string();
+    }
+    let tail = (avail - 1) / 2;
+    let head = avail - 1 - tail;
+    let chars: Vec<char> = name.chars().collect();
+    let h: String = chars.iter().take(head).collect();
+    let t: String = chars[chars.len() - tail..].iter().collect();
+    format!("{h}…{t}")
+}
+
+/// A path shortens through whole leading directories first, keeping the file name.
+fn shorten_path(path: &str, avail: usize) -> String {
+    if header_cells(path) <= avail {
+        return path.to_string();
+    }
+    let mut segs: Vec<&str> = path.split('/').collect();
+    while segs.len() > 1 {
+        segs.remove(0);
+        let cand = format!("…/{}", segs.join("/"));
+        if header_cells(&cand) <= avail {
+            return cand;
+        }
+    }
+    middle_cut(segs.last().copied().unwrap_or(path), avail)
+}
+
+/// A command cuts at a word, never below [`min_command`].
+fn shorten_command(cmd: &str, avail: usize) -> String {
+    if header_cells(cmd) <= avail {
+        return cmd.to_string();
+    }
+    let kept = keep_words(cmd, avail.saturating_sub(1));
+    if header_cells(&kept) >= 12 {
+        return format!("{kept}…");
+    }
+    min_command(cmd)
+}
+
+/// A target shortens to its minimum, never dropping: paths drop leading
+/// directories, commands cut at a word.
+fn shorten_target(target: &str, avail: usize) -> String {
+    if header_cells(target) <= avail {
+        return target.to_string();
+    }
+    if target.contains('/') {
+        shorten_path(target, avail)
+    } else {
+        shorten_command(target, avail)
+    }
+}
+
+/// A failed row's reason cut at a word, or dropped when 12 columns do not fit.
+fn cut_reason(reason: &str, avail: usize) -> Option<String> {
+    if header_cells(reason) <= avail {
+        return Some(reason.to_string());
+    }
+    if avail < 12 {
+        return None;
+    }
+    let kept = keep_words(reason, avail - 1);
+    if kept.is_empty() {
+        return None;
+    }
+    Some(format!("{kept}…"))
+}
+
+/// Plain header text through the cut order: `{mark} {tool} {target}  {facts}`
+/// with ` · ` between the primary facts, the reason and the kept secondary
+/// facts. Fact order is primary, reason, secondary, so Shell reads
+/// `exit · size · duration` with the reason after the exit.
+fn render_header_text(
+    head: &str,
+    target: &str,
+    prim: &str,
+    secs: &[&str],
+    reason: Option<&str>,
+) -> String {
+    let mut out = head.to_string();
+    if !target.is_empty() {
+        out.push(' ');
+        out.push_str(target);
+    }
+    let mut facts: Vec<&str> = Vec::new();
+    if !prim.is_empty() {
+        facts.push(prim);
+    }
+    if let Some(r) = reason {
+        facts.push(r);
+    }
+    facts.extend(secs.iter().copied());
+    if !facts.is_empty() {
+        out.push_str("  ");
+        out.push_str(&facts.join(" · "));
+    }
+    out
+}
+
+/// One single-view header line through the cut order. Primary facts never
+/// drop; secondary facts drop whole right-to-left, then the target shortens,
+/// then the reason cuts at 12+ columns or drops.
+pub fn fit_header(
+    mark: char,
+    tool: &str,
+    target: &str,
+    primary: &[&str],
+    secondary: &[&str],
+    reason: Option<&str>,
+    width: usize,
+) -> String {
+    let head = format!("{mark} {tool}");
+    let prim = primary.join(" · ");
+    // Step 1: secondary facts drop whole, right to left.
+    let mut kept: Vec<&str> = secondary.to_vec();
+    loop {
+        if header_cells(&render_header_text(&head, target, &prim, &kept, reason)) <= width {
+            return render_header_text(&head, target, &prim, &kept, reason);
+        }
+        if kept.pop().is_none() {
+            break;
+        }
+    }
+    // Step 2: the target shortens against the full reason, never below its
+    // minimum.
+    let rpart = reason.map(|r| header_cells(r) + 3).unwrap_or(0);
+    let avail_t = width.saturating_sub(header_cells(&head) + 3 + header_cells(&prim) + rpart);
+    let short = shorten_target(target, avail_t);
+    // Steps 3-4: the reason cuts at a word, or drops.
+    let base = render_header_text(&head, &short, &prim, &[], None);
+    let avail_r = width.saturating_sub(header_cells(&base) + 3);
+    match reason {
+        Some(r) => match cut_reason(r, avail_r) {
+            Some(cut) => format!("{base} · {cut}"),
+            None => base,
+        },
+        None => base,
+    }
+}
+
+/// The glyph of `mark` as a one-cell char, for measuring a styled header.
+fn mark_char(mark: Mark) -> char {
+    match mark {
+        Mark::Done | Mark::Running => '●',
+        Mark::Failed | Mark::Stopped => '⊗',
+    }
+}
+
+/// One structured header line as spans: the mark, the tool in bold, the
+/// (possibly shortened) target in plain text, two spaces, then the facts -
+/// the exit red on a failed row, everything else dim. Runs the same cut
+/// order as [`fit_header`]: secondary drops right-to-left, the target
+/// shortens, the reason cuts at 12+ columns or drops, primary never drops.
+#[allow(clippy::too_many_arguments)]
+pub fn header_spans(
+    mark: Mark,
+    tool: &str,
+    target: &str,
+    primary: &[&str],
+    secondary: &[&str],
+    reason: Option<&str>,
+    width: usize,
+    palette: &Palette,
+) -> Vec<Span<'static>> {
+    let head = format!("{} {tool}", mark_char(mark));
+    let prim = primary.join(" · ");
+    // Step 1: secondary facts drop whole, right to left.
+    let mut kept: Vec<&str> = secondary.to_vec();
+    loop {
+        if header_cells(&render_header_text(&head, target, &prim, &kept, reason)) <= width {
+            break;
+        }
+        if kept.pop().is_none() {
+            break;
+        }
+    }
+    let full = render_header_text(&head, target, &prim, &kept, reason);
+    let (short_target, kept_secs, cut_r) = if header_cells(&full) <= width {
+        (target.to_string(), kept.clone(), reason.map(str::to_string))
+    } else {
+        // Step 2: the target shortens against the full reason.
+        let rpart = reason.map(|r| header_cells(r) + 3).unwrap_or(0);
+        let avail_t = width.saturating_sub(header_cells(&head) + 3 + header_cells(&prim) + rpart);
+        let short = shorten_target(target, avail_t);
+        // Steps 3-4: the reason cuts at a word, or drops.
+        let base = render_header_text(&head, &short, &prim, &[], None);
+        let avail_r = width.saturating_sub(header_cells(&base) + 3);
+        let cut = match reason {
+            Some(r) => cut_reason(r, avail_r),
+            None => None,
+        };
+        (short, Vec::new(), cut)
+    };
+    let mut spans = vec![
+        mark.span(palette),
+        Span::raw(" ".to_string()),
+        Span::styled(tool.to_string(), bold(palette.ink())),
+    ];
+    if !short_target.is_empty() {
+        spans.push(Span::raw(" ".to_string()));
+        spans.push(Span::styled(short_target, palette.ink()));
+    }
+    let failed_exit = matches!(mark, Mark::Failed);
+    let mut first = true;
+    let mut push_fact = |text: &str, err: bool, spans: &mut Vec<Span<'static>>| {
+        if first {
+            spans.push(Span::raw("  ".to_string()));
+            first = false;
+        } else {
+            spans.push(Span::styled(" · ".to_string(), palette.dim()));
+        }
+        if err {
+            spans.push(Span::styled(text.to_string(), palette.err()));
+        } else {
+            spans.push(Span::styled(text.to_string(), palette.dim()));
+        }
+    };
+    for fact in primary.iter().filter(|f| !f.is_empty()) {
+        let err = failed_exit && fact.starts_with("exit ");
+        push_fact(fact, err, &mut spans);
+    }
+    if let Some(r) = cut_r.as_deref() {
+        push_fact(r, false, &mut spans);
+    }
+    for fact in kept_secs.iter().filter(|f| !f.is_empty()) {
+        push_fact(fact, false, &mut spans);
+    }
+    spans
 }
 
 /// A tool row as rows: ` ● label  facts`. The label (bold name, subject)

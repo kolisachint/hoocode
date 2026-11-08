@@ -1,6 +1,6 @@
- ● done · 8.5s · 7.1k tokens · 1 failed call               outline · claude-haiku-5-5 · 42% context
+ ● done · 8.5s · 7.1k tokens · 1 failed call  amber-harbor · claude-haiku-5-5 · 42% context · $1.23
 --- styles ---
 r0 c1 fg=#b5bd68
 r0 c2-30 fg=#989898
 r0 c31-43 fg=#d58181
-r0 c59-98 fg=#989898
+r0 c46-98 fg=#989898

@@ -1,7 +1,7 @@
 //! `components/bash-execution.ts`: a user `!` command with streaming output,
 //! a spinner while it runs, and a status line once it ends.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -14,7 +14,7 @@ use hoocode_tui_components::Loader;
 use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, row, Palette};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::wrap_text_with_ansi;
+use hoocode_tui_util::{truncate_to_width, wrap_text_with_ansi};
 
 use crate::fold::earlier_lines_text;
 use crate::tool_row::{dim_fact, fold_row, is_blank_row, tool_rows, Mark, BODY_INDENT};
@@ -108,11 +108,6 @@ pub struct BashExecutionComponent {
     full_output_path: Option<String>,
     expanded: bool,
     tail: OutputTail,
-    /// The transcript's outline flag, shared so a view flip reaches every row.
-    outline: Option<Rc<Cell<bool>>>,
-    /// The transcript's full flag: at the full stop the output shows whole
-    /// and the command is never cut.
-    full: Option<Rc<Cell<bool>>>,
 }
 
 impl BashExecutionComponent {
@@ -140,29 +135,13 @@ impl BashExecutionComponent {
             truncation: None,
             full_output_path: None,
             expanded: false,
-            outline: None,
-            full: None,
         }
     }
 
-    /// Outline (M5): while `flag` is set the row shows its header only, the
-    /// output stays in peek. The flag is the transcript's outline flag.
-    pub fn set_outline_flag(&mut self, flag: Rc<Cell<bool>>) {
-        self.outline = Some(flag);
-    }
-
-    fn outline_hidden(&self) -> bool {
-        self.outline.as_ref().is_some_and(|flag| flag.get())
-    }
-
-    /// The transcript's full flag, shared so a view flip reaches every row.
-    pub fn set_full_flag(&mut self, flag: Rc<Cell<bool>>) {
-        self.full = Some(flag);
-    }
-
-    /// Whether the output shows whole: the full stop, or `set_expanded`.
-    fn is_expanded(&self) -> bool {
-        self.expanded || self.full.as_ref().is_some_and(|flag| flag.get())
+    /// Whether the output shows whole: the block's own toggle. Collapsed,
+    /// a running command shows one dim tail line.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
     }
 
     pub fn set_expanded(&mut self, expanded: bool) {
@@ -236,12 +215,48 @@ impl BashExecutionComponent {
         tool_rows(0, mark, &label, facts, width, palette)
     }
 
+    /// A running command's single dim tail line while collapsed (UI-21 P4,
+    /// decision 4): its last output line, dim at column 4. Gone once the
+    /// command settles. With no output yet, the spinner stands in.
+    fn running_tail_line(&mut self, width: usize) -> Vec<String> {
+        let t = theme();
+        let content_width = width.saturating_sub(BODY_INDENT).max(1);
+        let last = self
+            .tail
+            .text()
+            .lines()
+            .rfind(|l| !l.trim().is_empty())
+            .map(str::to_string);
+        match last {
+            Some(line) => {
+                let cut = truncate_to_width(&line, content_width, "…", false);
+                let text = format!("{}{}", " ".repeat(BODY_INDENT), t.fg("dim", &cut));
+                vec![row(ansi_spans(&text), width)]
+            }
+            None => self.spinner_rows(width),
+        }
+    }
+
+    /// The spinner rows at column 4, without blank rows.
+    fn spinner_rows(&mut self, width: usize) -> Vec<String> {
+        self.loader
+            .borrow_mut()
+            .render(width.saturating_sub(BODY_INDENT).max(1) as u16)
+            .into_iter()
+            .filter(|l| !is_blank_row(l))
+            .map(|l| format!("{}{l}", " ".repeat(BODY_INDENT)))
+            .collect()
+    }
     /// The output rows, dim at column 4: the last two lines of a run that
     /// passed, the last four of one that failed, whole when it is four lines
     /// or fewer and at the full stop. The fold hint sits above the lines;
     /// the cancelled and truncation notices close the body. A running
-    /// command shows its spinner.
+    /// command, collapsed, shows one dim tail line instead (see
+    /// [`Self::running_tail_line`]); expanded, its tail and spinner.
     fn body_rows(&mut self, width: usize, palette: &Palette) -> Vec<String> {
+        if self.status == Status::Running && !self.is_expanded() {
+            return self.running_tail_line(width);
+        }
         let t = theme();
         let mut lines = Vec::new();
         let mut context = truncate_tail(
@@ -286,15 +301,7 @@ impl BashExecutionComponent {
             }
         }
         if self.status == Status::Running {
-            let spinner: Vec<String> = self
-                .loader
-                .borrow_mut()
-                .render(width.saturating_sub(BODY_INDENT).max(1) as u16)
-                .into_iter()
-                .filter(|l| !is_blank_row(l))
-                .map(|l| format!("{}{l}", " ".repeat(BODY_INDENT)))
-                .collect();
-            lines.extend(spinner);
+            lines.extend(self.spinner_rows(width));
             return lines;
         }
         let mut footer: Vec<String> = Vec::new();
@@ -343,11 +350,9 @@ impl Component for BashExecutionComponent {
         // One blank row opens the run, as it does a chain of tool rows.
         let mut lines = vec![String::new()];
         lines.extend(self.header_rows(width, &palette));
-        if !self.outline_hidden() {
-            let body = self.body_rows(width, &palette);
-            if !body.is_empty() {
-                lines.extend(body);
-            }
+        let body = self.body_rows(width, &palette);
+        if !body.is_empty() {
+            lines.extend(body);
         }
         lines
     }

@@ -1,0 +1,12 @@
+
+ ● Read …/src/tool_chain.rs  1451 lines
+ ● Shell cargo test -p hoocode-config 2>&1 | tail…  exit 0
+--- styles ---
+r1 c1 fg=#b5bd68
+r1 c3-6 fg=#e5e5e7 bold
+r1 c8-26 fg=#e5e5e7
+r1 c29-38 fg=#989898
+r2 c1 fg=#b5bd68
+r2 c3-7 fg=#e5e5e7 bold
+r2 c9-49 fg=#e5e5e7
+r2 c52-57 fg=#989898

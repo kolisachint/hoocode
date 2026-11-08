@@ -15,11 +15,11 @@ use serde_json::{json, Value};
 use super::search::js_number;
 use super::text;
 use crate::fold::earlier_lines_hint;
+use crate::fold::line_budget;
 use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{
     body_layout, BodyLayout, ToolRenderDefinition, ToolRenderResultOptions, ToolResultView,
 };
-use crate::tool_output_view::line_budget;
 use crate::visual_truncate::truncate_to_visual_lines;
 
 /// State key: the block needs re-rendering every second (a live `Elapsed`).

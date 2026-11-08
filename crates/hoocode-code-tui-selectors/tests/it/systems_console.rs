@@ -69,15 +69,22 @@ fn check_systems(name: &str, width: u16) {
     );
     assert!(
         text.lines()
-            .any(|l| l.starts_with(" › ") && l.contains("filter")),
+            .any(|l| l.starts_with(" ▏") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     // The selected setting's detail: beside the rows from 100 columns,
-    // under them below.
-    assert!(
-        text.contains("per turn  4,140 tokens"),
-        "{name}: missing the detail in\n{text}"
-    );
+    // under them below (capped at three rows plus `…` on narrow panes).
+    if width >= 100 {
+        assert!(
+            text.contains("per turn  4,140 tokens"),
+            "{name}: missing the detail in\n{text}"
+        );
+    } else {
+        assert!(
+            text.contains("tok/turn"),
+            "{name}: missing the capped detail in\n{text}"
+        );
+    }
     assert!(
         !text.contains("Per-turn surface"),
         "{name}: stacked surface row in\n{text}"

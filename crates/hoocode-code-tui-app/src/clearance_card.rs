@@ -2,8 +2,9 @@
 //! (declutter spec, Dialogs): a yellow `Allow Shell?` chip, the `$ command`
 //! row, an `access:` row only when the call writes, uses the network or
 //! pipes, then numbered options (`1 yes`, `2 yes, always for <program> this
-//! session`, `3 no, tell it why`), the reply row and the hint row. `1`/`2`/`3`
-//! pick, `e` edits the command first, and every other letter types a reply
+//! session`, `3 no, tell it why`), the reply row and the hint row (`1–3 pick ·
+//! y yes · n no · e edit`: `a` still highlights the always row). `1`/`2`/`3`
+//! pick, `e` edits the command first (`edit`), and every other letter types a reply
 //! that `enter` sends as the denial's reason. While the reply is empty, `y`
 //! answers yes and `n` no at once; `a` only moves the highlight to the always
 //! row, and `enter` confirms it. With no always row, `a` types like any letter.
@@ -15,11 +16,12 @@
 
 use hoocode_code_permissions::{is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo};
 use hoocode_code_tui_keybindings::key_hint_text;
-use hoocode_code_tui_widgets::pane::{hint_line, input_line, Chip, Pane, PaneStyle};
+use hoocode_code_tui_widgets::pane::{fit_hint_line, input_line, wrap_text, Chip, Pane, PaneStyle};
 use hoocode_tui_components::Input;
 use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{Line, Span};
 use hoocode_tui_render::Component;
+use hoocode_tui_util::visible_width;
 
 /// What the card answers with (the gate's [`ClearanceChoice`], sent on).
 pub type ClearanceAnswer = Box<dyn FnOnce(ClearanceChoice)>;
@@ -100,8 +102,8 @@ impl ClearanceCard {
         }
     }
 
-    /// `access: writes notes.txt, network, pipes 2 programs`: only what the
-    /// call writes, reaches over the network or pipes. None when it does none.
+    /// What the call reaches: `writes notes.txt, network, pipes 2
+    /// programs` after the dim `access:` label. None when it does none.
     fn access_text(&self) -> Option<String> {
         let reach = &self.info.reach;
         let mut parts = Vec::new();
@@ -120,12 +122,14 @@ impl ClearanceCard {
                 None => "pipes".to_string(),
             });
         }
-        (!parts.is_empty()).then(|| format!("access: {}", parts.join(", ")))
+        (!parts.is_empty()).then(|| parts.join(", "))
     }
 
-    /// The option labels, in key order: yes, [always], no.
-    fn options(&self) -> Vec<String> {
-        let mut options = vec!["yes".to_string()];
+    /// The option labels with their scope, in key order: yes, [always],
+    /// no. The scope rides on the always label's row while it fits, else
+    /// on its own continuation row (mock §S4).
+    fn options(&self) -> Vec<(String, Option<String>)> {
+        let mut options = vec![("yes".to_string(), None)];
         if let Some(program) = self.always_offer() {
             // Shell approvals live for this session only; other tools
             // persist to the mode's auto-allow.
@@ -134,77 +138,98 @@ impl ClearanceCard {
             } else {
                 format!("in {}", self.info.mode.trim().to_lowercase())
             };
-            options.push(format!("yes, always for {program} {scope}"));
+            options.push((format!("yes, always for {program}"), Some(scope)));
         }
-        options.push("no, tell it why".to_string());
+        options.push(("no, tell it why".to_string(), None));
         options
     }
 
     /// The pane for the current state.
-    fn pane(&self) -> Pane {
+    fn pane(&self, width: usize) -> Pane {
         let st = PaneStyle::current();
         let mut pane = Pane::new(self.title());
         pane.chip = Chip::Warn;
         if let Some(facts) = self.facts() {
             pane.facts = Line::from(vec![Span::styled(facts, st.dim_style())]);
         }
-        let mut subject = vec![Span::raw("  ")];
-        if self.info.tool == "Shell" {
-            subject.push(Span::styled("$ ", st.dim_style()));
-            subject.push(Span::styled(self.editable(), st.text_style()));
-        } else {
-            subject.push(Span::styled(self.info.detail.clone(), st.text_style()));
+        // The subject: `$ command` for Shell, the detail otherwise. A
+        // narrow pane wraps the command to a second row aligned under it
+        // (mock §S4).
+        let is_shell = self.info.tool == "Shell";
+        let wrap = width.saturating_sub(if is_shell { 6 } else { 4 });
+        for (n, part) in wrap_text(&self.editable(), wrap).iter().enumerate() {
+            let mut subject = if n == 0 {
+                vec![Span::raw("  ")]
+            } else if is_shell {
+                vec![Span::raw("    ")]
+            } else {
+                vec![Span::raw("  ")]
+            };
+            if is_shell && n == 0 {
+                subject.push(Span::styled("$ ", st.dim_style()));
+            }
+            subject.push(Span::styled(part.clone(), st.text_style()));
+            pane.top.push(Line::from(subject));
         }
-        pane.top.push(Line::from(subject));
         if let Some(access) = self.access_text() {
             pane.top.push(Line::from(vec![
                 Span::raw("  "),
-                Span::styled(access, st.dim_style()),
+                Span::styled("access:".to_string(), st.dim_style()),
+                Span::styled(format!(" {access}"), st.text_style()),
             ]));
         }
         if self.editing {
             pane.input = Some(input_line(self.edit.get_value(), "", self.focused));
             let run = key_hint_text("tui.input.submit");
             let cancel = key_hint_text("tui.select.cancel");
-            pane.hint = hint_line(&[(run.as_str(), "run"), (cancel.as_str(), "cancel")]);
+            pane.hint = fit_hint_line(
+                &[(run.as_str(), "run"), (cancel.as_str(), "cancel")],
+                false,
+                width,
+            );
         } else {
             let options = self.options();
             let count = options.len();
-            pane.rows = options
-                .into_iter()
-                .enumerate()
-                .map(|(i, label)| {
-                    let number_style = if i == self.selected && !st.mono {
-                        st.text_style()
-                    } else {
-                        st.dim_style()
-                    };
-                    Line::from(vec![
-                        Span::styled(format!("{}  ", i + 1), number_style),
-                        Span::styled(label, st.text_style()),
-                    ])
-                })
-                .collect();
+            let item_budget = width.saturating_sub(4);
+            for (i, (label, scope)) in options.into_iter().enumerate() {
+                let number = format!("{}  ", i + 1);
+                let inline = match &scope {
+                    Some(scope) => format!("{label} {scope}"),
+                    None => label.clone(),
+                };
+                let mut spans = vec![
+                    Span::styled(number.clone(), st.text_style()),
+                    Span::styled(label, st.text_style()),
+                ];
+                if visible_width(&number) + 2 + visible_width(&inline) <= item_budget {
+                    if let Some(scope) = scope {
+                        spans.push(Span::styled(format!(" {scope}"), st.text_style()));
+                    }
+                } else if let Some(scope) = scope {
+                    pane.flow.entry(i).or_default().push(Line::from(vec![
+                        Span::raw("        "),
+                        Span::styled(scope, st.text_style()),
+                    ]));
+                }
+                pane.rows.push(Line::from(spans));
+            }
             pane.selected = Some(self.selected.min(count - 1));
             pane.input = Some(input_line(&self.reply, "or type a reply", self.focused));
             let pick = format!("1–{count}");
             let yes = key_hint_text("app.dialog.yes");
-            let always = key_hint_text("app.dialog.always");
             let no = key_hint_text("app.dialog.no");
-            let enter = key_hint_text("tui.input.submit");
-            // `a` only highlights the always row, so its hint names enter too.
-            // The letters answer only the options offered: `always` needs three.
-            let always_label = format!("always ({enter})");
-            let mut hint = vec![
-                (pick.as_str(), "pick"),
-                (yes.as_str(), "yes"),
-                (no.as_str(), "no"),
-            ];
-            if count >= 3 {
-                hint.push((always.as_str(), always_label.as_str()));
-            }
-            hint.push(("e", "edit first"));
-            pane.hint = hint_line(&hint);
+            // `a` still highlights the always row; the hint keeps four
+            // items at every width (mock §S4).
+            pane.hint = fit_hint_line(
+                &[
+                    (pick.as_str(), "pick"),
+                    (yes.as_str(), "yes"),
+                    (no.as_str(), "no"),
+                    ("e", "edit"),
+                ],
+                false,
+                width,
+            );
         }
         pane.style = Some(st);
         pane
@@ -225,7 +250,7 @@ impl ClearanceCard {
 
 impl Component for ClearanceCard {
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.pane().render(width as usize)
+        self.pane(width as usize).render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {

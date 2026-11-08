@@ -1,7 +1,8 @@
 //! The one place a transcript row says "there is more": the `… N more lines`
 //! hint every renderer folds with (`… N earlier lines` where the tail of the
-//! output is what shows), the `…` ellipsis glyph, and the fold of a block's
-//! body rows that the peek rail and the trajectory share.
+//! output is what shows), the `…` ellipsis glyph, the fold of a block's
+//! body rows that the peek rail and the trajectory share, and the line
+//! budget a collapsed body shows before the hint.
 //!
 //! Every renderer that leaves lines out builds its hint here, so the text,
 //! the colour and the glyph read the same at every site. A reader that must
@@ -15,6 +16,50 @@ use hoocode_tui_util::strip_vt_control_characters;
 
 /// The ellipsis every cut and every fold ends with (never ASCII `...`).
 pub const ELLIPSIS: &str = "…";
+
+/// How many lines of a result a collapsed body shows before the hint.
+/// An open toggle shows everything: renderers get `expanded` and trim
+/// nothing.
+pub const PEEK_LINES: usize = 5;
+
+/// The lines of a result a renderer shows: [`PEEK_LINES`], or all of them
+/// when `expanded` (its toggle is open).
+pub fn line_budget(expanded: bool) -> usize {
+    if expanded {
+        usize::MAX
+    } else {
+        PEEK_LINES
+    }
+}
+
+/// The body a tool result shows while collapsed, shared by every renderer
+/// that trims its own output: the first [`line_budget`] lines, styled by
+/// `style`, then the dim `… N more lines` hint when lines were left out.
+/// Callers put any leading newline themselves, and skip the call for an
+/// empty output.
+pub fn peek_block(
+    expanded: bool,
+    lines: &[String],
+    style: impl FnOnce(&[String]) -> Vec<String>,
+) -> String {
+    let shown = lines.len().min(line_budget(expanded));
+    peek_window(lines.len(), &lines[..shown], style)
+}
+
+/// [`peek_block`] for a caller that has built only the lines it shows: `shown`
+/// is the first lines (at most the budget) of `total` lines, styled by
+/// `style`.
+pub fn peek_window(
+    total: usize,
+    shown: &[String],
+    style: impl FnOnce(&[String]) -> Vec<String>,
+) -> String {
+    let body = style(shown).join("\n");
+    if total <= shown.len() {
+        return body;
+    }
+    format!("{body}\n{}", more_lines_hint(total - shown.len()))
+}
 
 /// `… N more lines` (`… 1 more line`), plain text.
 pub fn more_lines_text(hidden: usize) -> String {

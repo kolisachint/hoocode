@@ -13,7 +13,7 @@ use std::rc::Rc;
 use hoocode_ai_models::models_are_equal;
 use hoocode_ai_types::Model;
 use hoocode_code_tui_theme::style_input;
-use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_code_tui_widgets::console::{query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
@@ -82,20 +82,35 @@ impl State {
             ModelScope::Scoped => "scoped",
         };
         let total = self.active().len();
-        let models = |n: usize| {
-            if n == 1 {
-                "1 model".to_string()
-            } else {
-                format!("{n} models")
-            }
-        };
         if query.is_empty() {
-            format!("showing {scope} · {}", models(total))
+            format!("showing {scope} · {}", models_text(total))
         } else {
             format!(
                 "showing {scope} · {} of {total}",
-                models(self.filtered.len())
+                models_text(self.filtered.len())
             )
+        }
+    }
+
+    /// The count's short form for a narrow title (`2 models`): the scope
+    /// prefix drops at 40 columns (settings `count_for_width` pattern).
+    fn short_text(&self, query: &str) -> String {
+        let total = self.active().len();
+        if query.is_empty() {
+            models_text(total)
+        } else {
+            format!("{} of {total}", models_text(self.filtered.len()))
+        }
+    }
+
+    /// The full count while it fits the title, else the short form.
+    fn count_for_width(&self, query: &str, width: usize) -> String {
+        let full = self.count_text(query);
+        // `  Models  /model  ` before the count.
+        if 18 + visible_width(&full) <= width {
+            full
+        } else {
+            self.short_text(query)
         }
     }
 
@@ -163,37 +178,27 @@ impl State {
         ));
         rows
     }
+}
 
-    /// The hint foot: the picker keys (the scope switch only where it
-    /// flips something).
-    fn hint_row(&self) -> Line<'static> {
-        if self.scoped.is_empty() {
-            hints(&[
-                (
-                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
-                    "move",
-                ),
-                (key_hint_text("tui.select.confirm").as_str(), "pick"),
-                (key_hint_text("tui.select.cancel").as_str(), "close"),
-            ])
-        } else {
-            hints(&[
-                (
-                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
-                    "move",
-                ),
-                (key_hint_text("tui.select.confirm").as_str(), "pick"),
-                (key_hint_text("tui.input.tab").as_str(), "all / scoped"),
-                (key_hint_text("tui.select.cancel").as_str(), "close"),
-            ])
-        }
+/// `1 model`, `N models`.
+fn models_text(count: usize) -> String {
+    if count == 1 {
+        "1 model".to_string()
+    } else {
+        format!("{count} models")
     }
 }
 
 /// One model row (content only; the console adds the ` › ` marker or
 /// gutter and the selection band): the id padded to `id_width`, then the
-/// price, dim. A model whose login expired says so.
-fn model_row(model: &Model, id_width: usize, expired: &HashSet<String>) -> Line<'static> {
+/// price, dim. The model in use says so, dim; a model whose login expired
+/// says that instead.
+fn model_row(
+    model: &Model,
+    id_width: usize,
+    expired: &HashSet<String>,
+    current: Option<&Model>,
+) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![
         Span::raw(format!("{:<id_width$}", model.id)),
@@ -202,6 +207,8 @@ fn model_row(model: &Model, id_width: usize, expired: &HashSet<String>) -> Line<
     ];
     if expired.contains(&model.provider) {
         spans.push(Span::styled("  expired".to_string(), pal.warn()));
+    } else if models_are_equal(current, Some(model)) {
+        spans.push(Span::styled("  in use".to_string(), pal.dim()));
     }
     Line::from(spans)
 }
@@ -353,9 +360,13 @@ impl Component for ModelSelectorComponent {
         let state = self.state.borrow();
         let search = self.search.borrow();
         let query = search.get_value().to_string();
-        let mut console = Console::new("Models · /model", state.count_text(&query));
+        let mut console = Console::new(
+            "Models · /model",
+            state.count_for_width(&query, width as usize),
+        );
         console.query = Some(query_row(&query, state.focused));
         let expired = state.expired.clone();
+        let current = state.current.clone();
         let id_width = state
             .filtered
             .iter()
@@ -366,13 +377,39 @@ impl Component for ModelSelectorComponent {
         console.rows = state
             .filtered
             .iter()
-            .map(|model| model_row(model, id_width, &expired))
+            .map(|model| model_row(model, id_width, &expired, current.as_ref()))
             .collect();
         console.selected = (!state.filtered.is_empty()).then_some(selected);
         console.max_visible = Some(state.cursor.max_visible());
         console.bottom = state.bottom_rows(&pal);
         console.detail = state.detail_rows(&pal);
-        console.hint = state.hint_row();
+        // The picker keys (the scope switch only where it flips something).
+        if state.scoped.is_empty() {
+            console.set_hints(
+                &[
+                    (
+                        key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                        "move",
+                    ),
+                    (key_hint_text("tui.select.confirm").as_str(), "pick"),
+                    (key_hint_text("tui.select.cancel").as_str(), "close"),
+                ],
+                false,
+            );
+        } else {
+            console.set_hints(
+                &[
+                    (
+                        key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                        "move",
+                    ),
+                    (key_hint_text("tui.select.confirm").as_str(), "pick"),
+                    (key_hint_text("tui.input.tab").as_str(), "all / scoped"),
+                    (key_hint_text("tui.select.cancel").as_str(), "close"),
+                ],
+                false,
+            );
+        }
         console.render(width as usize)
     }
 

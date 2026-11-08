@@ -10,7 +10,9 @@
 
 use hoocode_tui_ratatui::{Line, Span};
 
-use crate::pane::{hint_line, input_line, Chip, Pane, PaneStyle, PANE_CURSOR};
+use crate::pane::{
+    capped_hint_line, fit_hint_line, hint_line, input_line, Chip, Pane, PaneStyle, PANE_CURSOR,
+};
 
 /// The ` › ` marker every console flags its selected row with (accent).
 /// Unselected rows carry a blank gutter of the same width.
@@ -47,6 +49,13 @@ pub struct Console {
     pub bottom: Vec<Line<'static>>,
     /// The hint row, drawn last.
     pub hint: Line<'static>,
+    /// Structured hint items; when non-empty the hint row is built at the
+    /// render width (see [`fit_hint_line`]), so a narrow pane drops `move`
+    /// first while `enter` and `esc` never drop. A directly set [`hint`]
+    /// draws as-is when this is empty.
+    pub hint_items: Vec<(String, String)>,
+    /// The pane has more keys than its hint row shows (the `f1 more` item).
+    pub hint_more: bool,
     /// A label after the count (`/tasks · ctrl+g`); empty draws nothing.
     pub right: Line<'static>,
     /// Layer tabs between the name and the count (the Keys pane's `plain ctrl
@@ -89,6 +98,8 @@ impl Console {
             max_visible: None,
             bottom: Vec::new(),
             hint: Line::raw(""),
+            hint_items: Vec::new(),
+            hint_more: false,
             right: Line::raw(""),
             tabs: Line::raw(""),
             tabs_join: TabsJoin::Gap,
@@ -142,6 +153,17 @@ impl Console {
         pane
     }
 
+    /// Structured hint items drawn at the render width (see
+    /// [`fit_hint_line`]): the move item drops first, `enter` and `esc`
+    /// never drop. `more` says the pane has more keys (the `f1 more` item).
+    pub fn set_hints(&mut self, hints: &[(&str, &str)], more: bool) {
+        self.hint_items = hints
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        self.hint_more = more;
+    }
+
     /// The cells a row's content may use at `width` columns, given the
     /// detail already set on the console (a split narrows the list).
     pub fn row_width(&self, width: usize) -> usize {
@@ -160,7 +182,23 @@ impl Console {
         pane.max_visible = self.max_visible;
         pane.bottom = self.bottom.clone();
         pane.input = self.query.clone();
-        pane.hint = self.hint.clone();
+        pane.hint = if self.hint_items.is_empty() {
+            self.hint.clone()
+        } else {
+            let st = PaneStyle::current();
+            // The hint row draws at one cell of indent in `inner - 2` cells.
+            let inner = if st.mono {
+                width
+            } else {
+                width.saturating_sub(4)
+            };
+            let refs: Vec<(&str, &str)> = self
+                .hint_items
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            fit_hint_line(&refs, self.hint_more, inner.saturating_sub(1))
+        };
         pane.detail = self.detail.clone();
         pane.list_width = self.list_width;
         pane.render(width)
@@ -173,9 +211,11 @@ pub fn query_row(text: &str, caret: bool) -> Line<'static> {
     input_line(text, "filter", caret)
 }
 
-/// One hints row: keys in normal text, dim actions, joined by ` · `.
+/// One hints row: keys in normal text, dim actions, joined by ` · `. At most
+/// four items, then the help key and `more` when there are more; for a
+/// width-fitted row use [`Console::set_hints`] instead.
 pub fn hints(hints: &[(&str, &str)]) -> Line<'static> {
-    hint_line(hints)
+    capped_hint_line(hints, false)
 }
 
 /// The full key list a picker shows after `f1`: every `(key, action)`,
@@ -243,8 +283,9 @@ mod tests {
             "{:?}",
             rows[0]
         );
-        // The query is the input row, above the hint row.
-        assert!(rows[rows.len() - 2].starts_with(" › filter"), "{rows:?}");
+        // The query is the input row, above the hint row: no ` › ` marker,
+        // only the selected row carries one; the filter row shows `▏` (spec §3).
+        assert!(rows[rows.len() - 2].starts_with(" ▏ filter"), "{rows:?}");
         assert!(
             rows[rows.len() - 1].contains("esc close"),
             "{:?}",

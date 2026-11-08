@@ -82,8 +82,10 @@ pub struct LeaderLine {
     pub which_key: Vec<LeaderEntry>,
 }
 
-/// The transient rows: the leader, the warning, then the retry notice, then
-/// extension statuses, then startup progress. Indent 1, at most `width` cells each.
+/// The transient rows: one of the auto-retry notice, the leader, the
+/// history search or the warning (spec S24: one row at a time, in that
+/// order), then extension statuses, then startup progress. Indent 1, at
+/// most `width` cells each.
 pub struct TransientLines {
     data: FooterDataProvider,
     /// The leader's footer row and popup, while the leader is pending or has a note.
@@ -144,11 +146,14 @@ impl TransientLines {
             )
         };
         let mut lines = Vec::new();
-        if let Some((shown, hints)) = &self.history_search {
-            lines.push(cut(&paint(pal.dim(), shown), "…"));
-            lines.push(cut(&paint(pal.dim(), hints), "…"));
-        }
-        if let Some(leader) = &self.leader {
+        // S24: one of the four at a time, first present in order retry,
+        // leader, search, warning. The winner keeps its rows: the retry
+        // and warning notices are one row each, the leader its text row
+        // plus the which-key popup once due, the search its query row and
+        // its keys row.
+        if let Some(notice) = &self.retry_notice {
+            lines.push(cut(&paint(pal.warn(), &sanitize_status_text(notice)), "…"));
+        } else if let Some(leader) = &self.leader {
             lines.push(cut(&paint(pal.dim(), &leader.text), "…"));
             for row in which_key_rows(&leader.which_key, width) {
                 lines.push(truncate_to_width(
@@ -158,12 +163,11 @@ impl TransientLines {
                     false,
                 ));
             }
-        }
-        if let Some(notice) = &self.notice {
+        } else if let Some((shown, hints)) = &self.history_search {
+            lines.push(cut(&paint(pal.dim(), shown), "…"));
+            lines.push(cut(&paint(pal.dim(), hints), "…"));
+        } else if let Some(notice) = &self.notice {
             lines.push(cut(&paint(pal.warn(), notice), "…"));
-        }
-        if let Some(notice) = &self.retry_notice {
-            lines.push(cut(&paint(pal.warn(), &sanitize_status_text(notice)), "…"));
         }
         let statuses = self.data.get_extension_statuses();
         if !statuses.is_empty() {

@@ -22,15 +22,29 @@ use hoocode_tui_util::{
 };
 use serde_json::Value;
 
-use crate::fold::{more_lines_hint, ELLIPSIS};
-use crate::tool_chain_summary::ChainEntry;
-use crate::tool_output_view::{line_budget, ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW};
+use crate::fold::{line_budget, more_lines_hint, ELLIPSIS};
 use crate::tool_row::Mark;
-use crate::tool_signal::{
-    chain_subject, tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent,
-    ToolSignalInput,
-};
+use crate::tool_signal::{chain_subject, ResultHolder, ResultText, ToolResult};
+use crate::tools::subagent::TaskOutcome;
+
+/// One tool call's contribution to its chain, and to the transcript's
+/// mission flight log.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ChainEntry {
+    pub tool: String,
+    /// The call's subject — a path, a command, a pattern.
+    pub subject: String,
+    pub is_error: bool,
+    /// Still executing.
+    pub is_partial: bool,
+    /// Lines of text output the call returned.
+    pub output_lines: usize,
+    /// What a subagent call said about its task; `None` for other tools and
+    /// for calls that report no outcome (a background placeholder, a roster).
+    pub outcome: Option<TaskOutcome>,
+}
 use crate::tools::builtin_tool_definition;
+use hoocode_code_agent_session::format::format_tokens;
 use hoocode_tui_ratatui::core::text::Span;
 
 /// The exit code of a failed Shell result: our tool reports it as
@@ -57,6 +71,29 @@ fn shell_output_lines(output: &str) -> usize {
     } else {
         trimmed.lines().count()
     }
+}
+
+/// The first error-like line of failed Shell output, dimmed after `exit N`:
+/// the tool's own `Command exited with code N` trailer is never the reason.
+/// Falls back to the first output line when no line reads like an error.
+fn shell_failure_reason(output: &str) -> Option<String> {
+    let mut first: Option<String> = None;
+    for line in output.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if line.starts_with("Command exited with code") {
+            continue;
+        }
+        if first.is_none() {
+            first = Some(line.to_string());
+        }
+        let lower = line.to_lowercase();
+        if ["error", "fail", "fatal", "panic"]
+            .iter()
+            .any(|w| lower.contains(w))
+        {
+            return Some(line.to_string());
+        }
+    }
+    first
 }
 
 /// Distinct files in CodeSearch output: its `path:start-end [sources]`
@@ -183,12 +220,11 @@ pub struct ToolRenderDefinition {
     pub render_result: Option<RenderResultFn>,
 }
 
-/// `ToolExecutionOptions`.
+/// How `attachToolBlock` makes one: images on or off.
 #[derive(Debug, Clone, Copy)]
 pub struct ToolExecutionOptions {
     pub show_images: bool,
     pub image_width_cells: u32,
-    pub view: ToolOutputView,
 }
 
 impl Default for ToolExecutionOptions {
@@ -196,7 +232,6 @@ impl Default for ToolExecutionOptions {
         Self {
             show_images: true,
             image_width_cells: 60,
-            view: DEFAULT_TOOL_OUTPUT_VIEW,
         }
     }
 }
@@ -259,6 +294,35 @@ impl Component for PrefixFirstLine {
     }
 }
 
+/// A running Shell's single dim tail line while collapsed (single view):
+/// its last output line, dim, truncated to one row. With no output yet,
+/// the dim `○` stands in, mirroring [`crate::bash_execution`]'s pulse
+/// fallback. The chain's indent wrapper puts the row at column 4.
+struct RunningTailLine {
+    line: String,
+}
+
+impl RunningTailLine {
+    fn new(line: String) -> Self {
+        Self { line }
+    }
+}
+
+impl Component for RunningTailLine {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let t = theme();
+        let content_width = (width as usize).max(1);
+        let trimmed = self.line.trim();
+        if trimmed.is_empty() {
+            return vec![t.fg("dim", hoocode_tui_glyphs::status::TODO_STR)];
+        }
+        let cut = truncate_to_width(trimmed, content_width, "\u{2026}", false);
+        vec![t.fg("dim", &cut)]
+    }
+
+    fn invalidate(&mut self) {}
+}
+
 /// Indents every non-blank line of a child: a failure's body under a outline row.
 struct IndentAll {
     child: ComponentHandle,
@@ -287,31 +351,12 @@ impl Component for IndentAll {
     }
 }
 
-/// What a frozen block draws at each stop, captured at `frozen_width`.
+/// What a frozen block draws, captured at `frozen_width`.
+#[derive(Debug, Clone, Default)]
 struct FrozenLines {
-    outline: Vec<String>,
-    peek: Vec<String>,
-    full: Vec<String>,
-    /// The block's rows split for a chain step, at peek and at full.
-    peek_parts: StepParts,
-    full_parts: StepParts,
-}
-
-impl FrozenLines {
-    fn for_view(&self, view: ToolOutputView) -> &[String] {
-        match view {
-            ToolOutputView::Outline => &self.outline,
-            ToolOutputView::Peek => &self.peek,
-            ToolOutputView::Full => &self.full,
-        }
-    }
-
-    fn parts_for(&self, view: ToolOutputView) -> &StepParts {
-        match view {
-            ToolOutputView::Full => &self.full_parts,
-            ToolOutputView::Outline | ToolOutputView::Peek => &self.peek_parts,
-        }
-    }
+    lines: Vec<String>,
+    /// The block's rows split for a chain step.
+    parts: StepParts,
 }
 
 /// A block's rows split for a chain step (the peek trajectory): the call
@@ -421,8 +466,6 @@ pub struct ToolExecutionComponent {
     tool_name: String,
     tool_call_id: String,
     args: Value,
-    view: ToolOutputView,
-    signal: Option<Rc<RefCell<ToolSignalComponent>>>,
     show_images: bool,
     image_width_cells: u32,
     is_partial: bool,
@@ -438,16 +481,23 @@ pub struct ToolExecutionComponent {
     /// (no hit), and the abort reason is printed once, by the message.
     interrupted: bool,
     hide_component: bool,
-    is_latest: bool,
+    /// The single-view toggle: the body opens in place on click or Enter.
+    /// In memory only (a resumed session opens collapsed); survives resizes,
+    /// theme changes and rewraps.
+    expanded: bool,
+    /// The header's unstyled state, taken at freeze while the payloads are
+    /// still in. The chain builds the header from it on every render, in
+    /// the live palette.
+    snapshot: Option<RowSnapshot>,
     frozen: bool,
     frozen_lines: Option<FrozenLines>,
     frozen_width: usize,
-    frozen_truncated: Option<(usize, ToolOutputView, Vec<String>)>,
+    frozen_truncated: Option<(usize, Vec<String>)>,
     /// The call component the header line is read from (peek and full).
     header_source: Option<ComponentHandle>,
     /// Width the frozen step parts were captured at, and the width they were
     /// last fitted to.
-    frozen_parts_fit: Option<(usize, ToolOutputView, StepParts)>,
+    frozen_parts_fit: Option<(usize, StepParts)>,
     /// The call's summary, taken when it freezes: its payloads are released then.
     frozen_entry: Option<ChainEntry>,
     /// A failed call's first error line, kept when it freezes: the result is
@@ -460,6 +510,59 @@ pub struct ToolExecutionComponent {
     /// New whenever the block's state changes: every mutator goes through
     /// `update_display`, `freeze` or `capture_frozen` (the render stamp).
     rev: u64,
+}
+
+/// The tone of one fact segment: plain text, a dim fact, a green
+/// count, or a red one. Stored unstyled so a frozen row renders in the
+/// current palette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FactTone {
+    /// Plain text, no style (the space inside `+2 −2`).
+    Plain,
+    /// A dim fact (`30 lines`, `8.2s`).
+    Dim,
+    /// A green count (`+2`).
+    Ok,
+    /// A red count or exit (`−2`, `exit 1`).
+    Err,
+}
+
+/// One styled segment of a fact (`+2`, `exit 1`, `8.2s`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactSegment {
+    pub text: String,
+    pub tone: FactTone,
+}
+
+impl FactSegment {
+    fn span(&self, palette: &hoocode_tui_ratatui::Palette) -> Span<'static> {
+        match self.tone {
+            FactTone::Plain => Span::raw(self.text.clone()),
+            FactTone::Dim => Span::styled(self.text.clone(), palette.dim()),
+            FactTone::Ok => Span::styled(self.text.clone(), palette.ok()),
+            FactTone::Err => Span::styled(self.text.clone(), palette.err()),
+        }
+    }
+}
+
+/// One fact on the row: segments joined without a separator (`+2 −2`).
+pub type FactRun = Vec<FactSegment>;
+
+/// A frozen row's header, taken at `ToolExecutionComponent::freeze` while the payloads
+/// are still in: the mark, target and facts the settled call showed.
+/// The chain builds the header from it on every render, in the live
+/// palette, so frozen rows survive resizes, rewraps and theme changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowSnapshot {
+    pub mark: Mark,
+    pub tool: String,
+    pub target: String,
+    /// Facts the cut order never drops (`exit 1`, `+2 −2`).
+    pub primary: Vec<FactRun>,
+    /// Facts the cut order drops first (`8.2s`, `3 files`).
+    pub secondary: Vec<FactRun>,
+    pub is_error: bool,
+    pub interrupted: bool,
 }
 
 impl ToolExecutionComponent {
@@ -485,8 +588,6 @@ impl ToolExecutionComponent {
             tool_name: tool_name.to_string(),
             tool_call_id: tool_call_id.to_string(),
             args,
-            view: options.view,
-            signal: None,
             show_images: options.show_images,
             image_width_cells: options.image_width_cells,
             is_partial: true,
@@ -499,7 +600,8 @@ impl ToolExecutionComponent {
             result: None,
             interrupted: false,
             hide_component: false,
-            is_latest: false,
+            expanded: false,
+            snapshot: None,
             frozen: false,
             frozen_lines: None,
             frozen_width: 0,
@@ -643,11 +745,6 @@ impl ToolExecutionComponent {
         self.update_display();
     }
 
-    pub fn set_view(&mut self, view: ToolOutputView) {
-        self.view = view;
-        self.update_display();
-    }
-
     /// Marks the call as cut short by the user's abort. Its result stays an
     /// error to the renderer, but the step is not a hit and shows no body: the
     /// message that was aborted says so once.
@@ -715,6 +812,11 @@ impl ToolExecutionComponent {
     /// chip in place of its success stats). A call the user's abort cut short
     /// is no failure of its own.
     pub fn is_error(&self) -> bool {
+        // A frozen call has released its result: it reads the flag taken
+        // at freeze.
+        if self.frozen {
+            return self.snapshot.as_ref().is_some_and(|s| s.is_error);
+        }
         !self.interrupted && self.result.as_ref().is_some_and(|r| r.is_error)
     }
 
@@ -818,9 +920,15 @@ impl ToolExecutionComponent {
         Some(crate::trajectory::diff_stats(diff))
     }
 
-    /// The glyph of the call's row: green `●` done, dim `●` running, red
-    /// `⊗` failed, dim `⊗` stopped.
+    /// The glyph of the call's row: green `●` done, accent `◉` running, red
+    /// `⊗` failed, dim `⊗` stopped. A frozen call has released its result:
+    /// it reads the mark taken at freeze.
     pub fn mark(&self) -> Mark {
+        if self.frozen {
+            if let Some(snapshot) = &self.snapshot {
+                return snapshot.mark;
+            }
+        }
         if self.interrupted {
             Mark::Stopped
         } else if self.result.as_ref().is_some_and(|r| r.is_error) {
@@ -834,45 +942,157 @@ impl ToolExecutionComponent {
 
     /// The facts after the subject (`30 lines`, `+2 −2`, `exit 0 · 8.2s`):
     /// dim, a zero value left out. A failed shell call shows `exit N` in red
-    /// first. Empty when the call has no fact to give yet.
+    /// first. Empty when the call has no fact to give yet. A frozen call
+    /// reads the facts taken at freeze, styled in the live palette.
     pub fn facts(&self, palette: &hoocode_tui_ratatui::Palette) -> Vec<Span<'static>> {
-        use crate::tool_row::{diff_facts, dim_fact, join_facts, lines_fact, short_dur};
-        let dim = |s: String| {
-            if s.is_empty() {
-                Vec::new()
+        use crate::tool_row::join_facts;
+        let (primary, secondary) = match &self.snapshot {
+            Some(snapshot) if self.frozen => (snapshot.primary.clone(), snapshot.secondary.clone()),
+            _ => self.fact_runs(),
+        };
+        let groups: Vec<Vec<Span<'static>>> = primary
+            .into_iter()
+            .chain(secondary)
+            .map(|run| run.into_iter().map(|seg| seg.span(palette)).collect())
+            .filter(|spans: &Vec<Span<'static>>| !spans.is_empty())
+            .collect();
+        join_facts(groups, palette)
+    }
+
+    /// The single-view header's structured parts: the target after the tool
+    /// name, the primary facts (never dropped), the secondary facts
+    /// (dropped first) and a failed Shell row's dim reason (cut, never
+    /// wrapped). [`Self::fact_runs`] records the reason as the first
+    /// secondary run of a failed Shell row; it is split out here so the
+    /// chain's cut order can treat it apart. Read-only: fact content is
+    /// unchanged, for live and frozen rows alike.
+    pub fn header_parts(&self) -> (String, Vec<String>, Vec<String>, Option<String>) {
+        // The Agent row names the subtype, as the call line does
+        // (`Agent explore · Trace escaped quotes`): the `Agent` word comes
+        // from the tool name, the rest is the label.
+        let target = if self.is_agent() {
+            let subtype = self
+                .args
+                .get("subagent_type")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("agent")
+                .to_string();
+            let resume = if self.args.get("resume_task_id").is_some() {
+                "resume "
             } else {
-                vec![dim_fact(&s, palette)]
+                ""
+            };
+            match self.agent_label() {
+                Some((_, summary)) => format!("{resume}{subtype} · {summary}"),
+                None => format!("{resume}{subtype}"),
             }
+        } else {
+            chain_subject(&self.tool_name, &self.args, &self.cwd)
+        };
+        // Mirrors [`Self::facts`]: a frozen call has released its payloads,
+        // so the facts come from the capture taken at freeze.
+        let (primary_runs, secondary_runs) = match &self.snapshot {
+            Some(snapshot) if self.frozen => (snapshot.primary.clone(), snapshot.secondary.clone()),
+            _ => self.fact_runs(),
+        };
+        let flatten = |runs: Vec<FactRun>| -> Vec<String> {
+            runs.into_iter()
+                .map(|run| run.into_iter().map(|seg| seg.text).collect::<String>())
+                .filter(|text| !text.trim().is_empty())
+                .collect()
+        };
+        let primary = flatten(primary_runs);
+        let mut secondary = flatten(secondary_runs);
+        let mut reason = None;
+        if self.tool_name == "Shell" && self.is_error() && !secondary.is_empty() {
+            // Live, the output still in tells whether a reason was found;
+            // frozen, the payloads are released, but `freeze` kept the
+            // first error line, which is non-empty exactly when a reason
+            // was recorded first.
+            let recorded = if self.frozen {
+                !self.frozen_error.trim().is_empty()
+            } else {
+                shell_failure_reason(&self.text_output()).is_some()
+            };
+            if recorded {
+                reason = Some(secondary.remove(0));
+            }
+        }
+        (target, primary, secondary, reason)
+    }
+
+    /// The row's facts unstyled: the primary facts (never dropped by the cut
+    /// order) and the secondary ones (dropped first). [`Self::facts`] styles
+    /// them; [`Self::row_snapshot`] keeps them for frozen rows.
+    fn fact_runs(&self) -> (Vec<FactRun>, Vec<FactRun>) {
+        use crate::tool_row::{lines_fact, short_dur};
+        let dim_run = |text: String| -> Option<FactRun> {
+            (!text.is_empty()).then(|| {
+                vec![FactSegment {
+                    text,
+                    tone: FactTone::Dim,
+                }]
+            })
         };
         if self.interrupted {
-            return dim("stopped".to_string());
+            return (
+                dim_run("stopped".to_string()).into_iter().collect(),
+                Vec::new(),
+            );
         }
         if self.is_error() {
-            let mut facts = Vec::new();
+            let mut primary = Vec::new();
+            let mut secondary = Vec::new();
             if self.tool_name == "Shell" {
                 if let Some(code) = shell_exit_code(&self.text_output()) {
-                    facts.push(vec![Span::styled(format!("exit {code}"), palette.err())]);
+                    primary.push(vec![FactSegment {
+                        text: format!("exit {code}"),
+                        tone: FactTone::Err,
+                    }]);
+                }
+                // The reason first, then the size: the duration drops first.
+                if let Some(reason) = shell_failure_reason(&self.text_output()) {
+                    secondary.push(vec![FactSegment {
+                        text: reason,
+                        tone: FactTone::Dim,
+                    }]);
+                }
+                if let Some(size) = dim_run(lines_fact(shell_output_lines(&self.text_output()))) {
+                    secondary.push(size);
                 }
             }
-            facts.push(dim(self.result_duration().unwrap_or_default()));
-            return join_facts(facts, palette);
+            if let Some(dur) = dim_run(self.result_duration().unwrap_or_default()) {
+                secondary.push(dur);
+            }
+            return (primary, secondary);
         }
         if let Some(job) = self.background_job_id() {
             let mut text = format!("background {job}");
             if let Some(secs) = self.block_elapsed_secs().filter(|s| *s >= 1) {
                 text.push_str(&format!(" · {}", short_dur(secs)));
             }
-            return dim(text);
+            return (dim_run(text).into_iter().collect(), Vec::new());
         }
         let settled = self.result.is_some() && !self.is_partial;
         match self.tool_name.as_str() {
-            "Shell" if settled => join_facts(
-                vec![
-                    dim("exit 0".to_string()),
-                    dim(self.result_duration().unwrap_or_default()),
-                ],
-                palette,
-            ),
+            // `exit 0 · size · duration`: the duration drops first.
+            "Shell" if settled => {
+                let mut secondary = Vec::new();
+                if let Some(size) = dim_run(lines_fact(shell_output_lines(&self.text_output()))) {
+                    secondary.push(size);
+                }
+                if let Some(dur) = dim_run(self.result_duration().unwrap_or_default()) {
+                    secondary.push(dur);
+                }
+                (
+                    vec![vec![FactSegment {
+                        text: "exit 0".to_string(),
+                        tone: FactTone::Dim,
+                    }]],
+                    secondary,
+                )
+            }
             "Read" if settled => {
                 let truncation = self
                     .result
@@ -887,7 +1107,12 @@ impl ToolExecutionComponent {
                 let text_lines = shell_output_lines(&self.text_output());
                 let ranged = self.args.get("offset").is_some() || self.args.get("limit").is_some();
                 if !ranged {
-                    return dim(lines_fact(count("totalLines").unwrap_or(text_lines)));
+                    return (
+                        dim_run(lines_fact(count("totalLines").unwrap_or(text_lines)))
+                            .into_iter()
+                            .collect(),
+                        Vec::new(),
+                    );
                 }
                 let start = self
                     .args
@@ -897,9 +1122,14 @@ impl ToolExecutionComponent {
                     .max(1) as usize;
                 let read = count("outputLines").unwrap_or(text_lines);
                 if read == 0 {
-                    return Vec::new();
+                    return (Vec::new(), Vec::new());
                 }
-                dim(format!("lines {start}–{}", start + read - 1))
+                (
+                    dim_run(format!("lines {start}–{}", start + read - 1))
+                        .into_iter()
+                        .collect(),
+                    Vec::new(),
+                )
             }
             "CodeSearch" if settled => {
                 let hits = self
@@ -909,40 +1139,172 @@ impl ToolExecutionComponent {
                     .and_then(Value::as_u64)
                     .unwrap_or(0) as usize;
                 let files = search_file_count(&self.text_output());
-                join_facts(
-                    vec![
-                        dim(match hits {
-                            0 => String::new(),
-                            1 => "1 hit".to_string(),
-                            n => format!("{n} hits"),
-                        }),
-                        dim(match files {
-                            0 => String::new(),
-                            1 => "1 file".to_string(),
-                            n => format!("{n} files"),
-                        }),
-                    ],
-                    palette,
-                )
+                let primary = dim_run(match hits {
+                    0 => String::new(),
+                    1 => "1 hit".to_string(),
+                    n => format!("{n} hits"),
+                })
+                .into_iter()
+                .collect();
+                let secondary = dim_run(match files {
+                    0 => String::new(),
+                    1 => "1 file".to_string(),
+                    n => format!("{n} files"),
+                })
+                .into_iter()
+                .collect();
+                (primary, secondary)
             }
-            "Edit" => self
-                .edit_diff_stats()
-                .map(|(added, removed)| diff_facts(added, removed, palette))
-                .unwrap_or_default(),
+            "Edit" => match self.edit_diff_stats() {
+                Some((added, removed)) => {
+                    let mut run = Vec::new();
+                    if added > 0 {
+                        run.push(FactSegment {
+                            text: format!("+{added}"),
+                            tone: FactTone::Ok,
+                        });
+                    }
+                    if removed > 0 {
+                        if !run.is_empty() {
+                            run.push(FactSegment {
+                                text: " ".to_string(),
+                                tone: FactTone::Plain,
+                            });
+                        }
+                        run.push(FactSegment {
+                            // U+2212, as `diff_facts` draws it.
+                            text: format!("−{removed}"),
+                            tone: FactTone::Err,
+                        });
+                    }
+                    if run.is_empty() {
+                        (Vec::new(), Vec::new())
+                    } else {
+                        (vec![run], Vec::new())
+                    }
+                }
+                None => (Vec::new(), Vec::new()),
+            },
             "Write" if settled => {
                 let lines = self
                     .args
                     .get("content")
                     .and_then(Value::as_str)
                     .map_or(0, |c| c.lines().count());
-                diff_facts(lines, 0, palette)
+                if lines == 0 {
+                    (Vec::new(), Vec::new())
+                } else {
+                    (
+                        vec![vec![FactSegment {
+                            text: format!("+{lines}"),
+                            tone: FactTone::Ok,
+                        }]],
+                        Vec::new(),
+                    )
+                }
             }
-            "Agent" => dim(self
-                .block_elapsed_secs()
-                .filter(|s| *s >= 1)
-                .map(short_dur)
-                .unwrap_or_default()),
-            _ => Vec::new(),
+            "Agent" => {
+                if settled {
+                    // `3 calls · 1 failed`: the run's own calls, failed only
+                    // when any failed. Empty while the run is unknown.
+                    let mut primary = Vec::new();
+                    let steps = self.settled_sub_steps();
+                    if !steps.is_empty() {
+                        let calls = match steps.len() {
+                            1 => "1 call".to_string(),
+                            n => format!("{n} calls"),
+                        };
+                        primary.push(vec![FactSegment {
+                            text: calls,
+                            tone: FactTone::Dim,
+                        }]);
+                        let failed = steps.iter().filter(|s| s.failure.is_some()).count();
+                        if failed > 0 {
+                            primary.push(vec![FactSegment {
+                                text: format!("{failed} failed"),
+                                tone: FactTone::Dim,
+                            }]);
+                        }
+                    }
+                    return (
+                        primary,
+                        dim_run(self.result_duration().unwrap_or_default())
+                            .into_iter()
+                            .collect(),
+                    );
+                }
+                (
+                    dim_run(
+                        self.block_elapsed_secs()
+                            .filter(|s| *s >= 1)
+                            .map(short_dur)
+                            .unwrap_or_default(),
+                    )
+                    .into_iter()
+                    .collect(),
+                    Vec::new(),
+                )
+            }
+            // The plan the call landed, as the header shows it.
+            "TodoWrite" if settled => {
+                let todos: &[Value] = self
+                    .args
+                    .get("todos")
+                    .and_then(Value::as_array)
+                    .map_or(&[], Vec::as_slice);
+                let done = todos
+                    .iter()
+                    .filter(|t| t.get("status").and_then(Value::as_str) == Some("completed"))
+                    .count();
+                let items = match todos.len() {
+                    1 => "1 item".to_owned(),
+                    n => format!("{n} items"),
+                };
+                (
+                    vec![vec![FactSegment {
+                        text: format!("{items} · {done} done"),
+                        tone: FactTone::Dim,
+                    }]],
+                    dim_run(self.result_duration().unwrap_or_default())
+                        .into_iter()
+                        .collect(),
+                )
+            }
+            // `~8.1k tokens`: the hidden size the collapsed row stands for.
+            "WebFetch" | "WebSearch" if settled => {
+                let tokens = self
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.details.get("tokenEstimate"))
+                    .and_then(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_f64().map(|f| f.max(0.0).round() as u64))
+                    })
+                    .filter(|&n| n > 0)
+                    .map(|n| format!("~{} tokens", format_tokens(n)));
+                (
+                    dim_run(tokens.unwrap_or_default()).into_iter().collect(),
+                    dim_run(self.result_duration().unwrap_or_default())
+                        .into_iter()
+                        .collect(),
+                )
+            }
+            _ => (Vec::new(), Vec::new()),
+        }
+    }
+
+    /// The header's unstyled state, for [`Self::freeze`]: the mark, target
+    /// and facts the settled call shows, while the payloads are still in.
+    fn row_snapshot(&self) -> RowSnapshot {
+        let (primary, secondary) = self.fact_runs();
+        RowSnapshot {
+            mark: self.mark(),
+            tool: self.tool_name.clone(),
+            target: crate::tool_signal::chain_subject(&self.tool_name, &self.args, &self.cwd),
+            primary,
+            secondary,
+            is_error: self.is_error(),
+            interrupted: self.interrupted,
         }
     }
 
@@ -982,64 +1344,62 @@ impl ToolExecutionComponent {
         }
     }
 
-    /// Whether the block draws everything uncut: the full stop.
+    /// Whether this block's body is open in the transcript. One toggle per
+    /// block, in memory only: a resumed session opens collapsed, and the
+    /// flag survives resizes, theme changes and rewraps.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
+    }
+
+    /// Open or close this block's body. Failed rows settle collapsed and
+    /// never open themselves: only a toggle opens them.
+    pub fn set_expanded(&mut self, expanded: bool) {
+        if self.expanded == expanded {
+            return;
+        }
+        self.expanded = expanded;
+        self.rev = fresh_stamp();
+        if !self.frozen {
+            self.update_display();
+        }
+    }
+
+    /// Flip this block's toggle.
+    pub fn toggle_expanded(&mut self) {
+        self.set_expanded(!self.expanded);
+    }
+
+    /// Whether the block draws everything uncut: its own toggle, open in
+    /// place (single view: every block starts as one row).
     fn expanded(&self) -> bool {
-        self.view == ToolOutputView::Full
+        self.expanded
     }
 
-    /// A failure always shows its reason, in every view.
+    /// Whether the block draws its body at all: an open toggle, or a
+    /// running call whose live tail the collapsed row keeps (Decision 4).
+    /// A failure settles collapsed like every other call.
     fn should_show_body(&self) -> bool {
-        !self.interrupted && (self.view != ToolOutputView::Outline || self.is_error())
+        if self.interrupted {
+            return false;
+        }
+        if self.expanded() {
+            return true;
+        }
+        self.result.is_none() || self.is_partial || self.is_live_background_job()
     }
 
-    fn should_show_signal_line(&self) -> bool {
-        self.view == ToolOutputView::Outline
-    }
-
-    /// Whether this block draws its own blank row above itself (outline rows do not).
+    /// Whether this block draws its own blank row above itself.
     pub fn draws_leading_gap(&self) -> bool {
-        !self.should_show_signal_line()
+        true
     }
 
     /// A body sits at column 4: the block's one column of padding plus these
-    /// three, in every view.
+    /// three.
     fn indent_under_signal_row(&self, component: ComponentHandle) -> ComponentHandle {
         handle(IndentAll {
             child: component,
             indent: " ".repeat(3),
         })
-    }
-
-    /// Mark this block as the newest call in the transcript, or no longer it.
-    pub fn set_latest(&mut self, is_latest: bool) {
-        if self.is_latest == is_latest {
-            return;
-        }
-        self.is_latest = is_latest;
-        self.update_display();
-    }
-
-    fn signal_component(&mut self) -> ComponentHandle {
-        let input = ToolSignalInput {
-            tool_name: self.tool_name.clone(),
-            args: self.args.clone(),
-            cwd: self.cwd.clone(),
-            result: self.result.clone(),
-            is_partial: self.is_partial,
-            show_images: self.show_images,
-            is_latest: self.is_latest,
-        };
-        match &self.signal {
-            Some(signal) => {
-                signal.borrow_mut().set_input(input);
-                signal.clone()
-            }
-            None => {
-                let signal = Rc::new(RefCell::new(ToolSignalComponent::new(input)));
-                self.signal = Some(signal.clone());
-                signal
-            }
-        }
     }
 
     pub fn set_show_images(&mut self, show: bool) {
@@ -1094,9 +1454,16 @@ impl ToolExecutionComponent {
     }
 
     /// Freeze on the next render: capture the lines, release the payloads.
+    /// Whether the block's payloads are released and its rows come from
+    /// the captures at freeze.
+    pub fn is_frozen(&self) -> bool {
+        self.frozen
+    }
+
     pub fn freeze(&mut self) {
         if self.is_freezable() {
             self.rev = fresh_stamp();
+            self.snapshot = Some(self.row_snapshot());
             self.frozen_entry = Some(self.chain_entry());
             self.frozen_error = self
                 .error_text()
@@ -1191,14 +1558,42 @@ impl ToolExecutionComponent {
         format!("{} ", t.fg(color, glyph))
     }
 
+    /// A running Shell's tail line while collapsed: its last output line
+    /// (empty when nothing has streamed yet, for the `○` fallback).
+    /// Shell-only and partial: settled and open rows keep the result body
+    /// (or none) as before.
+    fn running_shell_tail(&self) -> Option<String> {
+        if self.tool_name != "Shell" {
+            return None;
+        }
+        if !self.is_partial {
+            return None;
+        }
+        if self.interrupted {
+            return None;
+        }
+        if self.expanded() {
+            return None;
+        }
+        let result = self.result.as_ref()?;
+        if result.is_error {
+            return None;
+        }
+        let output = self.text_output();
+        let last = output
+            .lines()
+            .rfind(|l| !l.trim().is_empty())
+            .map(|l| l.trim().to_string())
+            .unwrap_or_default();
+        Some(last)
+    }
+
     #[allow(unused_assignments)]
     fn rebuild_display(&mut self) {
         let mut has_content = false;
         self.hide_component = false;
         self.header_source = None;
-        self.leading_spacer
-            .borrow_mut()
-            .set_lines(if self.should_show_signal_line() { 0 } else { 1 });
+        self.leading_spacer.borrow_mut().set_lines(1);
 
         if self.has_renderer_definition() {
             // One column in, then the glyph: ` ● Name subject`. Nothing has a
@@ -1209,57 +1604,58 @@ impl ToolExecutionComponent {
 
             let dot = self.mark_prefix();
 
-            if self.should_show_signal_line() {
-                let signal = self.signal_component();
-                self.add_to_shell(handle(PrefixFirstLine::new(dot.clone(), signal)));
-                has_content = true;
-            } else {
-                match self.call_renderer() {
-                    None => {
-                        let fallback = self.create_call_fallback();
-                        let header =
-                            handle(PrefixFirstLine::hanging(dot.clone(), fallback.clone()));
-                        self.header_source = Some(fallback);
-                        self.add_to_shell(header);
-                        has_content = true;
-                    }
-                    Some(render_call) => {
-                        let last = self.call_component.clone();
-                        let rendered =
-                            self.render_with_context(last, |args, ctx| render_call(args, ctx));
-                        let component = match rendered {
-                            Ok(component) => {
-                                self.call_component = Some(component.clone());
-                                component
-                            }
-                            Err(_) => {
-                                self.call_component = None;
-                                self.create_call_fallback()
-                            }
-                        };
-                        let header =
-                            handle(PrefixFirstLine::hanging(dot.clone(), component.clone()));
-                        self.header_source = Some(component);
-                        self.add_to_shell(header);
-                        has_content = true;
-                    }
+            match self.call_renderer() {
+                None => {
+                    let fallback = self.create_call_fallback();
+                    let header = handle(PrefixFirstLine::hanging(dot.clone(), fallback.clone()));
+                    self.header_source = Some(fallback);
+                    self.add_to_shell(header);
+                    has_content = true;
+                }
+                Some(render_call) => {
+                    let last = self.call_component.clone();
+                    let rendered =
+                        self.render_with_context(last, |args, ctx| render_call(args, ctx));
+                    let component = match rendered {
+                        Ok(component) => {
+                            self.call_component = Some(component.clone());
+                            component
+                        }
+                        Err(_) => {
+                            self.call_component = None;
+                            self.create_call_fallback()
+                        }
+                    };
+                    let header = handle(PrefixFirstLine::hanging(dot.clone(), component.clone()));
+                    self.header_source = Some(component);
+                    self.add_to_shell(header);
+                    has_content = true;
                 }
             }
 
-            if self.result.is_some() && self.should_show_body() {
+            // The result renderer always runs: its state (a live run's
+            // tail, a ticking clock) is read even while the body stays shut.
+            // Only an open toggle attaches what it drew.
+            if self.result.is_some() {
+                // A running Shell's collapsed row keeps the canonical
+                // `RunningTailLine` below: the result body stays shut so the
+                // tail renders once, not twice (w-tail + w-wire overlap).
+                let show_body = self.should_show_body() && self.running_shell_tail().is_none();
                 match self.result_renderer() {
                     None => {
-                        if let Some(component) = self.create_result_fallback() {
-                            let component = self.indent_under_signal_row(component);
-                            self.add_to_shell(component);
-                            has_content = true;
+                        if show_body {
+                            if let Some(component) = self.create_result_fallback() {
+                                let component = self.indent_under_signal_row(component);
+                                self.add_to_shell(component);
+                                has_content = true;
+                            }
                         }
                     }
                     Some(render_result) => {
                         let result = self.result.clone().unwrap();
                         let last = self.result_component.clone();
-                        // Only the full stop opens a result: renderers trim it
-                        // otherwise.
+                        // Only an open toggle shows a result whole:
+                        // renderers trim it otherwise.
                         let options = ToolRenderResultOptions {
                             expanded: self.expanded(),
                             is_partial: self.is_partial,
@@ -1274,20 +1670,32 @@ impl ToolExecutionComponent {
                         match rendered {
                             Ok(component) => {
                                 self.result_component = Some(component.clone());
-                                let component = self.indent_under_signal_row(component);
-                                self.add_to_shell(component);
-                                has_content = true;
+                                if show_body {
+                                    let component = self.indent_under_signal_row(component);
+                                    self.add_to_shell(component);
+                                    has_content = true;
+                                }
                             }
                             Err(_) => {
                                 self.result_component = None;
-                                if let Some(component) = self.create_result_fallback() {
-                                    self.add_to_shell(component);
-                                    has_content = true;
+                                if show_body {
+                                    if let Some(component) = self.create_result_fallback() {
+                                        self.add_to_shell(component);
+                                        has_content = true;
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+            // A running Shell stays one header plus one dim tail line while
+            // collapsed: the live output's last line, or the `○` stand-in
+            // with nothing yet. Expanded rows keep the result body instead.
+            if let Some(tail) = self.running_shell_tail() {
+                let component = self.indent_under_signal_row(handle(RunningTailLine::new(tail)));
+                self.add_to_shell(component);
+                has_content = true;
             }
         } else {
             self.content_text.borrow_mut().set_custom_bg_fn(None);
@@ -1301,7 +1709,7 @@ impl ToolExecutionComponent {
         }
 
         if let Some(result) = &self.result {
-            if !self.should_show_signal_line() {
+            {
                 let caps = get_capabilities();
                 let mut added = Vec::new();
                 for content in &result.content {
@@ -1356,19 +1764,6 @@ impl ToolExecutionComponent {
     fn format_tool_execution(&self) -> String {
         let t = theme();
         let dot = self.mark_prefix();
-        if self.should_show_signal_line() {
-            let subject = tool_subject(&self.args, &self.cwd);
-            return format!(
-                "{}{}{}",
-                dot,
-                t.fg("toolTitle", &t.bold(&self.tool_name)),
-                if subject.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {}", t.fg("toolOutput", &subject))
-                }
-            );
-        }
         let mut text = format!("{}{}", dot, t.fg("toolTitle", &t.bold(&self.tool_name)));
         let content = crate::js_json::stringify_pretty(&self.args);
         if !content.is_empty() {
@@ -1457,11 +1852,12 @@ impl Component for ToolExecutionComponent {
     }
 
     fn invalidate(&mut self) {
-        // A frozen block's snapshot is authoritative.
+        // A frozen block's snapshot is unstyled, so a theme change is free:
+        // bump the stamp, leave the released payloads alone.
+        self.rev = fresh_stamp();
         if self.frozen {
             return;
         }
-        self.rev = fresh_stamp();
         for child in &self.children {
             child.borrow_mut().invalidate();
         }
@@ -1470,59 +1866,52 @@ impl Component for ToolExecutionComponent {
 }
 
 impl ToolExecutionComponent {
-    /// A frozen block draws the lines captured for its current stop. The first
-    /// render after [`freeze`](Self::freeze) captures every stop.
+    /// A frozen block draws its captured lines. The first render after
+    /// [`freeze`](Self::freeze) captures them.
     fn render_frozen(&mut self, width: u16) -> Vec<String> {
         if self.frozen_lines.is_none() {
             self.capture_frozen(width);
         }
         let w = width as usize;
-        let view = self.view;
         let Some(frozen) = &self.frozen_lines else {
             return Vec::new();
         };
-        let lines = frozen.for_view(view);
-        // A narrower terminal lays the lines out again so none overflows it:
-        // cut at peek, wrapped at full.
+        let lines = &frozen.lines;
+        // A narrower terminal lays the lines out again so none overflows
+        // it: frozen rows are cut, never wrapped.
         if w >= self.frozen_width {
             return lines.to_vec();
         }
-        if let Some((cached_width, cached_view, cached)) = &self.frozen_truncated {
-            if *cached_width == w && *cached_view == view {
+        if let Some((cached_width, cached)) = &self.frozen_truncated {
+            if *cached_width == w {
                 return cached.clone();
             }
         }
-        let wrap = view == ToolOutputView::Full;
         let fitted: Vec<String> = lines
             .iter()
-            .flat_map(|line| fit_frozen_line(line, w, wrap, true))
+            .flat_map(|line| fit_frozen_line(line, w, false, true))
             .collect();
-        self.frozen_truncated = Some((w, view, fitted.clone()));
+        self.frozen_truncated = Some((w, fitted.clone()));
         fitted
     }
 
-    /// Draws the block at every stop, keeps them, and releases the payloads.
+    /// Draws the block, keeps the drawing, and releases the payloads.
     fn capture_frozen(&mut self, width: u16) {
         self.rev = fresh_stamp();
-        let current = self.view;
-        let outline = self.draw_at(ToolOutputView::Outline, width);
-        let (peek, peek_parts) = self.draw_with_parts(ToolOutputView::Peek, width);
-        let (full, full_parts) = self.draw_with_parts(ToolOutputView::Full, width);
-        self.view = current;
-        self.frozen_lines = Some(FrozenLines {
-            outline,
-            peek,
-            full,
-            peek_parts,
-            full_parts,
-        });
+        // Capture the open body: a later toggle shows the whole output,
+        // not the collapsed rows. The collapsed row is rebuilt from the
+        // snapshot, so the capture's width is only the toggle's.
+        let was_expanded = self.expanded;
+        self.expanded = true;
+        let (lines, parts) = self.draw_with_parts(width);
+        self.expanded = was_expanded;
+        self.frozen_lines = Some(FrozenLines { lines, parts });
         self.frozen_width = width as usize;
         self.release_heavy_state();
     }
 
-    /// The block's lines at `view`, drawn fresh.
-    fn draw_at(&mut self, view: ToolOutputView, width: u16) -> Vec<String> {
-        self.view = view;
+    /// The block's lines, drawn fresh.
+    fn draw_at(&mut self, width: u16) -> Vec<String> {
         self.rebuild_display();
         if self.hide_component {
             return Vec::new();
@@ -1535,8 +1924,8 @@ impl ToolExecutionComponent {
     }
 
     /// [`draw_at`](Self::draw_at), and the same drawing split for a chain step.
-    fn draw_with_parts(&mut self, view: ToolOutputView, width: u16) -> (Vec<String>, StepParts) {
-        let lines = self.draw_at(view, width);
+    fn draw_with_parts(&mut self, width: u16) -> (Vec<String>, StepParts) {
+        let lines = self.draw_at(width);
         let parts = self.build_step_parts(width);
         (lines, parts)
     }
@@ -1551,31 +1940,29 @@ impl ToolExecutionComponent {
         if self.frozen_lines.is_none() {
             self.capture_frozen(width);
         }
-        let view = self.view;
         let target = (width as usize).max(1);
         let Some(frozen) = &self.frozen_lines else {
             return StepParts::default();
         };
-        let parts = frozen.parts_for(view);
+        let parts = &frozen.parts;
         let captured = self.frozen_width.max(1);
         if target >= captured {
             return parts.clone();
         }
-        if let Some((cached_width, cached_view, cached)) = &self.frozen_parts_fit {
-            if *cached_width == target && *cached_view == view {
+        if let Some((cached_width, cached)) = &self.frozen_parts_fit {
+            if *cached_width == target {
                 return cached.clone();
             }
         }
-        let wrap = view == ToolOutputView::Full;
         let mut fitted = parts.clone();
         let fit = |rows: &[String]| -> Vec<String> {
             rows.iter()
-                .flat_map(|line| fit_frozen_line(line, target, wrap, false))
+                .flat_map(|line| fit_frozen_line(line, target, false, false))
                 .collect()
         };
         fitted.body = fit(&parts.body);
         fitted.footer = fit(&parts.footer);
-        self.frozen_parts_fit = Some((target, view, fitted.clone()));
+        self.frozen_parts_fit = Some((target, fitted.clone()));
         fitted
     }
 

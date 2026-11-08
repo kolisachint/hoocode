@@ -728,18 +728,6 @@ impl SettingsManager {
         self.set("disabledTools", Some(strings(names)));
     }
 
-    /// `getToolOutputView`; an unknown value reads as peek.
-    pub fn tool_output_view(&self) -> ToolOutputView {
-        self.get("toolOutputView")
-            .and_then(Value::as_str)
-            .and_then(ToolOutputView::parse)
-            .unwrap_or(ToolOutputView::Peek)
-    }
-
-    pub fn set_tool_output_view(&mut self, view: ToolOutputView) {
-        self.set("toolOutputView", Some(view.as_str().into()));
-    }
-
     /// `fullscreen`: the app runs on the alternate screen (M1). On by default;
     /// `HOOCODE_FULLSCREEN=0` turns it off for one run.
     pub fn fullscreen(&self) -> bool {

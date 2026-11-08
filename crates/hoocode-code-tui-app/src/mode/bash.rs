@@ -19,9 +19,7 @@ impl Mode {
     /// the agent streams the row waits in the pending area. The `user_bash`
     /// extension hook waits on the extension runner (12.3).
     pub(super) fn handle_bash_command(&mut self, command: String, exclude_from_context: bool) {
-        let mut component = BashExecutionComponent::new(&command, exclude_from_context);
-        component.set_outline_flag(self.transcript.outline_active.clone());
-        component.set_full_flag(self.transcript.full_active.clone());
+        let component = BashExecutionComponent::new(&command, exclude_from_context);
         let component = handle(component);
         if self.session.is_streaming() {
             self.pending_messages

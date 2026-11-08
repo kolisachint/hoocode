@@ -14,9 +14,9 @@ use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_lab
 use serde_json::Value;
 
 use super::text;
+use crate::fold::{line_budget, peek_window};
 use crate::render_utils::{arg_or, invalid_arg_text, replace_tabs, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::{line_budget, peek_window};
 use hoocode_home::shorten_path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -401,7 +401,7 @@ mod tests {
         let rendered = highlight_code(&replace_tabs(output), Some(lang));
         let mut lines = super::super::trim_trailing_empty_lines(rendered);
         let total = lines.len();
-        lines.truncate(crate::tool_output_view::PEEK_LINES);
+        lines.truncate(crate::fold::PEEK_LINES);
         (total, lines)
     }
 
@@ -459,7 +459,7 @@ mod tests {
         let output: String = (0..5000).map(|i| format!("let v{i} = {i};\n")).collect();
         let preview = build_preview(&output, Some("rust"), false);
         assert_eq!(preview.total, 5000);
-        assert_eq!(preview.shown.len(), crate::tool_output_view::PEEK_LINES);
+        assert_eq!(preview.shown.len(), crate::fold::PEEK_LINES);
         let head: String = (0..10).map(|i| format!("let v{i} = {i};\n")).collect();
         let (_, full) = full_highlight_preview(&head, "rust");
         assert_eq!(preview.shown, full, "the first lines are the same");

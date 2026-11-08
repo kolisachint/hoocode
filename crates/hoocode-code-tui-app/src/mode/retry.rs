@@ -217,7 +217,6 @@ mod tests {
     use hoocode_ai_types::{AssistantMessage, StopReason};
     use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
     use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-    use hoocode_code_tui_widgets::tool_output_view::DEFAULT_TOOL_OUTPUT_VIEW;
     use hoocode_code_tui_widgets::ThinkingDisplay;
     use hoocode_tui_render::assert_golden;
     use hoocode_tui_util::strip_vt_control_characters;
@@ -260,16 +259,11 @@ mod tests {
             "bash",
             "call-1",
             serde_json::json!({"command": "ls"}),
-            ToolExecutionOptions {
-                view: DEFAULT_TOOL_OUTPUT_VIEW,
-                ..Default::default()
-            },
+            ToolExecutionOptions::default(),
             None,
             "/",
         )));
-        let chain = Rc::new(RefCell::new(ToolChainComponent::new(
-            DEFAULT_TOOL_OUTPUT_VIEW,
-        )));
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new()));
         chain.borrow_mut().add(block.clone());
         t.chat.borrow_mut().add_child(as_component(&chain));
         t.chains.push(chain.clone());

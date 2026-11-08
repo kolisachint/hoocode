@@ -202,6 +202,12 @@ pub trait Component {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         None
     }
+
+    /// The concrete component behind a handle, mutably, for components that
+    /// opt in (a click toggling the tool block whose header it hit).
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        None
+    }
 }
 
 pub type ComponentHandle = Rc<RefCell<dyn Component>>;

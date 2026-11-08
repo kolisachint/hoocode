@@ -118,6 +118,21 @@ Keys at the prompt while the agent works, with the defaults:
 How each kind is delivered follows its mode in `/settings` (`steering-mode`,
 `follow-up-mode`: one at a time, or all at once).
 
+## Pinned transcript blocks
+
+Each tool call is one row. PgUp (or the mouse wheel) pins the view, and a click on
+a header toggles it open. With the view pinned and the prompt empty:
+
+- **Enter** opens the focused block, or closes it again.
+- **`{`** and **`}`** focus the previous or next block.
+- **y** copies the focused block's raw output, never the rendered rows.
+- **Esc** clears the focus only. It never stops a turn.
+- **G** goes back to live and clears the focus.
+- **Ctrl+X u** focuses the newest block and pins the view, from the prompt.
+
+There is no expand-all in v1: open the blocks you need. The focus is not saved,
+so a resumed session opens collapsed.
+
 ## The approval card
 
 When a tool asks for permission, the card at the prompt answers to these keys

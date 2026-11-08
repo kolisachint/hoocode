@@ -13,7 +13,7 @@
 //! keys.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
 
 use hoocode_code_tui_keybindings::{key_hint_text, keybindings, KeybindingEntry};
@@ -24,7 +24,7 @@ use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
-use crate::console::{hints, query_row, Console};
+use crate::console::{query_row, Console};
 
 /// The groups sit side by side from this width; narrower they stack.
 const GRID_MIN_WIDTH: usize = 100;
@@ -178,8 +178,10 @@ struct Action {
 
 /// The bindings of one layer by cap, in cap order. Later entries win a
 /// shared cap, so app bindings name a key over the TUI library's editing
-/// defaults. `query` keeps the actions whose key or description contains
-/// it; empty keeps all.
+/// defaults. One row per binding: an entry with two keys on one layer
+/// keeps its smallest cap, so `app.hotkeys.open` (`ctrl+x ?`, `ctrl+x k`)
+/// prints `Show keyboard shortcuts` once, not twice. `query` keeps the
+/// actions whose key or description contains it; empty keeps all.
 fn layer_actions(
     entries: &[(&KeybindingEntry, Vec<String>)],
     layer: Layer,
@@ -196,6 +198,7 @@ fn layer_actions(
         }
     }
     let needle = query.to_lowercase();
+    let mut shown: HashSet<&str> = HashSet::new();
     by_cap
         .into_values()
         .filter(|(entry, key)| {
@@ -203,6 +206,7 @@ fn layer_actions(
                 || key.to_lowercase().contains(&needle)
                 || entry.description.to_lowercase().contains(&needle)
         })
+        .filter(|(entry, _)| shown.insert(entry.id))
         .map(|(entry, key)| Action {
             key,
             text: entry.description.to_string(),
@@ -448,11 +452,15 @@ impl Component for ControlsComponent {
                 )));
             }
         }
-        // The hint row only promises what the pane does.
-        console.hint = hints(&[
-            (key_hint_text("tui.input.tab").as_str(), "layer"),
-            (key_hint_text("tui.select.cancel").as_str(), "close"),
-        ]);
+        // The hint row only promises what the pane does, fitted to the
+        // width like every other picker's.
+        console.set_hints(
+            &[
+                (key_hint_text("tui.input.tab").as_str(), "layer"),
+                (key_hint_text("tui.select.cancel").as_str(), "close"),
+            ],
+            false,
+        );
         console.render(width)
     }
 

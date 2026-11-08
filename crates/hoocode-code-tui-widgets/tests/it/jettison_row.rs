@@ -1,5 +1,6 @@
 //! The compaction row: the folded compaction summary is one dim row drawn
-//! with ratatui, with the real token counts.
+//! with ratatui, with the real token counts: the label, the primary `saved
+//! N` fact, then the token range (secondary, dropped first when narrow).
 //! Expanded, the message is still its sheet.
 
 use std::rc::Rc;
@@ -40,11 +41,8 @@ fn folded_is_one_dim_row_with_the_range_and_real_tokens() {
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(visible_width(&rows[0]), 100, "{:?}", rows[0]);
     let plain = strip(&rows[0]);
-    assert!(
-        plain.contains("Compacted turns 1–3 into one summary"),
-        "{plain:?}"
-    );
-    assert!(plain.contains("120 → 144 tokens (grew 24)"), "{plain:?}");
+    assert!(plain.contains("Compacted turns 1–3 · grew 24"), "{plain:?}");
+    assert!(plain.contains("120 → 144 tokens"), "{plain:?}");
     assert!(plain.contains("for peek"), "{plain:?}");
 }
 
@@ -63,11 +61,8 @@ fn a_single_turn_compaction_names_no_range() {
         md,
     );
     let plain = strip(&component.render(100)[0]);
-    assert!(
-        plain.contains("Compacted turn 2 into one summary"),
-        "{plain:?}"
-    );
-    assert!(plain.contains("200 → 50 tokens (saved 150)"), "{plain:?}");
+    assert!(plain.contains("Compacted turn 2 · saved 150"), "{plain:?}");
+    assert!(plain.contains("200 → 50 tokens"), "{plain:?}");
 }
 
 #[test]
@@ -85,10 +80,7 @@ fn a_summary_from_before_turn_ranges_names_earlier_turns() {
         md,
     );
     let plain = strip(&component.render(100)[0]);
-    assert!(
-        plain.contains("Compacted earlier turns into one summary"),
-        "{plain:?}"
-    );
+    assert!(plain.contains("Compacted earlier turns"), "{plain:?}");
     assert!(plain.contains("from 100 tokens"), "{plain:?}");
 }
 

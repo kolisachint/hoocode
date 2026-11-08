@@ -3,16 +3,11 @@
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::fold::{fold_rows, fold_rows_tail, Folded};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
-
-/// How many body lines the fold check keeps.
-const BODY_LINES: usize = 3;
 
 fn block(name: &str, args: Value) -> ToolExecutionComponent {
     let definition =
@@ -21,10 +16,7 @@ fn block(name: &str, args: Value) -> ToolExecutionComponent {
         name,
         "call-1",
         args,
-        ToolExecutionOptions {
-            view: ToolOutputView::Peek,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(definition),
         "/work/project",
     )
@@ -67,6 +59,8 @@ fn write_prints_its_content_once_after_the_result() {
     );
     b.set_args_complete();
     b.update_result(result("Successfully wrote 11 bytes", false), false);
+    // Single view: the content opens on the toggle.
+    b.set_expanded(true);
     let text = rows(&mut b).join("\n");
     assert_eq!(text.matches("alpha").count(), 1, "{text}");
     assert_eq!(text.matches("beta").count(), 1, "{text}");
@@ -96,6 +90,7 @@ fn write_with_an_error_result_shows_the_error_not_the_body() {
         json!({"path": "notes.txt", "content": "alpha\nbeta\n"}),
     );
     b.update_result(result("Operation aborted", true), false);
+    b.set_expanded(true);
     let text = rows(&mut b).join("\n");
     assert_eq!(text.matches("Operation aborted").count(), 1, "{text}");
     assert!(!text.contains("alpha"), "{text}");
@@ -133,6 +128,7 @@ fn todo_write_failure_shows_its_reason() {
     let mut b = block("TodoWrite", json!({"todos": []}));
     b.set_args_complete();
     b.update_result(result("todo status must be pending", true), false);
+    b.set_expanded(true);
     let lines = rows(&mut b);
     assert!(
         lines
@@ -159,48 +155,28 @@ fn todo_write_failure_shows_no_counts_from_its_args() {
     assert!(!lines.iter().any(|l| l.contains("items")), "{lines:?}");
 }
 
-/// The rows a block's peek shows: its body folded the way the chain's rail
-/// folds it (`peek_rows` in `tool_chain.rs`), so the hint count is the one the
-/// trajectory prints.
-fn peek_fold(b: &mut ToolExecutionComponent) -> Folded {
-    let parts = b.step_parts(80);
-    if parts.tail {
-        fold_rows_tail(parts.body, Some(BODY_LINES))
-    } else {
-        fold_rows(parts.body, Some(BODY_LINES))
-    }
-}
-
 #[test]
-fn pending_write_preview_folds_like_the_finished_one() {
-    // A 12-line file: the peek shows three body rows and `… 9 more lines`
-    // once the result lands. The pending preview must match: no blank row
-    // ahead of the content, and the same fold count.
+fn pending_write_preview_matches_the_finished_one_when_open() {
+    // A 12-line file: open, the pending preview and the finished body show
+    // the same whole content. No blank row ahead of the content.
     let _g = lock();
     let content = "import sys\n\n\ndef main(args: list[str]) -> int:\n    \"\"\"Print the arguments.\"\"\"\n    for a in args:\n        print(f\"arg: {a}\")  # echo\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main(sys.argv[1:]))\n";
     let args = json!({"path": "tools/util.py", "content": content});
 
     let mut pending = block("Write", args.clone());
     pending.set_args_complete();
-    let pending_fold = peek_fold(&mut pending);
+    pending.set_expanded(true);
+    let pending_rows = rows(&mut pending);
 
     let mut finished = block("Write", args);
     finished.set_args_complete();
     finished.update_result(result("Successfully wrote 12 lines", false), false);
-    let finished_fold = peek_fold(&mut finished);
+    finished.set_expanded(true);
+    let finished_rows = rows(&mut finished);
 
-    assert_eq!(finished_fold.hidden, 9, "{finished_fold:?}");
-    assert_eq!(
-        pending_fold.hidden, finished_fold.hidden,
-        "{pending_fold:?}"
-    );
-    assert_eq!(
-        pending_fold.shown.len(),
-        finished_fold.shown.len(),
-        "{pending_fold:?}"
-    );
+    assert_eq!(pending_rows, finished_rows, "preview matches the body");
     assert!(
-        strip(&pending_fold.shown[0]).contains("import sys"),
-        "{pending_fold:?}"
+        strip(&pending_rows[1]).contains("import sys"),
+        "{pending_rows:?}"
     );
 }

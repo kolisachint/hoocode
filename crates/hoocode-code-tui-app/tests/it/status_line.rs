@@ -1,5 +1,5 @@
 //! The status line (declutter WP3): one row, left slot for live state, right
-//! slot for view, session, model, context and cost. Component goldens at 100
+//! slot for session, model, context and cost. Component goldens at 100
 //! columns for each state, the narrow drop order at 60 and 40, and the
 //! NO_COLOR rules.
 
@@ -21,10 +21,9 @@ fn secs(s: f64) -> Duration {
     Duration::from_secs_f64(s)
 }
 
-/// Peek view, signed in, everything set.
+/// Signed in, everything set.
 fn base() -> StatusLineData {
     StatusLineData {
-        view: "peek".into(),
         session: Some("amber-harbor".into()),
         model: Some("claude-haiku-5-5".into()),
         context_percent: Some(42.0),
@@ -90,7 +89,6 @@ fn failed_turn() {
 #[test]
 fn stopped_turn_and_failed_call_variants() {
     let mut data = base();
-    data.view = "outline".into();
     data.last_turn = Some(TurnResult {
         outcome: TurnOutcome::Stopped,
         elapsed: secs(2.0),
@@ -116,7 +114,7 @@ fn plan_mode_leads_the_right_slot() {
 }
 
 #[test]
-fn not_signed_in_shows_view_and_session_only() {
+fn not_signed_in_shows_session_only() {
     let mut data = base();
     data.signed_out = true;
     data.last_turn = Some(done());
@@ -242,7 +240,7 @@ fn narrow_60_drops_cost_then_session() {
 }
 
 #[test]
-fn narrow_40_keeps_percent_view_and_model() {
+fn narrow_40_keeps_percent_and_model() {
     let mut data = base();
     data.effort = Some("high".into());
     data.last_turn = Some(done());
@@ -253,13 +251,13 @@ fn narrow_40_keeps_percent_view_and_model() {
 fn drop_order_is_cost_session_context_word_effort() {
     let mut data = base();
     data.effort = Some("high".into());
-    let full = "peek · amber-harbor · claude-haiku-5-5 high · 42% context · $1.23";
+    let full = "amber-harbor · claude-haiku-5-5 high · 42% context · $1.23";
     let steps = [
         full,
-        "peek · amber-harbor · claude-haiku-5-5 high · 42% context",
-        "peek · claude-haiku-5-5 high · 42% context",
-        "peek · claude-haiku-5-5 high · 42%",
-        "peek · claude-haiku-5-5 · 42%",
+        "amber-harbor · claude-haiku-5-5 high · 42% context",
+        "claude-haiku-5-5 high · 42% context",
+        "claude-haiku-5-5 high · 42%",
+        "claude-haiku-5-5 · 42%",
     ];
     for expected in steps {
         // The narrowest width that holds this step, with one pad each side.
@@ -291,9 +289,9 @@ fn row_is_exactly_the_width() {
 fn very_narrow_cuts_the_left_slot_with_an_ellipsis() {
     let mut data = base();
     data.last_turn = Some(done());
-    let row = text(&data, 30);
+    let row = text(&data, 28);
     assert!(row.contains('…'), "{row}");
-    assert!(row.trim_end().ends_with("peek · 42%"), "{row}");
+    assert!(row.trim_end().ends_with("42%"), "{row}");
 }
 
 #[test]
@@ -303,9 +301,9 @@ fn zero_values_are_hidden() {
     data.context_percent = Some(0.0);
     data.session = Some(String::new());
     data.effort = Some(String::new());
-    assert_eq!(text(&data, 100).trim(), "peek · claude-haiku-5-5");
+    assert_eq!(text(&data, 100).trim(), "claude-haiku-5-5");
     data.cost = Some(0.004);
-    assert_eq!(text(&data, 100).trim(), "peek · claude-haiku-5-5");
+    assert_eq!(text(&data, 100).trim(), "claude-haiku-5-5");
     assert_eq!(format_cost(0.004), None);
     assert_eq!(format_cost(1.234).as_deref(), Some("$1.23"));
     data.last_turn = Some(TurnResult {
@@ -337,7 +335,7 @@ fn plan_word_is_bold_and_first() {
         .expect("plan span");
     assert!(plan.style.add_modifier.contains(Modifier::BOLD));
     let row: String = spans.iter().map(|s| s.content.as_ref()).collect();
-    assert!(row.trim_start().starts_with("plan · peek"), "{row}");
+    assert!(row.trim_start().starts_with("plan · amber-harbor"), "{row}");
 }
 
 #[test]
@@ -360,7 +358,10 @@ fn no_color_uses_only_bold_and_dim() {
             .unwrap_or_else(|| panic!("no span with {needle}"))
     };
     assert!(find("working").style.add_modifier.contains(Modifier::DIM));
-    assert!(find("peek").style.add_modifier.contains(Modifier::DIM));
+    assert!(find("amber-harbor")
+        .style
+        .add_modifier
+        .contains(Modifier::DIM));
     let plan = find("plan").style.add_modifier;
     assert!(plan.contains(Modifier::BOLD) && !plan.contains(Modifier::DIM));
     let row: String = spans.iter().map(|s| s.content.as_ref()).collect();

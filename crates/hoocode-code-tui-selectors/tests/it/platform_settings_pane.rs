@@ -118,7 +118,7 @@ fn leaves_no_setting_stranded_outside_every_category() {
         "light",
         "tools",
         "tool-output",
-        "tool-output-view",
+        "tool-output-note",
         "output-max-bytes",
         "output-max-lines",
         "platform",

@@ -7,10 +7,10 @@ use hoocode_tui_components::markdown::js_trim;
 use serde_json::Value;
 
 use super::text;
+use crate::fold::line_budget;
 use crate::fold::more_lines_hint;
 use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::line_budget;
 
 /// A JS number as `String(n)` prints it.
 pub(crate) fn js_number(value: &Value) -> String {

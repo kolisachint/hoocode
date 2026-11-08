@@ -9,5 +9,6 @@ mod hints;
 mod key_names;
 mod keybinding_layout;
 mod keymap_config;
+mod transcript_focus_keys;
 mod validation;
 mod which_key;

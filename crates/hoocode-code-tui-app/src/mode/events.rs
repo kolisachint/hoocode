@@ -13,7 +13,7 @@ use hoocode_code_task_store::{task_store, TaskStatus};
 use hoocode_code_tools_optin::todo::settle_dangling_main_tasks;
 use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::theme;
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::ChainState;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::AssistantMessageComponent;
 use hoocode_tui_components::{Loader, Spacer, Text};
@@ -409,7 +409,6 @@ impl Mode {
                         self.markdown_theme(),
                         DEFAULT_HIDDEN_THINKING_LABEL,
                     ));
-                    component.borrow_mut().set_view(self.tool_output_view);
                     component
                         .borrow_mut()
                         .set_outline_mission(self.transcript.current_mission());

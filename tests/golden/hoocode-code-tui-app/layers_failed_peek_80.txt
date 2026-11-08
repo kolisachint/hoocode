@@ -1,13 +1,7 @@
  › The parser test fails on the escaped-quote case. Find the cause, fix it, and
    check the screenshot of the failing output too.
 
- ⊗ Shell cargo test -p hoocode-parser escaped_quote  exit 1 · 3.1s
-    … 3 earlier lines
-    88  |         return Ok(Token::Str(text));
-        |                     ^^^^ expected `String`, found `&str`
-
-    error: could not compile `hoocode-parser` (lib) due to 1 previous error
-
+ ⊗ Shell cargo test -p hoocode-parser…  exit 1 · error[E0308]: mismatched types
  ● Read docs/screens/parser-failure.png  2 lines
 
  The escaped-quote case still fails. The lexer builds the token from a &str
@@ -28,22 +22,18 @@ r1 c3-49 fg=#e5e5e7 bg=#2a2a36
 r1 c50-79 bg=#2a2a36
 r3 c1 fg=#d58181
 r3 c3-7 fg=#e5e5e7 bold
-r3 c9-50 fg=#e5e5e7
-r3 c53-58 fg=#d58181
-r3 c59-65 fg=#989898
-r4 c4-20 fg=#989898
-r5 c4-45 fg=#989898
-r6 c4-65 fg=#989898
-r8 c4-74 fg=#989898
-r10 c1 fg=#b5bd68
-r10 c3-6 fg=#e5e5e7 bold
-r10 c8-38 fg=#e5e5e7
-r10 c41-47 fg=#989898
-r12 c71-74 fg=#5cc8bb
-r13 c40-45 fg=#5cc8bb
-r14 c15-20 fg=#5cc8bb
-r18 c1 fg=#d58181
-r18 c3-42 fg=#989898
-r20 c1 fg=#d58181
-r20 c3-8 fg=#d58181
-r20 c9-15 fg=#989898
+r3 c9-37 fg=#e5e5e7
+r3 c40-45 fg=#d58181
+r3 c46-78 fg=#989898
+r4 c1 fg=#b5bd68
+r4 c3-6 fg=#e5e5e7 bold
+r4 c8-38 fg=#e5e5e7
+r4 c41-47 fg=#989898
+r6 c71-74 fg=#5cc8bb
+r7 c40-45 fg=#5cc8bb
+r8 c15-20 fg=#5cc8bb
+r12 c1 fg=#d58181
+r12 c3-42 fg=#989898
+r14 c1 fg=#d58181
+r14 c3-8 fg=#d58181
+r14 c9-15 fg=#989898

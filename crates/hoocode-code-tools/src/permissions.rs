@@ -30,7 +30,6 @@ pub fn is_read_only(tool_name: &str) -> bool {
         tool_name,
         "Read"
             | "CodeSearch"
-            | "DocSearch"
             | "TodoWrite"
             | "AskUserQuestion"
             | "CronList"

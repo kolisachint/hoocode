@@ -43,9 +43,6 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.model.cycleForward",
     "app.model.cycleBackward",
     "app.model.select",
-    "app.tools.expand",
-    "app.view.cycleForward",
-    "app.view.cycleBackward",
     "app.thinking.toggle",
     "app.scroll.pageUp",
     "app.scroll.pageDown",
@@ -61,6 +58,7 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.input.voiceTranscribe",
     "app.message.followUp",
     "app.message.dequeue",
+    "app.scroll.focusNewest",
     "app.history.search",
     "app.clipboard.copyMessage",
     "app.clipboard.pasteImage",
@@ -195,6 +193,10 @@ const SCROLL_SCOPE: &[&str] = &[
     "app.scroll.searchInView",
     "app.scroll.searchNext",
     "app.scroll.searchPrevious",
+    "app.scroll.focusPrevious",
+    "app.scroll.focusNext",
+    "app.scroll.expandFocused",
+    "app.scroll.copyFocused",
 ];
 
 const SCOPES: &[(&str, &[&str])] = &[
@@ -432,9 +434,6 @@ fn matches_the_plans_default_keymap() {
         ("app.model.cycleBackward", vec!["ctrl+x M"]),
         ("app.thinking.cycleForward", vec!["ctrl+x t"]),
         ("app.thinking.cycleBackward", vec!["ctrl+x T"]),
-        ("app.view.cycleForward", vec!["ctrl+x o"]),
-        ("app.view.cycleBackward", vec!["ctrl+x O"]),
-        ("app.tools.expand", vec!["ctrl+x p"]),
         ("app.thinking.toggle", vec!["ctrl+x b"]),
         ("app.tasks.cycleForward", vec!["ctrl+x l"]),
         ("app.tasks.cycleBackward", vec!["ctrl+x L"]),
@@ -469,13 +468,7 @@ fn matches_the_plans_default_keymap() {
 #[test]
 fn keeps_the_keys_for_getting_out_and_getting_help_off_alt() {
     let m = manager();
-    let must_work_anywhere = [
-        "app.interrupt",
-        "app.clear",
-        "app.exit",
-        "app.tools.expand",
-        "tui.input.submit",
-    ];
+    let must_work_anywhere = ["app.interrupt", "app.clear", "app.exit", "tui.input.submit"];
     let needing_alt: Vec<&str> = must_work_anywhere
         .into_iter()
         .filter(|id| m.get_keys(id).iter().all(|k| has_alt(k)))
@@ -535,11 +528,6 @@ const DIALS: &[(&str, &str, &str)] = &[
         "thinking level",
         "app.thinking.cycleForward",
         "app.thinking.cycleBackward",
-    ),
-    (
-        "tool output",
-        "app.view.cycleForward",
-        "app.view.cycleBackward",
     ),
     (
         "task ledger",
@@ -637,7 +625,7 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings|hotkeys)"),
         (
             "Overlays",
-            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
+            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
         ("Lists", r"^app\.list\."),
         ("Dialogs", r"^app\.dialog\."),

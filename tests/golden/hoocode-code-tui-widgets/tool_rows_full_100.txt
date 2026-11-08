@@ -1,74 +1,34 @@
 
- ● Read /work/src/config.rs  12 lines
-    setting_01
-    setting_02
-    setting_03
-    setting_04
-    setting_05
-    setting_06
-    setting_07
-    setting_08
-    setting_09
-    setting_10
-    setting_11
-    setting_12
-
- ● Edit /work/src/config.rs  +2 −2
+ ● Read src/config.rs  12 lines
+ ● Edit src/config.rs  +2 −2
      12     let mut cfg = Config::default();
     -14     let raw = read_file(path)?;
     -15     apply_env(&mut cfg);
     +14     apply_env(&mut cfg);
     +15     let raw = read_file(path)?;
-     16     parse_into(&mut cfg, &raw)?;
-     17     Ok(cfg)
+    … 2 more lines
 
- ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 8.2s
-    test config::tests::case_01
-    test config::tests::case_02
-    test config::tests::case_03
-    test config::tests::case_04
-    test config::tests::case_05
-    test config::tests::case_06
-    test config::tests::case_07
-    test config::tests::case_08
-    test config::tests::case_09
-    test config::tests::case_10
-    test config::tests::case_11
-    test config::tests::case_12
+ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 12 lines · 8.2s
 --- styles ---
 r1 c1 fg=#b5bd68
 r1 c3-6 fg=#e5e5e7 bold
-r1 c8-26 fg=#e5e5e7
-r1 c29-36 fg=#989898
-r15 c1 fg=#b5bd68
-r15 c3-6 fg=#e5e5e7 bold
-r15 c8-26 fg=#e5e5e7
-r15 c29-30 fg=#b5bd68
-r15 c32-33 fg=#d58181
-r16 c4-43 fg=#989898
-r17 c4 fg=#d58181
-r17 c5-38 fg=#989898
-r18 c4 fg=#d58181
-r18 c5-31 fg=#989898
-r19 c4 fg=#b5bd68
-r19 c5-31 fg=#989898
-r20 c4 fg=#b5bd68
-r20 c5-38 fg=#989898
-r21 c4-39 fg=#989898
-r22 c4-18 fg=#989898
-r24 c1 fg=#b5bd68
-r24 c3-7 fg=#e5e5e7 bold
-r24 c9-52 fg=#e5e5e7
-r24 c55-67 fg=#989898
-r25 c4-30 fg=#989898
-r26 c4-30 fg=#989898
-r27 c4-30 fg=#989898
-r28 c4-30 fg=#989898
-r29 c4-30 fg=#989898
-r30 c4-30 fg=#989898
-r31 c4-30 fg=#989898
-r32 c4-30 fg=#989898
-r33 c4-30 fg=#989898
-r34 c4-30 fg=#989898
-r35 c4-30 fg=#989898
-r36 c4-30 fg=#989898
+r1 c8-20 fg=#e5e5e7
+r1 c23-30 fg=#989898
+r2 c1 fg=#b5bd68
+r2 c3-6 fg=#e5e5e7 bold
+r2 c8-20 fg=#e5e5e7
+r2 c23-27 fg=#989898
+r3 c4-43 fg=#989898
+r4 c4 fg=#d58181
+r4 c5-38 fg=#989898
+r5 c4 fg=#d58181
+r5 c5-31 fg=#989898
+r6 c4 fg=#b5bd68
+r6 c5-31 fg=#989898
+r7 c4 fg=#b5bd68
+r7 c5-38 fg=#989898
+r8 c4-17 fg=#989898
+r10 c1 fg=#b5bd68
+r10 c3-7 fg=#e5e5e7 bold
+r10 c9-52 fg=#e5e5e7
+r10 c55-78 fg=#989898

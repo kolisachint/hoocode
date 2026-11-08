@@ -1,5 +1,5 @@
- ● done · 11s · 23k tokens             peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23
+ ● done · 11s · 23k tokens                    amber-harbor · claude-haiku-5-5 · 42% context · $1.23
 --- styles ---
 r0 c1 fg=#b5bd68
 r0 c2-25 fg=#989898
-r0 c39-98 fg=#989898
+r0 c46-98 fg=#989898

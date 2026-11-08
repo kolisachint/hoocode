@@ -19,7 +19,7 @@ use hoocode_code_media::clipboard_image::ClipboardImage;
 use hoocode_code_media::rich_clipboard::CopyFlavour;
 use hoocode_code_paths::{env_override, VERSION};
 use hoocode_code_permissions::ClearanceChoice;
-use hoocode_code_settings::{EditorBorder, ToolOutputView};
+use hoocode_code_settings::EditorBorder;
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::live::LiveSink;
 use hoocode_code_task_store::task_store;
@@ -42,7 +42,8 @@ use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
 use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
-use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
+use hoocode_code_tui_widgets::tool_chain::ChainState;
+use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
 use hoocode_tui_render::{
@@ -66,11 +67,14 @@ use crate::notification_panel::{NotificationKind, NotificationPanel};
 use crate::perf::Perf;
 use crate::record_row::RecordRows;
 use crate::resource_display::{format_display_path, ResourceListing};
-use crate::scroll_view::{install_scroll_status, install_scroll_view};
+use crate::scroll_view::{
+    child_base, hit_chain, install_scroll_status, install_scroll_view, BlockToggle, TranscriptFocus,
+};
 use crate::startup_progress;
 use crate::tips::{
     render_tip, tip_ttl, TipRotation, TipRotationOptions, TipsController, TipsControllerOptions,
 };
+use hoocode_tui_render::BodyClick;
 
 mod attach;
 mod auth;
@@ -266,6 +270,9 @@ enum AppEvent {
     BashDone(Result<BashResult, String>),
     /// A `/copy` write ended: what was copied, and the flavour that landed.
     CopyDone(String, Result<CopyFlavour, String>),
+    /// A `y` copy of a focused block's raw output ended: what was copied,
+    /// and its bytes that landed.
+    CopyRawDone(String, Result<usize, String>),
     /// The clipboard image read ended.
     PastedImage(Option<ClipboardImage>),
     /// A `/subagent` run ended: its mode, and its summary or error.
@@ -426,7 +433,6 @@ struct Mode {
     /// gate's questions) wait for their answer.
     dialog_select: Rc<Cell<u32>>,
     update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
-    tool_output_view: ToolOutputView,
     hide_thinking_block: bool,
     chain_closed_for_current_message: bool,
     dial_reverse_taught: HashSet<&'static str>,
@@ -468,6 +474,12 @@ struct Mode {
     queue_recallable: Rc<Cell<bool>>,
     /// The transcript's scroll view: the leader opens its search (`leader.rs`).
     scroll_view: Rc<RefCell<crate::scroll_view::ScrollView>>,
+    /// Header clicks queued by the TUI, drained after each event (single
+    /// view: a click toggles its block and pins the view first).
+    pending_body_clicks: Rc<RefCell<Vec<BodyClick>>>,
+    /// U21 single view (P2): the pinned view's focused tool block, shared
+    /// with the scroll view (see `mode/transcript/focus.rs`).
+    focus: Rc<RefCell<TranscriptFocus>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
@@ -605,7 +617,6 @@ impl Mode {
             editor_border,
             editor_padding_x,
             autocomplete_max_visible,
-            tool_output_view,
             hide_thinking_block,
             code_block_indent,
             show_images,
@@ -617,7 +628,6 @@ impl Mode {
             settings.editor_border(),
             settings.editor_padding_x() as usize,
             settings.autocomplete_max_visible() as usize,
-            settings.tool_output_view(),
             settings.hide_thinking_block(),
             settings.code_block_indent(),
             settings.show_images(),
@@ -640,6 +650,14 @@ impl Mode {
         // A plain click on a link (OSC 8 or a bare URL) opens it in the
         // browser; `open_url` takes only http, https and mailto.
         tui.on_hyperlink = Some(Box::new(crate::login_controller::open_url));
+        // A click on a tool header toggles its block. The TUI only queues
+        // the row: the mode below drains the queue while the last frame's
+        // layout still matches the painted rows the click mapped to.
+        let pending_body_clicks: Rc<RefCell<Vec<BodyClick>>> = Rc::default();
+        let queued_clicks = pending_body_clicks.clone();
+        tui.on_body_click = Some(Box::new(move |click| {
+            queued_clicks.borrow_mut().push(click);
+        }));
 
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
@@ -738,9 +756,8 @@ impl Mode {
             Rc::new(move || queue_read.borrow().clone()),
             bash_marker.clone(),
         ));
-        let mut task_panel_component = TaskPanelComponent::new();
-        task_panel_component.set_outline(tool_output_view == ToolOutputView::Outline);
-        let task_panel = handle(task_panel_component);
+        // Single view: the task panel always draws its rows (no outline).
+        let task_panel = handle(TaskPanelComponent::new());
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
 
         let render_flag = dirty.clone();
@@ -878,14 +895,18 @@ impl Mode {
             }),
             Rc::new(move || busy_session.is_streaming() || busy_session.is_retrying()),
         );
-        install_scroll_status(&mut tui, status_data.clone());
+        // U21 single view (P2): the pinned view's transcript focus, shared
+        // with the scroll view (`mode/transcript/focus.rs`).
+        let focus = Rc::new(RefCell::new(TranscriptFocus::new()));
+        scroll_view.borrow_mut().set_focus_state(focus.clone());
+        install_scroll_status(&mut tui, status_data.clone(), focus.clone());
 
         let (tx, rx) = mpsc::channel();
         let tx = AppSender {
             tx,
             wake: tui.wake_handle(),
         };
-        let mode = Self {
+        Self {
             session,
             runtime: options.runtime,
             tui,
@@ -923,7 +944,6 @@ impl Mode {
             herdr: None,
             dialog_select: Rc::new(Cell::new(0)),
             update_notice: options.update_notice,
-            tool_output_view,
             hide_thinking_block,
             chain_closed_for_current_message: false,
             dial_reverse_taught: HashSet::new(),
@@ -944,6 +964,8 @@ impl Mode {
             transient,
             leader,
             scroll_view,
+            pending_body_clicks,
+            focus,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,
@@ -989,16 +1011,7 @@ impl Mode {
             restarted_input: None,
             session_op: None,
             mode_dial_after: None,
-        };
-        // Peek-only rows follow the saved view from the first frame: a
-        // restored outline session hides them without waiting for a flip.
-        mode.transcript
-            .outline_active
-            .set(mode.tool_output_view == ToolOutputView::Outline);
-        mode.transcript
-            .full_active
-            .set(mode.tool_output_view == ToolOutputView::Full);
-        mode
+        }
     }
 
     /// The next time something is due without input.
@@ -1029,9 +1042,73 @@ impl Mode {
         if !taken {
             self.tui.accept_event(event);
         }
+        self.drain_body_clicks();
+        // U21 single view (P2): the transcript keys the pinned view queued.
+        self.drain_focus_intents();
         self.hand_off_panel_up();
         self.return_panel_focus_if_asked();
         self.show_main();
+    }
+
+    /// The chat's base buffer row in the last frame's layout: the body holds
+    /// it full-screen, else it is a direct child of the TUI root.
+    fn chat_base_row(&self, width: u16) -> Option<usize> {
+        let chat_handle: ComponentHandle = self.transcript.chat.clone();
+        match &self.scroll_body {
+            Some(body) => child_base(&body.borrow(), &chat_handle, width),
+            None => {
+                let offsets = self.tui.child_row_offsets(width)?;
+                let children = self.tui.children();
+                if children.len() != offsets.len() {
+                    return None;
+                }
+                children
+                    .iter()
+                    .position(|c| Rc::ptr_eq(c, &chat_handle))
+                    .map(|i| offsets[i])
+            }
+        }
+    }
+
+    /// A queued header click toggles its block and pins the view, keeping
+    /// the header on the row the click found it on (decision 6). A click on
+    /// a body row, or outside every chain, queued nothing.
+    fn drain_body_clicks(&mut self) {
+        let clicks = std::mem::take(&mut *self.pending_body_clicks.borrow_mut());
+        if clicks.is_empty() {
+            return;
+        }
+        for click in clicks {
+            let base = self.chat_base_row(click.width);
+            let rel = base.and_then(|b| (click.buffer_row as usize).checked_sub(b));
+            let hit = rel.and_then(|r| hit_chain(&self.transcript.chat, click.width, r));
+            let Some((chain, block)) = hit else { continue };
+            let toggle = BlockToggle {
+                chain,
+                block,
+                buffer_row: click.buffer_row,
+                context: click.context,
+            };
+            // The click shares `enter`'s primitive (see `set_block_expanded`):
+            // the flag opens the body, the override keeps the focus path
+            // agreeing.
+            let target = toggle
+                .chain
+                .borrow_mut()
+                .as_any_mut()
+                .and_then(|a| a.downcast_mut::<ToolChainComponent>())
+                .and_then(|c| c.tool_blocks().get(toggle.block).cloned());
+            let Some(target) = target else {
+                continue;
+            };
+            let expanded = !target.borrow().is_expanded();
+            self.set_block_expanded(&target, expanded);
+            // Pin first, keeping the header on its row; the toggle opens
+            // under it.
+            self.tui
+                .scroll_to_row(toggle.buffer_row, Some(toggle.context));
+            self.dirty.set(true);
+        }
     }
 
     /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn
@@ -1525,6 +1602,9 @@ impl Mode {
                     }
                     AppEvent::BashDone(result) => self.finish_bash_command(result),
                     AppEvent::CopyDone(subject, result) => self.finish_copy(&subject, result),
+                    AppEvent::CopyRawDone(subject, result) => {
+                        self.finish_raw_copy(&subject, result)
+                    }
                     AppEvent::PastedImage(image) => self.insert_pasted_image(image),
                     AppEvent::SubagentDone(mode, result) => self.finish_subagent(&mode, result),
                     AppEvent::Subagent(task_id, event) => {

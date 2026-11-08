@@ -10,10 +10,10 @@ use std::rc::Rc;
 use hoocode_ai_types::{AssistantMessage, Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
+use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats};
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelView};
-use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
+use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
@@ -27,7 +27,7 @@ use crate::support::lock;
 /// A fixed working directory: the tool renderers print paths relative to it.
 const CWD: &str = "/work/project";
 
-fn tool(name: &str, args: Value, view: ToolOutputView) -> ToolExecutionComponent {
+fn tool(name: &str, args: Value) -> ToolExecutionComponent {
     // The registry as the app builds it: built-in renderers first, then the
     // registered ones (Agent, AgentOutput).
     let definition =
@@ -36,10 +36,7 @@ fn tool(name: &str, args: Value, view: ToolOutputView) -> ToolExecutionComponent
         name,
         "call-1",
         args,
-        ToolExecutionOptions {
-            view,
-            ..Default::default()
-        },
+        ToolExecutionOptions::default(),
         Some(definition),
         CWD,
     )
@@ -335,7 +332,7 @@ fn task_panel_empty_tabs_hidden_80() {
 #[test]
 fn shell_running_80() {
     let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Peek);
+    let mut block = tool("Shell", shell_args());
     block.update_result(result(&output_lines(2), false, json!({})), true);
     assert_golden!("shell_running_80", render_golden(&mut block, 80));
 }
@@ -343,7 +340,7 @@ fn shell_running_80() {
 #[test]
 fn shell_success_80() {
     let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Peek);
+    let mut block = tool("Shell", shell_args());
     block.update_result(
         result("test result: ok. 12 passed; 0 failed", false, json!({})),
         false,
@@ -354,7 +351,7 @@ fn shell_success_80() {
 #[test]
 fn shell_success_120() {
     let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Peek);
+    let mut block = tool("Shell", shell_args());
     block.update_result(
         result("test result: ok. 12 passed; 0 failed", false, json!({})),
         false,
@@ -365,7 +362,7 @@ fn shell_success_120() {
 #[test]
 fn shell_error_80() {
     let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Peek);
+    let mut block = tool("Shell", shell_args());
     block.update_result(
         result(
             "error[E0432]: unresolved import `crate::missing`\nexit code 101",
@@ -380,7 +377,7 @@ fn shell_error_80() {
 #[test]
 fn shell_output_collapsed_80() {
     let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Outline);
+    let mut block = tool("Shell", shell_args());
     block.update_result(result(&output_lines(12), false, json!({})), false);
     assert_golden!("shell_output_collapsed_80", render_golden(&mut block, 80));
 }
@@ -388,7 +385,7 @@ fn shell_output_collapsed_80() {
 #[test]
 fn shell_output_peek_80() {
     let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Peek);
+    let mut block = tool("Shell", shell_args());
     block.update_result(result(&output_lines(12), false, json!({})), false);
     assert_golden!("shell_output_peek_80", render_golden(&mut block, 80));
 }
@@ -406,7 +403,7 @@ fn agent_args() -> Value {
 #[test]
 fn agent_call_80() {
     let _g = lock();
-    let mut block = tool("Agent", agent_args(), ToolOutputView::Peek);
+    let mut block = tool("Agent", agent_args());
     assert_golden!("agent_call_80", render_golden(&mut block, 80));
 }
 
@@ -415,14 +412,14 @@ fn agent_background_call_80() {
     let _g = lock();
     let mut args = agent_args();
     args["background"] = json!(true);
-    let mut block = tool("Agent", args, ToolOutputView::Peek);
+    let mut block = tool("Agent", args);
     assert_golden!("agent_background_call_80", render_golden(&mut block, 80));
 }
 
 #[test]
 fn agent_result_80() {
     let _g = lock();
-    let mut block = tool("Agent", agent_args(), ToolOutputView::Peek);
+    let mut block = tool("Agent", agent_args());
     block.update_result(
         result("Found the footer in footer.rs.", false, json!({})),
         false,
@@ -433,7 +430,7 @@ fn agent_result_80() {
 #[test]
 fn agent_result_120() {
     let _g = lock();
-    let mut block = tool("Agent", agent_args(), ToolOutputView::Peek);
+    let mut block = tool("Agent", agent_args());
     block.update_result(
         result("Found the footer in footer.rs.", false, json!({})),
         false,
@@ -454,11 +451,7 @@ fn agent_output(text: &str, status: &str) -> ToolResult {
 #[test]
 fn agent_output_done_80() {
     let _g = lock();
-    let mut block = tool(
-        "AgentOutput",
-        json!({ "task_id": "explore#1" }),
-        ToolOutputView::Peek,
-    );
+    let mut block = tool("AgentOutput", json!({ "task_id": "explore#1" }));
     block.update_result(
         agent_output("Footer is in footer.rs, 340 lines.", "done"),
         false,
@@ -469,11 +462,7 @@ fn agent_output_done_80() {
 #[test]
 fn agent_output_running_80() {
     let _g = lock();
-    let mut block = tool(
-        "AgentOutput",
-        json!({ "task_id": "explore#1" }),
-        ToolOutputView::Peek,
-    );
+    let mut block = tool("AgentOutput", json!({ "task_id": "explore#1" }));
     block.update_result(agent_output("Still reading files.", "running"), true);
     assert_golden!("agent_output_running_80", render_golden(&mut block, 80));
 }
@@ -481,11 +470,7 @@ fn agent_output_running_80() {
 #[test]
 fn agent_output_failed_80() {
     let _g = lock();
-    let mut block = tool(
-        "AgentOutput",
-        json!({ "task_id": "explore#1" }),
-        ToolOutputView::Peek,
-    );
+    let mut block = tool("AgentOutput", json!({ "task_id": "explore#1" }));
     block.update_result(
         agent_output("Stopped: tool limit reached.", "failed"),
         false,
@@ -594,7 +579,7 @@ fn assistant_message_thinking_label_80() {
 #[test]
 fn user_message_band_80() {
     let _g = lock();
-    let mut header = MissionHeader::new(1, "how does wrapping work?");
+    let mut header = MissionHeader::new("how does wrapping work?");
     assert_golden!("user_message_band_80", render_golden(&mut header, 80));
 }
 
@@ -603,7 +588,6 @@ fn user_message_band_wrapped_40() {
     // Wrapped and later lines start under the text, at column 3.
     let _g = lock();
     let mut header = MissionHeader::new(
-        6,
         "check wrap.rs for the overflow in the second branch\nthen run the tests",
     );
     assert_golden!(
@@ -614,18 +598,14 @@ fn user_message_band_wrapped_40() {
 
 #[test]
 fn peek_failed_call_80() {
-    // Peek: tool rows with no step number and no rail; the failed Shell
-    // reads red `⊗` and its error lines.
+    // Single view: tool rows with no step number and no rail; the failed
+    // Shell reads red `⊗` and its error lines.
     let _g = lock();
-    let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
-    let mut read = tool(
-        "Read",
-        json!({ "path": "src/wrap.rs" }),
-        ToolOutputView::Peek,
-    );
+    let mut chain = ToolChainComponent::new();
+    let mut read = tool("Read", json!({ "path": "src/wrap.rs" }));
     read.update_result(result("line one\nline two", false, json!({})), false);
     chain.add(Rc::new(RefCell::new(read)));
-    let mut shell = tool("Shell", shell_args(), ToolOutputView::Peek);
+    let mut shell = tool("Shell", shell_args());
     shell.update_result(
         result(
             "boom\nCommand exited with code 3",
@@ -638,198 +618,7 @@ fn peek_failed_call_80() {
     assert_golden!("peek_failed_call_80", render_golden(&mut chain, 80));
 }
 
-// ---- Outline: the user message, recap rows, end line ----
-
-use hoocode_code_tui_widgets::outline::{FlightItem, FlightMark, FlightStats};
-
-/// One call of a mission's batch: finished (`Some(is_error)`) or still running.
-fn batch_call(name: &str, args: Value, outcome: Option<bool>) -> ToolBlock {
-    let mut block = tool(name, args, ToolOutputView::Outline);
-    if let Some(is_error) = outcome {
-        let text = if is_error { "boom" } else { "ok" };
-        block.update_result(result(text, is_error, json!({})), false);
-    }
-    Rc::new(RefCell::new(block))
-}
-
-/// The chain's calls as one mission batch (R3). A mission's chain draws
-/// nothing in outline, so its rows are read through the mission's flight data.
-fn outline_mission_of(
-    chain: &ToolChainComponent,
-    mark: FlightMark,
-    time: Option<&str>,
-) -> Rc<RefCell<FlightStats>> {
-    Rc::new(RefCell::new(FlightStats {
-        mark,
-        steps: chain.tool_blocks().len(),
-        hits: chain
-            .tool_blocks()
-            .iter()
-            .filter(|block| block.borrow().is_error())
-            .count(),
-        landed_time: time.map(str::to_string),
-        items: vec![FlightItem::Batch(chain.tool_blocks().to_vec())],
-        ..Default::default()
-    }))
-}
-
-fn flight_stats(
-    mark: FlightMark,
-    steps: usize,
-    hits: usize,
-    time: Option<&str>,
-    cost: Option<&str>,
-) -> Rc<RefCell<FlightStats>> {
-    Rc::new(RefCell::new(FlightStats {
-        mark,
-        steps,
-        hits,
-        landed_time: time.map(str::to_string),
-        started: None,
-        cost: cost.map(str::to_string),
-        ..Default::default()
-    }))
-}
-
-fn outline_header(seq: usize, prompt: &str, stats: Rc<RefCell<FlightStats>>) -> MissionHeader {
-    let mut header = MissionHeader::new(seq, prompt);
-    header.set_view(ToolOutputView::Outline);
-    header.set_flight(stats);
-    header
-}
-
-#[test]
-fn outline_mission_row_80() {
-    // One flight-log row: the mark, the prompt, steps, hits, time, cost.
-    let _g = lock();
-    let mut header = outline_header(
-        1,
-        "what does the wrap crate do?",
-        flight_stats(FlightMark::Landed, 1, 0, Some("0.8s"), Some("$0.003")),
-    );
-    assert_golden!("outline_mission_row_80", render_golden(&mut header, 80));
-}
-
-#[test]
-fn outline_mission_row_100() {
-    // Wide: the stats hold their columns counted back from the right edge.
-    let _g = lock();
-    let mut header = outline_header(
-        1,
-        "what does the wrap crate do?",
-        flight_stats(FlightMark::Landed, 1, 0, Some("0.8s"), Some("$0.003")),
-    );
-    assert_golden!("outline_mission_row_100", render_golden(&mut header, 100));
-}
-
-#[test]
-fn outline_mission_row_40() {
-    // Narrow: the prompt is cut with `…` first, the stats stay whole.
-    let _g = lock();
-    let mut header = outline_header(
-        2,
-        "review the wrap helper for overflow bugs",
-        flight_stats(FlightMark::Landed, 4, 1, Some("0.6s"), Some("$0.006")),
-    );
-    assert_golden!("outline_mission_row_40", render_golden(&mut header, 40));
-}
-
-#[test]
-fn outline_mission_in_flight_80() {
-    // A flying mission reads `◉`; with no landed time the row shows the
-    // cost only. Elapsed time comes off the turn clock at render, so the
-    // golden pins the row without it.
-    let _g = lock();
-    let mut header = outline_header(
-        2,
-        "run a slow check",
-        flight_stats(FlightMark::InFlight, 1, 0, None, Some("$0.001")),
-    );
-    assert_golden!(
-        "outline_mission_in_flight_80",
-        render_golden(&mut header, 80)
-    );
-}
-
-#[test]
-fn outline_mission_stepless_80() {
-    // No steps: `0 steps 0✕` is omitted, the row reads mark, prompt, cost.
-    let _g = lock();
-    let mut header = outline_header(
-        3,
-        "just talking",
-        flight_stats(FlightMark::Landed, 0, 0, None, Some("$0.000")),
-    );
-    assert_golden!(
-        "outline_mission_stepless_80",
-        render_golden(&mut header, 80)
-    );
-}
-
-#[test]
-fn outline_chain_hits_80() {
-    // Each hit gets its own line under the mission: mission-relative step,
-    // tool, subject, first output line, `HIT`. Settled clean calls get none.
-    let _g = lock();
-    let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
-    let mut read = tool(
-        "Read",
-        json!({ "path": "src/wrap.rs" }),
-        ToolOutputView::Outline,
-    );
-    read.update_result(result("line one\nline two", false, json!({})), false);
-    chain.add(Rc::new(RefCell::new(read)));
-    let mut shell = tool("Shell", shell_args(), ToolOutputView::Outline);
-    shell.update_result(
-        result(
-            "boom\nCommand exited with code 3",
-            true,
-            json!({ "durationMs": 100.0 }),
-        ),
-        false,
-    );
-    chain.add(Rc::new(RefCell::new(shell)));
-    let stats = outline_mission_of(&chain, FlightMark::Landed, Some("2s"));
-    let mut header = outline_header(1, "run the checks", stats);
-    assert_golden!("outline_chain_hits_80", render_golden(&mut header, 80));
-}
-
-#[test]
-fn outline_chain_hits_40() {
-    // Narrow: the subject is cut first, `HIT` stays whole.
-    let _g = lock();
-    let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
-    let mut shell = tool("Shell", shell_args(), ToolOutputView::Outline);
-    shell.update_result(
-        result(
-            "boom\nCommand exited with code 3",
-            true,
-            json!({ "durationMs": 100.0 }),
-        ),
-        false,
-    );
-    chain.add(Rc::new(RefCell::new(shell)));
-    let stats = outline_mission_of(&chain, FlightMark::Landed, Some("2s"));
-    let mut header = outline_header(1, "run the checks", stats);
-    assert_golden!("outline_chain_hits_40", render_golden(&mut header, 40));
-}
-
-#[test]
-fn outline_chain_live_80() {
-    // A flying mission's live step, indented 8: the progress bar sits inline
-    // after the subject. The estimate comes off the call's `timeout`; the
-    // elapsed share is zero at render, so the bar is empty.
-    let _g = lock();
-    let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
-    chain.add(Rc::new(RefCell::new(tool(
-        "Shell",
-        json!({ "command": "sleep 6; echo done", "timeout": 6 }),
-        ToolOutputView::Outline,
-    ))));
-    let stats = outline_mission_of(&chain, FlightMark::InFlight, None);
-    let mut header = outline_header(1, "run the checks", stats);
-    assert_golden!("outline_chain_live_80", render_golden(&mut header, 80));
-}
+// ---- Assistant message outside a mission ----
 
 #[test]
 fn outline_hides_thinking_outside_a_mission() {
@@ -851,55 +640,9 @@ fn outline_hides_thinking_outside_a_mission() {
     );
     assert!(drawn.contains("here is the answer"), "{drawn}");
 }
-
-// ---- The turn's end and progress (outline chain row, landing outcomes) ----
-
-#[test]
-fn outline_mission_chain_live_80() {
-    // A flying mission: the prompt wraps whole, the progress row names the
-    // calls in order (`Tool ×N`, `Tool✗`), the last one still running.
-    let _g = lock();
-    let stats = flight_stats(FlightMark::InFlight, 4, 1, None, Some("$0.004"));
-    stats.borrow_mut().items = vec![FlightItem::Batch(vec![
-        batch_call("Read", json!({"path": "src/wrap.rs"}), Some(false)),
-        batch_call("Read", json!({"path": "src/lib.rs"}), Some(false)),
-        batch_call("Edit", json!({"path": "src/wrap.rs"}), Some(false)),
-        batch_call("Shell", json!({"command": "cargo test"}), Some(true)),
-        batch_call("Shell", json!({"command": "cargo test"}), None),
-    ])];
-    let mut header = outline_header(
-        1,
-        "fix the overflow bug in the wrap helper so long mission prompts never get cut, then run the suite",
-        stats,
-    );
-    assert_golden!(
-        "outline_mission_chain_live_80",
-        render_golden(&mut header, 80)
-    );
-}
-
-#[test]
-fn outline_mission_chain_landed_80() {
-    // Landed: the progress row reads what the turn amounted to.
-    let _g = lock();
-    let stats = flight_stats(FlightMark::Landed, 5, 0, Some("4.2s"), Some("$0.012"));
-    stats.borrow_mut().items = vec![FlightItem::Batch(vec![
-        batch_call("Edit", json!({"path": "src/a.rs"}), Some(false)),
-        batch_call("Edit", json!({"path": "src/b.rs"}), Some(false)),
-        batch_call("Write", json!({"path": "src/c.rs"}), Some(false)),
-        batch_call("Shell", json!({"command": "cargo fmt"}), Some(false)),
-        batch_call("Shell", json!({"command": "cargo test"}), Some(false)),
-    ])];
-    let mut header = outline_header(2, "split the wrap helper", stats);
-    assert_golden!(
-        "outline_mission_chain_landed_80",
-        render_golden(&mut header, 80)
-    );
-}
-
 #[test]
 fn turn_end_failed_80() {
-    // Peek and full: a failed turn's end line; tokens and cost are the
+    // Single view: a failed turn's end line; tokens and cost are the
     // status line's.
     let _g = lock();
     let stats = Rc::new(RefCell::new(FlightStats {

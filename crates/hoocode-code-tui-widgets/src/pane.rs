@@ -4,11 +4,13 @@
 //! In colour a pane is borderless: its own background is the edge. Top to
 //! bottom it has a title row (a ` Title ` chip, then the dim `/command` and
 //! facts), the rows (a 3-column gutter, ` › ` marks the selected row on the
-//! selection background), an optional input row (input background, ` › `,
-//! a dim placeholder) and the hint row last. With a detail column and at
-//! least [`SPLIT_MIN_WIDTH`] columns the body splits into list | detail: the
-//! detail column one stronger shade, after a blank 1-column gutter. Narrower,
-//! the detail stacks under the list (or hides, see [`NarrowDetail`]).
+//! selection background), an optional input row (input background, a `▏`
+//! caret and a dim placeholder) and the hint row last. Only the selected
+//! row carries ` › `. With a detail column and at least [`SPLIT_MIN_WIDTH`]
+//! columns the body splits into list | detail: the detail column one
+//! stronger shade, after a blank 1-column gutter. Narrower, the detail
+//! stacks under the list (at most [`STACKED_DETAIL_ROWS`] rows, then `…`;
+//! or hides, see [`NarrowDetail`]).
 //!
 //! In monochrome (colour off: NO_COLOR, `TERM=dumb`, no tty) the pane
 //! gets light `┌─┐│└┘` borders with the title in the top border, the split
@@ -17,6 +19,8 @@
 //!
 //! Every painted background also sets its foreground ([`PaneStyle`]). The
 //! pane only draws: callers keep keys, filtering and events.
+
+use std::collections::BTreeMap;
 
 use hoocode_code_tui_keybindings::key_hint_text;
 use hoocode_tui_ratatui::core::style::Color;
@@ -53,6 +57,9 @@ pub enum Chip {
     Plain,
 }
 
+/// How many stacked detail rows draw under a narrow list before `…`.
+pub const STACKED_DETAIL_ROWS: usize = 3;
+
 /// What a split pane does with its detail column below [`SPLIT_MIN_WIDTH`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NarrowDetail {
@@ -61,6 +68,16 @@ pub enum NarrowDetail {
     Stacked,
     /// The list alone.
     Hidden,
+}
+
+/// At most [`STACKED_DETAIL_ROWS`] detail rows under a narrow list, then a
+/// dim `…` row when more are hidden (spec §3).
+fn detail_stack(detail: &[Line<'static>], st: &PaneStyle) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = detail.iter().take(STACKED_DETAIL_ROWS).cloned().collect();
+    if detail.len() > STACKED_DETAIL_ROWS {
+        out.push(Line::styled("…", st.dim_style()));
+    }
+    out
 }
 
 /// The pane colours. Colour panes paint every cell with a background and a
@@ -269,6 +286,11 @@ pub struct Pane {
     pub top: Vec<Line<'static>>,
     /// The list rows (3-column gutter).
     pub rows: Vec<Line<'static>>,
+    /// Continuation rows under list items, keyed by the item's index in
+    /// [`Pane::rows`]: a wrapped description draws directly under its
+    /// item, in the item's band when selected (spec §4 S3/S4). Only short
+    /// lists that never window (`max_visible` unset) should use flows.
+    pub flow: BTreeMap<usize, Vec<Line<'static>>>,
     /// The selected row's index into [`Pane::rows`].
     pub selected: Option<usize>,
     /// At most this many list rows draw, centred on the selection.
@@ -297,6 +319,9 @@ enum Row {
     Padded(Line<'static>),
     /// A list row with the gutter; `true` when selected.
     Item(Line<'static>, bool),
+    /// A continuation row under an item (a wrapped description): the
+    /// item's band when `true`.
+    Flow(Line<'static>, bool),
     /// Blank list cells beside a taller detail.
     Blank,
     /// A stacked detail row, full width.
@@ -430,12 +455,20 @@ impl Pane {
         }
         let (items, selected) = window_rows(&self.rows, self.selected, self.max_visible);
         let mut list: Vec<Row> = self.top.iter().cloned().map(Row::Padded).collect();
-        list.extend(
-            items
-                .into_iter()
-                .enumerate()
-                .map(|(i, line)| Row::Item(line, Some(i) == selected)),
-        );
+        for (i, line) in items.into_iter().enumerate() {
+            let is_selected = Some(i) == selected;
+            list.push(Row::Item(line, is_selected));
+            // Continuation rows draw directly under their item, in the
+            // item's band when selected (spec §4 S3/S4).
+            if let Some(extra) = self.flow.get(&i) {
+                list.extend(
+                    extra
+                        .iter()
+                        .cloned()
+                        .map(|line| Row::Flow(line, is_selected)),
+                );
+            }
+        }
         list.extend(self.bottom.iter().cloned().map(Row::Padded));
         let body_start = rows.len();
         let mut body_len = list.len();
@@ -448,7 +481,11 @@ impl Pane {
             if st.mono {
                 rows.push(Row::Blank);
             }
-            rows.extend(self.detail.iter().cloned().map(Row::Stacked));
+            rows.extend(
+                detail_stack(&self.detail, &st)
+                    .into_iter()
+                    .map(Row::Stacked),
+            );
         }
         if let Some(input) = &self.input {
             rows.push(Row::Input(input.clone()));
@@ -466,7 +503,9 @@ impl Pane {
                         Row::Padded(line) | Row::Stacked(line) => format!(" {}", flatten(line)),
                         Row::Item(line, true) => format!("{PANE_CURSOR}{}", flatten(line)),
                         Row::Item(line, false) => format!("   {}", flatten(line)),
-                        Row::Input(line) => format!("{PANE_CURSOR}{}", flatten(line)),
+                        Row::Flow(line, true) => format!(" {}", flatten(&emboldened(line))),
+                        Row::Flow(line, false) => format!(" {}", flatten(line)),
+                        Row::Input(line) => format!(" {}", flatten(line)),
                         Row::Blank => String::new(),
                         Row::Hint => format!(" {}", flatten(&self.hint)),
                     };
@@ -496,6 +535,12 @@ impl Pane {
                     put(&mut buf, x0 + 1, y, inner.saturating_sub(2), &line);
                 }
                 Row::Padded(line) => {
+                    put(&mut buf, x0 + 1, y, col_w.saturating_sub(2), line);
+                }
+                Row::Flow(line, is_selected) => {
+                    if *is_selected {
+                        fill(&mut buf, x0, y, col_w, st.fill(st.pane_sel));
+                    }
                     put(&mut buf, x0 + 1, y, col_w.saturating_sub(2), line);
                 }
                 Row::Item(line, is_selected) => {
@@ -535,22 +580,11 @@ impl Pane {
                     fill(&mut buf, x0, y, inner, st.fill(st.pane_detail));
                     put(&mut buf, x0 + 1, y, inner.saturating_sub(2), line);
                 }
+                // Only the selected row carries ` › ` (spec §3): the
+                // input row sits one cell in with its `▏` caret.
                 Row::Input(line) => {
                     fill(&mut buf, x0, y, inner, st.fill(st.pane_input));
-                    put(
-                        &mut buf,
-                        x0,
-                        y,
-                        inner.min(GUTTER),
-                        &Line::styled(PANE_CURSOR, st.accent_style()),
-                    );
-                    put(
-                        &mut buf,
-                        x0 + GUTTER,
-                        y,
-                        inner.saturating_sub(GUTTER + 1),
-                        line,
-                    );
+                    put(&mut buf, x0 + 1, y, inner.saturating_sub(2), line);
                 }
                 Row::Hint => {
                     put(&mut buf, x0 + 1, y, inner.saturating_sub(2), &self.hint);
@@ -673,10 +707,79 @@ pub fn window_rows(
     (window, sel.map(|s| s.saturating_sub(start)))
 }
 
+/// Wraps `text` at word boundaries to lines of at most `width` cells
+/// (spec §4: a narrow pane wraps rows instead of cutting them). A word
+/// wider than `width` stays whole on its own row; the pane cuts it with
+/// `…`. Callers add the row indent and styling to each line.
+pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    let mut row_w = 0;
+    for word in text.split_whitespace() {
+        let w = visible_width(word);
+        if row.is_empty() {
+            row.push_str(word);
+            row_w = w;
+        } else if row_w + 1 + w <= width {
+            row.push(' ');
+            row.push_str(word);
+            row_w += 1 + w;
+        } else {
+            rows.push(std::mem::take(&mut row));
+            row.push_str(word);
+            row_w = w;
+        }
+    }
+    rows.push(row);
+    rows
+}
+
 /// One hint row from every `(key, action)`: keys in normal text, actions
 /// and the ` · ` separators dim.
 pub fn hint_line(hints: &[(&str, &str)]) -> Line<'static> {
     hint_spans(hints.iter().copied(), &PaneStyle::current())
+}
+
+/// The hint row fitted to `width` columns: at most [`MAX_HINTS`] items,
+/// then the help key and `more` when there are more (or `more` says the
+/// pane has more keys). The move item drops first when the row does not
+/// fit, then middle items; the first item and the confirm, cancel and help
+/// keys never drop; what is left truncates with `…` as a last resort
+/// (spec §3).
+pub fn fit_hint_line(hints: &[(&str, &str)], more: bool, width: usize) -> Line<'static> {
+    let st = PaneStyle::current();
+    let help = key_hint_text("app.list.help");
+    let confirm = key_hint_text("tui.select.confirm");
+    let cancel = key_hint_text("tui.select.cancel");
+    let mut items: Vec<(&str, &str)> = hints.iter().take(MAX_HINTS).copied().collect();
+    if more || hints.len() > MAX_HINTS {
+        items.push((help.as_str(), "more"));
+    }
+    let budget = width.saturating_sub(2);
+    let mut line = hint_spans(items.iter().copied(), &st);
+    while line.width() > budget && items.len() > 1 {
+        let drop = items
+            .iter()
+            .position(|(_, action)| *action == "move")
+            .or_else(|| {
+                items.iter().enumerate().position(|(i, (key, _))| {
+                    i > 0
+                        && *key != confirm.as_str()
+                        && *key != cancel.as_str()
+                        && *key != help.as_str()
+                })
+            });
+        let Some(at) = drop else {
+            break;
+        };
+        items.remove(at);
+        line = hint_spans(items.iter().copied(), &st);
+    }
+    if line.width() > budget {
+        line = truncate_line(&line, budget);
+    }
+    line
 }
 
 /// The hint row the spec asks for: at most [`MAX_HINTS`] items, then
@@ -713,22 +816,22 @@ fn hint_spans<'a>(
     Line::from(spans)
 }
 
-/// The input row's content: the typed `text` (normal), or the dim
-/// `placeholder` while empty; a `▏` caret while the pane has focus.
+/// The input row's content: the typed `text` (normal) with a trailing `▏`
+/// caret, or the `▏` marker and the dim `placeholder` when empty. The
+/// marker is normal text (the mock draws it unstyled); only the row's
+/// ` › ` marker, where one shows, is accent.
 pub fn input_line(text: &str, placeholder: &str, caret: bool) -> Line<'static> {
     let st = PaneStyle::current();
     let mut spans = Vec::new();
     if text.is_empty() {
-        if caret {
-            spans.push(Span::styled("▏", st.accent_style()));
-        }
+        spans.push(Span::styled("▏", st.text_style()));
         if !placeholder.is_empty() {
-            spans.push(Span::styled(placeholder.to_string(), st.dim_style()));
+            spans.push(Span::styled(format!(" {placeholder}"), st.dim_style()));
         }
     } else {
         spans.push(Span::styled(text.to_string(), st.text_style()));
         if caret {
-            spans.push(Span::styled("▏", st.accent_style()));
+            spans.push(Span::styled("▏", st.text_style()));
         }
     }
     Line::from(spans)

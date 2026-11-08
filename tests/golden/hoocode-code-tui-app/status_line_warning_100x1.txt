@@ -1,4 +1,4 @@
- context is almost full                peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23
+ context is almost full                       amber-harbor · claude-haiku-5-5 · 42% context · $1.23
 --- styles ---
 r0 c1-22 fg=#f0c674
-r0 c39-98 fg=#989898
+r0 c46-98 fg=#989898

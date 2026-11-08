@@ -187,57 +187,11 @@ fn outline_shows_the_abort_and_error_reason_after_the_text() {
 }
 
 #[test]
-fn an_outline_turn_lists_its_calls_under_the_whole_prompt() {
-    use hoocode_code_tui_widgets::outline::FlightItem;
-    use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-    use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Outline;
-    use hoocode_code_tui_widgets::tool_signal::ToolResult;
-    use serde_json::json;
+fn the_header_band_lists_the_whole_prompt() {
     let _g = lock();
-    let cwd = std::env::current_dir()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
-    let block = |tool: &str, args: serde_json::Value, finished: bool| {
-        let mut component = ToolExecutionComponent::new(
-            tool,
-            &format!("{tool}-{args}"),
-            args,
-            ToolExecutionOptions {
-                view: Outline,
-                ..Default::default()
-            },
-            None,
-            &cwd,
-        );
-        if finished {
-            component.update_result(
-                ToolResult {
-                    content: vec![Content::text("ok")],
-                    details: json!({}),
-                    is_error: false,
-                },
-                false,
-            );
-        }
-        Rc::new(RefCell::new(component))
-    };
-    let shell = block("Shell", json!({"command": "cargo test"}), false);
-    let stats = Rc::new(RefCell::new(FlightStats {
-        mark: FlightMark::InFlight,
-        steps: 3,
-        items: vec![FlightItem::Batch(vec![
-            block("Read", json!({"file_path": "a.rs"}), true),
-            block("Edit", json!({"file_path": "a.rs"}), true),
-            shell.clone(),
-        ])],
-        ..Default::default()
-    }));
     let prompt =
         "fix the overflow in the wrap helper and make sure that the whole suite still passes";
-    let mut header = MissionHeader::new(1, prompt);
-    header.set_view(Outline);
-    header.set_flight(stats.clone());
+    let mut header = MissionHeader::new(prompt);
     let rows: Vec<String> = header
         .render(50)
         .iter()
@@ -255,31 +209,6 @@ fn an_outline_turn_lists_its_calls_under_the_whole_prompt() {
     for word in prompt.split_whitespace() {
         assert!(flat.contains(word), "{word}: {rows:#?}");
     }
-    // A running turn: its calls in one recap row, and no end line.
-    assert_eq!(
-        rows.last().unwrap(),
-        " ● Read a.rs · Edit a.rs · Shell cargo test",
-        "{rows:#?}"
-    );
-
-    // The shell finishes and the turn ends: the same row, still no end line.
-    shell.borrow_mut().update_result(
-        ToolResult {
-            content: vec![Content::text("ok")],
-            details: json!({}),
-            is_error: false,
-        },
-        false,
-    );
-    {
-        let mut flight = stats.borrow_mut();
-        flight.mark = FlightMark::Landed;
-        flight.landed_time = Some("2s".to_string());
-    }
-    let after: Vec<String> = header
-        .render(50)
-        .iter()
-        .map(|row| strip(row).trim_end().to_string())
-        .collect();
-    assert_eq!(after, rows, "{after:#?}");
+    // The prompt band is the whole header: no mission number.
+    assert!(!flat.contains("M1"), "{rows:#?}");
 }

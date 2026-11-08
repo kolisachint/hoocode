@@ -664,7 +664,6 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
-                component.borrow_mut().set_view(self.tool_output_view);
                 component
                     .borrow_mut()
                     .set_outline_mission(self.transcript.current_mission());

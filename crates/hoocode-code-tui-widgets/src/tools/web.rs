@@ -8,9 +8,9 @@ use serde_json::Value;
 
 use super::search::js_number;
 use super::text;
+use crate::fold::peek_block;
 use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::peek_block;
 
 /// The first lines of the output, peek-trimmed, as both web tools print it.
 fn peek_output(result: &ToolResultView<'_>, show_images: bool, expanded: bool) -> String {

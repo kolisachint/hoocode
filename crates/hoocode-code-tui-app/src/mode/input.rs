@@ -39,7 +39,6 @@ pub(super) enum Action {
     Clear,
     Exit,
     Suspend,
-    ToolsExpand,
     ThinkingForward,
     ThinkingBackward,
     ThinkingToggle,
@@ -52,8 +51,6 @@ pub(super) enum Action {
     ModelBackward,
     ModelSelect,
     SettingsOpen,
-    ViewForward,
-    ViewBackward,
     /// The editor submitted this text (it has already cleared itself).
     Submit(String),
     AutocompleteVisibility(bool),
@@ -105,10 +102,13 @@ pub(super) enum Action {
     PanelUp(String),
     /// `app.subagent.attach`: attach to the newest Agent block's run.
     SubagentAttach,
+    /// `app.scroll.focusNewest` (Ctrl+X u): focus the newest tool block and
+    /// pin the view.
+    FocusNewest,
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 28] = [
+const EDITOR_ACTIONS: [(&str, Action); 26] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
     ("app.panel.focus", Action::PanelToggle),
@@ -123,11 +123,9 @@ const EDITOR_ACTIONS: [(&str, Action); 28] = [
     ("app.session.fork", Action::ForkOpen),
     ("app.hotkeys.open", Action::HotkeysOpen),
     ("app.clipboard.copyMessage", Action::CopyMessage),
-    ("app.view.cycleForward", Action::ViewForward),
-    ("app.view.cycleBackward", Action::ViewBackward),
+    ("app.scroll.focusNewest", Action::FocusNewest),
     ("app.clear", Action::Clear),
     ("app.suspend", Action::Suspend),
-    ("app.tools.expand", Action::ToolsExpand),
     ("app.thinking.cycleForward", Action::ThinkingForward),
     ("app.model.cycleForward", Action::ModelForward),
     ("app.model.cycleBackward", Action::ModelBackward),
@@ -965,10 +963,6 @@ impl Mode {
             }
             Action::Exit => self.request_user_quit(),
             Action::Suspend => self.handle_ctrl_z(),
-            Action::ToolsExpand => self.toggle_tool_output_view(),
-            Action::ViewForward | Action::ViewBackward => {
-                self.cycle_tool_output_view(action == Action::ViewForward)
-            }
             Action::ThinkingForward | Action::ThinkingBackward => {
                 let direction = if action == Action::ThinkingForward {
                     hoocode_code_agent_session::CycleDirection::Forward
@@ -1028,6 +1022,7 @@ impl Mode {
             }
             Action::PanelToggle => self.toggle_task_panel(),
             Action::PanelUp(data) => self.enter_task_panel_from_prompt(&data),
+            Action::FocusNewest => self.focus_newest_and_pin(),
             Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
             Action::ClearanceDone(choice) => self.close_clearance(choice),

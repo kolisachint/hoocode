@@ -24,17 +24,16 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use hoocode_code_paths::canonicalize_path;
-use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
+use hoocode_code_session::identity::session_slug_for;
 use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentState};
 use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, key_text};
-use hoocode_code_tui_theme::{session_color_token, style_input};
+use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
-use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_home::shorten_path;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key, KeybindingsManager};
-use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::js_trim;
 use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
@@ -190,10 +189,11 @@ impl SessionSelectorHeader {
         ]
     }
 
-    /// The hint row: the delete prompt, the interrupted-run choice or the
-    /// timed status while one is up (the row spans the pane, so long
-    /// prompts are not cut by a split), else four keys and `f1 more`.
-    fn hint_line(&self) -> Line<'static> {
+    /// The hint row's prompt states: the delete prompt, the interrupted-run
+    /// choice or the timed status while one is up (the row spans the pane,
+    /// so long prompts are not cut by a split). None in the normal state:
+    /// the caller draws four keys and `f1 more` from [`all_hints`].
+    fn hint_prompt(&self) -> Option<Line<'static>> {
         let pal = Palette::current();
         if self.confirming_delete {
             let mut spans = vec![Span::styled("Delete session? ".to_string(), pal.err())];
@@ -204,7 +204,7 @@ impl SessionSelectorHeader {
                 ])
                 .spans,
             );
-            return Line::from(spans);
+            return Some(Line::from(spans));
         }
         if self.choosing_subagent {
             let text = if self.can_resume {
@@ -218,7 +218,7 @@ impl SessionSelectorHeader {
                     key_hint_text("tui.select.cancel")
                 )
             };
-            return Line::from(vec![Span::styled(text.to_string(), pal.acc())]);
+            return Some(Line::from(vec![Span::styled(text.to_string(), pal.acc())]));
         }
         if let Some((kind, message)) = &self.status {
             let style = if *kind == StatusKind::Error {
@@ -226,10 +226,9 @@ impl SessionSelectorHeader {
             } else {
                 pal.acc()
             };
-            return Line::from(vec![Span::styled(message.clone(), style)]);
+            return Some(Line::from(vec![Span::styled(message.clone(), style)]));
         }
-        let hints = Self::all_hints();
-        capped_hint_line(&as_pairs(&hints), true)
+        None
     }
 
     /// The full key list rows (after `f1`); none while it is closed.
@@ -804,13 +803,14 @@ impl SessionList {
     }
 
     /// One session row (content only; the pane adds the ` › ` marker or
-    /// gutter and the selection band): the colour swatch, the tree prefix,
-    /// the branch, the name, and the facts right-aligned (search hits, then
-    /// the age). The rest of a session shows in the detail column.
+    /// gutter and the selection band): the tree prefix, the branch, the
+    /// name, and the facts right-aligned (search hits, then the age).
+    /// Never bold: only the selected row carries ` › ` (mock §S8). The
+    /// rest of a session shows in the detail column.
     fn console_row(
         &self,
         i: usize,
-        selected: bool,
+        _selected: bool,
         inner: usize,
         now: DateTime<Utc>,
     ) -> Line<'static> {
@@ -834,22 +834,13 @@ impl SessionList {
             })
             .collect();
         let normalized = js_trim(&normalized);
-        // A swatch in the session's own colour, as its chip resolves it.
-        let slot = session
-            .color
-            .map(i64::from)
-            .unwrap_or_else(|| i64::from(session_color_slot_for(&session.id)));
         let branch = match &session.branch {
             Some(b) if !has_name && !b.is_empty() && !DEFAULT_BRANCHES.contains(&b.as_str()) => {
                 b.as_str()
             }
             _ => "",
         };
-        let mut spans = vec![
-            Span::styled(" ".to_string(), pal.fill(session_color_token(slot))),
-            Span::raw(" ".to_string()),
-            Span::styled(prefix.clone(), pal.dim()),
-        ];
+        let mut spans = vec![Span::styled(prefix.clone(), pal.dim())];
         if !branch.is_empty() {
             spans.push(Span::styled(format!("{GIT_BRANCH_GLYPH} "), pal.dim()));
             spans.push(Span::styled(branch.to_string(), pal.dim()));
@@ -896,8 +887,7 @@ impl SessionList {
             .map(|(text, _)| visible_width(text) as i64)
             .sum::<i64>()
             + 2 * right.len().saturating_sub(1) as i64;
-        // The row's cells, less the swatch and its space.
-        let room = inner as i64 - 4;
+        let room = inner as i64 - 2;
         let available = room - prefix_width - branch_width - right_width - 2;
         let truncated = strip_vt_control_characters(&truncate_to_width(
             normalized,
@@ -906,16 +896,13 @@ impl SessionList {
             false,
         ));
         let name_width = visible_width(&truncated) as i64;
-        let mut name_span = if is_confirming_delete {
+        let name_span = if is_confirming_delete {
             Span::styled(truncated, pal.err())
         } else if is_current {
             Span::styled(truncated, pal.acc())
         } else {
             Span::raw(truncated)
         };
-        if selected {
-            name_span.style = bold(name_span.style);
-        }
         spans.push(name_span);
         let spacing = (room - prefix_width - branch_width - name_width - right_width).max(1);
         spans.push(Span::raw(" ".repeat(spacing as usize)));
@@ -1694,7 +1681,13 @@ impl Component for SessionSelectorComponent {
         console.selected = selected;
         bottom.extend(header.help_lines());
         console.bottom = bottom;
-        console.hint = header.hint_line();
+        if let Some(prompt) = header.hint_prompt() {
+            console.hint = prompt;
+        } else {
+            let hints = SessionSelectorHeader::all_hints();
+            let refs: Vec<(&str, &str)> = hints.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+            console.set_hints(&refs, true);
+        }
         console.render(width)
     }
 

@@ -13,7 +13,6 @@ use hoocode_code_settings::{ModelCategoryName, ScopedModel};
 use hoocode_code_tui_keybindings::{key_hint_text, key_text};
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, query_row, Console};
-use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::{get_keybindings, matches_key};
@@ -287,8 +286,10 @@ impl State {
                 let mut spans = vec![
                     Span::raw(format!("{:<id_width$}", item.model.id)),
                     Span::raw("  "),
+                    // `on` is ink and `off` dim: green means done, so it
+                    // no longer stands in for a switch (mock §S7).
                     if on {
-                        Span::styled("on ".to_string(), pal.ok())
+                        Span::styled("on ".to_string(), pal.ink())
                     } else {
                         Span::styled("off".to_string(), pal.dim())
                     },
@@ -514,7 +515,7 @@ impl Component for ScopedModelsSelectorComponent {
         if self.help {
             console.bottom.extend(help_rows(&pairs));
         }
-        console.hint = capped_hint_line(&pairs, true);
+        console.set_hints(&pairs, true);
         console.render(width as usize)
     }
 

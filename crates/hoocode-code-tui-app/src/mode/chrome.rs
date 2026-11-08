@@ -82,7 +82,6 @@ impl Mode {
                 self.last_turn.clone()
             },
             signed_out,
-            view: self.tool_output_view.as_str().to_string(),
             plan_mode: self.footer_data.get_active_mode() == "plan",
             session: Some(session.display_name()).filter(|name| !name.is_empty()),
             model: model.map(|m| m.id.clone()),

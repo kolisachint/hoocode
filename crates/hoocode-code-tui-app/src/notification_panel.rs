@@ -13,7 +13,7 @@
 //! slot ([`NotificationPanel::status_notice`]) and the band stays empty. A
 //! longer one is drawn here, above the prompt, as plain rows: one blank row,
 //! then rows indented by one column with no fill (a warning's first row
-//! yellow, bold when body rows follow; the rest dim).
+//! ink bold; the rest dim).
 //!
 //! A notice that needs an action ([`NotificationPanel::notify_action`])
 //! never times out; [`NotificationPanel::dismiss`] removes it once the action
@@ -339,14 +339,16 @@ impl Component for NotificationPanel {
         }
         let inner = (width - 1).max(1);
         let warning = current.kind == NotificationKind::Warning;
-        let has_body = !current.body.is_empty();
-        let title_color = if warning { "warning" } else { "dim" };
         let styled_title = |row: &str| {
-            let text = ink(title_color, row);
-            if warning && has_body && !row.contains("\x1b[") {
-                theme().bold(&text)
+            if warning {
+                let text = ink("ink", row);
+                if !row.contains("\x1b[") {
+                    theme().bold(&text)
+                } else {
+                    text
+                }
             } else {
-                text
+                ink("dim", row)
             }
         };
         // The title wraps at spaces (at most 3 rows, the last ends in `…`);

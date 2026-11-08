@@ -1,20 +1,18 @@
 //! The `<skill …>` block a `/skill:name` message carries, as the transcript
-//! draws it. Outline shows one row, `◆ skill: <name>`. Peek (the default)
-//! adds the first lines of the skill's body, then how many are left. Full
-//! shows the whole body.
+//! draws it. Collapsed, one row: `skill <name>` with the name in bold (no
+//! mark: a skill block has no state). Expanded, the body follows, whole.
+//! One toggle (`expanded`); the transcript flips it in place.
 
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Text;
 use hoocode_tui_render::Component;
 
-use crate::fold::more_lines_hint;
-use crate::tool_output_view::line_budget;
+use crate::fold::{line_budget, more_lines_hint};
 
 pub struct SkillBlockComponent {
     name: String,
     body: String,
     expanded: bool,
-    full: bool,
     text: Text,
 }
 
@@ -25,38 +23,35 @@ impl SkillBlockComponent {
             name: name.to_string(),
             body: body.to_string(),
             expanded: true,
-            full: false,
             text: Text::new("", 0, 0),
         };
         this.rebuild();
         this
     }
 
-    /// `true` at peek (the body shows), `false` at outline (the row only).
+    /// The block's own toggle; collapsed is the `skill <name>` row,
+    /// expanded the whole body.
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
         self.rebuild();
     }
 
-    /// `true` at the full stop: the whole body shows, nothing folded.
-    pub fn set_full(&mut self, full: bool) {
-        self.full = full;
-        self.rebuild();
+    /// Whether the block's own toggle is open.
+    pub fn is_expanded(&self) -> bool {
+        self.expanded
     }
 
     fn rebuild(&mut self) {
         let t = theme();
-        let row = t.fg(
-            "customMessageText",
-            &t.bold(&format!("◆ skill: {}", self.name)),
-        );
+        let row = format!("skill {}", t.fg("customMessageText", &t.bold(&self.name)));
+        // Expanded, the whole body: the toggle opens the block.
         let content = if self.expanded {
             let body = self.body.trim();
             if body.is_empty() {
                 row
             } else {
                 let lines: Vec<&str> = body.split('\n').collect();
-                let budget = line_budget(self.full);
+                let budget = line_budget(self.expanded);
                 let shown = lines
                     .iter()
                     .take(budget)

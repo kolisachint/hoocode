@@ -80,7 +80,6 @@ impl Mode {
                 // Resolved fresh on every open, never downloaded.
                 // Extension flags arrive with the extension runner (12.3).
                 flags: Vec::new(),
-                tool_output_view: self.tool_output_view,
                 tool_output_max_bytes: settings.tool_output_max_bytes(),
                 tool_output_max_lines: settings.tool_output_max_lines(),
                 context_gc: settings.context_gc_enabled(),
@@ -222,7 +221,6 @@ impl Mode {
                     _ => {}
                 }
             }
-            SettingsChange::ToolOutputView(view) => self.apply_tool_output_view(view, true),
             SettingsChange::ToolOutputMaxBytes(bytes) => self
                 .session
                 .settings()
