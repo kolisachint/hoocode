@@ -15,21 +15,32 @@ use crate::support::{lock, strip};
 
 /// `create_default_background_result_message`'s header, with the verb it
 /// writes for an `Ok` result. A failed dispatch still returns `Ok`, so its
-/// header says `finished:` too; the verdict is only in the body.
-const HEADER: &str = "Background tool \"Agent\" (id toolu_01Hx7) finished:";
+/// header says `finished:` too; the verdict is only in the body. The header
+/// names the run's resume label and the raw call id.
+fn header(label: &str) -> String {
+    format!("Background agent {label} (toolu_01Hx7) finished:")
+}
+
+/// The header old session files carry: the tool and the call id, no label.
+/// It still parses (back-compat).
+const OLD_HEADER: &str = "Background tool \"Agent\" (id toolu_01Hx7) finished:";
 
 /// A done notice: the Agent tool's body with the summary, the outstanding
 /// count (empty when none are running), and its "Read the full result" line.
 fn done_text(summary: &str, tail: &str) -> String {
     format!(
-        "{HEADER}explore#4 finished ✓ — {summary}.{tail}\n\
-         Read the full result with AgentOutput(\"explore#4\")."
+        "{}explore#4 finished ✓ — {summary}.{tail}\n\
+         Read the full result with AgentOutput(\"explore#4\").",
+        header("explore#4")
     )
 }
 
 /// A failed dispatch's body: a single line, no "Read the full result".
 fn failed_text() -> String {
-    format!("{HEADER}explore#1 failed ✗ — provider timed out after 95s")
+    format!(
+        "{}explore#1 failed ✗ — provider timed out after 95s",
+        header("explore#1")
+    )
 }
 
 const SUMMARY: &str = "Mapped the module and its three callers";
@@ -83,7 +94,7 @@ fn outline_is_one_line_with_the_counts() {
     let lines = render(&done_text(SUMMARY, " 4 still running."), false);
     assert_eq!(
         lines,
-        vec!["◦ explore#4 finished ✓ · 1m27s · 4 still running"]
+        vec!["● explore#4 finished ✓ · 1m27s · 4 still running"]
     );
     assert!(!lines.join("").contains('▏'));
     assert!(!lines.join("").contains("Read the full result"));
@@ -92,7 +103,7 @@ fn outline_is_one_line_with_the_counts() {
 #[test]
 fn outline_omits_the_running_count_when_absent() {
     let lines = render(&done_text(SUMMARY, ""), false);
-    assert_eq!(lines, vec!["◦ explore#4 finished ✓ · 1m27s"]);
+    assert_eq!(lines, vec!["● explore#4 finished ✓ · 1m27s"]);
 }
 
 #[test]
@@ -101,7 +112,7 @@ fn peek_adds_a_summary_line_with_the_gutter() {
     assert_eq!(
         lines,
         vec![
-            "◦ explore#4 finished ✓ · 1m27s · 4 still running",
+            "● explore#4 finished ✓ · 1m27s · 4 still running",
             "  │ Mapped the module and its three callers",
         ]
     );
@@ -117,7 +128,7 @@ fn peek_adds_the_model_line_when_the_text_has_one() {
     assert_eq!(
         lines,
         vec![
-            "◦ explore#4 finished ✓ · 1m27s · 4 still running",
+            "● explore#4 finished ✓ · 1m27s · 4 still running",
             "  │ Mapped the module and its three callers",
             "  model haiku-5-5 · effort high",
         ]
@@ -133,7 +144,7 @@ fn a_failed_notice_renders_its_reason_at_peek() {
     assert_eq!(
         lines,
         vec![
-            "◦ explore#1 ✗ failed · 1m27s",
+            "⊗ explore#1 failed · 1m27s",
             "  │ provider timed out after 95s",
         ]
     );
@@ -152,7 +163,7 @@ fn text_that_is_not_a_notice_falls_back() {
     );
     // A header with a body that carries no `type#n` label.
     assert_eq!(
-        parse_background_notice(&format!("{HEADER}Mapped the module.")),
+        parse_background_notice(&format!("{}Mapped the module.", header("explore#4"))),
         None
     );
     // A notice line without the header it always comes after.
@@ -167,8 +178,9 @@ fn text_that_is_not_a_notice_falls_back() {
 #[test]
 fn parses_a_notice_that_names_its_description() {
     let text = format!(
-        "{HEADER}explore#2 (\"audit the db layer\") finished ✓ — {SUMMARY}.\n\
-         Read the full result with AgentOutput(\"explore#2\")."
+        "{}explore#2 (\"audit the db layer\") finished ✓ — {SUMMARY}.\n\
+         Read the full result with AgentOutput(\"explore#2\").",
+        header("explore#2")
     );
     let notice = parse_background_notice(&text).expect("a notice with a description");
     assert_eq!(notice.label, "explore#2");
@@ -176,9 +188,37 @@ fn parses_a_notice_that_names_its_description() {
     assert_eq!(notice.verdict, NoticeVerdict::Finished);
     assert_eq!(notice.summary, SUMMARY);
     assert_eq!(notice.call_id.as_deref(), Some("toolu_01Hx7"));
-    let cancelled = format!("{HEADER}explore#3 (\"x\") cancelled ⊘ — cancelled before it started");
+    let cancelled = format!(
+        "{}explore#3 (\"x\") cancelled ⊘ — cancelled before it started",
+        header("explore#3")
+    );
     assert_eq!(
         parse_background_notice(&cancelled).map(|n| n.verdict),
         Some(NoticeVerdict::Cancelled)
     );
+}
+
+/// Old session files carry the tool-and-call-id header with no resume
+/// label. It still parses, with the same call id and body.
+#[test]
+fn parses_the_old_tool_and_call_id_header() {
+    let body = "explore#4 finished ✓ — Mapped the module.\n\
+         Read the full result with AgentOutput(\"explore#4\").";
+    let new_shape = parse_background_notice(&format!("{}{body}", header("explore#4")))
+        .expect("the new header parses");
+    let old_shape =
+        parse_background_notice(&format!("{OLD_HEADER}{body}")).expect("the old header parses");
+    assert_eq!(old_shape.call_id, new_shape.call_id);
+    assert_eq!(old_shape.call_id.as_deref(), Some("toolu_01Hx7"));
+    assert_eq!(old_shape.label, "explore#4");
+    assert_eq!(old_shape.verdict, NoticeVerdict::Finished);
+    assert_eq!(old_shape.summary, "Mapped the module");
+    let _guard = lock();
+    let mut component = BackgroundNoticeComponent::new(old_shape);
+    let lines: Vec<String> = component
+        .render(100)
+        .iter()
+        .map(|l| strip(l).trim_end().to_string())
+        .collect();
+    assert!(lines[0].starts_with("● explore#4 finished ✓"), "{lines:?}");
 }

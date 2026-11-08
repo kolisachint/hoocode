@@ -3,8 +3,8 @@
 //! The text the model receives is unchanged. Only its drawing changes:
 //!
 //! ```text
-//! ◦ explore#4 finished ✓ · 1m27s · 4 still running        outline
-//! ◦ explore#4 finished ✓ · 1m27s · 4 still running        peek
+//! ● explore#4 finished ✓ · 1m27s · 4 still running        outline
+//! ● explore#4 finished ✓ · 1m27s · 4 still running        peek
 //!   │ Mapped the module and its three callers
 //!   model haiku-5-5 · effort high
 //! ```
@@ -54,9 +54,13 @@ pub struct BackgroundNotice {
     pub effort: Option<String>,
 }
 
-/// `Background tool "Agent" (id …) finished:` and the body after it.
+/// The header and the body after it. New headers name the run's resume
+/// label (`Background agent explore#4 (id …) finished:`); old session files
+/// carry the tool-and-call-id form (`Background tool "Agent" (id …)
+/// finished:`), which still parses. Either way the call id and the body are
+/// captured.
 static HEADER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?s)^Background tool "[^"]+" \(id ([^)]*)\) (?:finished|failed):\s*(.*)$"#)
+    Regex::new(r#"(?s)^(?:Background tool "[^"]+" \(id ([^)]*)\)|Background agent \S+ \(([^)]*)\)) (?:finished|failed):\s*(.*)$"#)
         .expect("background header")
 });
 
@@ -90,9 +94,10 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
     let header = HEADER_RE.captures(text)?;
     let call_id = header
         .get(1)
+        .or_else(|| header.get(2))
         .map(|m| m.as_str().trim().to_string())
         .filter(|id| !id.is_empty());
-    let body = header.get(2)?.as_str();
+    let body = header.get(3)?.as_str();
 
     let (model, effort) = match MODEL_RE.captures(body) {
         Some(caps) => (
@@ -175,19 +180,22 @@ impl BackgroundNoticeComponent {
     fn head_line(&self) -> String {
         let t = theme();
         let notice = &self.notice;
-        let (word, tone) = match notice.verdict {
-            NoticeVerdict::Finished => ("finished ✓", "success"),
-            NoticeVerdict::Failed => ("✗ failed", "error"),
-            NoticeVerdict::Cancelled => ("⊘ cancelled", "dim"),
+        // One mark, then the words in dim: a green `●` for a finish (as the
+        // tool-row done mark), a red `⊗` for a failure, a dim `⊗` for a
+        // cancel. `(partial)` is dim too: yellow is blocking only.
+        let (mark, mark_tone, word) = match notice.verdict {
+            NoticeVerdict::Finished => ("●", "success", "finished ✓"),
+            NoticeVerdict::Failed => ("⊗", "error", "failed"),
+            NoticeVerdict::Cancelled => ("⊗", "dim", "cancelled"),
         };
         let mut line = format!(
             "{} {} {}",
-            t.fg(tone, "◦"),
+            t.fg(mark_tone, mark),
             t.fg(label_color(&notice.label, "accent"), &notice.label),
-            t.fg(tone, word),
+            t.fg("dim", word),
         );
         if notice.partial {
-            line.push_str(&t.fg("warning", " (partial)"));
+            line.push_str(&t.fg("dim", " (partial)"));
         }
         let mut parts: Vec<String> = Vec::new();
         if let Some(elapsed) = &self.elapsed {

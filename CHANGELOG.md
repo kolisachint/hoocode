@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent rows read type first.** A running subagent row is `◉ explore  Trace the auth flow  12s · muse · 3:12 left`: the type, then the title, then the facts. The live tool activity is gone, and the row carries the model's short scoped alias instead of the full `provider/id`.
 - **Facts sit after the title.** Token counts, schedule firings, notes and `cancelled` follow the title after two spaces instead of pinning right. Narrow rows drop the deadline first, then the model, then the clock, and cut the title at a word boundary last.
 
+### Changed: subagent-response nudge (2026-11-08)
+- **A finished background subagent names its run.** The follow-up header reads `Background agent explore#4 (toolu_01Hx7) finished:` instead of `Background tool "Agent" (id toolu_01Hx7) finished:`, so the notice matches the run's handle. Old session files still read.
+- **Notice heads use the glyph set.** A finish is a green `●`, a failure a red `⊗` with a dim reason, a cancel all dim; the `◦`, `✗` and `⊘` marks and the yellow `(partial)` are gone.
+- **The attached-run header takes `›`, and a skill block is its bold name only.** `› explore · Find the footer code · running · esc back`. The `◆` mark is gone.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 
