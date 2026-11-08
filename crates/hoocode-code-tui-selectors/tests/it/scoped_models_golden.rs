@@ -64,9 +64,9 @@ fn check(name: &str, width: u16) {
             })
             .collect();
         for row in [
-            vec!["›", "claude-haiku-5-5", "on"],
-            vec!["gpt-5-mini", "on"],
-            vec!["gpt-5", "off"],
+            vec!["›", "●", "claude-haiku-5-5", "on"],
+            vec!["●", "gpt-5-mini", "on"],
+            vec!["○", "gpt-5", "off"],
         ] {
             assert!(
                 rows.iter().any(|r| r.starts_with(&row)),

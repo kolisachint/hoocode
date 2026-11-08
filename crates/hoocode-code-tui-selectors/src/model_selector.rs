@@ -190,27 +190,31 @@ fn models_text(count: usize) -> String {
 }
 
 /// One model row (content only; the console adds the ` › ` marker or
-/// gutter and the selection band): the id padded to `id_width`, then the
-/// price, dim. The model in use says so, dim; a model whose login expired
-/// says that instead.
-fn model_row(
-    model: &Model,
-    id_width: usize,
-    expired: &HashSet<String>,
-    current: Option<&Model>,
-) -> Line<'static> {
+/// gutter and the selection band): `● id  price · ctx · thinking`. The
+/// mark carries the state (`●` the model in use, `○` the rest); the price
+/// is primary and never drops, context then thinking drop right-to-left.
+/// A model whose login expired says so as fact text (`expired`, warn),
+/// never colour alone.
+fn model_row(model: &Model, expired: bool, current: Option<&Model>, width: usize) -> Line<'static> {
     let pal = Palette::current();
-    let mut spans = vec![
-        Span::raw(format!("{:<id_width$}", model.id)),
-        Span::raw("  "),
-        Span::styled(format_price(&model.cost), pal.dim()),
-    ];
-    if expired.contains(&model.provider) {
-        spans.push(Span::styled("  expired".to_string(), pal.warn()));
-    } else if models_are_equal(current, Some(model)) {
-        spans.push(Span::styled("  in use".to_string(), pal.dim()));
+    let mut primary = vec![(format_price(&model.cost), pal.dim())];
+    if expired {
+        primary.push(("expired".to_string(), pal.warn()));
     }
-    Line::from(spans)
+    let thinking = if model.reasoning { "thinking" } else { "fixed" };
+    let secondary = vec![
+        (format_context(model.context_window), pal.dim()),
+        (thinking.to_string(), pal.dim()),
+    ];
+    crate::framed_list::picker_row(
+        models_are_equal(current, Some(model)) && !expired,
+        &model.id,
+        "",
+        primary,
+        secondary,
+        width,
+        &pal,
+    )
 }
 
 /// `200k` for a 200,000-token window, the raw count below a thousand.
@@ -367,22 +371,26 @@ impl Component for ModelSelectorComponent {
         console.query = Some(query_row(&query, state.focused));
         let expired = state.expired.clone();
         let current = state.current.clone();
-        let id_width = state
-            .filtered
-            .iter()
-            .map(|m| visible_width(&m.id))
-            .max()
-            .unwrap_or(0);
+        console.detail = state.detail_rows(&pal);
+        // The detail is set before the rows: a split narrows the list
+        // column, and rows are built to that width.
+        let row_width = console.row_width(width as usize);
         let selected = state.cursor.selected();
         console.rows = state
             .filtered
             .iter()
-            .map(|model| model_row(model, id_width, &expired, current.as_ref()))
+            .map(|model| {
+                model_row(
+                    model,
+                    expired.contains(&model.provider),
+                    current.as_ref(),
+                    row_width,
+                )
+            })
             .collect();
         console.selected = (!state.filtered.is_empty()).then_some(selected);
         console.max_visible = Some(state.cursor.max_visible());
         console.bottom = state.bottom_rows(&pal);
-        console.detail = state.detail_rows(&pal);
         // The picker keys (the scope switch only where it flips something).
         if state.scoped.is_empty() {
             console.set_hints(
