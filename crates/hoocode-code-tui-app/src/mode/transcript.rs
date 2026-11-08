@@ -18,7 +18,6 @@ use hoocode_code_agent_session::stats::{
 use hoocode_code_resources::skill_blocks::parse_skill_block;
 use hoocode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
 use hoocode_code_tui_keybindings::key_text;
-use hoocode_code_tui_theme::{apply_block_fill, BlockFill};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_code_tui_widgets::background_notice::{
     parse_background_notice, BackgroundNoticeComponent,
@@ -38,7 +37,6 @@ use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_code_tui_widgets::trajectory::{self, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
-use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
@@ -1321,23 +1319,6 @@ impl Mode {
         for block in &freezable[..excess] {
             block.borrow_mut().freeze();
         }
-    }
-
-    /// `showBlock`: a filled block in the chat, bold title over muted lines.
-    fn show_block(&mut self, fill: BlockFill, fg: &str, title: &str, body: &[&str]) {
-        let t = theme();
-        let mut block = BoxComponent::new(1, 1, None);
-        apply_block_fill(&mut block, fill);
-        block.add_child(as_component(&handle(Text::new(
-            t.bold(&t.fg(fg, title)),
-            0,
-            0,
-        ))));
-        for line in body {
-            block.add_child(as_component(&handle(Text::new(t.fg("muted", line), 0, 0))));
-        }
-        self.add_to_chat(as_component(&handle(Spacer::new(1))));
-        self.add_to_chat(as_component(&handle(block)));
     }
 
     /// Every tool block in the transcript.
