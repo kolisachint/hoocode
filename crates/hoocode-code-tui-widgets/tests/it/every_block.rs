@@ -319,7 +319,10 @@ fn compaction_label_cuts_before_the_primary_fact() {
     assert!(plain.contains('…'), "{plain:?}");
 }
 
-const HEADER: &str = "Background agent explore#4 (toolu_01Hx7) finished:";
+/// The loop's glance header for a done run: the run's line, then the dim
+/// machine line (the raw call id verbatim, the resume label, the pointer).
+const HEADER: &str =
+    "› ● explore#4 · done\n  toolu_01Hx7 · resume_task_id: explore#4 · full result below\n";
 
 /// The notice toggle reads back what it was set to.
 #[test]
