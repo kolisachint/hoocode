@@ -171,9 +171,9 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25271 / 7470 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 4 | 1981 / 2282 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9216 / 4990 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9216 / 5003 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2931 / 2950 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13239 / 10394 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13237 / 10394 | keep |
 
 ### TUI library (`tui-*`)
 
