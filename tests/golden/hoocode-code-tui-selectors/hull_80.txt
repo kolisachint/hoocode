@@ -1,10 +1,10 @@
   Theme  /theme  6 themes
-   auto
- › dark  in use
-   dusk
-   high-contrast
-   light
-   paper
+   ○ auto
+ › ● dark  in use
+   ○ dusk
+   ○ high-contrast
+   ○ light
+   ○ paper
  dark  Default dark theme
  built-in
 
@@ -18,15 +18,38 @@ r0 c9-14 fg=#989898 bg=#1e1e2a
 r0 c15-16 fg=#e5e5e7 bg=#1e1e2a
 r0 c17-24 fg=#989898 bg=#1e1e2a
 r0 c25-79 fg=#e5e5e7 bg=#1e1e2a
-r1 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r1 c3 fg=#989898 bg=#1e1e2a
+r1 c4 fg=#e5e5e7 bg=#1e1e2a
+r1 c5-8 fg=#e5e5e7 bg=#1e1e2a bold
+r1 c9-79 fg=#e5e5e7 bg=#1e1e2a
 r2 c0-2 fg=#5cc8bb bg=#233239
-r2 c3-6 fg=#e5e5e7 bg=#233239
-r2 c7-14 fg=#989898 bg=#233239
-r2 c15-79 fg=#e5e5e7 bg=#233239
-r3 c0-79 fg=#e5e5e7 bg=#1e1e2a
-r4 c0-79 fg=#e5e5e7 bg=#1e1e2a
-r5 c0-79 fg=#e5e5e7 bg=#1e1e2a
-r6 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r2 c3 fg=#b5bd68 bg=#233239
+r2 c4 fg=#e5e5e7 bg=#233239
+r2 c5-8 fg=#e5e5e7 bg=#233239 bold
+r2 c9-10 fg=#e5e5e7 bg=#233239
+r2 c11-16 fg=#989898 bg=#233239
+r2 c17-79 fg=#e5e5e7 bg=#233239
+r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r3 c3 fg=#989898 bg=#1e1e2a
+r3 c4 fg=#e5e5e7 bg=#1e1e2a
+r3 c5-8 fg=#e5e5e7 bg=#1e1e2a bold
+r3 c9-79 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r4 c3 fg=#989898 bg=#1e1e2a
+r4 c4 fg=#e5e5e7 bg=#1e1e2a
+r4 c5-17 fg=#e5e5e7 bg=#1e1e2a bold
+r4 c18-79 fg=#e5e5e7 bg=#1e1e2a
+r5 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r5 c3 fg=#989898 bg=#1e1e2a
+r5 c4 fg=#e5e5e7 bg=#1e1e2a
+r5 c5-9 fg=#e5e5e7 bg=#1e1e2a bold
+r5 c10-79 fg=#e5e5e7 bg=#1e1e2a
+r6 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r6 c3 fg=#989898 bg=#1e1e2a
+r6 c4 fg=#e5e5e7 bg=#1e1e2a
+r6 c5-9 fg=#e5e5e7 bg=#1e1e2a bold
+r6 c10-79 fg=#e5e5e7 bg=#1e1e2a
 r7 c0-6 fg=#e5e5e7 bg=#292b40
 r7 c7-24 fg=#989898 bg=#292b40
 r7 c25-79 fg=#e5e5e7 bg=#292b40

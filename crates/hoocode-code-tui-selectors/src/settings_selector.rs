@@ -1100,8 +1100,10 @@ impl Component for SelectSubmenu {
 }
 
 impl SelectSubmenu {
-    /// One pane over the select list's window. The selected row carries
-    /// `in use`: moving the cursor previews the theme at once, so the
+    /// One pane over the select list's window, on the row grammar
+    /// (`crate::framed_list::picker_row`): the mark carries the state (`●` the theme in
+    /// use, `○` the rest) and `in use` is a dim fact, never colour
+    /// alone. Moving the cursor previews the theme at once, so the
     /// selection is always the theme in use while the pane is open.
     fn render_console(&self, width: usize, console: &SubmenuConsole) -> Vec<String> {
         let pal = Palette::current();
@@ -1113,16 +1115,32 @@ impl SelectSubmenu {
                 pal.dim(),
             )])];
         }
+        // The detail is set before the rows: a split narrows the list
+        // column, and rows are built to that width.
+        if let (Some(detail), Some(item)) = (console.detail, list.get_selected_item()) {
+            out.detail = detail(item);
+        }
+        let row_width = out.row_width(width);
         let (rows, selected) = list.console_window();
         out.rows = rows
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                let mut spans = vec![Span::raw(item.label.clone())];
-                if Some(i) == selected {
-                    spans.push(Span::styled("  in use".to_string(), pal.dim()));
-                }
-                Line::from(spans)
+                let selected_row = Some(i) == selected;
+                let facts = if selected_row {
+                    vec![("in use".to_string(), pal.dim())]
+                } else {
+                    Vec::new()
+                };
+                crate::framed_list::picker_row(
+                    selected_row,
+                    &item.label,
+                    "",
+                    Vec::new(),
+                    facts,
+                    row_width,
+                    &pal,
+                )
             })
             .collect();
         out.selected = selected;
@@ -1131,9 +1149,6 @@ impl SelectSubmenu {
                 format!("  {footer}"),
                 pal.dim(),
             )])];
-        }
-        if let (Some(detail), Some(item)) = (console.detail, list.get_selected_item()) {
-            out.detail = detail(item);
         }
         let pairs: Vec<(&str, &str)> = console
             .hint

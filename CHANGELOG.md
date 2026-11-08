@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Notice heads use the glyph set.** A finish is a green `●`, a failure a red `⊗` with a dim reason, a cancel all dim; the `◦`, `✗` and `⊘` marks and the yellow `(partial)` are gone.
 - **The attached-run header takes `›`, and a skill block is its bold name only.** `› explore · Find the footer code · running · esc back`. The `◆` mark is gone.
 
+### Changed: selector rows finish the row grammar (2026-11-08)
+- **Theme submenu rows read like the other pickers.** The Theme pane inside `/settings` draws `● dark  in use` (mark, bold name, dim fact) on the shared row grammar instead of a bare label; facts cut right-to-left at narrow widths.
+- **The session delete confirm is dim, not red.** `Delete session?` reads as dim text with `enter confirm · esc cancel`, like the quit card; red stays for blocking errors.
+
 ### Fixed: duplicate parallel tool calls (2026-11-05)
 - **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
 

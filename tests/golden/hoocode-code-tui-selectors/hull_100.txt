@@ -1,10 +1,10 @@
   Theme  /theme  6 themes
-   auto                               dark  Default dark theme
- › dark  in use                       built-in
-   dusk
-   high-contrast                      › add a width check to wrap_text
-   light                              ● Edit src/wrap.rs  +4 −1
-   paper                              ⊗ Shell cargo test -p wrap  exit 1 · 3.1s
+   ○ auto                             dark  Default dark theme
+ › ● dark  in use                     built-in
+   ○ dusk
+   ○ high-contrast                    › add a width check to wrap_text
+   ○ light                            ● Edit src/wrap.rs  +4 −1
+   ○ paper                            ⊗ Shell cargo test -p wrap  exit 1 · 3.1s
                                       Width is checked now; the wrap tests pass.
  ↑↓ preview · enter keep · esc back
 --- styles ---
@@ -15,31 +15,54 @@ r0 c9-14 fg=#989898 bg=#1e1e2a
 r0 c15-16 fg=#e5e5e7 bg=#1e1e2a
 r0 c17-24 fg=#989898 bg=#1e1e2a
 r0 c25-99 fg=#e5e5e7 bg=#1e1e2a
-r1 c0-36 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r1 c3 fg=#989898 bg=#1e1e2a
+r1 c4 fg=#e5e5e7 bg=#1e1e2a
+r1 c5-8 fg=#e5e5e7 bg=#1e1e2a bold
+r1 c9-36 fg=#e5e5e7 bg=#1e1e2a
 r1 c37-43 fg=#e5e5e7 bg=#292b40
 r1 c44-61 fg=#989898 bg=#292b40
 r1 c62-99 fg=#e5e5e7 bg=#292b40
 r2 c0-2 fg=#5cc8bb bg=#233239
-r2 c3-6 fg=#e5e5e7 bg=#233239
-r2 c7-14 fg=#989898 bg=#233239
-r2 c15-35 fg=#e5e5e7 bg=#233239
+r2 c3 fg=#b5bd68 bg=#233239
+r2 c4 fg=#e5e5e7 bg=#233239
+r2 c5-8 fg=#e5e5e7 bg=#233239 bold
+r2 c9-10 fg=#e5e5e7 bg=#233239
+r2 c11-16 fg=#989898 bg=#233239
+r2 c17-35 fg=#e5e5e7 bg=#233239
 r2 c36 fg=#e5e5e7 bg=#1e1e2a
 r2 c37 fg=#e5e5e7 bg=#292b40
 r2 c38-45 fg=#989898 bg=#292b40
 r2 c46-99 fg=#e5e5e7 bg=#292b40
-r3 c0-36 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r3 c3 fg=#989898 bg=#1e1e2a
+r3 c4 fg=#e5e5e7 bg=#1e1e2a
+r3 c5-8 fg=#e5e5e7 bg=#1e1e2a bold
+r3 c9-36 fg=#e5e5e7 bg=#1e1e2a
 r3 c37-99 fg=#e5e5e7 bg=#292b40
-r4 c0-36 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r4 c3 fg=#989898 bg=#1e1e2a
+r4 c4 fg=#e5e5e7 bg=#1e1e2a
+r4 c5-17 fg=#e5e5e7 bg=#1e1e2a bold
+r4 c18-36 fg=#e5e5e7 bg=#1e1e2a
 r4 c37 fg=#e5e5e7 bg=#292b40
 r4 c38-39 fg=#989898 bg=#292b40
 r4 c40-99 fg=#e5e5e7 bg=#292b40
-r5 c0-36 fg=#e5e5e7 bg=#1e1e2a
+r5 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r5 c3 fg=#989898 bg=#1e1e2a
+r5 c4 fg=#e5e5e7 bg=#1e1e2a
+r5 c5-9 fg=#e5e5e7 bg=#1e1e2a bold
+r5 c10-36 fg=#e5e5e7 bg=#1e1e2a
 r5 c37 fg=#e5e5e7 bg=#292b40
 r5 c38-39 fg=#b5bd68 bg=#292b40
 r5 c40-43 fg=#989898 bg=#292b40 bold
 r5 c44-62 fg=#989898 bg=#292b40
 r5 c63-99 fg=#e5e5e7 bg=#292b40
-r6 c0-36 fg=#e5e5e7 bg=#1e1e2a
+r6 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r6 c3 fg=#989898 bg=#1e1e2a
+r6 c4 fg=#e5e5e7 bg=#1e1e2a
+r6 c5-9 fg=#e5e5e7 bg=#1e1e2a bold
+r6 c10-36 fg=#e5e5e7 bg=#1e1e2a
 r6 c37 fg=#e5e5e7 bg=#292b40
 r6 c38-39 fg=#d58181 bg=#292b40
 r6 c40-44 fg=#989898 bg=#292b40 bold
