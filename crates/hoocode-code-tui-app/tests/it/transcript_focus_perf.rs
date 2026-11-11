@@ -116,7 +116,9 @@ fn harness() -> (Tui, Rc<RefCell<TranscriptFocus>>) {
 
 #[test]
 fn two_thousand_focus_keys_queue_with_no_loop_stall() {
-    let (mut ui, _focus) = harness();
+    let (mut ui, focus) = harness();
+    // The move keys act only with a block focused (K-P4): focus one first.
+    focus.borrow_mut().focus("call-0");
     let mut recorder = Recorder::new();
     // Alternate the move keys, as stepping back and forth would.
     for i in 0..KEYS {

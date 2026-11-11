@@ -1,7 +1,8 @@
-//! U21 P2 transcript focus keys (Muse-only, fast): `{` `}` queue for the
-//! mode instead of unpinning, `enter`/`y` queue only while a block is
-//! focused, `esc` clears the focus and stays pinned, `End` goes back to live,
-//! and the pinned hint row names the focused keys.
+//! U21 P2 transcript focus keys (Muse-only, fast). At the prompt a bare key
+//! types (K-P4, 2026-11-11). Once a block is focused over an empty prompt,
+//! `{` `}` `enter` `y` `j` `k` `[` `]` `/` queue or act instead of typing. `esc`
+//! clears the focus and stays pinned, `q` and `End` clear it and go back to
+//! live, and the pinned hint row names the focused keys.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -181,8 +182,9 @@ fn text_of(editor: &Rc<RefCell<Editor>>) -> String {
 // --- queuing ---------------------------------------------------------------
 
 #[test]
-fn open_brace_queues_previous_and_stays_pinned() {
+fn open_brace_with_a_block_focused_queues_previous_and_stays_pinned() {
     let mut h = setup(false);
+    h.focus.borrow_mut().focus("call-1");
     h.send("{");
     assert!(h.ui.scroll_pinned());
     assert_eq!(text_of(&h.editor), "");
@@ -190,11 +192,116 @@ fn open_brace_queues_previous_and_stays_pinned() {
 }
 
 #[test]
-fn close_brace_queues_next_and_stays_pinned() {
+fn close_brace_with_a_block_focused_queues_next_and_stays_pinned() {
     let mut h = setup(false);
+    h.focus.borrow_mut().focus("call-1");
     h.send("}");
     assert!(h.ui.scroll_pinned());
     assert_eq!(h.intents(), vec![FocusIntent::Next]);
+}
+
+#[test]
+fn braces_with_no_block_focused_type_at_the_prompt() {
+    let mut h = setup(false);
+    h.send("{");
+    assert!(!h.ui.scroll_pinned(), "the brace goes back to live");
+    assert_eq!(text_of(&h.editor), "{");
+    assert!(h.intents().is_empty());
+}
+
+#[test]
+fn bare_keys_with_no_block_focused_are_not_consumed_and_go_live() {
+    // Each of these is typed text: the view answers `false` so the prompt
+    // gets the key, and the view is live afterwards.
+    for key in ["j", "k", "q", "[", "]", "{", "}", "/", "y"] {
+        let mut h = setup(false);
+        assert!(
+            !h.view.borrow_mut().handle_input(&mut h.ui, key),
+            "{key} is not consumed"
+        );
+        assert!(!h.ui.scroll_pinned(), "{key} goes back to live");
+        h.send(key);
+        assert_eq!(text_of(&h.editor), key, "{key} types at the prompt");
+    }
+}
+
+#[test]
+fn transcript_keys_with_a_block_focused_are_consumed_and_stay_pinned() {
+    let mut h = setup(false);
+    h.focus.borrow_mut().focus("call-1");
+    for key in ["j", "k", "[", "]"] {
+        assert!(
+            h.view.borrow_mut().handle_input(&mut h.ui, key),
+            "{key} is consumed"
+        );
+        assert!(h.ui.scroll_pinned(), "{key} stays pinned");
+    }
+    for key in ["{", "}", ENTER, "y"] {
+        assert!(
+            h.view.borrow_mut().handle_input(&mut h.ui, key),
+            "{key} is consumed"
+        );
+        assert!(h.ui.scroll_pinned(), "{key} stays pinned");
+    }
+    assert_eq!(text_of(&h.editor), "");
+    assert!(h.focus.borrow().is_focused(), "the focus is kept");
+    assert_eq!(
+        h.intents(),
+        vec![
+            FocusIntent::Previous,
+            FocusIntent::Next,
+            FocusIntent::Toggle,
+            FocusIntent::Copy
+        ]
+    );
+}
+
+#[test]
+fn q_with_a_block_focused_clears_the_focus_and_goes_live() {
+    let mut h = setup(false);
+    h.focus.borrow_mut().focus("call-1");
+    assert!(h.view.borrow_mut().handle_input(&mut h.ui, "q"));
+    assert!(!h.ui.scroll_pinned());
+    assert!(!h.focus.borrow().is_focused());
+    assert_eq!(text_of(&h.editor), "");
+}
+
+#[test]
+fn an_unbound_letter_with_a_block_focused_clears_the_focus_and_types() {
+    for key in ["g", "x"] {
+        let mut h = setup(false);
+        h.focus.borrow_mut().focus("call-1");
+        assert!(
+            !h.view.borrow_mut().handle_input(&mut h.ui, key),
+            "{key} is not consumed"
+        );
+        assert!(!h.ui.scroll_pinned(), "{key} goes back to live");
+        assert!(!h.focus.borrow().is_focused(), "{key} clears the focus");
+        h.send(key);
+        assert_eq!(text_of(&h.editor), key, "{key} types at the prompt");
+    }
+}
+
+#[test]
+fn a_typed_key_over_prompt_text_clears_the_focus_and_types() {
+    let mut h = setup(false);
+    h.editor.borrow_mut().insert_text_at_cursor("gi");
+    h.focus.borrow_mut().focus("call-1");
+    h.send("/");
+    assert!(!h.ui.scroll_pinned());
+    assert!(!h.focus.borrow().is_focused());
+    assert!(!h.ui.scroll_search_active(), "/ types, it does not search");
+    assert_eq!(text_of(&h.editor), "gi/");
+}
+
+#[test]
+fn slash_with_a_block_focused_opens_the_search() {
+    let mut h = setup(false);
+    h.focus.borrow_mut().focus("call-1");
+    h.send("/");
+    assert!(h.ui.scroll_search_active());
+    assert!(h.ui.scroll_pinned());
+    assert_eq!(text_of(&h.editor), "");
 }
 
 #[test]
@@ -246,6 +353,7 @@ fn y_with_a_focus_queues_copy_and_stays_pinned() {
 #[test]
 fn focusing_keys_do_not_fire_inside_an_open_search() {
     let mut h = setup(false);
+    h.focus.borrow_mut().focus("call-1");
     h.send("/");
     assert!(h.ui.scroll_search_active());
     h.send("{");
@@ -339,7 +447,7 @@ fn base() -> StatusLineData {
 }
 
 #[test]
-fn the_focused_slot_names_enter_y_and_esc() {
+fn the_focused_slot_names_enter_y_the_braces_and_esc() {
     let _g = lock(Some("dark"));
     AppKeybindingsManager::default().install();
     let (scroll, search) = scroll_slot(&status(), true);
@@ -350,11 +458,11 @@ fn the_focused_slot_names_enter_y_and_esc() {
         .iter()
         .map(|key| format!("{} {}", key.key, key.action))
         .collect();
-    assert_eq!(keys, vec!["enter open", "y copy", "esc clear"]);
+    assert_eq!(keys, vec!["enter open", "y copy", "{ } move", "esc clear"]);
 }
 
 #[test]
-fn the_unfocused_slot_keeps_esc_live() {
+fn the_unfocused_slot_names_ctrl_x_u_focus_and_esc_live() {
     let _g = lock(Some("dark"));
     AppKeybindingsManager::default().install();
     let (scroll, _) = scroll_slot(&status(), false);
@@ -364,7 +472,7 @@ fn the_unfocused_slot_keeps_esc_live() {
         .iter()
         .map(|key| format!("{} {}", key.key, key.action))
         .collect();
-    assert_eq!(keys, vec!["esc live"]);
+    assert_eq!(keys, vec!["ctrl+x u focus", "esc live"]);
 }
 
 #[test]
@@ -372,7 +480,16 @@ fn the_focused_status_row_reads_the_focus_keys() {
     let _g = lock(Some("dark"));
     AppKeybindingsManager::default().install();
     let row = crate::support::plain(&format_scroll_status(&status(), &base(), true));
-    assert!(row.contains("enter open"), "{row}");
-    assert!(row.contains("y copy"), "{row}");
-    assert!(row.contains("esc clear"), "{row}");
+    assert!(
+        row.contains("enter open · y copy · { } move · esc clear"),
+        "{row}"
+    );
+}
+
+#[test]
+fn the_unfocused_status_row_names_ctrl_x_u_focus() {
+    let _g = lock(Some("dark"));
+    AppKeybindingsManager::default().install();
+    let row = crate::support::plain(&format_scroll_status(&status(), &base(), false));
+    assert!(row.contains("ctrl+x u focus · esc live"), "{row}");
 }

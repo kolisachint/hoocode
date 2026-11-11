@@ -1,7 +1,9 @@
-//! U21 single view P2: the pinned view's transcript focus. `{` and `}` move
-//! the focus between tool blocks, `enter` toggles the focused block,
-//! `y` copies its raw output, `esc` clears the focus, and `G` goes back to
-//! live. `ctrl+x u` focuses the newest block and pins the view.
+//! U21 single view P2: the pinned view's transcript focus. `ctrl+x u` focuses
+//! the newest block and pins the view. With a block focused over an empty
+//! prompt, `{` and `}` move the focus between tool blocks, `enter` toggles
+//! the focused block, `y` copies its raw output, and `esc` clears the focus.
+//! `q` and `End` clear the focus and go back to live. Any other typed key
+//! clears the focus and types at the prompt.
 //!
 //! The scroll view queues the pinned keys as [`FocusIntent`]s (it owns no
 //! chains); the mode drains them here, where the chains, the session and the
@@ -111,7 +113,7 @@ fn scroll_chain_into_view(
 
 /// Push the transcript focus into every chain, so the focused header draws
 /// the `›` gutter and the paneSel fill. Runs from `set_focus` and after
-/// every key (esc and G clear the shared state from the scroll view).
+/// every key (esc, q and End clear the shared state from the scroll view).
 fn sync_chain_focus(mode: &mut Mode) {
     let focused = mode.focus.borrow().focused_call().map(str::to_string);
     for chain in &mode.transcript.chains {
@@ -120,7 +122,7 @@ fn sync_chain_focus(mode: &mut Mode) {
 }
 
 /// Focus `block`: remember it and show its header. The pinned hint row
-/// (`enter open · y copy · esc clear`) teaches the keys.
+/// (`enter open · y copy · { } move · esc clear`) teaches the keys.
 fn set_focus(mode: &mut Mode, block: &ToolBlock) {
     let call_id = block.borrow().tool_call_id().to_string();
     mode.focus.borrow_mut().focus(&call_id);
@@ -211,22 +213,26 @@ impl Mode {
         found
     }
 
-    /// Whether the focused block draws expanded: its toggle stop, else
-    /// collapsed (single view: every block starts as one row).
-    fn focus_expanded(&self, call_id: &str) -> bool {
-        self.focus
-            .borrow()
-            .expanded_override(call_id)
-            .unwrap_or(false)
-    }
-
-    /// One primitive for both toggle paths (click + `enter`): flip the
-    /// block's expanded flag and record the stop in the override map, so a
-    /// click and `enter` agree however the block was opened.
+    /// One primitive for both toggle paths (click + `enter`): set the block's
+    /// own expanded flag and record the stop in the override map. Both paths
+    /// read the flag, so a click and `enter` always agree.
     pub(crate) fn set_block_expanded(&mut self, block: &ToolBlock, expanded: bool) {
         let call_id = block.borrow().tool_call_id().to_string();
         block.borrow_mut().set_expanded(expanded);
         self.focus.borrow_mut().set_expanded(&call_id, expanded);
+    }
+
+    /// A header click while a block is focused moves the focus onto the
+    /// clicked block, so the next `enter` or `y` acts on it. With no focus
+    /// the click leaves the keyboard alone: the mouse never takes it from the
+    /// prompt.
+    pub(crate) fn move_focus_on_click(&mut self, block: &ToolBlock) {
+        if !self.focus.borrow().is_focused() {
+            return;
+        }
+        let call_id = block.borrow().tool_call_id().to_string();
+        self.focus.borrow_mut().focus(&call_id);
+        sync_chain_focus(self);
     }
 
     /// `enter` on a focused block: open it in place, or fold it back to one
@@ -235,8 +241,7 @@ impl Mode {
         let Some(block) = self.focused_block() else {
             return;
         };
-        let call_id = block.borrow().tool_call_id().to_string();
-        let expanded = !self.focus_expanded(&call_id);
+        let expanded = !block.borrow().is_expanded();
         if !self.tui.scroll_pinned() {
             pin_to_tail(self);
         }

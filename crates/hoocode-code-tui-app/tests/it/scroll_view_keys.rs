@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use hoocode_code_tui_app::scroll_view::{capture_top, reanchor_top};
+use hoocode_code_tui_app::scroll_view::{capture_top, reanchor_top, ScrollView};
 use hoocode_code_tui_app::scroll_view::{install_scroll_view, jump_to_user_message, TurnDirection};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_theme::{get_editor_theme, init_theme};
@@ -105,6 +105,13 @@ struct Harness {
     ui: Tui,
     alternate: Arc<AtomicBool>,
     editor: Rc<RefCell<Editor>>,
+    view: Rc<RefCell<ScrollView>>,
+}
+
+/// Opens the transcript search the way the leader does, from the pinned view.
+fn open_search(h: &mut Harness) {
+    h.view.borrow_mut().search_from_bottom(&mut h.ui);
+    assert!(h.ui.scroll_search_active());
 }
 
 impl Harness {
@@ -135,7 +142,7 @@ fn setup() -> Harness {
     ui.add_child(transcript);
     ui.add_child(editor.clone());
     let prompt = editor.clone();
-    install_scroll_view(
+    let view = install_scroll_view(
         &mut ui,
         editor.clone(),
         Rc::new(RefCell::new(Container::new())),
@@ -151,6 +158,7 @@ fn setup() -> Harness {
         ui,
         alternate,
         editor,
+        view,
     }
 }
 
@@ -259,14 +267,13 @@ fn a_picker_keeps_its_letters_and_the_pinned_view_stays() {
 }
 
 #[test]
-fn bare_letters_step_the_pinned_view_over_an_empty_prompt() {
+fn bare_letters_type_at_the_prompt_when_no_block_is_focused() {
+    // K-P4 (2026-11-11): with no block focused a letter always types, so the
+    // first letter of a prompt typed after scrolling is not lost.
     let mut h = pinned();
-    let before = h.top();
     h.send("k");
-    assert_eq!(h.top(), before - 1, "k is one line up");
-    h.send("j");
-    assert_eq!(h.top(), before, "j is one line down");
-    assert_eq!(h.text(), "", "the letters do not reach the prompt");
+    assert!(!h.ui.scroll_pinned(), "k goes back to live");
+    assert_eq!(h.text(), "k", "k types");
 }
 
 #[test]
@@ -282,15 +289,11 @@ fn bare_letters_type_into_a_prompt_that_holds_text() {
 }
 
 #[test]
-fn q_leaves_the_pinned_view_over_an_empty_prompt() {
+fn q_types_at_the_prompt_when_no_block_is_focused() {
     let mut h = pinned();
     h.send("q");
-    assert!(!h.ui.scroll_pinned());
-    assert_eq!(
-        h.text(),
-        "",
-        "q is a pager key, not a letter for the prompt"
-    );
+    assert!(!h.ui.scroll_pinned(), "q goes back to live");
+    assert_eq!(h.text(), "q", "q types");
 }
 
 #[test]
@@ -582,10 +585,20 @@ const SLASH: &str = "/";
 const ENTER: &str = "\r";
 
 #[test]
-fn opens_on_slash_once_pinned_and_takes_typed_characters() {
+fn slash_types_at_the_prompt_when_no_block_is_focused() {
+    // `/` opens a search only from a focused block (see the focus tests); with
+    // none, it is a typed character and goes back to live.
     let mut h = pinned();
     h.send(SLASH);
-    assert!(h.ui.scroll_search_active());
+    assert!(!h.ui.scroll_search_active());
+    assert!(!h.ui.scroll_pinned());
+    assert_eq!(h.text(), "/");
+}
+
+#[test]
+fn the_search_takes_typed_characters_into_its_query() {
+    let mut h = pinned();
+    open_search(&mut h);
     h.send("l");
     h.send("i");
     assert_eq!(h.ui.scroll_search_query(), "li");
@@ -596,7 +609,7 @@ fn opens_on_slash_once_pinned_and_takes_typed_characters() {
 #[test]
 fn backspaces_the_query() {
     let mut h = pinned();
-    h.send(SLASH);
+    open_search(&mut h);
     h.send("l");
     h.send("i");
     h.send("\x7f");
@@ -606,7 +619,7 @@ fn backspaces_the_query() {
 #[test]
 fn treats_an_empty_query_committed_with_enter_as_cancelled() {
     let mut h = pinned();
-    h.send(SLASH);
+    open_search(&mut h);
     h.send(ENTER);
     assert!(!h.ui.scroll_search_active());
     assert!(h.ui.scroll_pinned());
@@ -615,7 +628,7 @@ fn treats_an_empty_query_committed_with_enter_as_cancelled() {
 #[test]
 fn drops_the_search_on_the_first_escape_and_the_view_on_the_second() {
     let mut h = pinned();
-    h.send(SLASH);
+    open_search(&mut h);
     h.send("l");
     h.send(ENTER);
     assert!(h.ui.scroll_search_active());
@@ -629,7 +642,7 @@ fn drops_the_search_on_the_first_escape_and_the_view_on_the_second() {
 #[test]
 fn forgets_a_half_typed_query_when_the_view_unpins_without_it() {
     let mut h = pinned();
-    h.send(SLASH);
+    open_search(&mut h);
     h.send("l");
     assert_eq!(h.ui.scroll_search_query(), "l");
     h.ui.scroll_to_live();
