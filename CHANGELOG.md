@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: letters always type at the prompt (2026-11-11)
+- **A letter typed after scrolling back is no longer lost.** With the transcript scrolled back and the prompt empty, `j`, `k`, `q`, `[`, `]`, `{`, `}` and `/` were taken as pager keys, so "jump" became "ump" and `/model` opened a transcript search. Every typed character now goes to the prompt. The transcript letters act only while a tool row is focused: `ctrl+x u` focuses the newest one, and the `›` gutter shows it. Arrows, PgUp, PgDn, Home, End and Esc work as before.
+- **A click and `enter` open and close the same row the same way.** A click moves the keyboard focus only when a row is already focused, so the mouse never takes the keyboard from the prompt. `q`, or any letter that is not a transcript key, clears the focus and goes back to live.
+- **The scrolled-back hint names the way in:** `ctrl+x u focus · esc live`, and with a row focused `enter open · y copy · { } move · esc clear`.
+- **Typing while the task panel has the keyboard goes to the prompt** instead of being dropped.
+
+### Changed: task panel (2026-11-11)
+- **The tab strip says how to change tab:** `ctrl+x l next tab · ctrl+x g hide`. A new tip explains the tabs.
+- **Tips sit in the task pane.** When the task panel is shown, a tip is drawn on the pane's colour as its last rows, not as a separate stripe above the prompt.
+- **Running subagent rows are accent, not yellow.** Yellow is for the thing that blocks you.
+
 ### Fixed: stage-2 design sweep (2026-11-08)
 - **Rendered rows use the glyph set only.** The ask-options breadcrumb, the working-directory line, the new-session line and the debug-log line read `●` now; the status working `◉` is accent (never yellow for non-blocking) and status warnings read ink. The quit card's `k`/`l` come from the keymap (`app.quit.stop-jobs`, `app.quit.leave-running`, a new Quit family), so a rebound key shows its new name.
 - **Stale scene copy follows the row grammar.** The attach scenario waits read `› … · esc back`; the linked-run asserts read the type-first rows (`◉ explore  scan the repo  34s`); the tree summarizer draws no pulse — compaction keeps the only spinner (UI-4 closed); `/name` and status facts join with `·`. UI-9 closed: no stale binding claims in the user or map pages.
