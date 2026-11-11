@@ -1,9 +1,9 @@
   Sessions  /resume  2 sessions · this folder
- › wrap width                                                           56y ago
-   add a width check to wrap_text in src/wrap.rs                        56y ago
+ › wrap width                                                               now
+   add a width check to wrap_text in src/wrap.rs                            now
  wrap width
  clay-arbor · 5 messages
- last used 56y ago
+ last used now
  …
  ▏ filter
  ↑↓ move · enter open · / search · esc close · f1 more
@@ -16,19 +16,19 @@ r0 c19-20 fg=#e5e5e7 bg=#1e1e2a
 r0 c21-44 fg=#989898 bg=#1e1e2a
 r0 c45-79 fg=#e5e5e7 bg=#1e1e2a
 r1 c0-2 fg=#5cc8bb bg=#233239
-r1 c3-71 fg=#e5e5e7 bg=#233239
-r1 c72-78 fg=#989898 bg=#233239
+r1 c3-75 fg=#e5e5e7 bg=#233239
+r1 c76-78 fg=#989898 bg=#233239
 r1 c79 fg=#e5e5e7 bg=#233239
-r2 c0-71 fg=#e5e5e7 bg=#1e1e2a
-r2 c72-78 fg=#989898 bg=#1e1e2a
+r2 c0-75 fg=#e5e5e7 bg=#1e1e2a
+r2 c76-78 fg=#989898 bg=#1e1e2a
 r2 c79 fg=#e5e5e7 bg=#1e1e2a
 r3 c0-79 fg=#e5e5e7 bg=#292b40
 r4 c0 fg=#e5e5e7 bg=#292b40
 r4 c1-23 fg=#989898 bg=#292b40
 r4 c24-79 fg=#e5e5e7 bg=#292b40
 r5 c0 fg=#e5e5e7 bg=#292b40
-r5 c1-17 fg=#989898 bg=#292b40
-r5 c18-79 fg=#e5e5e7 bg=#292b40
+r5 c1-13 fg=#989898 bg=#292b40
+r5 c14-79 fg=#e5e5e7 bg=#292b40
 r6 c0 fg=#e5e5e7 bg=#292b40
 r6 c1 fg=#989898 bg=#292b40
 r6 c2-79 fg=#e5e5e7 bg=#292b40

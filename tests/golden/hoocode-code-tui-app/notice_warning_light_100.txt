@@ -1,0 +1,6 @@
+
+ API key expires in 3 days
+ Regenerate it in the dashboard, then run /login again.
+--- styles ---
+r1 c1-25 fg=#2b2f36 bold
+r2 c1-54 fg=#555864

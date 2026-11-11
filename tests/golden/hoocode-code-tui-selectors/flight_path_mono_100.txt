@@ -1,0 +1,9 @@
+┌─ Tree ─ /tree  3 entries ──────────────────────────────┬─────────────────────────────────────────┐
+│   user       what does the wrap crate do?              │ user  message 3 of 3 · you are here     │
+│   assistant  It wraps text greedily.                   │ add a width check to wrap_text          │
+│ › user       add a width check to wrap_text            │                                         │
+│ ▏ filter                                                                                         │
+│ ↑↓ move · enter go here · / search · esc close · f1 more                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r3 c1-44 bold

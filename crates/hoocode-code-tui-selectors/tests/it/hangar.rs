@@ -10,7 +10,7 @@ use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 use serde_json::json;
 
-use crate::support::lock;
+use crate::support::{has_title, lock, look, Look};
 
 fn model(provider: &str, id: &str, name: &str) -> Model {
     serde_json::from_value(json!({
@@ -41,7 +41,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Models  /model  showing scoped · 2 models"),
+        has_title(text, "Models  /model  showing scoped · 2 models"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -51,7 +51,7 @@ fn check(name: &str, width: u16) {
     );
     assert!(
         text.lines()
-            .any(|l| l.starts_with(" ▏") && l.contains("filter")),
+            .any(|l| l.contains("▏") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     assert!(
@@ -91,4 +91,18 @@ fn hangar_search_counts_the_match() {
         !text.contains("mock-large"),
         "unfiltered ship still listed in\n{text}"
     );
+}
+
+#[test]
+fn hangar_light_100() {
+    let _g = lock();
+    look(Look::Light);
+    check("hangar_light_100", 100);
+}
+
+#[test]
+fn hangar_mono_100() {
+    let _g = lock();
+    look(Look::Mono);
+    check("hangar_mono_100", 100);
 }

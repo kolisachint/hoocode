@@ -1,0 +1,4 @@
+
+ Session saved to ~/.hoocode/sessions/abc123.json
+--- styles ---
+r1 c1-48 fg=#555864

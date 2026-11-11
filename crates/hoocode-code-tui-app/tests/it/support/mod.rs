@@ -15,6 +15,7 @@ pub fn lock(theme: Option<&str>) -> MutexGuard<'static, ()> {
     // Goldens were captured in truecolor.
     std::env::set_var("COLORTERM", "truecolor");
     init_theme(theme, false);
+    hoocode_code_tui_theme::chalk::set_enabled(true);
     hoocode_code_tui_app::startup_progress::clear();
     guard
 }
@@ -36,4 +37,22 @@ pub fn plain(text: &str) -> String {
         }
     }
     out
+}
+
+/// The look a golden is pinned in, on top of [`lock`].
+#[derive(Clone, Copy, Debug)]
+pub enum Look {
+    Dark,
+    Light,
+    /// Colour off (the NO_COLOR rules): shapes, bold and dim only.
+    Mono,
+}
+
+/// Applies `look`. Call after [`lock`], which restores the theme and colour.
+pub fn look(look: Look) {
+    match look {
+        Look::Dark => {}
+        Look::Light => init_theme(Some("light"), false),
+        Look::Mono => hoocode_code_tui_theme::chalk::set_enabled(false),
+    }
 }

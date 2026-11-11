@@ -1,0 +1,11 @@
+┌─ Allow Shell? ───────────────────────────────────────────────────────────────────────────────────┐
+│   $ printf 'alpha\nbeta\ngamma\n' | sort -r                                                      │
+│   access: pipes 2 programs                                                                       │
+│ › 1  yes                                                                                         │
+│   2  yes, always for printf this session                                                         │
+│   3  no, tell it why                                                                             │
+│ ▏ or type a reply                                                                                │
+│ 1–3 pick · y yes · n no · e edit                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r3 c1-9 bold

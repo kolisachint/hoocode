@@ -1,0 +1,19 @@
+┌─ Theme ─ /theme  6 themes ────────┬──────────────────────────────────────────────────────────────┐
+│   ○ auto                          │ dark  Default dark theme                                     │
+│ › ● dark  in use                  │ built-in                                                     │
+│   ○ dusk                          │                                                              │
+│   ○ high-contrast                 │ › add a width check to wrap_text                             │
+│   ○ light                         │ ● Edit src/wrap.rs  +4 −1                                    │
+│   ○ paper                         │ ⊗ Shell cargo test -p wrap  exit 1 · 3.1s                    │
+│                                   │ Width is checked now; the wrap tests pass.                   │
+│ ↑↓ preview · enter keep · esc back                                                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r1 c6-9 bold
+r2 c1-17 bold
+r3 c6-9 bold
+r4 c6-18 bold
+r5 c6-10 bold
+r5 c40-43 bold
+r6 c6-10 bold
+r6 c40-44 bold

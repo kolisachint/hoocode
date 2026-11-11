@@ -10,7 +10,7 @@ use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 
-use crate::support::lock;
+use crate::support::{has_title, lock, look, Look};
 
 fn item(id: &str, text: &str) -> UserMessageItem {
     UserMessageItem {
@@ -32,12 +32,17 @@ fn fixture() -> Vec<UserMessageItem> {
 }
 
 fn check(name: &str, width: u16) {
+    check_look(name, width, Look::Dark);
+}
+
+fn check_look(name: &str, width: u16, look_: Look) {
     let _g = lock();
+    look(look_);
     let mut selector = UserMessageSelectorComponent::new(fixture(), Some("m2"));
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Fork  /fork"),
+        has_title(text, "Fork  /fork"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -88,4 +93,14 @@ fn esc_cancels() {
         selector.poll(std::time::Instant::now()),
         vec![UserMessageEvent::Cancel]
     );
+}
+
+#[test]
+fn stage_separation_light_100() {
+    check_look("stage_separation_light_100", 100, Look::Light);
+}
+
+#[test]
+fn stage_separation_mono_100() {
+    check_look("stage_separation_mono_100", 100, Look::Mono);
 }

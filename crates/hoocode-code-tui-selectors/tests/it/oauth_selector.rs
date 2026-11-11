@@ -14,7 +14,7 @@ use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 
-use crate::support::{lock, strip};
+use crate::support::{has_title, lock, look, strip, Look};
 
 fn ids(values: &[&str]) -> HashSet<String> {
     values.iter().map(|v| v.to_string()).collect()
@@ -250,7 +250,7 @@ fn check_docking_provider(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Log in  /login  3 providers"),
+        has_title(text, "Log in  /login  3 providers"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -312,12 +312,17 @@ fn docking_auth_dialog() -> LoginDialogComponent {
 }
 
 fn check_docking_auth(name: &str, width: u16) {
+    check_docking_auth_look(name, width, Look::Dark);
+}
+
+fn check_docking_auth_look(name: &str, width: u16, look_: Look) {
     let _g = lock();
+    look(look_);
     let mut dialog = docking_auth_dialog();
     let rendered = render_golden(&mut dialog, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Log in  /login  Anthropic"),
+        has_title(text, "Log in  /login  Anthropic"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -340,4 +345,14 @@ fn docking_auth_100() {
 #[test]
 fn docking_auth_80() {
     check_docking_auth("docking_auth_80", 80);
+}
+
+#[test]
+fn docking_auth_light_100() {
+    check_docking_auth_look("docking_auth_light_100", 100, Look::Light);
+}
+
+#[test]
+fn docking_auth_mono_100() {
+    check_docking_auth_look("docking_auth_mono_100", 100, Look::Mono);
 }

@@ -12,7 +12,7 @@ use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 
-use crate::support::{lock, plain};
+use crate::support::{lock, look, plain, Look};
 
 fn debrief() -> ShiftDebrief {
     ShiftDebrief {
@@ -167,4 +167,21 @@ fn jobs_card_keys() {
         card.handle_input(key);
         assert_eq!(*answered.borrow(), Some(expected), "key {key:?}");
     }
+}
+
+/// The quit-with-jobs pane in the light and monochrome looks.
+#[test]
+fn jobs_card_light_golden() {
+    let _g = lock(Some("dark"));
+    look(Look::Light);
+    let mut card = EndShiftJobsCard::new(jobs(), Box::new(|_| {}));
+    assert_golden!("end_shift_jobs_light_100", render_golden(&mut card, 100));
+}
+
+#[test]
+fn jobs_card_mono_golden() {
+    let _g = lock(Some("dark"));
+    look(Look::Mono);
+    let mut card = EndShiftJobsCard::new(jobs(), Box::new(|_| {}));
+    assert_golden!("end_shift_jobs_mono_100", render_golden(&mut card, 100));
 }

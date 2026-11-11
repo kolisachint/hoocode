@@ -1,0 +1,11 @@
+┌─ Scoped models ─ /scoped-models  2 of 3 on · this session only ──────────────────────────────────┐
+│ › ● claude-haiku-5-5  on · alias haiku · effort low · cheap                                      │
+│   ● gpt-5-mini  on                                                                               │
+│   ○ gpt-5  off                                                                                   │
+│ ▏ filter                                                                                         │
+│ enter on / off · / search · s save to settings · esc close · f1 more                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r1 c1-60 bold
+r2 c6-15 bold
+r3 c6-10 bold

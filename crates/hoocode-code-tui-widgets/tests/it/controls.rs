@@ -10,16 +10,24 @@ use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 
-use crate::support::lock;
+use crate::support::{has_title, lock, look, Look};
 
 fn check(name: &str, width: u16) {
+    check_look(name, width, Look::Dark);
+}
+
+fn check_look(name: &str, width: u16, variant: Look) {
     let _g = lock();
+    look(variant);
     let mut controls = ControlsComponent::new();
     // The leader layer: the transcript's keys are leader keys now (K-P2, K-P3).
     controls.handle_input("\t");
     let rendered = render_golden(&mut controls, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
-    assert!(text.contains("Keys  ?"), "{name}: missing title in\n{text}");
+    assert!(
+        has_title(text, "Keys  ?"),
+        "{name}: missing title in\n{text}"
+    );
     assert!(
         text.contains("plain")
             && text.contains("ctrl")
@@ -33,7 +41,8 @@ fn check(name: &str, width: u16) {
     );
     for group in ["prompt", "transcript", "app"] {
         assert!(
-            text.lines().any(|l| l.trim_start().starts_with(group)),
+            text.lines()
+                .any(|l| l.trim_start_matches(['│', ' ']).starts_with(group)),
             "{name}: missing the {group} group in\n{text}"
         );
     }
@@ -54,6 +63,16 @@ fn controls_100() {
 #[test]
 fn controls_80() {
     check("controls_80", 80);
+}
+
+#[test]
+fn controls_light_100() {
+    check_look("controls_light_100", 100, Look::Light);
+}
+
+#[test]
+fn controls_mono_100() {
+    check_look("controls_mono_100", 100, Look::Mono);
 }
 
 #[test]

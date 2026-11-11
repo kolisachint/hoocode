@@ -1,0 +1,127 @@
+  Keys  ?   plain   ctrl   leader   alt  128 bindings · 23 shown
+ prompt
+ ctrl+x c  Copy the agent's last message to the clipboard    ctrl+x y  Yank pop    ctrl+x z  Redo
+ transcript
+ ctrl+x /  Search the transcript
+ ctrl+x T  Cycle thinking level backward
+ ctrl+x b  Toggle thinking blocks
+ ctrl+x n  Attach to the subagent run of the last Agent block (read-only)
+ ctrl+x t  Cycle thinking level (off → … → high)
+ ctrl+x u  Focus the newest tool block and pin the view
+ app
+ ctrl+x ?  Show keyboard shortcuts
+ ctrl+x L  Cycle task panel view backward
+ ctrl+x M  Cycle to previous model
+ ctrl+x a  Cycle agent mode backward
+ ctrl+x d  Take back the last queued message
+ ctrl+x e  Open external editor
+ ctrl+x f  Queue follow-up message
+ ctrl+x g  Show or hide the task panel
+ ctrl+x h  Resume a session from history
+ ctrl+x l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)
+ ctrl+x m  Cycle to next model
+ ctrl+x r  Record voice and transcribe into the editor
+ ctrl+x s  Open settings
+ ctrl+x w  Change working directory (move to another repo without quitting)
+ ▏ filter
+ tab layer · esc close
+--- styles ---
+r0 c0 fg=#2b2f36 bg=#e8e8f0
+r0 c1-6 fg=#f8f8fb bg=#00625c bold
+r0 c7 fg=#2b2f36 bg=#e8e8f0
+r0 c8 fg=#555864 bg=#e8e8f0
+r0 c9-11 fg=#2b2f36 bg=#e8e8f0
+r0 c12-16 fg=#555864 bg=#e8e8f0
+r0 c17-19 fg=#2b2f36 bg=#e8e8f0
+r0 c20-23 fg=#555864 bg=#e8e8f0
+r0 c24-26 fg=#2b2f36 bg=#e8e8f0
+r0 c27-32 fg=#00625c bg=#e8e8f0
+r0 c33-35 fg=#2b2f36 bg=#e8e8f0
+r0 c36-38 fg=#555864 bg=#e8e8f0
+r0 c39-40 fg=#2b2f36 bg=#e8e8f0
+r0 c41-63 fg=#555864 bg=#e8e8f0
+r0 c64-99 fg=#2b2f36 bg=#e8e8f0
+r1 c0 fg=#2b2f36 bg=#e8e8f0
+r1 c1-6 fg=#555864 bg=#e8e8f0
+r1 c7-99 fg=#2b2f36 bg=#e8e8f0
+r2 c0-8 fg=#2b2f36 bg=#e8e8f0
+r2 c9-56 fg=#555864 bg=#e8e8f0
+r2 c57-68 fg=#2b2f36 bg=#e8e8f0
+r2 c69-78 fg=#555864 bg=#e8e8f0
+r2 c79-90 fg=#2b2f36 bg=#e8e8f0
+r2 c91-96 fg=#555864 bg=#e8e8f0
+r2 c97-99 fg=#2b2f36 bg=#e8e8f0
+r3 c0 fg=#2b2f36 bg=#e8e8f0
+r3 c1-10 fg=#555864 bg=#e8e8f0
+r3 c11-99 fg=#2b2f36 bg=#e8e8f0
+r4 c0-8 fg=#2b2f36 bg=#e8e8f0
+r4 c9-31 fg=#555864 bg=#e8e8f0
+r4 c32-99 fg=#2b2f36 bg=#e8e8f0
+r5 c0-8 fg=#2b2f36 bg=#e8e8f0
+r5 c9-39 fg=#555864 bg=#e8e8f0
+r5 c40-99 fg=#2b2f36 bg=#e8e8f0
+r6 c0-8 fg=#2b2f36 bg=#e8e8f0
+r6 c9-32 fg=#555864 bg=#e8e8f0
+r6 c33-99 fg=#2b2f36 bg=#e8e8f0
+r7 c0-8 fg=#2b2f36 bg=#e8e8f0
+r7 c9-72 fg=#555864 bg=#e8e8f0
+r7 c73-99 fg=#2b2f36 bg=#e8e8f0
+r8 c0-8 fg=#2b2f36 bg=#e8e8f0
+r8 c9-47 fg=#555864 bg=#e8e8f0
+r8 c48-99 fg=#2b2f36 bg=#e8e8f0
+r9 c0-8 fg=#2b2f36 bg=#e8e8f0
+r9 c9-54 fg=#555864 bg=#e8e8f0
+r9 c55-99 fg=#2b2f36 bg=#e8e8f0
+r10 c0 fg=#2b2f36 bg=#e8e8f0
+r10 c1-3 fg=#555864 bg=#e8e8f0
+r10 c4-99 fg=#2b2f36 bg=#e8e8f0
+r11 c0-8 fg=#2b2f36 bg=#e8e8f0
+r11 c9-33 fg=#555864 bg=#e8e8f0
+r11 c34-99 fg=#2b2f36 bg=#e8e8f0
+r12 c0-8 fg=#2b2f36 bg=#e8e8f0
+r12 c9-40 fg=#555864 bg=#e8e8f0
+r12 c41-99 fg=#2b2f36 bg=#e8e8f0
+r13 c0-8 fg=#2b2f36 bg=#e8e8f0
+r13 c9-33 fg=#555864 bg=#e8e8f0
+r13 c34-99 fg=#2b2f36 bg=#e8e8f0
+r14 c0-8 fg=#2b2f36 bg=#e8e8f0
+r14 c9-35 fg=#555864 bg=#e8e8f0
+r14 c36-99 fg=#2b2f36 bg=#e8e8f0
+r15 c0-8 fg=#2b2f36 bg=#e8e8f0
+r15 c9-43 fg=#555864 bg=#e8e8f0
+r15 c44-99 fg=#2b2f36 bg=#e8e8f0
+r16 c0-8 fg=#2b2f36 bg=#e8e8f0
+r16 c9-30 fg=#555864 bg=#e8e8f0
+r16 c31-99 fg=#2b2f36 bg=#e8e8f0
+r17 c0-8 fg=#2b2f36 bg=#e8e8f0
+r17 c9-33 fg=#555864 bg=#e8e8f0
+r17 c34-99 fg=#2b2f36 bg=#e8e8f0
+r18 c0-8 fg=#2b2f36 bg=#e8e8f0
+r18 c9-37 fg=#555864 bg=#e8e8f0
+r18 c38-99 fg=#2b2f36 bg=#e8e8f0
+r19 c0-8 fg=#2b2f36 bg=#e8e8f0
+r19 c9-39 fg=#555864 bg=#e8e8f0
+r19 c40-99 fg=#2b2f36 bg=#e8e8f0
+r20 c0-8 fg=#2b2f36 bg=#e8e8f0
+r20 c9-71 fg=#555864 bg=#e8e8f0
+r20 c72-99 fg=#2b2f36 bg=#e8e8f0
+r21 c0-8 fg=#2b2f36 bg=#e8e8f0
+r21 c9-29 fg=#555864 bg=#e8e8f0
+r21 c30-99 fg=#2b2f36 bg=#e8e8f0
+r22 c0-8 fg=#2b2f36 bg=#e8e8f0
+r22 c9-53 fg=#555864 bg=#e8e8f0
+r22 c54-99 fg=#2b2f36 bg=#e8e8f0
+r23 c0-8 fg=#2b2f36 bg=#e8e8f0
+r23 c9-23 fg=#555864 bg=#e8e8f0
+r23 c24-99 fg=#2b2f36 bg=#e8e8f0
+r24 c0-8 fg=#2b2f36 bg=#e8e8f0
+r24 c9-74 fg=#555864 bg=#e8e8f0
+r24 c75-99 fg=#2b2f36 bg=#e8e8f0
+r25 c0-1 fg=#2b2f36 bg=#dadbe6
+r25 c2-8 fg=#555864 bg=#dadbe6
+r25 c9-99 fg=#2b2f36 bg=#dadbe6
+r26 c0-3 fg=#2b2f36 bg=#e8e8f0
+r26 c4-12 fg=#555864 bg=#e8e8f0
+r26 c13-15 fg=#2b2f36 bg=#e8e8f0
+r26 c16-21 fg=#555864 bg=#e8e8f0
+r26 c22-99 fg=#2b2f36 bg=#e8e8f0

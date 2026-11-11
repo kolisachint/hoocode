@@ -12,7 +12,7 @@ use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 use serde_json::json;
 
-use crate::support::{lock, plain};
+use crate::support::{lock, look, plain, Look};
 
 type Answered = Rc<RefCell<Option<ClearanceChoice>>>;
 
@@ -360,4 +360,21 @@ fn esc_cancels_the_edit() {
     assert_eq!(*answered.borrow(), None);
     let rows = rows(&mut card, 100);
     assert!(rows.iter().any(|row| row.contains("e edit")), "{rows:?}");
+}
+
+/// The shell card in the light and monochrome looks.
+#[test]
+fn shell_card_light_golden() {
+    let _g = lock(Some("dark"));
+    look(Look::Light);
+    let (mut card, _) = card(shell_info("$ printf 'alpha\\nbeta\\ngamma\\n' | sort -r"));
+    assert_golden!("clearance_shell_light_100", render_golden(&mut card, 100));
+}
+
+#[test]
+fn shell_card_mono_golden() {
+    let _g = lock(Some("dark"));
+    look(Look::Mono);
+    let (mut card, _) = card(shell_info("$ printf 'alpha\\nbeta\\ngamma\\n' | sort -r"));
+    assert_golden!("clearance_shell_mono_100", render_golden(&mut card, 100));
 }

@@ -5,6 +5,7 @@ mod anthropic_warning_ts;
 mod at_file_completion;
 mod clearance_card;
 mod clearance_queue;
+mod completion_menus;
 mod dialogs;
 mod end_shift;
 mod extension_selector;

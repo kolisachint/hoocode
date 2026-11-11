@@ -15,7 +15,7 @@ use hoocode_code_tui_selectors::session_selector::{
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 
-use crate::support::{agent_dir, lock};
+use crate::support::{agent_dir, has_title, lock, look, Look};
 
 fn make(id: &str, name: Option<&str>, first_message: &str) -> SessionInfo {
     SessionInfo {
@@ -27,7 +27,9 @@ fn make(id: &str, name: Option<&str>, first_message: &str) -> SessionInfo {
         branch: None,
         parent_session_path: None,
         created: DateTime::<Utc>::UNIX_EPOCH,
-        modified: DateTime::<Utc>::UNIX_EPOCH,
+        // A fixed date ahead of any clock: the age reads `now` every year.
+        // (The epoch read `56y ago`, which drifts with the clock.)
+        modified: DateTime::<Utc>::from_timestamp(4_102_444_800, 0).unwrap_or_default(),
         message_count: 5,
         model: None,
         all_messages_text: first_message.to_string(),
@@ -59,12 +61,17 @@ fn selector() -> SessionSelectorComponent {
 }
 
 fn check(name: &str, width: u16) {
+    check_look(name, width, Look::Dark);
+}
+
+fn check_look(name: &str, width: u16, look_: Look) {
     let _g = lock();
+    look(look_);
     let mut s = selector();
     let rendered = render_golden(&mut s, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Sessions  /resume"),
+        has_title(text, "Sessions  /resume"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -78,7 +85,7 @@ fn check(name: &str, width: u16) {
     );
     assert!(
         text.lines()
-            .any(|l| l.starts_with(" ▏") && l.contains("filter")),
+            .any(|l| l.contains("▏") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     assert!(
@@ -96,4 +103,14 @@ fn mission_log_100() {
 #[test]
 fn mission_log_80() {
     check("mission_log_80", 80);
+}
+
+#[test]
+fn mission_log_light_100() {
+    check_look("mission_log_light_100", 100, Look::Light);
+}
+
+#[test]
+fn mission_log_mono_100() {
+    check_look("mission_log_mono_100", 100, Look::Mono);
 }

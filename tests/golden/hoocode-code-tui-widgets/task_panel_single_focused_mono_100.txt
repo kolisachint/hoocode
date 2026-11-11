@@ -1,0 +1,10 @@
+┌─ Tasks ─ /tasks · ctrl+x g  plan 1/5 ────────────────────────────────────────────────────────────┐
+│ › ● Read the migration plan                                                                      │
+│   ◉ Port the task panel renderer                                                                 │
+│   ○ Add golden snapshots                                                                         │
+│   ⊗ Run the parity check                                                                         │
+│   ⊗ Drop the old lens tabs  cancelled                                                            │
+│ ↑↓ move · esc back                                                                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r1 c1-28 bold

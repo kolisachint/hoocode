@@ -1,0 +1,29 @@
+┌─ Keys ─ ?   plain   ctrl   leader   alt  128 bindings · 23 shown ────────────────────────────────┐
+│ prompt                                                                                           │
+│ ctrl+x c  Copy the agent's last message to the clipboard    ctrl+x y  Yank pop    ctrl+x z  Redo │
+│ transcript                                                                                       │
+│ ctrl+x /  Search the transcript                                                                  │
+│ ctrl+x T  Cycle thinking level backward                                                          │
+│ ctrl+x b  Toggle thinking blocks                                                                 │
+│ ctrl+x n  Attach to the subagent run of the last Agent block (read-only)                         │
+│ ctrl+x t  Cycle thinking level (off → … → high)                                                  │
+│ ctrl+x u  Focus the newest tool block and pin the view                                           │
+│ app                                                                                              │
+│ ctrl+x ?  Show keyboard shortcuts                                                                │
+│ ctrl+x L  Cycle task panel view backward                                                         │
+│ ctrl+x M  Cycle to previous model                                                                │
+│ ctrl+x a  Cycle agent mode backward                                                              │
+│ ctrl+x d  Take back the last queued message                                                      │
+│ ctrl+x e  Open external editor                                                                   │
+│ ctrl+x f  Queue follow-up message                                                                │
+│ ctrl+x g  Show or hide the task panel                                                            │
+│ ctrl+x h  Resume a session from history                                                          │
+│ ctrl+x l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)                          │
+│ ctrl+x m  Cycle to next model                                                                    │
+│ ctrl+x r  Record voice and transcribe into the editor                                            │
+│ ctrl+x s  Open settings                                                                          │
+│ ctrl+x w  Change working directory (move to another repo without quitting)                       │
+│ ▏ filter                                                                                         │
+│ tab layer · esc close                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---

@@ -1,0 +1,13 @@
+┌─ Models ─ /model  showing scoped · 2 models ─────────────────────────────────────────────────────┐
+│ › ● mock-large  free · 128k       │ mock-large  in use                                           │
+│   ○ mock-fast  free · 128k        │ name      Mock Large                                         │
+│                                   │ provider  mock                                               │
+│                                   │ context   128k                                               │
+│                                   │ price     free                                               │
+│                                   │ thinking  supported                                          │
+│ ▏ filter                                                                                         │
+│ ↑↓ move · enter pick · tab all / scoped · esc close                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r1 c1-28 bold
+r2 c6-14 bold

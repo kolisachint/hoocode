@@ -10,7 +10,7 @@ use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
-use crate::support::lock;
+use crate::support::{has_title, lock, look, Look};
 
 const TS: &str = "2026-01-01T00:00:00.000Z";
 
@@ -66,13 +66,18 @@ fn fixture() -> (Vec<SessionTreeNode>, &'static str) {
 }
 
 fn check(name: &str, width: u16) {
+    check_look(name, width, Look::Dark);
+}
+
+fn check_look(name: &str, width: u16, look_: Look) {
     let _g = lock();
+    look(look_);
     let (tree, leaf) = fixture();
     let mut selector = TreeSelectorComponent::new(&tree, Some(leaf), 24, None, None);
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Tree  /tree"),
+        has_title(text, "Tree  /tree"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -82,7 +87,7 @@ fn check(name: &str, width: u16) {
     );
     assert!(
         text.lines()
-            .any(|l| l.starts_with(" ▏") && l.contains("filter")),
+            .any(|l| l.contains("▏") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     assert!(
@@ -118,4 +123,14 @@ fn flight_path_search_counts_the_matches() {
         text.contains("1 entry of 3"),
         "missing filtered count in\n{text}"
     );
+}
+
+#[test]
+fn flight_path_light_100() {
+    check_look("flight_path_light_100", 100, Look::Light);
+}
+
+#[test]
+fn flight_path_mono_100() {
+    check_look("flight_path_mono_100", 100, Look::Mono);
 }

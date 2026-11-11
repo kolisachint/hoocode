@@ -22,7 +22,7 @@ use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::{assert_golden, Component};
 use serde_json::{json, Value};
 
-use crate::support::lock;
+use crate::support::{lock, look, Look};
 
 /// A fixed working directory: the tool renderers print paths relative to it.
 const CWD: &str = "/work/project";
@@ -657,4 +657,132 @@ fn turn_end_failed_80() {
     }));
     let mut landing = LandingLine::new(stats);
     assert_golden!("turn_end_failed_80", render_golden(&mut landing, 80));
+}
+
+// ---- task panel: the variants without a golden (focus, tab kinds, light, mono) ----
+
+/// One plan list with no other tab: unfocused is `task_panel_mixed_*`; this is
+/// the same list with the keyboard on the panel (Up from the prompt).
+fn single_tab_focused(name: &str, variant: Look) {
+    let _g = lock();
+    look(variant);
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    mixed_tasks();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_focused(true);
+    assert_golden!(name, render_golden(&mut panel, 100));
+}
+
+#[test]
+fn task_panel_single_focused_100() {
+    single_tab_focused("task_panel_single_focused_100", Look::Dark);
+}
+
+#[test]
+fn task_panel_single_focused_light_100() {
+    single_tab_focused("task_panel_single_focused_light_100", Look::Light);
+}
+
+#[test]
+fn task_panel_single_focused_mono_100() {
+    single_tab_focused("task_panel_single_focused_mono_100", Look::Mono);
+}
+
+/// Three rows of the Schedule tab: scheduled jobs with no `next in` fact
+/// (it reads the clock), one Done and one Failed.
+fn schedule_jobs() {
+    let job = |key: &str| CreateTaskOptions {
+        source: Some(TaskSource::Schedule),
+        key: Some(key.into()),
+        ..Default::default()
+    };
+    let done = task_store()
+        .create("/loop check the deploy", job("schedule:job-1"))
+        .id;
+    set_done(done);
+    let failed = task_store()
+        .create("/loop sync the wiki", job("schedule:job-2"))
+        .id;
+    task_store().update(
+        failed,
+        TaskPatch {
+            status: Some(TaskStatus::Failed),
+            note: Some(Some("exit 2".into())),
+            ..Default::default()
+        },
+    );
+    task_store().create("/loop review open PRs", job("schedule:job-3"));
+}
+
+fn focused_view(name: &str, view: TaskPanelView, variant: Look, fill: fn()) {
+    let _g = lock();
+    look(variant);
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    fill();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(view);
+    panel.set_focused(true);
+    assert_golden!(name, render_golden(&mut panel, 100));
+}
+
+#[test]
+fn flight_plan_mcp_100() {
+    focused_view(
+        "flight_plan_mcp_100",
+        TaskPanelView::Mcp,
+        Look::Dark,
+        three_tabs,
+    );
+}
+
+#[test]
+fn flight_plan_mcp_light_100() {
+    focused_view(
+        "flight_plan_mcp_light_100",
+        TaskPanelView::Mcp,
+        Look::Light,
+        three_tabs,
+    );
+}
+
+#[test]
+fn flight_plan_mcp_mono_100() {
+    focused_view(
+        "flight_plan_mcp_mono_100",
+        TaskPanelView::Mcp,
+        Look::Mono,
+        three_tabs,
+    );
+}
+
+#[test]
+fn flight_plan_schedule_100() {
+    focused_view(
+        "flight_plan_schedule_100",
+        TaskPanelView::Schedule,
+        Look::Dark,
+        schedule_jobs,
+    );
+}
+
+#[test]
+fn flight_plan_schedule_light_100() {
+    focused_view(
+        "flight_plan_schedule_light_100",
+        TaskPanelView::Schedule,
+        Look::Light,
+        schedule_jobs,
+    );
+}
+
+#[test]
+fn flight_plan_schedule_mono_100() {
+    focused_view(
+        "flight_plan_schedule_mono_100",
+        TaskPanelView::Schedule,
+        Look::Mono,
+        schedule_jobs,
+    );
 }

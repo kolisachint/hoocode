@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::support::{lock, strip};
+use crate::support::{lock, look, strip, Look};
 use hoocode_code_tools_optin::ask_options::{AskOption, AskQuestion};
 use hoocode_code_tui_selectors::ask_options::{AskOptionsComponent, AskOptionsOptions};
 use hoocode_tui_render::assert_golden;
@@ -317,4 +317,20 @@ fn escape_skips_when_no_option_can_answer() {
     pane.handle_input(ESC);
     assert!(*cancelled.borrow());
     assert_eq!(*submitted.borrow(), None);
+}
+
+#[test]
+fn question_card_light_golden() {
+    let _g = lock();
+    look(Look::Light);
+    let (mut c, _, _) = pane();
+    assert_golden!("ask_card_light_100", render_golden(&mut c, 100));
+}
+
+#[test]
+fn question_card_mono_golden() {
+    let _g = lock();
+    look(Look::Mono);
+    let (mut c, _, _) = pane();
+    assert_golden!("ask_card_mono_100", render_golden(&mut c, 100));
 }

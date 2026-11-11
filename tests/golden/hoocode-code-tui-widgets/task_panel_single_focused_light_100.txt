@@ -1,0 +1,39 @@
+  Tasks  /tasks · ctrl+x g  plan 1/5
+ › ● Read the migration plan
+   ◉ Port the task panel renderer
+   ○ Add golden snapshots
+   ⊗ Run the parity check
+   ⊗ Drop the old lens tabs  cancelled
+ ↑↓ move · esc back
+--- styles ---
+r0 c0 fg=#2b2f36 bg=#e8e8f0
+r0 c1-7 fg=#f8f8fb bg=#00625c bold
+r0 c8 fg=#2b2f36 bg=#e8e8f0
+r0 c9-25 fg=#555864 bg=#e8e8f0
+r0 c26-99 fg=#2b2f36 bg=#e8e8f0
+r1 c0-2 fg=#00625c bg=#c3dcdc
+r1 c3 fg=#555864 bg=#c3dcdc
+r1 c4 fg=#2b2f36 bg=#c3dcdc
+r1 c5-27 fg=#555864 bg=#c3dcdc
+r1 c28-99 fg=#2b2f36 bg=#c3dcdc
+r2 c0-2 fg=#2b2f36 bg=#e8e8f0
+r2 c3 fg=#00625c bg=#e8e8f0
+r2 c4-99 fg=#2b2f36 bg=#e8e8f0
+r3 c0-2 fg=#2b2f36 bg=#e8e8f0
+r3 c3 fg=#555864 bg=#e8e8f0
+r3 c4-99 fg=#2b2f36 bg=#e8e8f0
+r4 c0-2 fg=#2b2f36 bg=#e8e8f0
+r4 c3 fg=#b8111e bg=#e8e8f0
+r4 c4-99 fg=#2b2f36 bg=#e8e8f0
+r5 c0-2 fg=#2b2f36 bg=#e8e8f0
+r5 c3 fg=#555864 bg=#e8e8f0
+r5 c4 fg=#2b2f36 bg=#e8e8f0
+r5 c5-26 fg=#555864 bg=#e8e8f0
+r5 c27-28 fg=#2b2f36 bg=#e8e8f0
+r5 c29-37 fg=#555864 bg=#e8e8f0
+r5 c38-99 fg=#2b2f36 bg=#e8e8f0
+r6 c0-2 fg=#2b2f36 bg=#e8e8f0
+r6 c3-10 fg=#555864 bg=#e8e8f0
+r6 c11-13 fg=#2b2f36 bg=#e8e8f0
+r6 c14-18 fg=#555864 bg=#e8e8f0
+r6 c19-99 fg=#2b2f36 bg=#e8e8f0

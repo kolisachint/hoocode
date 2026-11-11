@@ -17,7 +17,7 @@ use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::{Component, ComponentHandle};
 
-use crate::support::lock;
+use crate::support::{has_title, lock, look, Look};
 
 fn surface() -> PromptSurface {
     PromptSurface {
@@ -55,12 +55,20 @@ fn pane(changes: Rc<RefCell<Vec<SettingsChange>>>) -> SettingsSelectorComponent 
 const DOWN: &str = "\x1b[B";
 
 fn check_systems(name: &str, width: u16) {
+    check_systems_look(name, width, Look::Dark);
+}
+
+fn check_systems_look(name: &str, width: u16, look_: Look) {
     let _g = lock();
+    look(look_);
     let mut pane = pane(Rc::default());
     let rendered = render_golden(&mut pane, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Settings  /settings  4,140 tokens per turn · prompt 1,430 · tools 2,710"),
+        has_title(
+            text,
+            "Settings  /settings  4,140 tokens per turn · prompt 1,430 · tools 2,710"
+        ),
         "{name}: missing title and count in\n{text}"
     );
     assert!(
@@ -69,14 +77,14 @@ fn check_systems(name: &str, width: u16) {
     );
     assert!(
         text.lines()
-            .any(|l| l.starts_with(" ▏") && l.contains("filter")),
+            .any(|l| l.contains("▏") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     // The selected setting's detail: beside the rows from 100 columns,
     // under them below (capped at three rows plus `…` on narrow panes).
     if width >= 100 {
         assert!(
-            text.contains("per turn  4,140 tokens"),
+            has_title(text, "per turn  4,140 tokens"),
             "{name}: missing the detail in\n{text}"
         );
     } else {
@@ -139,13 +147,18 @@ fn open_hull(pane: &mut SettingsSelectorComponent) -> (ComponentHandle, DoneSlot
 }
 
 fn check_hull(name: &str, width: u16) {
+    check_hull_look(name, width, Look::Dark);
+}
+
+fn check_hull_look(name: &str, width: u16, look_: Look) {
     let _g = lock();
+    look(look_);
     let mut pane = pane(Rc::default());
     let (hull, _) = open_hull(&mut pane);
     let rendered = render_golden(&mut *hull.borrow_mut(), width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Theme  /theme  6 themes"),
+        has_title(text, "Theme  /theme  6 themes"),
         "{name}: missing title and count in\n{text}"
     );
     assert!(
@@ -252,4 +265,24 @@ fn hull_esc_reverts() {
             SettingsChange::ThemePreview("dark".to_string()),
         ]
     );
+}
+
+#[test]
+fn systems_light_100() {
+    check_systems_look("systems_light_100", 100, Look::Light);
+}
+
+#[test]
+fn systems_mono_100() {
+    check_systems_look("systems_mono_100", 100, Look::Mono);
+}
+
+#[test]
+fn hull_light_100() {
+    check_hull_look("hull_light_100", 100, Look::Light);
+}
+
+#[test]
+fn hull_mono_100() {
+    check_hull_look("hull_mono_100", 100, Look::Mono);
 }
