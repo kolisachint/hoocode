@@ -1025,14 +1025,24 @@ fn websocket_headers_drop_the_sse_ones() {
     assert_eq!(get("authorization"), Some("Bearer tok"));
 }
 
+/// The value of `var`, or a panic naming it: a live test needs a real credential.
+fn require_env(var: &str) -> String {
+    std::env::var(var)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            panic!(
+                "{var} is not set: this live test needs a real subscription token in that variable"
+            )
+        })
+}
+
 /// `openai-codex-cache-affinity-e2e.test.ts`: needs a ChatGPT OAuth access
 /// token in `OPENAI_CODEX_OAUTH_TOKEN`.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "live: needs OPENAI_CODEX_OAUTH_TOKEN"]
 async fn live_handles_sse_requests_with_aligned_cache_affinity_identifiers() {
-    let Ok(token) = std::env::var("OPENAI_CODEX_OAUTH_TOKEN") else {
-        return;
-    };
+    let token = require_env("OPENAI_CODEX_OAUTH_TOKEN");
     let model = hoocode_ai_models::get_model("openai-codex", "gpt-5.3-codex")
         .unwrap()
         .clone();

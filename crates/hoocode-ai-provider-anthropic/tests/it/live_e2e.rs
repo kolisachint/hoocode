@@ -6,9 +6,10 @@
 //! case of `anthropic-thinking-disable.test.ts` and
 //! `anthropic-tool-name-normalization.test.ts`.
 //!
-//! Ignored by default; each test returns early (skip) without its key, like
-//! `describe.skipIf`. Run with
+//! Ignored by default. Run with
 //! `ANTHROPIC_API_KEY=... cargo test -p hoocode-ai-provider-anthropic --test live_e2e -- --ignored`.
+//! A run without the credential fails (it does not skip): a test that passes
+//! without calling the API would report success for nothing.
 //! The github-copilot cases need a Copilot session token (`resolveApiKey`
 //! from OAuth storage) and are left to 8.4b.
 
@@ -20,8 +21,14 @@ use hoocode_ai_types::{
 };
 use serde_json::json;
 
-fn key(var: &str) -> Option<String> {
-    std::env::var(var).ok().filter(|v| !v.is_empty())
+/// The value of `var`, or a panic naming it: a live test needs a real credential.
+fn require_env(var: &str) -> String {
+    std::env::var(var)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            panic!("{var} is not set: this live test needs a real subscription token or key in that variable")
+        })
 }
 
 fn user(text: &str) -> Message {
@@ -66,6 +73,9 @@ fn probe_priority(model: &Model) -> f64 {
 
 /// `selectOneCasePerProvider` over every anthropic-messages model, for the
 /// providers whose key comes from the environment.
+///
+/// Panics when no provider has a key: the callers would otherwise pass with
+/// nothing tested.
 fn probe_cases(filter: impl Fn(&Model) -> bool) -> Vec<(Model, String)> {
     let mut cases = Vec::new();
     for provider in hoocode_ai_models::get_providers() {
@@ -87,6 +97,10 @@ fn probe_cases(filter: impl Fn(&Model) -> bool) -> Vec<(Model, String)> {
             cases.push(((*model).clone(), api_key));
         }
     }
+    assert!(
+        !cases.is_empty(),
+        "no provider key is set for an anthropic-messages model (ANTHROPIC_OAUTH_TOKEN or ANTHROPIC_API_KEY): this live test needs one"
+    );
     cases
 }
 
@@ -205,9 +219,7 @@ async fn forced_long_cache_retention_is_accepted() {
 #[tokio::test]
 #[ignore = "live: needs ANTHROPIC_API_KEY and network"]
 async fn opus_4_7_streams_with_reasoning_enabled() {
-    let Some(api_key) = key("ANTHROPIC_API_KEY") else {
-        return;
-    };
+    let api_key = require_env("ANTHROPIC_API_KEY");
     let context = Context::new(
         "You are a precise assistant. Follow the user's instructions exactly.".into(),
         vec![user("Compute 48291 * 7317 and 90844 - 17729, add the results, and determine whether the sum is divisible by 11. Reply with exactly this format and nothing else: sum=<sum>; divisibleBy11=<yes|no>")],
@@ -348,9 +360,9 @@ async fn assert_second_tool_call_with_interleaved_thinking(llm: Model, api_key: 
 #[tokio::test]
 #[ignore = "live: needs Anthropic credentials and network"]
 async fn interleaved_thinking_on_opus_4_5_and_4_6() {
-    let Some(api_key) = hoocode_ai_env::get_env_api_key("anthropic") else {
-        return;
-    };
+    let api_key = hoocode_ai_env::get_env_api_key("anthropic").unwrap_or_else(|| {
+        panic!("ANTHROPIC_OAUTH_TOKEN or ANTHROPIC_API_KEY is not set: this live test needs an Anthropic credential")
+    });
     for id in ["claude-opus-4-5", "claude-opus-4-6"] {
         assert_second_tool_call_with_interleaved_thinking(model(id), &api_key).await;
     }
@@ -361,9 +373,7 @@ async fn interleaved_thinking_on_opus_4_5_and_4_6() {
 #[tokio::test]
 #[ignore = "live: needs ANTHROPIC_API_KEY and network"]
 async fn thinking_off_disables_thinking_for_claude_reasoning_models() {
-    let Some(api_key) = key("ANTHROPIC_API_KEY") else {
-        return;
-    };
+    let api_key = require_env("ANTHROPIC_API_KEY");
     let context = Context::new(
         "You are a precise assistant. Follow the requested output format exactly.".into(),
         vec![user("Before replying, carefully solve 36863 * 5279 internally. Then reply with the word pong repeated exactly 40 times, separated by single spaces. Do not add any other text.")],
@@ -458,9 +468,7 @@ fn one_arg_tool(name: &str, description: &str, arg: &str, arg_description: &str)
 #[tokio::test]
 #[ignore = "live: needs ANTHROPIC_OAUTH_TOKEN and network"]
 async fn oauth_tool_names_round_trip() {
-    let Some(token) = key("ANTHROPIC_OAUTH_TOKEN") else {
-        return;
-    };
+    let token = require_env("ANTHROPIC_OAUTH_TOKEN");
     let cases = [
         (
             one_arg_tool("todowrite", "Write a todo item", "task", "The task to add"),

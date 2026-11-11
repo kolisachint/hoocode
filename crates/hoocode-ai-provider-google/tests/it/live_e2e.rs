@@ -73,9 +73,10 @@ fn options(max_tokens: u64) -> SimpleStreamOptions {
 #[tokio::test]
 #[ignore = "live: needs GEMINI_API_KEY and network"]
 async fn gemini_thinking_can_be_disabled() {
-    if std::env::var("GEMINI_API_KEY").is_err() {
-        return;
-    }
+    assert!(
+        std::env::var("GEMINI_API_KEY").is_ok_and(|v| !v.is_empty()),
+        "GEMINI_API_KEY is not set: this live test needs a real Gemini API key"
+    );
     for (id, max_tokens, min_pongs) in [
         ("gemini-2.5-flash", 160, 35),
         ("gemini-3-flash-preview", 160, 35),
@@ -97,9 +98,10 @@ async fn vertex_thinking_can_be_disabled() {
     let has_project = (std::env::var("GOOGLE_CLOUD_PROJECT").is_ok()
         || std::env::var("GCLOUD_PROJECT").is_ok())
         && std::env::var("GOOGLE_CLOUD_LOCATION").is_ok();
-    if !has_key && !has_project {
-        return;
-    }
+    assert!(
+        has_key || has_project,
+        "GOOGLE_CLOUD_API_KEY, or GOOGLE_CLOUD_PROJECT (or GCLOUD_PROJECT) with GOOGLE_CLOUD_LOCATION, is not set: this live test needs Vertex credentials"
+    );
     for id in ["gemini-2.5-flash", "gemini-3-flash-preview"] {
         let model = hoocode_ai_models::get_model("google-vertex", id)
             .unwrap()
