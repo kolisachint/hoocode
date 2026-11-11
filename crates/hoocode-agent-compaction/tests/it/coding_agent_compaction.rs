@@ -724,24 +724,31 @@ async fn compaction_omits_the_header_without_a_session_id() {
     );
 }
 
-fn live_options() -> Option<(hoocode_ai_types::Model, SummarizeOptions)> {
-    let token = std::env::var("ANTHROPIC_OAUTH_TOKEN").ok()?;
-    let model = hoocode_ai_models::get_model("anthropic", "claude-sonnet-4-5")?.clone();
-    Some((
+/// The model and options for the live run; panics, naming the variable, when
+/// the token is not set (a run with `--ignored` must not pass untested).
+fn live_options() -> (hoocode_ai_types::Model, SummarizeOptions) {
+    let token = std::env::var("ANTHROPIC_OAUTH_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| {
+            panic!("ANTHROPIC_OAUTH_TOKEN is not set: this live test needs a real Anthropic OAuth token")
+        });
+    let model = hoocode_ai_models::get_model("anthropic", "claude-sonnet-4-5")
+        .expect("anthropic/claude-sonnet-4-5 is in the catalog")
+        .clone();
+    (
         model,
         SummarizeOptions {
             api_key: Some(token),
             ..Default::default()
         },
-    ))
+    )
 }
 
 #[tokio::test]
 #[ignore = "live: needs ANTHROPIC_OAUTH_TOKEN"]
 async fn generates_a_compaction_result_for_the_large_session_and_reloads() {
-    let Some((model, options)) = live_options() else {
-        return;
-    };
+    let (model, options) = live_options();
     let entries = load_large_session_entries();
     let loaded = build_session_context(&entries);
     let preparation = prepare_compaction(&entries, &DEFAULT_COMPACTION_SETTINGS).unwrap();

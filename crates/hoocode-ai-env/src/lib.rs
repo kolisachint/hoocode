@@ -12,7 +12,7 @@
 ///
 /// Returns `None` if the provider is not recognized (callers may still attempt
 /// a generic lookup or return `None`).
-fn get_api_key_env_vars(provider: &str) -> Option<&'static [&'static str]> {
+pub fn get_api_key_env_vars(provider: &str) -> Option<&'static [&'static str]> {
     match provider {
         // github-copilot: only the explicit COPILOT_GITHUB_TOKEN opts a GitHub
         // token into Copilot inference. GH_TOKEN / GITHUB_TOKEN are ambient in

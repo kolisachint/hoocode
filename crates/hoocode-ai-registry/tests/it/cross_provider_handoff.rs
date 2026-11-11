@@ -230,9 +230,33 @@ fn generate_context(model: &Model, api_key: &str) -> Option<Vec<Message>> {
     Some(messages)
 }
 
+/// Panics, naming the variables of every provider in the matrix, when none
+/// has a key: the test would have no fixtures and fail on a count alone.
+fn require_any_provider_key() {
+    if PROVIDER_MODEL_PAIRS
+        .iter()
+        .any(|(provider, ..)| hoocode_ai_env::get_env_api_key(provider).is_some())
+    {
+        return;
+    }
+    let mut vars: Vec<String> = Vec::new();
+    for (provider, ..) in PROVIDER_MODEL_PAIRS {
+        for var in hoocode_ai_env::get_api_key_env_vars(provider).unwrap_or_default() {
+            if !vars.iter().any(|v| v == var) {
+                vars.push(var.to_string());
+            }
+        }
+    }
+    panic!(
+        "none of the provider keys is set ({}): this live test needs at least one",
+        vars.join(", ")
+    );
+}
+
 #[test]
 #[ignore = "live: needs provider API keys and network"]
 fn cross_provider_handoff() {
+    require_any_provider_key();
     let mut contexts: Vec<(&str, Model, String, Vec<Message>)> = Vec::new();
     for (provider, id, label, api) in PROVIDER_MODEL_PAIRS {
         let Some(api_key) = hoocode_ai_env::get_env_api_key(provider) else {
