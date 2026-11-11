@@ -817,6 +817,65 @@ async fn retries_transient_http_errors() {
     assert_eq!(requests.lock().unwrap().len(), 2);
 }
 
+// -----------------------------------------------------------------------------
+// AU-3: 401 and 403 with a subscription token
+// -----------------------------------------------------------------------------
+
+/// The default transport (Auto) first tries the WebSocket handshake, which
+/// the server rejects; the SSE fallback then retries the rejected request
+/// three times (no refresh is attempted) before the error is final.
+async fn assert_rejected_token(status: &'static str, body: &str, message: &str) {
+    let rejected = || Reply {
+        status,
+        content_type: "application/json",
+        body: body.into(),
+        hold_open: false,
+    };
+    let (base, requests) = http_server(vec![
+        rejected(),
+        rejected(),
+        rejected(),
+        rejected(),
+        rejected(),
+    ])
+    .await;
+    let result = stream_codex_responses(
+        model("gpt-5.1-codex", &base),
+        say_hello(),
+        CodexOptions {
+            api_key: Some(mock_token()),
+            ..Default::default()
+        },
+    )
+    .result()
+    .await;
+    assert_eq!(result.stop_reason, StopReason::Error);
+    assert_eq!(result.error_message.as_deref(), Some(message));
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 5, "1 WebSocket handshake + 4 SSE attempts");
+    assert_eq!(requests[0].header("upgrade"), Some("websocket"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rejected_subscription_token_401_fails_with_the_server_message() {
+    assert_rejected_token(
+        "401 Unauthorized",
+        r#"{"error":{"message":"Your authentication token has been invalidated. Please try signing in again."}}"#,
+        "Your authentication token has been invalidated. Please try signing in again.",
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rejected_subscription_token_403_fails_with_the_server_message() {
+    assert_rejected_token(
+        "403 Forbidden",
+        r#"{"error":{"message":"You do not have access to this model on your plan."}}"#,
+        "You do not have access to this model on your plan.",
+    )
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn invalid_tokens_fail_with_the_ts_message() {
     let result = stream_codex_responses(

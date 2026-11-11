@@ -29,5 +29,9 @@ tokio = { version = "1", features = ["rt", "time"] }
 rand = "0.10"
 
 [dev-dependencies]
+base64 = "0.23"
+hoocode-ai-oauth-anthropic = { workspace = true }
+hoocode-ai-oauth-google = { workspace = true }
+hoocode-ai-oauth-openai-codex = { workspace = true }
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }

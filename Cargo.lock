@@ -1505,8 +1505,12 @@ dependencies = [
 name = "hoocode-code-auth"
 version = "0.2.39"
 dependencies = [
+ "base64 0.23.1",
  "hoocode-ai-env",
  "hoocode-ai-oauth",
+ "hoocode-ai-oauth-anthropic",
+ "hoocode-ai-oauth-google",
+ "hoocode-ai-oauth-openai-codex",
  "hoocode-ai-types",
  "hoocode-code-models",
  "hoocode-code-paths",
