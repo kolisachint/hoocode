@@ -79,7 +79,12 @@ pub fn tools_fingerprint(tools: &[String]) -> String {
         hasher.update(tool.as_bytes());
         hasher.update(b"\n");
     }
-    format!("sha256:{:x}", hasher.finalize())
+    let hex: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!("sha256:{hex}")
 }
 
 /// What changed since the grant, by server name.
@@ -130,7 +135,12 @@ pub fn fingerprint(servers: &[ServerDef]) -> String {
         hasher.update(line.as_bytes());
         hasher.update(b"\n");
     }
-    format!("sha256:{:x}", hasher.finalize())
+    let hex: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!("sha256:{hex}")
 }
 
 /// The change from an approved set to the declared one, by name.
