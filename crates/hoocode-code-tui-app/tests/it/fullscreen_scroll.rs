@@ -107,6 +107,7 @@ struct Screen {
     chat: Rc<RefCell<Container>>,
     alternate: Arc<AtomicBool>,
     editor: Rc<RefCell<Editor>>,
+    focus: Rc<RefCell<TranscriptFocus>>,
 }
 
 impl Screen {
@@ -172,7 +173,7 @@ fn screen() -> Screen {
     let editor_handle: ComponentHandle = editor.clone();
     ui.add_child(editor_handle.clone());
     let prompt = editor.clone();
-    install_scroll_view(
+    let view = install_scroll_view(
         &mut ui,
         editor_handle.clone(),
         chat.clone(),
@@ -181,6 +182,8 @@ fn screen() -> Screen {
         Rc::new(move || prompt.borrow().get_text().is_empty()),
         Rc::new(|| false),
     );
+    let focus = Rc::new(RefCell::new(TranscriptFocus::new()));
+    view.borrow_mut().set_focus_state(focus.clone());
     install_scroll_status(
         &mut ui,
         Rc::default(),
@@ -194,6 +197,7 @@ fn screen() -> Screen {
         chat,
         alternate,
         editor,
+        focus,
     }
 }
 
@@ -237,9 +241,11 @@ fn shift_down_at_the_tail_is_consumed_and_does_nothing() {
 #[test]
 fn jump_to_user_message_finds_the_chat_inside_the_body() {
     let mut s = screen();
-    // `[` and `]` are scroll mode's (K-P4): pin at the tail first, as the leader does.
+    // `[` and `]` act only with a block focused (K-P4, 2026-11-11): pin at the
+    // tail and focus a block, as `ctrl+x u` does.
     s.ui.scroll_to_row(i64::MAX, None);
     assert!(s.ui.scroll_pinned());
+    s.focus.borrow_mut().focus("call-1");
     // The last user message is at body row 42; the view lands three rows above it.
     s.send("[");
     assert_eq!(s.top(), 39, "previous message, from the tail");

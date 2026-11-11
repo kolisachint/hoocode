@@ -121,16 +121,26 @@ How each kind is delivered follows its mode in `/settings` (`steering-mode`,
 ## Pinned transcript blocks
 
 Each tool call is one row. PgUp (or the mouse wheel) pins the view, and a click on
-a header toggles it open. With the view pinned and the prompt empty:
+a header toggles it open. At the prompt a letter types, even when the view is pinned.
+**Ctrl+X u** focuses the newest block and pins the view. Only with a block focused
+and the prompt empty do letters act as transcript keys:
 
 - **Enter** opens the focused block, or closes it again.
-- **`{`** and **`}`** focus the previous or next block.
+- **`{`** and **`}`** move the focus to the previous or next block.
 - **y** copies the focused block's raw output, never the rendered rows.
+- **j** and **k** scroll a line; **`[`** and **`]`** jump to your previous or next
+  message; **`/`** searches the transcript.
+- **q** clears the focus and goes back to live.
 - **Esc** clears the focus only. It never stops a turn.
 - **Home** jumps to the start of the transcript; **End** goes back to live and
-  clears the focus. (`g` and `G` type as usual now; bind them back to
-  `app.scroll.top` and `app.scroll.bottom` in `keybindings.json` for the vim keys.)
-- **Ctrl+X u** focuses the newest block and pins the view, from the prompt.
+  clears the focus.
+
+Any other letter clears the focus, goes back to live and types. A click toggles a
+block. If a block is already focused, the click also moves the focus to it, so
+**Enter** and **y** act on it next. With no block focused, a click leaves the
+keyboard alone.
+
+Keys can be rebound in `keybindings.json`.
 
 There is no expand-all in v1: open the blocks you need. The focus is not saved,
 so a resumed session opens collapsed.

@@ -186,7 +186,7 @@ Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (
 | 2026-10-15 | SessionStart runs the nextest install, the prune and the warm-up. `HOOCODE_WARMUP=0` opts out |
 | 2026-10-19 | CI wiring applied: the `guards` job, the goldens workflow and the macOS PR job |
 | 2026-10-29 | Release profile: thin LTO, one codegen unit, stripped symbols, unwind kept (built 2026-10-30) |
-| 2026-11-04 | Plain words only in TUI text. `scripts/ci/plain_words.sh` is run by hand; it is not in CI yet (EN-8) |
+| 2026-11-04 | Plain words only in TUI text. `scripts/ci/plain_words.sh` runs in the CI `guards` job (EN-8, since 2026-11-11) |
 
 ### Open
 
@@ -199,7 +199,6 @@ Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (
 | EN-5 | Re-measure the build and decide on mold | M | After EN-2 and EN-4 | Measure a clean `cargo check --workspace --all-targets --timings`, a clean `cargo nextest run --workspace --no-run`, and a base-crate edit followed by both. Adopt mold only if linking is over 30% of an incremental `nextest --no-run`. Linux only, never macOS |
 | EN-6 | Doctests: CI runs none | S | User picks: recommend adding a doctest step for the crates that have doctests | The earlier CI plan put `cargo test --doc` in CI; `ci.yml` `test` runs nextest only. Either add the step or drop the rule and keep `doctest = false` |
 | EN-7 | MSRV job | S | None | Build with Rust 1.88, `--locked`, the way the other jobs run. Nothing checks `rust-version` today |
-| EN-8 | Run `scripts/ci/plain_words.sh` in the `guards` job | S | None | The plain-words rule is enforced by hand only. Check the script's skip list after the cleanup |
 | EN-9 | Self-update prints the right command for the install method | S | User asks for `hoocode update` to be fixed | Under `~/.hoocode/bin`: the curl command. Under `node_modules`: the npm command. PyPI runs from the user cache dir: the pip command. Today `hoocode-code-update` does not detect the method |
 | EN-10 | Remove the dead `publish_crates` input from `release.yml` | S | Next edit to `release.yml` | The input does nothing; the job prints a notice. Or re-enable it with a paced publish script |
 | EN-11 | Windows build | M | User asks for Windows | Add `x86_64-pc-windows-msvc` to `binaries.yml`, a `.zip`, an `install.ps1` and a `win32-x64` npm package. The old Windows leg was the slowest part of a release |

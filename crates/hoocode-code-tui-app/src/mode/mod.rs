@@ -1089,8 +1089,7 @@ impl Mode {
                 context: click.context,
             };
             // The click shares `enter`'s primitive (see `set_block_expanded`):
-            // the flag opens the body, the override keeps the focus path
-            // agreeing.
+            // both paths read the block's flag.
             let target = toggle
                 .chain
                 .borrow_mut()
@@ -1102,6 +1101,7 @@ impl Mode {
             };
             let expanded = !target.borrow().is_expanded();
             self.set_block_expanded(&target, expanded);
+            self.move_focus_on_click(&target);
             // Pin first, keeping the header on its row; the toggle opens
             // under it.
             self.tui
@@ -1730,6 +1730,9 @@ impl Mode {
                 .set_screen_rows(self.size.get().1);
             self.show_attached();
             self.refresh_status_line();
+            // The band joins the task pane's colour while the pane is drawn above it.
+            let joined = self.task_panel.borrow_mut().is_drawn();
+            self.notifications.borrow_mut().set_joined_to_pane(joined);
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }

@@ -103,7 +103,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-oauth` | OAuth core for hoocode AI: types, PKCE, callback server, provider registry | 7 | 1084 / 0 | keep |
 | `ai-oauth-anthropic` | Anthropic (Claude Pro/Max) OAuth flow for hoocode AI | 1 | 544 / 0 | keep |
 | `ai-oauth-github-copilot` | GitHub Copilot OAuth device flow for hoocode AI | 1 | 675 / 0 | keep |
-| `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for hoocode AI | 1 | 1448 / 0 | keep |
+| `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for hoocode AI | 1 | 1447 / 0 | keep |
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for hoocode AI | 1 | 599 / 0 | keep |
 | `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2771 / 518 | keep |
 | `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 816 | test provider (dev-dep only) |
@@ -169,11 +169,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25985 / 7556 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 26184 / 7761 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 4 | 1984 / 2327 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9408 / 5013 | keep |
-| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2931 / 2950 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13569 / 10847 | keep |
+| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2931 / 3123 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13643 / 10930 | keep |
 
 ### TUI library (`tui-*`)
 

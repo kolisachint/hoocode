@@ -68,7 +68,7 @@ impl StatusTone {
     fn token(self) -> &'static str {
         match self {
             StatusTone::Ready => "success",
-            StatusTone::Working => "warning",
+            StatusTone::Working => "accent",
             StatusTone::Failed => "error",
         }
     }

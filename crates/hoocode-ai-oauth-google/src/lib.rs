@@ -78,8 +78,7 @@ fn read_google_oauth_client_with(
             };
             Err(format!(
                 "{} needs an OAuth client, and hoocode does not ship one. Set {missing} to the \
-                 installed-app credentials of the client you are signing in as, then run /login again. \
-                 See docs/providers.md for where those values come from.",
+                 installed-app credentials of the client you are signing in as, then run /login again.",
                 env.product_name
             ))
         }

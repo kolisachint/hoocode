@@ -1,6 +1,6 @@
 # UI map
 
-Where each part of the interactive screen lives. Snapshot of 2026-11-07 (single view, UI-21/UI-22). Crate names are `hoocode-*` since step 0c
+Where each part of the interactive screen lives. Snapshot of 2026-11-11 (single view, UI-21/UI-22; bare-key rule and task-panel hints of 2026-11-11). Crate names are `hoocode-*` since step 0c
 ([design README](../design/README.md), Engineering). Crates are
 described in [packages.md](packages.md). Names, not line numbers: line numbers drift.
 
@@ -39,8 +39,8 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Status line (one row under the prompt): left slot by priority search, scrolled, `◉ working · 4s · esc stop`, a one-row notice, `⊗ not signed in  /login`, the last turn (`● done · 11s · 23k tokens`, `⊗ failed …`, `⊗ stopped …`); right, dim: `plan ·` in plan mode, then session · model effort · `42% context` · cost, dropping cost, session, the word context, effort as the width shrinks. Empty left while a permission or question is open | status line | `hoocode-code-tui-app/src/status_line.rs` (`StatusLineData`, `StatusLineView`, `status_line_ansi`); the mode refreshes its data each loop pass (`status_line_data`, `refresh_status_line` in `mode/chrome.rs`); the last turn is recorded by `record_mission_outcome` in `mode/transcript.rs`; scroll and search slots by `scroll_view.rs` `format_scroll_status` |
 | Start header | two lines on the start screen (` hoocode v<ver>`, ` <cwd> · N skills · M agents`), one blank row once a turn exists (`is_turn_row` in `mode/chrome.rs`); the resource listing leaves out its summary line (`ResourceListing::summary_in_header`) | `hoocode-code-tui-app/src/start_header.rs` (`StartHeader`, `StartFacts`, `start_lines`) |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12). The summary line is always shown; the detail sections (`[Skills]`, `[Commands]`, `[Agents]`, `[MCP]`) open when the block is expanded, or under `verbose`, and fold when collapsed. Skill rows read `/skill:<name>` then the path, command rows `/<name>`, agent rows the plain name | resource display | `hoocode-code-tui-app/src/resource_display.rs` (`show_loaded_resources_with_details` returns the details' typed handle), `expandable_text.rs` |
-| Task panel (declutter WP8, a pane above the prompt): rows only, no title when unfocused, with one dim strip row first when more than one tab has rows (`plan 1/3 · agents 1/1 · mcp 1 · ctrl+x g`; the shown tab in normal text, a live tab reads `agents 2 running`); focused it gets the `Tasks` chip, `/tasks · ctrl+x g` and the strip after it, the `›` pick and a hint row. Row glyphs `◉` working (accent), `○` queued, `●` done (text dim), `⊗` failed (red) or cancelled (dim, `cancelled` after it); agent rows `explore  Trace the auth flow  12s`; shown, leader `g` (ctrl+x g) toggles, Up from the prompt's first line takes the keyboard; see [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (`tab_strip`, rows, keys, `render_flight_plan`, drawn on `pane.rs`); leader `g` (ctrl+x g), the Up hand-off and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
-| Notification band and one-row notices | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs`: a notice with no body rows shows in the status line's left slot (`status_notice`) and the band stays empty, unless a turn runs (`set_status_slot_free(false)`), when it draws in the band; longer notices draw above the prompt as plain rows (indent 1, no fill, a warning's first row yellow, the rest dim, the title wrapped to 3 rows with a final `…`). `notify_action` makes a notice that needs an action: it never times out until `dismiss(topic)`. First run: with no working provider `Mode` opens the Log in pane itself (`show_oauth_selector`, `mode/mod.rs`); Esc leaves `⊗ not signed in  /login` in the status line (`StatusLineData::signed_out`), and submitting a prompt while signed out keeps the text and reopens Log in (`submit` in `mode/input.rs`). `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update` |
+| Task panel (declutter WP8, a pane above the prompt): rows only, no title when unfocused, with one dim strip row first when more than one tab has rows (`plan 1/3 · agents 1/1 · mcp 1 · ctrl+x l next tab · ctrl+x g hide`; the shown tab in normal text, a live tab reads `agents 2 running`); focused it gets the `Tasks` chip, `/tasks · ctrl+x g` and the strip after it, the `›` pick and a hint row. Row glyphs `◉` working (accent), `○` queued, `●` done (text dim), `⊗` failed (red) or cancelled (dim, `cancelled` after it); agent rows `explore  Trace the auth flow  12s`; shown, leader `g` (ctrl+x g) toggles, Up from the prompt's first line takes the keyboard; see [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (`tab_strip`, rows, keys, `render_flight_plan`, drawn on `pane.rs`); leader `g` (ctrl+x g), the Up hand-off and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
+| Notification band and one-row notices | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs`: a notice with no body rows shows in the status line's left slot (`status_notice`) and the band stays empty, unless a turn runs (`set_status_slot_free(false)`), when it draws in the band; longer notices draw above the prompt as plain rows (indent 1, no fill, a warning's first row ink bold, the rest dim, the title wrapped to 3 rows with a final `…`). When the task panel is drawn, these rows join its pane (pane background, indent 3, no blank row); see [Task panel](#task-panel). `notify_action` makes a notice that needs an action: it never times out until `dismiss(topic)`. First run: with no working provider `Mode` opens the Log in pane itself (`show_oauth_selector`, `mode/mod.rs`); Esc leaves `⊗ not signed in  /login` in the status line (`StatusLineData::signed_out`), and submitting a prompt while signed out keeps the text and reopens Log in (`submit` in `mode/input.rs`). `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update` |
 | Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens (not MCP elicitation forms); repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing, `TurnTimer` set at prompt submit); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` when its request has `chime` set (`dialog_bridge.rs`) |
 | Herdr pane state (no screen change): `blocked` while a clearance card, a permission-gate selector (`DialogRequest::Select`, `dialog_select` flag) or an options pane is up; `working` while a prompt, run or compaction is in flight; else `idle` | `hoocode-code-tui-app/src/herdr.rs`; `sync_herdr` in `mode/events.rs` |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
@@ -162,7 +162,7 @@ The TUI owns the mechanism; the app owns which key does what.
 - Pinning works from any focus. Picker keys never un-pin.
 - PgDn past the bottom, or the wheel reaching the bottom, returns to live.
 - Status row (bottom): the REWIND bar while pinned (`◂◂ REWIND  43–61 of 78 · 55%  ↓ 3 new`, label in vio, then the keys: line, `PgUp/PgDn page`, top, live). The SCAN bar while searching (`⌕ SCAN  query  N contact(s)`, label in warn; typing: `enter lock · esc close`; locked: `enter next · esc close`).
-  The line keys are `↑/↓` and `j` / `k` over an empty prompt, and `shift+↑/shift+↓` while the prompt holds text.
+  The line keys are `↑/↓` over an empty prompt, and `j` / `k` with a block focused. `shift+↑/shift+↓` move one line while the prompt holds text.
 - Full-screen and mouse reporting on (the default): a plain drag does not select text. Selection is shift+drag.
 - The view pinned on a message keeps that message on top across renders.
   A rebuild of the transcript (`/new`, `/resume`, the thinking toggle, leader `b`) goes live.
@@ -193,22 +193,22 @@ The TUI owns the mechanism; the app owns which key does what.
 | Key | Prompt focused | Picker focused (live or pinned) |
 |---|---|---|
 | PgUp / PgDn | Page the transcript (pins) | Same |
-| `g` / `G` (pinned, empty prompt) | Top / live (focus cleared). Typed as text otherwise | The picker's letters |
+| Home / End (pinned) | Top / live (End clears the focus). Home and End are not typed characters | The picker's own cursor keys |
 | Wheel | Scroll; wheel up pins | Same |
 | Scrollbar click | Pinned only: page toward the click | Same |
 | Click on a link | Opens it in the browser (an OSC 8 link or a bare `http(s)://` / `mailto:` URL; `Tui::on_hyperlink` set to `login_controller::open_url` in `mode/mod.rs`). `HOOCODE_MOUSE=0` hands clicks back to the terminal | Same |
 | ↑ / ↓ | Pinned: one line over an empty prompt; with text, the prompt. Live: the prompt, which moves its cursor; ↑ on the first line goes to the task panel when it is shown and has rows | Picker |
 | Shift+↑ / Shift+↓ | Live: the prompt's history (older / newer). Pinned: one line | Picker |
-| `[` / `]` (pinned, empty prompt) | Previous / next user message. Typed as text otherwise | The picker's letters |
-| `j` / `k`, `q` (pinned, empty prompt) | One line down / up; `q` back to live | The picker's letters |
-| `{` / `}` (pinned, empty prompt) | Focus the previous / next block. Typed as text otherwise | The picker's letters |
+| `[` / `]` (block focused, empty prompt) | Previous / next user message. Typed as text otherwise (see the last row) | The picker's letters |
+| `j` / `k`, `q` (block focused, empty prompt) | One line down / up; `q` clears the focus and goes live | The picker's letters |
+| `{` / `}` (block focused, empty prompt) | Focus the previous / next block. Typed as text otherwise (see the last row) | The picker's letters |
 | Enter (pinned, block focused) | Toggle the block open / closed | Picker |
 | `y` (pinned, block focused) | Copy the block's raw output | Picker |
 | Esc (pinned, block focused) | Clear the focus only, never stops a turn | Picker |
 | Leader `u` (ctrl+x u) | Focus the newest block and pin | Picker |
-| `ctrl+x o` / `ctrl+x O` / `ctrl+x p` | Removed in P5 (UI-21): the view dial is gone, with `toolOutputView` and `app.view.*`. Single-view keys are `enter` toggle, `{` `}` focus, `y` copy, `esc` clear, `G` live, `ctrl+x u` newest + pin | Picker |
 | Leader `/` (ctrl+x /) | Pin at bottom, open search | Picker |
-| `/` | Pinned: search in view. Live: types `/` | Picker |
+| `/` | Block focused, empty prompt: search the transcript. Otherwise typed as text (live or pinned) | Picker |
+| Any other typed character | Block focused: clears the focus, goes live and types. No block focused, pinned: goes live and types. Live: types | The picker's letters |
 | `n` / `p` | Search open: next / previous match. Else the prompt | Picker |
 | Enter | Search locked: next contact. Typing: locks the query. Else the prompt | Picker |
 | Esc | Search open: clear it. Else live; during an agent run, also aborts it | Picker |
@@ -234,12 +234,14 @@ One tab per kind of task: **Plan** (TodoWrite items, each linked run nested unde
 
 | Key | Focused panel |
 |---|---|
-| `app.panel.focus` | Not a panel key: the leader `g` (ctrl+x g) runs it from the prompt. Esc returns the keyboard |
+| `app.panel.focus` (ctrl+x g) | Hides the panel and gives the keyboard back. It is in `PANEL_KEYS` (`task_panel.rs`) |
 | `app.panel.up` / `app.panel.down` (arrows) | Pick the row above / below. Up clamps at the top; Down past the last row returns to the prompt. The pick is kept by row id across rebuilds |
 | `app.panel.prevTab` (Left, Shift+Tab) / `app.panel.nextTab` (Right, Tab) | Previous / next tab with rows (wraps); the pick goes to the new tab's last row |
 | `app.panel.open` (Enter) | A row with an action (MCP server `Login`) queues `Perform`, which `TaskStore::perform` runs (`/mcp login` path). A subagent row queues `Open`, which attaches to its run (`attach_run`, T3.3). A shell row queues `Open`, which attaches to the job's output (`attach_job`, T5.3). Plan items, schedule jobs and MCP calls do nothing on Enter |
 | `app.panel.cancel` (`x`) | First press arms the row (the right column says `press x again to cancel`). Second: an Abort row (MCP call, running shell job) queues `Perform(Abort)`; a running subagent run queues `Cancel`, through `SubagentPool::cancel`. Other rows ignore it. Any other key disarms |
 | `app.panel.exit` (Esc) | Disarms a pending cancel, else back to the prompt |
+
+**Strip hints, joined notices, typed keys.** The unfocused strip ends with `ctrl+x l next tab · ctrl+x g hide` (keymap names; the hints drop before the tab labels when the width is short). Tips and longer notices drawn under the panel join its pane: pane background, indent 3, no blank row (`notification_panel.rs`). With no panel they render as before. While the panel has the keyboard, a typed character that is not one of its keys returns the keyboard to the prompt and types there.
 
 The hint foot names only the keys that do something on the picked row (`pick_hints`): the moves and `esc back` always, then Enter and `x` by row kind (`enter log in` on a Login row, `enter open its log` on a run, `enter open output` on a shell job, `x cancel` on an active run or MCP call, `x stop` on a running shell job). A plan item or a schedule job names neither.
 
@@ -296,7 +298,7 @@ A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs
 | ANSI-aware width, wrap, truncate | `tui-util` |
 | Kill ring, undo | `tui-editing` |
 | Fuzzy match | `tui-fuzzy` |
-| Themes (built-in and JSON), colours | `code-tui-theme` |
+| Themes (built-in and JSON), colours | `code-tui-theme`. Colour roles and rules: `crates/hoocode-code-tui-theme/color-semantics.json` (checked by `tests/it/color_semantics.rs`) |
 
 ## Rules for UI changes
 

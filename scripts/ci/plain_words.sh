@@ -12,8 +12,8 @@
 # "flight path", "end shift", "satellite", "jettison", "comms", "hull", "mission control".
 # Docs, archive and design pages are not checked (they record the old names).
 #
-# Status: add it to the CI `guards` job next to no_cortex.sh (the workflow file needs a
-# token with workflow scope). Run it by hand too: scripts/ci/plain_words.sh
+# Status: runs in the CI `guards` job next to no_cortex.sh. Run it by hand too:
+# scripts/ci/plain_words.sh
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
