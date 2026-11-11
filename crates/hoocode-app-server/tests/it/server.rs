@@ -1081,7 +1081,7 @@ async fn schema_conformance() {
         for error in validator.iter_errors(payload) {
             failures.push(format!(
                 "{kind} {method} ({name}) at {}: {error}",
-                error.instance_path
+                error.instance_path()
             ));
         }
     }
