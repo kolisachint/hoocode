@@ -185,7 +185,7 @@ pub fn main(argv: &[String]) -> i32 {
         return config_command::run_config_command(env.color, &mut stderr);
     }
     if argv.first().is_some_and(|a| a == "update") {
-        return hoocode_code_update::run_update_command(&mut stdout);
+        return hoocode_code_update::run_update_command(&argv[1..], &mut stdout, &mut stderr);
     }
     if argv
         .first()
