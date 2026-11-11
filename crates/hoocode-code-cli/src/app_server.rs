@@ -125,8 +125,13 @@ pub fn run(argv: &[String], err: &mut dyn Write) -> i32 {
             }
         };
     let args = crate::args::parse_args(&rest);
-    if let Some((bad, _)) = args.unknown_flags.first() {
-        let _ = writeln!(err, "Error: unknown option --{bad}\n\n{USAGE}");
+    if !args.unknown_flags.is_empty() {
+        let names: Vec<String> = args
+            .unknown_flags
+            .iter()
+            .map(|(name, _)| format!("--{name}"))
+            .collect();
+        let _ = writeln!(err, "{}\n\n{USAGE}", crate::unknown_option_error(&names));
         return 1;
     }
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -187,6 +192,17 @@ mod tests {
 
     fn strings(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn an_unknown_option_is_named_then_the_usage_follows() {
+        let mut err = Vec::new();
+        assert_eq!(run(&strings(&["--bogus"]), &mut err), 1);
+        let text = String::from_utf8(err).unwrap();
+        assert!(
+            text.starts_with("Error: Unknown option: --bogus\n\nUsage: hoocode app-server"),
+            "{text}"
+        );
     }
 
     #[test]
