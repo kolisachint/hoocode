@@ -84,7 +84,7 @@ mod agent_output {
             raw.contains(&t.fg("dim", " (\"audit the db layer\")")),
             "{raw}"
         );
-        assert!(raw.contains(&t.fg("warning", "running")), "{raw}");
+        assert!(raw.contains(&t.fg("accent", "running")), "{raw}");
     }
 }
 

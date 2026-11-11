@@ -23,6 +23,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use hoocode_code_tui_theme::theme;
+use hoocode_code_tui_widgets::pane::{Pane, PaneStyle};
+use hoocode_tui_ratatui::{Line, Span};
 use hoocode_tui_render::Component;
 
 use crate::status_line::{KeyHint, NoticeLevel, StatusNotice};
@@ -91,6 +93,9 @@ pub struct NotificationPanel {
     /// The status line's left slot is free for a one-row notice (no turn
     /// is running): such a notice shows there and the band stays empty.
     status_slot_free: bool,
+    /// The task panel is drawn right above the band: the band then joins
+    /// its pane (see [`Self::set_joined_to_pane`]).
+    joined_to_pane: bool,
 }
 
 impl NotificationPanel {
@@ -114,6 +119,7 @@ impl NotificationPanel {
             clock,
             cache: None,
             status_slot_free: true,
+            joined_to_pane: false,
         }
     }
 
@@ -284,6 +290,18 @@ impl NotificationPanel {
         }
     }
 
+    /// Whether the task panel is drawn right above the band. Then the band's
+    /// rows go on the pane colour, full width, at the pane's indent 3, with no
+    /// blank row above, so a tip reads as the last rows of the task pane. In
+    /// monochrome there is no fill and the band renders as before.
+    pub fn set_joined_to_pane(&mut self, joined: bool) {
+        if self.joined_to_pane != joined {
+            self.joined_to_pane = joined;
+            self.cache = None;
+            (self.request_render)();
+        }
+    }
+
     /// The notice up now as a status-line notice, when it is one row (no
     /// body). Its `note` (`shift+alt+m back`) becomes the key hint: the first
     /// word the key, the rest what it does. The panel's own clock expires it.
@@ -330,6 +348,12 @@ impl Component for NotificationPanel {
         // One row: the status line shows it while its slot is free.
         if current.body.is_empty() && self.status_slot_free {
             return Vec::new();
+        }
+        if self.joined_to_pane {
+            let st = PaneStyle::current();
+            if !st.mono {
+                return self.render_joined(current, width, st);
+            }
         }
         let rows = self.budget();
         if let Some((w, r, lines)) = &self.cache {
@@ -406,5 +430,76 @@ impl Component for NotificationPanel {
 
     fn invalidate(&mut self) {
         self.cache = None;
+    }
+}
+
+impl NotificationPanel {
+    /// The band as the task pane's last rows: the pane's background, full
+    /// width, rows at indent 3, no blank row above. Drawn through [`Pane`], so
+    /// the fill is the pane's own. Not cached: the pane style is read per draw.
+    fn render_joined(&self, current: &Notification, width: usize, st: PaneStyle) -> Vec<String> {
+        let inner = width.saturating_sub(4).max(1);
+        let warning = current.kind == NotificationKind::Warning;
+        let title_style = if warning {
+            st.text_style()
+                .add_modifier(hoocode_tui_ratatui::Modifier::BOLD)
+        } else {
+            st.dim_style()
+        };
+        let mut title_rows = wrap_text_with_ansi(&one_line(&current.title), inner);
+        if title_rows.len() > 3 {
+            title_rows.truncate(3);
+            let last = title_rows.pop().unwrap_or_default();
+            title_rows.push(truncate_to_width(&format!("{last}…"), inner, "…", false));
+        }
+        let hint = current
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(|note| {
+                let (key, action) = note.split_once(' ').unwrap_or((note, ""));
+                (key.to_string(), action.trim().to_string())
+            });
+        let hint_spans = |(key, action): &(String, String)| {
+            let mut spans = vec![Span::styled(key.clone(), st.text_style())];
+            if !action.is_empty() {
+                spans.push(Span::styled(format!(" {action}"), st.dim_style()));
+            }
+            spans
+        };
+        // Each row is one line of spans; the hint joins the last title row
+        // when it fits, else takes a row of its own.
+        let mut rows: Vec<Vec<Span<'static>>> = Vec::new();
+        let last = title_rows.len().saturating_sub(1);
+        for (i, row) in title_rows.iter().enumerate() {
+            let mut spans = vec![Span::styled(row.clone(), title_style)];
+            if let (true, Some(hint)) = (i == last, &hint) {
+                let plain = format!("{row}  {} {}", hint.0, hint.1);
+                if visible_width(plain.trim_end()) <= inner {
+                    spans.push(Span::raw("  "));
+                    spans.extend(hint_spans(hint));
+                } else {
+                    rows.push(spans);
+                    spans = hint_spans(hint);
+                }
+            }
+            rows.push(spans);
+        }
+        for line in self.body_rows(current) {
+            let text = truncate_to_width(line, inner, "…", false);
+            rows.push(vec![Span::styled(text, st.dim_style())]);
+        }
+        let mut pane = Pane::new("");
+        pane.top = rows
+            .into_iter()
+            .map(|spans| {
+                let mut line = vec![Span::raw("  ")];
+                line.extend(spans);
+                Line::from(line)
+            })
+            .collect();
+        pane.style = Some(st);
+        pane.render(width)
     }
 }

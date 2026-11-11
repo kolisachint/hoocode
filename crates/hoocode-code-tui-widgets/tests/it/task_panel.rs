@@ -13,7 +13,7 @@ use hoocode_code_task_store::{
     TaskPatch, TaskSource, TaskStatus, TaskUsage,
 };
 use hoocode_code_tui_theme::init_theme;
-use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelView};
+use hoocode_code_tui_widgets::task_panel::{PanelEvent, TaskPanelComponent, TaskPanelView};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
@@ -456,8 +456,13 @@ fn the_strip_is_the_first_row_with_every_tab_and_the_hint() {
     let strip_row = strip(&render(&mut panel, 120)[0]);
     assert!(strip_row.contains("plan 0/1 · agents 1/1"), "{strip_row}");
     // The hint is pinned right, not appended to the tabs.
-    assert!(strip_row.trim_end().ends_with("ctrl+x g"), "{strip_row}");
-    assert!(!strip_row.contains("agents 1/1 · ctrl+x g"), "{strip_row}");
+    assert!(
+        strip_row
+            .trim_end()
+            .ends_with("ctrl+x l next tab · ctrl+x g hide"),
+        "{strip_row}"
+    );
+    assert!(!strip_row.contains("agents 1/1 · ctrl+x l"), "{strip_row}");
     // Switching the shown tab keeps the same strip.
     panel.set_view(TaskPanelView::Subagents);
     let strip_row = strip(&render(&mut panel, 120)[0]);
@@ -1176,7 +1181,6 @@ fn a_finished_row_shows_the_outcome_and_its_cause() {
 // ---- focus, tabs, the pick, and the keys ----
 
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
-use hoocode_code_tui_widgets::task_panel::PanelEvent;
 
 const TAB: &str = "\t";
 const SHIFT_TAB: &str = "\x1b[Z";
@@ -1479,7 +1483,8 @@ fn the_hint_names_no_enter_or_x_where_they_do_nothing() {
         !foot.contains("· enter") && !foot.contains("· x "),
         "{foot}"
     );
-    assert!(foot.contains("↑↓ move · ←→ tab · esc back"), "{foot}");
+    // One tab: no `←→ tab`.
+    assert!(foot.contains("↑↓ move · esc back"), "{foot}");
 
     create_with(
         "a job",
@@ -1585,10 +1590,7 @@ fn focus_opens_the_flight_plan_console() {
     );
     // A plan item has no Enter and no `x`: the foot names only the moves.
     assert!(
-        lines
-            .last()
-            .unwrap()
-            .contains("↑↓ move · ←→ tab · esc back"),
+        lines.last().unwrap().contains("↑↓ move · esc back"),
         "{lines:#?}"
     );
 }
@@ -2046,4 +2048,85 @@ fn up_is_handed_over_only_while_the_panel_is_shown_with_rows() {
     assert!(panel.can_take_up(), "shown again");
     panel.toggle_shown();
     assert!(!panel.can_take_up(), "hidden by the leader g");
+}
+
+#[test]
+fn the_strip_hint_names_the_cycle_and_hide_keys_at_80_and_120() {
+    let _g = lock();
+    plan_and_done_run();
+    for width in [80u16, 120] {
+        let strip_row = strip(&render(&mut TaskPanelComponent::new(), width)[0]);
+        assert!(
+            strip_row
+                .trim_end()
+                .ends_with("ctrl+x l next tab · ctrl+x g hide"),
+            "{width}: {strip_row}"
+        );
+        assert!(
+            strip_row.contains("plan 0/1 · agents 1/1"),
+            "{width}: {strip_row}"
+        );
+    }
+}
+
+#[test]
+fn the_strip_hint_drops_hide_then_next_tab_before_the_tabs_cut() {
+    let _g = lock();
+    plan_and_done_run();
+    // Tabs need 21 cells; `next tab` is 17 more, `hide` 16 more.
+    let mid = strip(&render(&mut TaskPanelComponent::new(), 58)[0]);
+    assert!(mid.trim_end().ends_with("ctrl+x l next tab"), "{mid}");
+    assert!(!mid.contains("hide"), "{mid}");
+    assert!(mid.contains("plan 0/1 · agents 1/1"), "{mid}");
+    let narrow = strip(&render(&mut TaskPanelComponent::new(), 42)[0]);
+    assert!(!narrow.contains("next tab"), "{narrow}");
+    assert!(!narrow.contains("ctrl+x"), "{narrow}");
+    assert!(narrow.contains("plan 0/1 · agents 1/1"), "{narrow}");
+}
+
+#[test]
+fn a_focused_panel_names_the_tab_key_only_with_several_tabs() {
+    let _g = lock();
+    create("only plan");
+    let mut one = focused();
+    let foot = plain(&mut one, 120).pop().unwrap_or_default();
+    assert!(!foot.contains("tab"), "{foot}");
+    assert!(foot.contains("esc back"), "{foot}");
+    plan_and_done_run();
+    let mut two = focused();
+    let foot = plain(&mut two, 120).pop().unwrap_or_default();
+    assert!(foot.contains("tab"), "{foot}");
+}
+
+#[test]
+fn a_bare_printable_key_hands_the_keyboard_back_as_typed_text() {
+    let _g = lock();
+    plan_and_done_run();
+    let mut panel = focused();
+    press(&mut panel, "q");
+    assert_eq!(panel.take_events(), vec![PanelEvent::Type("q".into())]);
+    press(&mut panel, " ");
+    assert_eq!(panel.take_events(), vec![PanelEvent::Type(" ".into())]);
+}
+
+#[test]
+fn x_still_arms_a_cancel_and_an_escape_sequence_does_not_type() {
+    let _g = lock();
+    plan_and_done_run();
+    let mut panel = focused();
+    press(&mut panel, "x");
+    assert!(panel.take_events().is_empty());
+    press(&mut panel, "\x1b[2~");
+    assert!(panel.take_events().is_empty());
+}
+
+#[test]
+fn is_drawn_follows_shown_and_rows() {
+    let _g = lock();
+    let mut panel = TaskPanelComponent::new();
+    assert!(!panel.is_drawn(), "no rows");
+    create("row");
+    assert!(panel.is_drawn());
+    assert!(!panel.toggle_shown(), "hidden");
+    assert!(!panel.is_drawn());
 }

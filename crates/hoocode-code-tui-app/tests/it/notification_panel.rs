@@ -459,3 +459,69 @@ fn lets_a_caller_set_the_time_itself() {
     s.advance(500);
     assert_eq!(s.showing(), None);
 }
+
+#[test]
+fn joined_to_the_task_pane_the_band_takes_the_pane_fill_at_indent_three() {
+    let _g = lock(Some("dark"));
+    let mut s = setup(None);
+    s.panel.notify(
+        NotificationKind::Info,
+        "Mode: build",
+        &["described in .hoo/modes/build.md"],
+        None,
+        None,
+        None,
+    );
+    s.panel.set_joined_to_pane(true);
+    let lines = s.panel.render(WIDTH);
+    assert_eq!(lines.len(), 2, "no blank row above the band: {lines:?}");
+    for line in &lines {
+        assert!(line.contains(";48;2;"), "pane fill on every row: {line:?}");
+    }
+    let plain = s.rows(WIDTH);
+    assert_eq!(plain[0], "   Mode: build");
+    assert_eq!(plain[1], "   described in .hoo/modes/build.md");
+}
+
+#[test]
+fn not_joined_the_band_renders_as_before() {
+    let _g = lock(Some("dark"));
+    let mut s = setup(None);
+    s.panel.notify(
+        NotificationKind::Info,
+        "Mode: build",
+        &["described in .hoo/modes/build.md"],
+        None,
+        None,
+        None,
+    );
+    s.panel.set_joined_to_pane(true);
+    s.panel.set_joined_to_pane(false);
+    let lines = s.panel.render(WIDTH);
+    assert_eq!(lines[0], "");
+    assert!(lines.iter().skip(1).all(|l| !l.contains(";48;2;")));
+    let plain = s.rows(WIDTH);
+    assert_eq!(plain[1], " Mode: build");
+}
+
+#[test]
+fn joined_in_monochrome_the_band_keeps_todays_rendering() {
+    let _g = lock(Some("dark"));
+    hoocode_code_tui_theme::chalk::set_enabled(false);
+    let mut s = setup(None);
+    s.panel.notify(
+        NotificationKind::Info,
+        "Mode: build",
+        &["described in .hoo/modes/build.md"],
+        None,
+        None,
+        None,
+    );
+    s.panel.set_joined_to_pane(true);
+    let lines = s.panel.render(WIDTH);
+    let plain = s.rows(WIDTH);
+    hoocode_code_tui_theme::chalk::set_enabled(true);
+    assert_eq!(lines[0], "");
+    assert!(lines.iter().all(|l| !l.contains(";48;2;")));
+    assert_eq!(plain[1], " Mode: build");
+}
