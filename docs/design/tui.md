@@ -1,6 +1,6 @@
 # TUI
 
-Status (2026-11-11): built and consolidated. The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
+Status (2026-11-11): built and consolidated. The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). This is not the last TUI session: UI-25, UI-28 and UI-31 are started and not finished. The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
 
 ## Principles
 
@@ -69,7 +69,7 @@ Built 2026-11-07 (UI-21 and UI-22, phases P0–P6 on branch `feat/u21-u22`). Dec
 - Click and Enter read and write the same flag (`set_block_expanded`, `crates/hoocode-code-tui-app/src/mode/transcript/focus.rs`).
 - Focusing a block does not expand it. `{` and `}` change no expansion state.
 - Live: a click pins the view first, with the header on the same screen row, then toggles. `↓ N new` counts rows that arrive below.
-- There is no expand-all or collapse-all key (Open UI-24).
+- `ctrl+x o` (`app.scroll.toggleAll`) opens every tool row, or closes them all when any is open. It writes the same `expanded` flag. Frozen rows are skipped, and the status slot says how many (`Opened 12 rows. 30 older rows have no output to show.`). Closing is silent.
 
 #### Keys
 
@@ -350,6 +350,7 @@ Rule ids in the JSON: `yellow-blocking-only`, `red-failure-only`, `green-done-on
 | `b` | Show or hide thinking blocks | `u` | Focus the newest tool call and pin the view |
 | `y` | Yank pop (the editor's kill ring) | `z` | Redo (the editor) |
 | `v` | Paste image (Windows only) | Enter | Newline (works in every terminal) |
+| `o` | Open or close all tool rows | | |
 | Esc or Ctrl+X | Cancel the leader | | |
 
 Leader rules: `ctrl+x` enters pending. The next key runs its action. Esc, a second Ctrl+X, an unbound key (`no binding`, shown 1.5 s) or the timeout cancels. The timeout is 1500 ms (`leaderTimeoutMs`, `DEFAULT_LEADER_TIMEOUT`). After 400 ms (`WHICH_KEY_DELAY`) a which-key popup lists the leader keys, built from the keymap. The pending key is swallowed and never reaches the editor. The leader works only at the prompt: a picker, pane or task panel above it takes the key.
@@ -479,7 +480,7 @@ Other rules: every state has a shape. Every key is reachable from the keyboard. 
 | Key lint | `scripts/ci/no_literal_keys.py` (CI `guards` job) | Every change | runs in CI |
 | Plain words | `scripts/ci/plain_words.sh` (CI `guards` job) | Every change | runs in CI |
 
-Dialogs and notices have no golden pin yet (UI-6).
+Dialogs and notices are pinned by component goldens in dark, light and monochrome at 100 columns (UI-6, 2026-11-11): `tests/golden/hoocode-code-tui-selectors/`, `hoocode-code-tui-app/` and `hoocode-code-tui-widgets/`. The goldens pin the screen as built. Where it differs from this page, the list is in [docs/backlog.md](../backlog.md) (UI-34).
 
 ## How TUI work is done
 
@@ -545,13 +546,15 @@ Dialogs and notices have no golden pin yet (UI-6).
 | 2026-11-11 | A new tip teaches the tabs ("Tasks have tabs"). Running marks are accent, never yellow. |
 | 2026-11-11 | Colour semantics: `crates/hoocode-code-tui-theme/color-semantics.json` is the machine-readable source for agents (rules, roles, states, surfaces, token meanings). It is kept in sync with the schema by `tests/it/color_semantics.rs`. This page keeps a summary. |
 | 2026-11-11 | UI-2, UI-3, UI-5, UI-8, UI-10 and UI-11 closed as verified. UI-2: the orphan goldens are deleted. UI-3: the plain-words guard runs in CI `guards`. UI-5: a printable leader is refused (`LeaderKey::new`). UI-8: the contrast test covers all five themes. UI-10: the session picker's `x` asks for confirmation (`confirming_delete`). UI-11: `ctrl+x y` (yank pop) and `ctrl+x z` (redo) are bound. |
+| 2026-11-11 | `ctrl+x o` opens every tool row, or closes them all when any is open (UI-24 closed). Frozen rows are skipped and a one-row notice says how many. Supersedes the 2026-11-07 "no expand-all" row. |
+| 2026-11-11 | UI-6 closed: every dialog and notice has a component golden in dark, light and monochrome. UI-30 closed: the write-only override map in `TranscriptFocus` is removed. |
+| 2026-11-11 | User requests, not built yet (Open UI-31, UI-32): a tool row shows whether it is open, and a click anywhere on its line toggles it; the selected row in every pane is bold; deeper panes match the settings pane. When built, these supersede "an expanded header looks the same as a collapsed one", "a press and release on the same header cell" and "selected row: normal text (not bold)". |
 | 2026-11-11 | UI-4 and UI-9 were closed on 2026-11-08 and UI-21 and UI-22 on 2026-11-07. The Open table no longer lists them. |
 
 ## Open
 
 | ID | Item | Size | Trigger or gate | Design notes |
 |---|---|---|---|---|
-| UI-6 | Pin dialogs and notices with component goldens. The text mockups were deleted on 2026-11-06, so dialogs and notices have no text copy until this lands | M | Next | Add a component golden for each dialog (permission, question, quit, models, settings, sessions, theme, tree, fork, log in, scoped models, keys, slash, files, task panel variants) and each notice (info, info with value, usage, warning). Light and mono: one each. Use `UPDATE_GOLDENS=1`. Also fix the comment at `code-tui-widgets/tests/it/tool_rows.rs:3`, which names the deleted mockups. |
 | UI-7 | Auto theme by OSC 11 (decision 2026-11-03). Not built: `auto` reads `COLORFGBG` and the macOS setting only. | M | User: in scope or drop | Send `ESC ] 11 ; ? BEL`, parse the `rgb:` reply with a short timeout, fall back to `COLORFGBG`. Re-check on the existing 60 s poll, or on focus. If dropped, say so in Decisions. |
 | UI-12 | Verify the VS Code terminal does not take Ctrl+X before the default leader is final. | S | Manual check | If it does, keep the default and say so on the user page. |
 | UI-13 | Verify `⊗` and `◉` on common fonts (macOS Terminal, Windows Terminal, JetBrains Mono). | S | Manual check | `◉` ships in JetBrainsMono Nerd Font Mono. Record the result in the glyph module note. |
@@ -562,13 +565,15 @@ Dialogs and notices have no golden pin yet (UI-6).
 | UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
-| UI-24 | Expand-all / collapse-all key for tool rows (dropped 2026-11-07, revisit on ask). | S | User decision | Recommended if asked: `ctrl+x o` toggles all blocks. |
-| UI-25 | Thinking and other non-tool blocks cannot be focused from the keyboard (focus walks tool blocks only). Thinking has no production caller of `set_expanded`. | M | None | |
+| UI-25 | Only tool rows toggle. Thinking, summaries, `!` blocks, the skill block, the background notice and the startup listing have an `expanded` setter that no production code calls: no click, no key, no focus gutter. "Blocks that toggle besides tool calls" above describes the intent, not the build. | M | Next | Build one mechanism (header rows for hit-testing, get and set of `expanded`, raw text for copy, focused look) and make the tool chain its first user. Started: `docs/wip/2026-11-11-block-toggle.patch`. |
 | UI-26 | `/hotkeys` shows one meaning per bare key and omits non-letter keys (`controls.rs` `layer_cap`, `layer_actions`). | S | None | |
 | UI-27 | Settings search: Space toggles the row before the query sees it (`config_selector.rs`). | S | None | |
-| UI-28 | Hard-coded keys not in the keymap: `e`, `1`–`3` (permission card), `v`, `r` (session picker), Space (settings). | S | None | Move them to the keymap, or list them as fixed text on the hint row. |
+| UI-28 | Hard-coded keys not in the keymap: `e`, `1`–`3` (permission card), `v`, `r` (session picker), Space (settings). The scoped models picker should take its category key from the keymap and show it in the hint row (user, 2026-11-11). | S | Next | Started: `docs/wip/2026-11-11-ui-28-keys.patch`. |
 | UI-29 | Remaining non-blocking uses of the warning colour. | S | None | The list is in [docs/backlog.md](../backlog.md) (UI-29). The warning colour is for blocking only. |
-| UI-30 | `TranscriptFocus` override map is write-only since 2026-11-11 (`expanded_override`, `clear_expanded` in `scroll_view.rs` have no callers): remove. | S | None | |
+| UI-31 | Tool rows: open and close must be reliable, the row shows whether it is open, and a click anywhere on the row's line toggles it (user, 2026-11-11). | M | Next, with UI-25 | Stay inside the glyph set if it reads well. Rows that cannot open show no indicator. Started in the same patch as UI-25. |
+| UI-32 | Deeper panes (the screens reached from settings) have stray blank rows and whitespace. Match the settings pane. Make the selected row's name bold in every pane, as Models, Tree, Theme and Scoped models already do (user, 2026-11-11). | S | Next | Sessions, Settings and Fork are not bold today. |
+| UI-33 | Screen goldens are stale: 9 of 10 scenarios differ. They predate the single view (2026-11-07). | M | Before the next release check | Review each diff, fix the timing waits in `subagent-attach` and `scroll-view`, then `update`. List in [docs/backlog.md](../backlog.md). |
+| UI-34 | 21 places where a dialog or notice golden differs from this page. | M | After UI-32 | List in [docs/backlog.md](../backlog.md). Fix the screen or fix this page, one by one. |
 
 ## Not doing
 

@@ -20,7 +20,7 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
 - **TUI colours (2026-11-11):** what each colour token means is in
   `crates/hoocode-code-tui-theme/color-semantics.json` (machine-readable, checked by
   `tests/it/color_semantics.rs`). Read it before choosing a colour in TUI code; use tokens only.
-- **Handover:** `docs/backlog.md` says what the last session did, checked and left. The plan
+- **Handover:** `docs/backlog.md` says what the last session did, checked and left. Unfinished work is kept as patches in `docs/wip/`. The plan
   is still `docs/design/roadmap.md`.
 - **What to build next:** `docs/design/roadmap.md`. When the user asks to proceed or
   implement, ask which roadmap item first (recommendation: the top of "Next").

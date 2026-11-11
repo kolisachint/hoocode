@@ -1,0 +1,406 @@
+diff --git a/crates/hoocode-code-tui-app/src/clearance_card.rs b/crates/hoocode-code-tui-app/src/clearance_card.rs
+index 0f40f037..ff479c7d 100644
+--- a/crates/hoocode-code-tui-app/src/clearance_card.rs
++++ b/crates/hoocode-code-tui-app/src/clearance_card.rs
+@@ -192,7 +192,8 @@ impl ClearanceCard {
+             let count = options.len();
+             let item_budget = width.saturating_sub(4);
+             for (i, (label, scope)) in options.into_iter().enumerate() {
+-                let number = format!("{}  ", i + 1);
++                // The row's number is the key that picks it (K-P5).
++                let number = format!("{}  ", key_hint_text(PICK_IDS[i.min(2)]));
+                 let inline = match &scope {
+                     Some(scope) => format!("{label} {scope}"),
+                     None => label.clone(),
+@@ -215,9 +216,14 @@ impl ClearanceCard {
+             }
+             pane.selected = Some(self.selected.min(count - 1));
+             pane.input = Some(input_line(&self.reply, "or type a reply", self.focused));
+-            let pick = format!("1–{count}");
++            let pick = format!(
++                "{}–{}",
++                key_hint_text(PICK_IDS[0]),
++                key_hint_text(PICK_IDS[count.min(PICK_IDS.len()) - 1])
++            );
+             let yes = key_hint_text("app.dialog.yes");
+             let no = key_hint_text("app.dialog.no");
++            let edit = key_hint_text("app.permission.edit");
+             // `a` still highlights the always row; the hint keeps four
+             // items at every width (mock §S4).
+             pane.hint = fit_hint_line(
+@@ -225,7 +231,7 @@ impl ClearanceCard {
+                     (pick.as_str(), "pick"),
+                     (yes.as_str(), "yes"),
+                     (no.as_str(), "no"),
+-                    ("e", "edit"),
++                    (edit.as_str(), "edit"),
+                 ],
+                 false,
+                 width,
+@@ -248,6 +254,13 @@ impl ClearanceCard {
+     }
+ }
+ 
++/// The option keys, in order: `pick1` answers option 1, and so on.
++const PICK_IDS: [&str; 3] = [
++    "app.permission.pick1",
++    "app.permission.pick2",
++    "app.permission.pick3",
++];
++
+ impl Component for ClearanceCard {
+     fn render(&mut self, width: u16) -> Vec<String> {
+         self.pane(width as usize).render(width as usize)
+@@ -296,16 +309,16 @@ impl Component for ClearanceCard {
+             // Esc alone is no (spec §6.2).
+             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),
+             "\r" | "\n" => self.choose(self.selected),
+-            "e" => {
++            _ if kb.matches(data, "app.permission.edit") => {
+                 self.editing = true;
+                 self.edit.set_value(self.editable());
+                 // Editing starts at the end of the command (ctrl+e).
+                 self.edit.handle_input("\x05");
+                 self.edit.set_focused(self.focused);
+             }
+-            "1" => self.choose(0),
+-            "2" if count >= 2 => self.choose(1),
+-            "3" if count >= 3 => self.choose(2),
++            _ if kb.matches(data, "app.permission.pick1") => self.choose(0),
++            _ if kb.matches(data, "app.permission.pick2") && count >= 2 => self.choose(1),
++            _ if kb.matches(data, "app.permission.pick3") && count >= 3 => self.choose(2),
+             // The dialog letters (K-P4), only here with no reply typed: y and n
+             // answer at once. a moves the highlight to the always row; enter confirms it.
+             _ if kb.matches(data, "app.dialog.yes") => self.choose(0),
+diff --git a/crates/hoocode-code-tui-keybindings/src/defaults.rs b/crates/hoocode-code-tui-keybindings/src/defaults.rs
+index f0aa00a1..99682754 100644
+--- a/crates/hoocode-code-tui-keybindings/src/defaults.rs
++++ b/crates/hoocode-code-tui-keybindings/src/defaults.rs
+@@ -39,10 +39,19 @@ pub fn context_of(id: &str) -> Context {
+             | "app.session.rename"
+             | "app.session.delete"
+             | "app.session.deleteNoninvasive"
++            | "app.subagent.view"
++            | "app.subagent.resume"
+     );
+-    if id.starts_with("tui.select.") || id.starts_with("app.list.") || picker_session {
++    if id.starts_with("tui.select.")
++        || id.starts_with("app.list.")
++        || id == "app.settings.toggle"
++        || picker_session
++    {
+         Context::Picker
+-    } else if id.starts_with("app.dialog.") || id.starts_with("app.options.") {
++    } else if id.starts_with("app.dialog.")
++        || id.starts_with("app.options.")
++        || id.starts_with("app.permission.")
++    {
+         Context::Dialog
+     } else if id.starts_with("app.tree.") {
+         Context::Tree
+diff --git a/crates/hoocode-code-tui-keybindings/src/keybindings.rs b/crates/hoocode-code-tui-keybindings/src/keybindings.rs
+index 8c3a7646..53dcda8d 100644
+--- a/crates/hoocode-code-tui-keybindings/src/keybindings.rs
++++ b/crates/hoocode-code-tui-keybindings/src/keybindings.rs
+@@ -301,6 +301,16 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
+             &["escape"],
+             "Back from an attached subagent run to the session",
+         ),
++        entry(
++            "app.subagent.view",
++            &["v"],
++            "Interrupted run: view the transcript",
++        ),
++        entry(
++            "app.subagent.resume",
++            &["r"],
++            "Interrupted run: resume it",
++        ),
+         entry(
+             "app.options.next",
+             &["right"],
+@@ -403,6 +413,11 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
+             &[],
+             "Tree filter: cycle backward",
+         ),
++        entry(
++            "app.settings.toggle",
++            &["space"],
++            "Settings: toggle the picked row",
++        ),
+         // ── Lists — bare letters, live while the query is empty (K-P4)
+         entry("app.list.up", &["k"], "List: move up"),
+         entry("app.list.down", &["j"], "List: move down"),
+@@ -413,6 +428,11 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
+         entry("app.dialog.yes", &["y"], "Dialog: yes"),
+         entry("app.dialog.no", &["n"], "Dialog: no"),
+         entry("app.dialog.always", &["a"], "Dialog: always"),
++        // ── Permission — the clearance card's own keys (K-P4, bare while no reply is typed)
++        entry("app.permission.edit", &["e"], "Permission: edit the command first"),
++        entry("app.permission.pick1", &["1"], "Permission: pick option 1"),
++        entry("app.permission.pick2", &["2"], "Permission: pick option 2"),
++        entry("app.permission.pick3", &["3"], "Permission: pick option 3"),
+     ]
+ }
+ 
+diff --git a/crates/hoocode-code-tui-keybindings/tests/fixtures/keybindings-gold.json b/crates/hoocode-code-tui-keybindings/tests/fixtures/keybindings-gold.json
+index 4594a7e8..0c26cec3 100644
+--- a/crates/hoocode-code-tui-keybindings/tests/fixtures/keybindings-gold.json
++++ b/crates/hoocode-code-tui-keybindings/tests/fixtures/keybindings-gold.json
+@@ -665,6 +665,20 @@
+    ],
+    "Back from an attached subagent run to the session"
+   ],
++  [
++   "app.subagent.view",
++   [
++    "v"
++   ],
++   "Interrupted run: view the transcript"
++  ],
++  [
++   "app.subagent.resume",
++   [
++    "r"
++   ],
++   "Interrupted run: resume it"
++  ],
+   [
+    "app.options.next",
+    [
+@@ -847,6 +861,13 @@
+    [],
+    "Tree filter: cycle backward"
+   ],
++  [
++   "app.settings.toggle",
++   [
++    "space"
++   ],
++   "Settings: toggle the picked row"
++  ],
+   [
+    "app.list.up",
+    [
+@@ -902,6 +923,34 @@
+     "a"
+    ],
+    "Dialog: always"
++  ],
++  [
++   "app.permission.edit",
++   [
++    "e"
++   ],
++   "Permission: edit the command first"
++  ],
++  [
++   "app.permission.pick1",
++   [
++    "1"
++   ],
++   "Permission: pick option 1"
++  ],
++  [
++   "app.permission.pick2",
++   [
++    "2"
++   ],
++   "Permission: pick option 2"
++  ],
++  [
++   "app.permission.pick3",
++   [
++    "3"
++   ],
++   "Permission: pick option 3"
+   ]
+  ],
+  "format": {
+diff --git a/crates/hoocode-code-tui-keybindings/tests/it/keybinding_layout.rs b/crates/hoocode-code-tui-keybindings/tests/it/keybinding_layout.rs
+index 27aca2a8..6dea18e1 100644
+--- a/crates/hoocode-code-tui-keybindings/tests/it/keybinding_layout.rs
++++ b/crates/hoocode-code-tui-keybindings/tests/it/keybinding_layout.rs
+@@ -178,6 +178,36 @@ const OPTIONS_SCOPE: &[&str] = &[
+     "app.options.back",
+ ];
+ 
++/// The interrupted-run choice on a session row (`v` view, `r` resume, esc
++/// back). It owns its keys while open, so `r` is the rename key only outside it.
++const INTERRUPTED_RUN_SCOPE: &[&str] = &[
++    "tui.select.cancel",
++    "app.subagent.view",
++    "app.subagent.resume",
++];
++
++/// The clearance (permission) card: letters and digits answer while no reply
++/// is typed (K-P4).
++const PERMISSION_SCOPE: &[&str] = &[
++    "app.dialog.yes",
++    "app.dialog.no",
++    "app.dialog.always",
++    "app.permission.edit",
++    "app.permission.pick1",
++    "app.permission.pick2",
++    "app.permission.pick3",
++];
++
++/// The settings list: Space toggles the picked row (the search query only
++/// sees it while it has text).
++const SETTINGS_SCOPE: &[&str] = &[
++    "tui.select.up",
++    "tui.select.down",
++    "tui.select.confirm",
++    "tui.select.cancel",
++    "app.settings.toggle",
++];
++
+ const SCROLL_SCOPE: &[&str] = &[
+     "app.scroll.lineUp",
+     "app.scroll.lineDown",
+@@ -209,6 +239,9 @@ const SCOPES: &[(&str, &[&str])] = &[
+     ("task panel", PANEL_SCOPE),
+     ("attached view", ATTACHED_SCOPE),
+     ("options pane", OPTIONS_SCOPE),
++    ("interrupted run choice", INTERRUPTED_RUN_SCOPE),
++    ("permission card", PERMISSION_SCOPE),
++    ("settings list", SETTINGS_SCOPE),
+     ("pinned scroll view", SCROLL_SCOPE),
+ ];
+ 
+@@ -657,13 +690,14 @@ fn families() -> Vec<(&'static str, Regex)> {
+         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),
+         ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|panel\.focus$)"),
+         ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|shiftLineUp|shiftLineDown|search)$"),
+-        ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings|hotkeys)"),
++        ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings\.open|hotkeys)"),
+         (
+             "Overlays",
+-            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest|toggleAll)|session\.(toggle|rename|delete)|models\.|tree\.)",
++            r"^app\.(options\.|subagent\.(attach|detach|view|resume)$|settings\.toggle$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest|toggleAll)|session\.(toggle|rename|delete)|models\.|tree\.)",
+         ),
+         ("Lists", r"^app\.list\."),
+         ("Dialogs", r"^app\.dialog\."),
++        ("Permission", r"^app\.permission\."),
+     ]
+     .into_iter()
+     .map(|(name, re)| (name, Regex::new(re).unwrap()))
+diff --git a/crates/hoocode-code-tui-selectors/src/config_selector.rs b/crates/hoocode-code-tui-selectors/src/config_selector.rs
+index db9cbb3e..a754707a 100644
+--- a/crates/hoocode-code-tui-selectors/src/config_selector.rs
++++ b/crates/hoocode-code-tui-selectors/src/config_selector.rs
+@@ -4,7 +4,7 @@
+ //! `+pattern` / `-pattern` entry to the settings file it belongs to. Themes
+ //! are not listed: they are picked with `/theme`, not switched off here.
+ 
+-use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, SPACE_KEY};
++use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
+ use std::cell::RefCell;
+ use std::cmp::Ordering;
+ use std::rc::Rc;
+@@ -572,7 +572,7 @@ impl ResourceList {
+                 key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                 "move",
+             ),
+-            (SPACE_KEY, "toggle"),
++            (key_hint_text("app.settings.toggle").as_str(), "toggle"),
+             (key_hint_text("tui.select.cancel").as_str(), "close"),
+         ]);
+         console
+@@ -712,7 +712,7 @@ impl Component for ResourceList {
+             if let Some(cb) = &mut self.on_exit {
+                 cb();
+             }
+-        } else if data == " " || kb.matches(data, "tui.select.confirm") {
++        } else if kb.matches(data, "app.settings.toggle") || kb.matches(data, "tui.select.confirm") {
+             self.toggle_selected();
+         } else {
+             self.search.handle_input_with(data, &kb);
+diff --git a/crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs b/crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs
+index d90fc3e3..39ebaf9e 100644
+--- a/crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs
++++ b/crates/hoocode-code-tui-selectors/src/scoped_models_selector.rs
+@@ -27,6 +27,9 @@ use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
+ 
+ const MAX_VISIBLE: usize = 8;
+ 
++/// The hint row's keys before `f1 more` (enter, category, esc).
++const ROW_HINTS: usize = 3;
++
+ /// `None` = all enabled (no filter); `Some` = an explicit ordered list of
+ /// `provider/id`s.
+ pub type EnabledIds = Option<Vec<String>>;
+@@ -224,17 +227,18 @@ impl State {
+         }
+     }
+ 
+-    /// Every key the picker answers to, in hint order (the first four show;
+-    /// `f1` lists the rest).
++    /// Every key the picker answers to, in hint order. The hint row shows the
++    /// first [`ROW_HINTS`] (enter, the category key, esc) and `f1 more`; `f1`
++    /// lists them all.
+     fn all_hints() -> Vec<(String, String)> {
+         let pair = |key: String, action: &str| (key, action.to_string());
+         vec![
+             pair(key_text("tui.select.confirm"), "on / off"),
++            pair(key_text("app.models.category"), "category"),
++            pair(key_hint_text("tui.select.cancel"), "close"),
+             pair(key_text("app.list.search"), "search"),
+             pair(key_text("app.models.save"), "save to settings"),
+-            pair(key_hint_text("tui.select.cancel"), "close"),
+             pair(key_hint_text("tui.input.tab"), "effort"),
+-            pair(key_text("app.models.category"), "category"),
+             pair(key_text("app.models.enableAll"), "all on"),
+             pair(key_text("app.models.clearAll"), "all off"),
+             pair(key_text("app.models.toggleProvider"), "provider"),
+@@ -520,7 +524,7 @@ impl Component for ScopedModelsSelectorComponent {
+         if self.help {
+             console.bottom.extend(help_rows(&pairs));
+         }
+-        console.set_hints(&pairs, true);
++        console.set_hints(pairs.get(..ROW_HINTS).unwrap_or(&pairs), true);
+         console.render(width as usize)
+     }
+ 
+diff --git a/crates/hoocode-code-tui-selectors/src/session_selector.rs b/crates/hoocode-code-tui-selectors/src/session_selector.rs
+index 533345c2..df5cd8c9 100644
+--- a/crates/hoocode-code-tui-selectors/src/session_selector.rs
++++ b/crates/hoocode-code-tui-selectors/src/session_selector.rs
+@@ -209,18 +209,15 @@ impl SessionSelectorHeader {
+             return Some(Line::from(spans));
+         }
+         if self.choosing_subagent {
++            let view = key_hint_text("app.subagent.view");
++            let back = key_hint_text("tui.select.cancel");
+             let text = if self.can_resume {
+-                &format!(
+-                    "Interrupted run · v view · r resume · {} back",
+-                    key_hint_text("tui.select.cancel")
+-                )
++                let resume = key_hint_text("app.subagent.resume");
++                format!("Interrupted run · {view} view · {resume} resume · {back} back")
+             } else {
+-                &format!(
+-                    "Interrupted run · v view · {} back",
+-                    key_hint_text("tui.select.cancel")
+-                )
++                format!("Interrupted run · {view} view · {back} back")
+             };
+-            return Some(Line::from(vec![Span::styled(text.to_string(), pal.acc())]));
++            return Some(Line::from(vec![Span::styled(text, pal.acc())]));
+         }
+         if let Some((kind, message)) = &self.status {
+             let style = if *kind == StatusKind::Error {
+@@ -682,10 +679,10 @@ impl SessionList {
+             let close = ListEvent::SubagentChoiceChange(false);
+             if kb.matches(data, "tui.select.cancel") {
+                 events.push(close);
+-            } else if data == "v" {
++            } else if kb.matches(data, "app.subagent.view") {
+                 events.push(close);
+                 events.push(ListEvent::Select(run.child));
+-            } else if data == "r" && self.can_resume {
++            } else if kb.matches(data, "app.subagent.resume") && self.can_resume {
+                 events.push(close);
+                 events.push(ListEvent::ResumeSubagent(run));
+             } else {

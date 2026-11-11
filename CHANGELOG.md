@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: open or close all tool rows (2026-11-11)
+- **`ctrl+x o` opens every tool row, or closes them all when any is open.** Old rows that have released their output are skipped, and the status line says how many.
+- **A user page for subscription logins** (`docs/user/login.md`): the providers, the Google client variables, `ANTHROPIC_OAUTH_TOKEN`, the callback ports and what to do when one is taken.
+- **Every dialog and notice is pinned by a golden** in dark, light and monochrome.
+
+### Fixed: logins and command-line errors (2026-11-11)
+- **A rejected login token fails at once.** On the ChatGPT and Gemini paths a 401 or 403 was retried for about 7 seconds. The ChatGPT error now names the status: `ChatGPT API error (401): …`.
+- **The ChatGPT login says when port 1455 is taken** and asks you to paste the code or the redirect URL.
+- **An unknown option points at the help:** `Error: Unknown option: --x`, then `Run `hoocode --help` for usage.` `hoocode app-server` words it the same way. (#107)
+- **`hoocode update --help` and `hoocode config --help` print a usage.** `config --help` no longer opens the picker. An unknown argument to either is an error with exit code 2. (#153, #154)
+- **Plugin commands say what is missing:** `install needs a plugin name`. (#157)
+- **`scripts/install.sh --prefix` with no value is a usage error,** and the script has `--help`. (#106)
+- **The `HOOCODE_*` environment variables are on the configuration page.** (#155)
+- **Live tests fail when run without a credential,** so `--ignored` no longer reports a pass that tested nothing.
+
+### Changed: dependencies and model catalog (2026-11-11)
+- sha2 0.11, jsonwebtoken 11, jsonschema 0.60, and the minor and patch group (ignore, rmcp, signal-hook, unicode-width, uuid). The model catalog has 33 more models.
+
 ### Fixed: letters always type at the prompt (2026-11-11)
 - **A letter typed after scrolling back is no longer lost.** With the transcript scrolled back and the prompt empty, `j`, `k`, `q`, `[`, `]`, `{`, `}` and `/` were taken as pager keys, so "jump" became "ump" and `/model` opened a transcript search. Every typed character now goes to the prompt. The transcript letters act only while a tool row is focused: `ctrl+x u` focuses the newest one, and the `›` gutter shows it. Arrows, PgUp, PgDn, Home, End and Esc work as before.
 - **A click and `enter` open and close the same row the same way.** A click moves the keyboard focus only when a row is already focused, so the mouse never takes the keyboard from the prompt. `q`, or any letter that is not a transcript key, clears the focus and goes back to live.
