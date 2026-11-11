@@ -12,6 +12,7 @@ pub(crate) fn global_theme_lock() -> MutexGuard<'static, ()> {
 }
 
 mod auto_theme;
+mod color_semantics;
 mod gold;
 mod schema;
 mod theme_blocking_yellow;
