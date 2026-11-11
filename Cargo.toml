@@ -93,7 +93,7 @@ resolver = "2"
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.2.38"
+version = "0.2.39"
 authors = ["Mario Zechner (original author)", "Sachin Koli"]
 edition = "2021"
 license = "MIT"
