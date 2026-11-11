@@ -7,7 +7,7 @@ hoocode                        # full-screen session
 ```
 
 `hoocode --help` lists the provider keys it reads. No API key? Start `hoocode` and run `/login` to sign in with a subscription
-(Anthropic, GitHub Copilot, OpenAI Codex or Google) instead.
+(Anthropic, GitHub Copilot, OpenAI Codex or Google) instead. See [subscription sign-in](login.md).
 
 ## In a session
 

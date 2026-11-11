@@ -53,3 +53,5 @@ Built-in tools: **Read**, **Shell**, **Edit**, **Write** and **CodeSearch**.
 The [README](../../README.md) and the
 [CHANGELOG](../../CHANGELOG.md) in the
 repository have the full detail, and `/changelog` shows it inside hoocode.
+
+Sign in to a provider with `/login` and sign out with `/logout`. See [sign-in](login.md).

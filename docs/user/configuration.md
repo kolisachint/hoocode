@@ -8,7 +8,7 @@ to move it.
 | File or folder | What it holds |
 |---|---|
 | `~/.hoocode/settings.json` | Global settings (`/settings` edits it) |
-| `~/.hoocode/auth.json` | Logins and keys saved by `/login` |
+| `~/.hoocode/auth.json` | Logins and keys saved by `/login`. See [sign-in](login.md) |
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
