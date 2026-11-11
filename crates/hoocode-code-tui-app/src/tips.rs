@@ -113,6 +113,13 @@ pub fn tips() -> Vec<Tip> {
                 )]
             })
             .note("/settings"),
+        Tip::new("task-tabs", "Tasks have tabs")
+            .dynamic(|| {
+                vec![format!(
+                    "Plan, agents, background jobs get tabs. {} cycles; Up enters the list.",
+                    key_text("app.tasks.cycleForward")
+                )]
+            }),
         Tip::new("hotkeys", "Every shortcut, on one screen")
             .dynamic(|| {
                 vec![format!(

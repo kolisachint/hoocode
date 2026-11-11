@@ -3,28 +3,32 @@
 //! Declutter spec (Dialogs, Tasks): the panel is a pane above the prompt.
 //! Unfocused it has no title: rows only, with one dim strip row first when
 //! more than one tab has rows. The strip names the shown tab whole, folds
-//! the rest into `+N tabs`, and pins the `ctrl+x g` hint right.
-//! Focused it gets the `Tasks` chip with `/tasks · ctrl+g` and the strip
-//! after it, the pick marker and the hint row. Row glyphs: `◉` working,
+//! the rest into `+N tabs`, and pins the hint `ctrl+x l next tab · ctrl+x g
+//! hide` right (the hint drops `hide`, then `next tab`, before any tab label
+//! is cut). Focused it gets the `Tasks` chip with `/tasks · ctrl+x g` and the
+//! strip after it, the pick marker and the hint row. Row glyphs: `◉` working,
 //! `○` queued, `●` done, `⊗` failed or cancelled. It draws the same at every
 //! density.
 //!
-//! The panel is shown by default. Ctrl+G toggles it. With no rows it draws
-//! nothing.
+//! The panel is shown by default. The leader `ctrl+x g` toggles it. With no
+//! rows it draws nothing.
 //!
 //! One tab per kind of task, in tab order (see [`TaskPanelView`]); a tab
 //! with no rows is hidden.
 //! - Plan: the main agent's TodoWrite plan, each dispatched run nested under
 //!   the plan item it works on;
 //! - Agents: the subagent forest (`parentTaskId`), drawn with connectors;
+//! - Shell: background shell jobs, one row each;
+//! - Schedule: scheduled jobs, one row each;
 //! - MCP: the MCP calls, flat.
 //!
 //! The prompt keeps the keyboard. Up on the prompt's first line hands it to the
 //! panel on the bottom row ([`TaskPanelComponent::enter_from_below`]). Then the
 //! pick moves with Up and Down, Left and Right (or Tab) switch tabs, and Down
-//! past the last row, Esc or Ctrl+G returns to the prompt. Enter opens the
-//! pick, and `x` (twice) cancels a subagent run. What the app must do about
-//! those is queued as [`PanelEvent`]s, read with
+//! past the last row, Esc or `ctrl+x g` returns to the prompt. A printable key
+//! the panel does not use returns to the prompt too, and is typed there.
+//! Enter opens the pick, and `x` (twice) cancels a subagent run. What the app
+//! must do about those is queued as [`PanelEvent`]s, read with
 //! [`TaskPanelComponent::take_events`].
 //!
 //! The rows come from a [`RowModel`], rebuilt only when the store's
@@ -127,9 +131,18 @@ pub enum PanelEvent {
     /// `x` pressed twice on a running subagent. `run_id` is the pool's id for
     /// the run (the store task's `agent`).
     Cancel { run_id: String },
-    /// Back to the prompt: Esc, Down past the last row, or Ctrl+G (which also
+    /// Back to the prompt: Esc, Down past the last row, or ctrl+x g (which also
     /// hides the panel).
     Exit,
+    /// A printable key the panel does not use: the keyboard goes back to the
+    /// prompt, and the key is typed into it.
+    Type(String),
+}
+
+/// A single printable character (no control character, no escape sequence).
+fn is_printable(data: &str) -> bool {
+    let mut chars = data.chars();
+    matches!((chars.next(), chars.next()), (Some(ch), None) if !ch.is_control())
 }
 
 /// A row with a run clock: every row that is not a plan item (a subagent run, an
@@ -336,11 +349,43 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
         .collect()
 }
 
-/// The tab strip: the shown tab in normal text, the other tabs dim, and
-/// the `ctrl+x g` hint pinned right. At narrow widths the trailing tabs
-/// collapse into `+N tabs` (`plan 1/3 · +3 tabs`), always keeping the shown
-/// tab visible; what still overflows the pane cuts.
-fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool, width: usize) -> Line<'static> {
+/// The unfocused strip's hint, by how much of it is left. Level 0 names the
+/// cycle key and the hide key; level 1 drops `hide`; level 2 drops both. The
+/// strip drops hints a level at a time before it cuts a tab label.
+fn strip_hint_items(level: usize) -> Vec<(String, &'static str)> {
+    let cycle = (key_hint_text("app.tasks.cycleForward"), "next tab");
+    let hide = (key_hint_text("app.panel.focus"), "hide");
+    match level {
+        0 => vec![cycle, hide],
+        1 => vec![cycle],
+        _ => Vec::new(),
+    }
+}
+
+/// The hint's spans: keys in normal ink, action words dim, ` · ` between items.
+fn strip_hint_spans(items: &[(String, &'static str)]) -> Vec<Span<'static>> {
+    let st = PaneStyle::current();
+    let mut spans = Vec::new();
+    for (i, (keys, action)) in items.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" · ", st.dim_style()));
+        }
+        spans.push(Span::styled(keys.clone(), st.text_style()));
+        spans.push(Span::styled(format!(" {action}"), st.dim_style()));
+    }
+    spans
+}
+
+fn strip_hint_width(items: &[(String, &'static str)]) -> usize {
+    strip_hint_spans(items).iter().map(|s| s.width()).sum()
+}
+
+/// The tab strip: the shown tab in normal text, the other tabs dim, and the
+/// hint pinned right when `hinted`. At narrow widths the hint drops a level
+/// at a time first, then the trailing tabs collapse into `+N tabs`
+/// (`plan 1/3 · +3 tabs`), always keeping the shown tab visible; what still
+/// overflows the pane cuts.
+fn tab_strip(model: &RowModel, view: TaskPanelView, hinted: bool, width: usize) -> Line<'static> {
     let st = PaneStyle::current();
     let tabs = model.views();
     let labels: Vec<String> = tabs
@@ -348,16 +393,23 @@ fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool, width: usize) ->
         .map(|tab| model.lens_stats(*tab).label(*tab).to_lowercase())
         .collect();
     let shown = tabs.iter().position(|tab| *tab == view).unwrap_or(0);
-    let hint_key = hint.then(|| key_hint_text("app.panel.focus"));
-    let hint_w = hint_key.as_deref().map(visible_width).unwrap_or(0);
     // Cells for the strip content: the pane keeps a 2-column pad and the
     // unfocused strip adds its own 2-column indent.
     let budget = width.saturating_sub(4);
+    // The fullest hint level that fits with every tab whole. When none does,
+    // no hint, and the tabs collapse.
+    let hint_items = if hinted {
+        (0..=2)
+            .map(strip_hint_items)
+            .find(|items| strip_fits(&labels, labels.len(), strip_hint_width(items), budget))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let hint_w = strip_hint_width(&hint_items);
     // The leading tabs shown whole; the rest collapse into `+N tabs`.
     let mut shown_tabs = labels.len();
-    while shown_tabs > shown + 1
-        && !strip_fits(&labels, shown_tabs, hint_w, hint_key.is_some(), budget)
-    {
+    while shown_tabs > shown + 1 && !strip_fits(&labels, shown_tabs, hint_w, budget) {
         shown_tabs -= 1;
     }
     let mut spans = Vec::new();
@@ -381,24 +433,19 @@ fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool, width: usize) ->
         }
         spans.push(Span::styled(format!("+{hidden} tabs"), st.dim_style()));
     }
-    if let Some(key) = hint_key {
+    if hint_w > 0 {
         let used: usize = spans.iter().map(|s| s.width()).sum();
         let gap = budget.checked_sub(used + hint_w).unwrap_or(1);
         spans.push(Span::raw(" ".repeat(gap)));
-        spans.push(Span::styled(key, st.dim_style()));
+        spans.extend(strip_hint_spans(&hint_items));
     }
     Line::from(spans)
 }
 
-/// Whether `shown_tabs` leading tabs (plus `+N tabs` for the rest and the
-/// pinned hint) fit in `budget` cells with at least one space of pin gap.
-fn strip_fits(
-    labels: &[String],
-    shown_tabs: usize,
-    hint_w: usize,
-    hinted: bool,
-    budget: usize,
-) -> bool {
+/// Whether `shown_tabs` leading tabs (plus `+N tabs` for the rest, and a hint
+/// `hint_w` cells wide when there is one) fit in `budget` cells with at least
+/// one space of pin gap.
+fn strip_fits(labels: &[String], shown_tabs: usize, hint_w: usize, budget: usize) -> bool {
     let mut used = 0;
     for (i, label) in labels.iter().enumerate().take(shown_tabs) {
         if i > 0 {
@@ -413,7 +460,7 @@ fn strip_fits(
         }
         used += visible_width(&format!("+{hidden} tabs"));
     }
-    if hinted {
+    if hint_w > 0 {
         used += 1 + hint_w;
     }
     used <= budget
@@ -839,13 +886,14 @@ fn is_cancellable(task: &Task) -> bool {
 /// A plan item or a schedule job has neither, so its foot names none.
 fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(String, &'static str)> {
     let open = key_hint_text("app.panel.open");
-    let mut keys = vec![
-        (key_pair_hint("app.panel.up", "app.panel.down"), "move"),
-        (
+    let mut keys = vec![(key_pair_hint("app.panel.up", "app.panel.down"), "move")];
+    // Left and Right move between tabs only when there is more than one.
+    if model.views().len() > 1 {
+        keys.push((
             key_pair_hint("app.panel.prevTab", "app.panel.nextTab"),
             "tab",
-        ),
-    ];
+        ));
+    }
     if let Some(task) = picked.and_then(|id| model.task(id)) {
         if task.action == Some(RowAction::Login) {
             keys.push((open.clone(), "log in"));
@@ -870,7 +918,7 @@ fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(String, &'static st
 /// `TaskPanelComponent`.
 pub struct TaskPanelComponent {
     view: TaskPanelView,
-    /// The user's Ctrl+G choice; `None` shows the panel.
+    /// The user's ctrl+x g choice; `None` shows the panel.
     shown_override: Option<bool>,
     disposed: bool,
     ticking: bool,
@@ -949,12 +997,12 @@ impl TaskPanelComponent {
         self.selected = None;
     }
 
-    /// Whether the panel is drawn: the user's Ctrl+G choice, else shown.
+    /// Whether the panel is drawn: the user's ctrl+x g choice, else shown.
     pub fn is_shown(&self) -> bool {
         self.shown_override.unwrap_or(true)
     }
 
-    /// Ctrl+G: flips shown and hidden for this view. Returns the new state.
+    /// ctrl+x g: flips shown and hidden for this view. Returns the new state.
     pub fn toggle_shown(&mut self) -> bool {
         let shown = !self.is_shown();
         self.shown_override = Some(shown);
@@ -1054,6 +1102,26 @@ impl TaskPanelComponent {
         }
     }
 
+    /// Whether the panel draws rows this pass: shown, with rows. The
+    /// notification band joins the panel's pane while this is true.
+    pub fn is_drawn(&mut self) -> bool {
+        self.model.sync(task_store());
+        self.is_shown() && !self.model.views().is_empty()
+    }
+
+    /// Takes back the first queued [`PanelEvent::Type`], so the app can type
+    /// the key into the prompt before the next key of the same input batch.
+    pub fn take_typed(&mut self) -> Option<String> {
+        let at = self
+            .events
+            .iter()
+            .position(|event| matches!(event, PanelEvent::Type(_)))?;
+        match self.events.remove(at) {
+            PanelEvent::Type(text) => Some(text),
+            _ => None,
+        }
+    }
+
     /// A running row is live: re-render every second for its run clock.
     pub fn ticking(&self) -> bool {
         self.ticking
@@ -1144,6 +1212,12 @@ impl TaskPanelComponent {
         self.model.sync(task_store());
         let kb = get_keybindings();
         let Some(id) = PANEL_KEYS.iter().copied().find(|id| kb.matches(data, id)) else {
+            // A bare printable key is not the panel's: it goes back to the
+            // prompt and is typed there, so no keystroke is lost.
+            if is_printable(data) {
+                self.confirming = None;
+                self.events.push(PanelEvent::Type(data.to_string()));
+            }
             return;
         };
         // Any key but `x` disarms a pending cancel. Esc only disarms when one is pending.
@@ -1153,7 +1227,7 @@ impl TaskPanelComponent {
             .take()
             .filter(|id| self.is_cancellable_row(*id));
         match id {
-            // Ctrl+G hides the panel, and a hidden panel gives the keyboard back.
+            // ctrl+x g hides the panel, and a hidden panel gives the keyboard back.
             "app.panel.focus" => {
                 if !self.toggle_shown() {
                     self.events.push(PanelEvent::Exit);

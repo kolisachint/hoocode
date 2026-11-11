@@ -122,7 +122,7 @@ fn panel_focus_is_stale(focused: bool, shown: bool, has_rows: bool) -> bool {
 }
 
 impl Mode {
-    /// `app.panel.focus` (Ctrl+G): shows or hides the task panel in this view.
+    /// `app.panel.focus` (ctrl+x g): shows or hides the task panel in this view.
     /// The keyboard stays where it is; a hidden panel gives it back from inside.
     /// With no rows there is nothing to show, so the toggle stays as it is and
     /// the status line says so.
@@ -160,13 +160,27 @@ impl Mode {
     }
 
     /// Returns the keyboard when the panel queued an exit (Down past its last
-    /// row, Esc, Ctrl+G) during the key just handled, so the next key of the
-    /// batch goes to the prompt.
+    /// row, Esc, ctrl+x g) or a typed key during the key just handled, so the
+    /// next key of the batch goes to the prompt.
     pub(super) fn return_panel_focus_if_asked(&mut self) {
+        let typed = self.task_panel.borrow_mut().take_typed();
+        if let Some(text) = typed {
+            self.type_into_prompt(&text);
+            return;
+        }
         let asked = self.task_panel.borrow_mut().take_exit();
         if asked {
             self.leave_task_panel();
         }
+    }
+
+    /// A printable key the focused panel does not use: the keyboard goes back
+    /// to the prompt and the key is typed there, through the prompt's own
+    /// input path so the completion menus see it too.
+    fn type_into_prompt(&mut self, text: &str) {
+        self.leave_task_panel();
+        self.prompt_component().borrow_mut().handle_input(text);
+        self.dirty.set(true);
     }
 
     /// Gives the keyboard back when the panel has it but can no longer show
@@ -216,6 +230,7 @@ impl Mode {
                 }
                 PanelEvent::Cancel { run_id } => self.cancel_subagent_run(&run_id),
                 PanelEvent::Exit => self.leave_task_panel(),
+                PanelEvent::Type(text) => self.type_into_prompt(&text),
             }
         }
     }
@@ -478,5 +493,32 @@ mod tests {
             end_shift_answer(EndShiftChoice::End, true),
             (EndShift::Decided, true, true)
         );
+    }
+}
+
+#[cfg(test)]
+mod typed_key_tests {
+    use super::super::test_support::test_mode;
+    use hoocode_code_task_store::{task_store, CreateTaskOptions};
+    use hoocode_tui_render::Component;
+
+    /// A printable key the focused panel does not use goes back to the prompt
+    /// and is typed there, so the keystroke is not lost.
+    #[test]
+    fn a_typed_key_with_the_panel_focused_returns_to_the_prompt_and_is_typed() {
+        let mut mode = test_mode(None);
+        task_store().create("row a", CreateTaskOptions::default());
+        mode.enter_task_panel_from_prompt("\x1b[A");
+        assert!(
+            mode.task_panel.borrow().is_focused(),
+            "panel took the keyboard"
+        );
+        mode.task_panel.borrow_mut().handle_input("q");
+        mode.return_panel_focus_if_asked();
+        assert!(
+            !mode.task_panel.borrow().is_focused(),
+            "keyboard back at the prompt"
+        );
+        assert_eq!(mode.editor.borrow().editor.get_text(), "q");
     }
 }

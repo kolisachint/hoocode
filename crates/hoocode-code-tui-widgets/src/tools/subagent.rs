@@ -173,7 +173,7 @@ fn roster_line(line: &str) -> String {
             let status = &caps[3];
             let rest = &caps[4];
             let status_color = if status == "running" {
-                "warning"
+                "accent"
             } else if status.starts_with("done") {
                 "success"
             } else if status == "collected" || status == "cancelled" {
@@ -234,7 +234,7 @@ fn card_status(result: &ToolResultView<'_>) -> Option<String> {
 fn status_tone(status: &str) -> &'static str {
     match status {
         "done" => "success",
-        "running" => "warning",
+        "running" => "accent",
         "collected" => "muted",
         "cancelled" | "unknown" => "dim",
         _ => "error",

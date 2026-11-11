@@ -1,12 +1,14 @@
-   plan 1/3 · agents 1/1 · mcp 1/1                                     ctrl+x g
+   plan 1/3 · agents 1/1 · mcp 1/1            ctrl+x l next tab · ctrl+x g hide
    ● Read the migration plan
    ◉ Port the task panel renderer
    ○ Add golden snapshots
 --- styles ---
 r0 c0-10 fg=#e5e5e7 bg=#1e1e2a
 r0 c11-33 fg=#989898 bg=#1e1e2a
-r0 c34-70 fg=#e5e5e7 bg=#1e1e2a
-r0 c71-78 fg=#989898 bg=#1e1e2a
+r0 c34-53 fg=#e5e5e7 bg=#1e1e2a
+r0 c54-65 fg=#989898 bg=#1e1e2a
+r0 c66-73 fg=#e5e5e7 bg=#1e1e2a
+r0 c74-78 fg=#989898 bg=#1e1e2a
 r0 c79 fg=#e5e5e7 bg=#1e1e2a
 r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r1 c3 fg=#989898 bg=#1e1e2a
