@@ -15,10 +15,25 @@ if [[ -x "$CURL_BIN/hoocode" ]]; then
 else
   PREFIX="$HOME/.local/bin"
 fi
+usage() {
+  cat <<'EOF'
+Usage: scripts/install.sh [--prefix DIR]
+
+Build the release hoocode binary and install it as hoocode (and its hoo alias).
+
+  --prefix DIR    install into DIR (default: ~/.hoocode/bin when the curl
+                  installer's install exists, else ~/.local/bin)
+  -h, --help      show this usage
+EOF
+}
+# Argument errors exit 2 before anything is built.
+die() { echo "error: $*" >&2; exit 2; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --prefix) PREFIX="$2"; shift 2 ;;
-    *) echo "unknown argument: $1" >&2; exit 2 ;;
+    --prefix) [[ $# -ge 2 ]] || die "--prefix needs a value"; PREFIX="$2"; shift 2 ;;
+    --prefix=*) [[ -n "${1#*=}" ]] || die "--prefix needs a value"; PREFIX="${1#*=}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown argument: $1 (see --help)" ;;
   esac
 done
 
