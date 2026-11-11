@@ -144,14 +144,28 @@ mod tests {
     }
 
     #[test]
-    fn errors_go_to_stderr_with_the_usage() {
+    fn errors_go_to_stderr_naming_what_is_missing() {
         let (_dir, paths) = sandbox();
         let (code, out, err) = call(&paths, &["install"]);
         assert_eq!(code, 1);
         assert!(out.is_empty());
-        assert!(
-            err.starts_with("Error: Usage: hoocode plugin list | "),
-            "{err}"
+        assert_eq!(
+            err,
+            "Error: install needs a plugin name. Run `hoocode plugin --help` for usage.\n"
+        );
+
+        let (code, _, err) = call(&paths, &["remove"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            err,
+            "Error: remove needs a plugin name. Run `hoocode plugin --help` for usage.\n"
+        );
+
+        let (code, _, err) = call(&paths, &["plugin", "marketplace", "add"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            err,
+            "Error: marketplace add needs a source. Run `hoocode plugin --help` for usage.\n"
         );
 
         let (code, _, err) = call(&paths, &["remove", "nothing-here"]);
