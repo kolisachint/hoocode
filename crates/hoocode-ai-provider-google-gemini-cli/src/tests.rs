@@ -629,13 +629,12 @@ fn a_safety_stop_is_an_unknown_error() {
 
 // --- AU-3: 401 and 403 with a subscription token ---
 
-/// A rejected token is not refreshed here. Every failed attempt is retried
-/// with backoff (1 s, 2 s, 4 s) on the single endpoint, so the server sees
-/// four requests before the error is final.
+/// A rejected token is not refreshed or retried: the server sees one request
+/// and the error is final.
 fn assert_rejected_token(status_line: &'static str, code: u16, message: &str) {
     let body = r#"{"error":{"code":401,"message":"Request had invalid authentication credentials.","status":"UNAUTHENTICATED"}}"#;
     let rejected = (status_line, "application/json", body);
-    let server = serve_script(vec![rejected; 4]);
+    let server = serve_script(vec![rejected]);
     let mut m = model();
     m.base_url = server.base_url.clone();
     let (events, result) = run_stream(m, API_KEY);
@@ -645,7 +644,7 @@ fn assert_rejected_token(status_line: &'static str, code: u16, message: &str) {
         result.error_message.as_deref(),
         Some(format!("Cloud Code Assist API error ({code}): {message}").as_str())
     );
-    assert_eq!(server.requests().len(), 4);
+    assert_eq!(server.requests().len(), 1);
 }
 
 #[test]

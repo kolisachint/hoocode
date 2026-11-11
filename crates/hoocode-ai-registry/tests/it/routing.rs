@@ -79,11 +79,13 @@ fn every_registered_provider_streams_through_its_api() {
             continue;
         }
         let codex = model.api == "openai-codex-responses";
-        // Cloud Code Assist retries every failure (errors raised in its retry
-        // loop are caught and retried), so it gets a successful stream; its
+        // Cloud Code Assist retries every failure but a rejected token (errors
+        // raised in its retry loop are caught and retried), so it gets a
+        // successful stream; its
         // API key is the OAuth `{token, projectId}` JSON.
         let gemini_cli = model.api == "google-gemini-cli";
-        // Codex retries every failure but a usage limit, needs a ChatGPT JWT
+        // Codex retries every failure but a usage limit or a rejected token,
+        // needs a ChatGPT JWT
         // (it reads the account id from it) and defaults to WebSocket.
         let error_body = if codex {
             r#"{"error":{"code":"usage_limit_reached","message":"routed"}}"#

@@ -662,6 +662,8 @@ async fn sleep_ms(ms: u64) {
 enum Attempt {
     Done(reqwest::Response),
     Next,
+    /// A failure that is not retried (a rejected token).
+    Fatal(String),
 }
 
 /// The try block of `streamGoogleGeminiCli`.
@@ -682,9 +684,10 @@ async fn drive(
     let headers = build_headers(model, &access_token, options);
     let client = hoocode_ai_util::tls::http_client();
 
-    // 403/404 cascade to the next endpoint at once; 429/5xx back off. Errors
-    // raised inside the loop (including a non-retryable status) are caught
-    // and retried with backoff like network errors, as in TS.
+    // 403/404 cascade to the next endpoint at once; 429/5xx back off; 401 and
+    // a 403 on the last endpoint end at once. Other errors raised inside the
+    // loop (including a non-retryable status) are caught and retried with
+    // backoff like network errors, as in TS.
     let mut response = None;
     let mut last_error: Option<String> = None;
     let mut request_url = String::new();
@@ -711,6 +714,7 @@ async fn drive(
                 break;
             }
             Ok(Attempt::Next) => continue,
+            Ok(Attempt::Fatal(error)) => return Err(error),
             Err(error) => {
                 last_error = Some(error);
                 if attempt < MAX_RETRIES {
@@ -803,6 +807,14 @@ async fn try_request(
         *endpoint_index += 1;
         return Ok(Attempt::Next);
     }
+    let error = format!(
+        "Cloud Code Assist API error ({status}): {}",
+        extract_error_message(&error_text)
+    );
+    // A token the server rejected does not start working on a retry.
+    if matches!(status, 401 | 403) {
+        return Ok(Attempt::Fatal(error));
+    }
     if attempt < MAX_RETRIES && is_retryable_error(status, &error_text) {
         if *endpoint_index < endpoint_count - 1 {
             *endpoint_index += 1;
@@ -821,10 +833,7 @@ async fn try_request(
         sleep_ms(delay_ms).await;
         return Ok(Attempt::Next);
     }
-    Err(format!(
-        "Cloud Code Assist API error ({status}): {}",
-        extract_error_message(&error_text)
-    ))
+    Err(error)
 }
 
 // ---------------------------------------------------------------------------

@@ -342,6 +342,11 @@ fn transport_json(transport: Transport) -> Value {
 // SSE transport
 // =============================================================================
 
+/// HTTP 401 or 403: the token was rejected. Not retried.
+fn is_rejected_token(status: u16) -> bool {
+    matches!(status, 401 | 403)
+}
+
 /// `isRetryableError`.
 fn is_retryable_error(status: u16, error_text: &str) -> bool {
     if matches!(status, 429 | 500 | 502 | 503 | 504) {
@@ -374,7 +379,8 @@ async fn sleep(ms: u64, signal: Option<&AbortSignal>) -> Result<(), CodexError> 
 }
 
 /// The POST with retries for rate limits and transient errors. Any failure
-/// other than a usage limit is retried, as in the TS loop.
+/// other than a usage limit or a rejected token (401, 403) is retried, as in
+/// the TS loop.
 async fn fetch_with_retries(
     model: &Model,
     headers: &[(String, String)],
@@ -421,7 +427,14 @@ async fn fetch_with_retries(
                     &error_text,
                     hoocode_ai_types::now_ms(),
                 );
-                CodexError::other(friendly.unwrap_or(message))
+                let error = CodexError::other(friendly.unwrap_or_else(|| {
+                    format!("ChatGPT API error ({}): {message}", status.as_u16())
+                }));
+                // A token the server rejected does not start working on a retry.
+                if is_rejected_token(status.as_u16()) {
+                    return Err(error);
+                }
+                error
             }
         };
         if attempt < MAX_RETRIES && !error.message().contains("usage limit") {

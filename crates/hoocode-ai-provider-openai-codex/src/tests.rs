@@ -822,8 +822,8 @@ async fn retries_transient_http_errors() {
 // -----------------------------------------------------------------------------
 
 /// The default transport (Auto) first tries the WebSocket handshake, which
-/// the server rejects; the SSE fallback then retries the rejected request
-/// three times (no refresh is attempted) before the error is final.
+/// the server rejects; the SSE fallback then sends the request once. A 401
+/// or 403 is not retried and no refresh is attempted, so the error is final.
 async fn assert_rejected_token(status: &'static str, body: &str, message: &str) {
     let rejected = || Reply {
         status,
@@ -831,14 +831,7 @@ async fn assert_rejected_token(status: &'static str, body: &str, message: &str) 
         body: body.into(),
         hold_open: false,
     };
-    let (base, requests) = http_server(vec![
-        rejected(),
-        rejected(),
-        rejected(),
-        rejected(),
-        rejected(),
-    ])
-    .await;
+    let (base, requests) = http_server(vec![rejected(), rejected()]).await;
     let result = stream_codex_responses(
         model("gpt-5.1-codex", &base),
         say_hello(),
@@ -852,7 +845,7 @@ async fn assert_rejected_token(status: &'static str, body: &str, message: &str) 
     assert_eq!(result.stop_reason, StopReason::Error);
     assert_eq!(result.error_message.as_deref(), Some(message));
     let requests = requests.lock().unwrap();
-    assert_eq!(requests.len(), 5, "1 WebSocket handshake + 4 SSE attempts");
+    assert_eq!(requests.len(), 2, "1 WebSocket handshake + 1 SSE attempt");
     assert_eq!(requests[0].header("upgrade"), Some("websocket"));
 }
 
@@ -861,7 +854,7 @@ async fn rejected_subscription_token_401_fails_with_the_server_message() {
     assert_rejected_token(
         "401 Unauthorized",
         r#"{"error":{"message":"Your authentication token has been invalidated. Please try signing in again."}}"#,
-        "Your authentication token has been invalidated. Please try signing in again.",
+        "ChatGPT API error (401): Your authentication token has been invalidated. Please try signing in again.",
     )
     .await;
 }
@@ -871,7 +864,7 @@ async fn rejected_subscription_token_403_fails_with_the_server_message() {
     assert_rejected_token(
         "403 Forbidden",
         r#"{"error":{"message":"You do not have access to this model on your plan."}}"#,
-        "You do not have access to this model on your plan.",
+        "ChatGPT API error (403): You do not have access to this model on your plan.",
     )
     .await;
 }
