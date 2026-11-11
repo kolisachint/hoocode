@@ -3,8 +3,8 @@
   "version": 1,
   "rules": [
     {"id": "yellow-blocking-only", "rule": "Yellow marks only the thing that blocks the user: a permission or question title and its chip. Never running, never a non-blocking warning. A warning's first row is ink bold.", "applies_to": ["warning", "chipWarn"]},
-    {"id": "red-failure-only", "rule": "Red marks only the failed mark `⊗` and the `exit N` fact. A failure reason is dim.", "applies_to": ["error", "err"]},
-    {"id": "green-done-only", "rule": "Green marks only the done mark `●` and diff additions `+n`.", "applies_to": ["success", "ok", "toolDiffAdded"]},
+    {"id": "red-failure-only", "rule": "Red marks only the failed mark `⊗`, the `exit N` fact and diff removals `−n`. A failure reason is dim.", "applies_to": ["error", "err"]},
+    {"id": "green-done-only", "rule": "Green marks only the done mark `●` and diff additions `+n`. The `!` shell-mode prompt mark has its own token, `bashMode`.", "applies_to": ["success", "ok", "toolDiffAdded"]},
     {"id": "accent-marker-running", "rule": "Accent marks the `›` marker, the running `◉` mark, inline code and the title chip.", "applies_to": ["accent", "chip", "acc", "mdCode"]},
     {"id": "never-colour-alone", "rule": "Every state has its own glyph. Colour is added on top, and the state must still read under NO_COLOR.", "applies_to": ["accent", "success", "error", "dim", "warning"]},
     {"id": "separation-by-background", "rule": "Panes and the prompt are separated by background steps and text weight, not by borders. Borders appear only in monochrome.", "applies_to": ["surface", "pane", "paneSel", "paneInput", "paneDetail"]},
@@ -33,7 +33,7 @@
     },
     {
       "role": "failed",
-      "meaning": "The failed mark `⊗` and the `exit N` fact, and nothing else.",
+      "meaning": "The failed mark `⊗`, the `exit N` fact and diff removals `−n`, and nothing else.",
       "tokens": ["error", "err"],
       "use_for": ["the failed mark `⊗`", "the `exit N` fact on a failed Shell row", "the failure notice head"],
       "never_for": ["the failure reason (dim)", "stopped or denied rows (dim `⊗`)", "the selected row"],
@@ -81,7 +81,7 @@
     {"state": "running", "glyph": "◉", "token": "accent", "note": "Elapsed time only; no spinner."},
     {"state": "done", "glyph": "●", "token": "success"},
     {"state": "failed", "glyph": "⊗", "token": "error", "note": "Red only on the mark and `exit N`; the reason is dim."},
-    {"state": "stopped", "glyph": "⊗", "token": "dim"},
+    {"state": "stopped", "glyph": "⊗", "token": "dim", "note": "Stopped by the user, cancelled or denied."},
     {"state": "queued", "glyph": "○", "token": "dim"},
     {"state": "blocking", "glyph": null, "token": "warning", "note": "Permission or question title only."}
   ],
