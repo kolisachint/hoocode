@@ -256,6 +256,11 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "Focus the newest tool block and pin the view",
         ),
         entry(
+            "app.scroll.toggleAll",
+            &["ctrl+x o"],
+            "Open all tool blocks, or close them all when one is open",
+        ),
+        entry(
             "app.panel.nextTab",
             &["right", "tab"],
             "Task panel: next tab",

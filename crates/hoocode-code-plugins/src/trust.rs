@@ -77,7 +77,12 @@ pub(crate) fn fingerprint(roots: &[PathBuf]) -> String {
             hasher.update(&bytes);
         }
     }
-    format!("sha256:{:x}", hasher.finalize())
+    let hex: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!("sha256:{hex}")
 }
 
 fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {

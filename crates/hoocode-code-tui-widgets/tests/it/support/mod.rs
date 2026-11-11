@@ -11,6 +11,7 @@ pub fn lock() -> MutexGuard<'static, ()> {
     let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("COLORTERM", "truecolor");
     hoocode_code_tui_theme::init_theme(Some("dark"), false);
+    hoocode_code_tui_theme::chalk::set_enabled(true);
     // `setKeybindings(new KeybindingsManager())`: the defaults, no user file.
     static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
     let dir = DIR.get_or_init(|| tempfile::tempdir().unwrap());
@@ -79,4 +80,28 @@ pub fn paper_theme() -> hoocode_code_tui_theme::Theme {
 /// Switch the process-wide theme to the [`paper_theme`] instance.
 pub fn init_paper_theme() {
     hoocode_code_tui_theme::set_theme_instance(paper_theme());
+}
+
+/// The look a golden is pinned in, on top of [`lock`].
+#[derive(Clone, Copy, Debug)]
+pub enum Look {
+    Dark,
+    Light,
+    /// Colour off (the NO_COLOR rules): shapes, bold and dim only.
+    Mono,
+}
+
+/// Applies `look`. Call after [`lock`], which restores the theme and colour.
+pub fn look(look: Look) {
+    match look {
+        Look::Dark => {}
+        Look::Light => hoocode_code_tui_theme::init_theme(Some("light"), false),
+        Look::Mono => hoocode_code_tui_theme::chalk::set_enabled(false),
+    }
+}
+
+/// Whether the drawn text carries the pane title `title` (`Tree  /tree`): the
+/// chip in colour, or in monochrome the top border's `Tree ─ /tree`.
+pub fn has_title(text: &str, title: &str) -> bool {
+    text.contains(title) || text.contains(&title.replacen("  ", " ─ ", 1))
 }

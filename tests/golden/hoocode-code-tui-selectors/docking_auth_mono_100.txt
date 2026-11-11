@@ -1,0 +1,9 @@
+┌─ Log in ─ /login  Anthropic ─────────────────────────────────────────────────────────────────────┐
+│ 1 https://example.test/oauth/authorize?code=WXYZ-1234                                            │
+│ scan, or enter to open the browser                                                               │
+│ No QR code in this terminal build — the link above docks the same provider.                      │
+│                                                                                                  │
+│ Approve the subscription in the browser.                                                         │
+│ esc cancel                                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---

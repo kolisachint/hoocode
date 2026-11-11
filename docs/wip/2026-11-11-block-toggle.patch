@@ -1,0 +1,1937 @@
+diff --git a/crates/hoocode-code-tui-app/src/mode/mod.rs b/crates/hoocode-code-tui-app/src/mode/mod.rs
+index abba0686..6cdd8e38 100644
+--- a/crates/hoocode-code-tui-app/src/mode/mod.rs
++++ b/crates/hoocode-code-tui-app/src/mode/mod.rs
+@@ -43,7 +43,6 @@ use hoocode_code_tui_widgets::controls::ControlsComponent;
+ use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
+ use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
+ use hoocode_code_tui_widgets::tool_chain::ChainState;
+-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
+ use hoocode_code_tui_widgets::UserMessageComponent;
+ use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
+ use hoocode_tui_render::{
+@@ -68,7 +67,7 @@ use crate::perf::Perf;
+ use crate::record_row::RecordRows;
+ use crate::resource_display::{format_display_path, ResourceListing};
+ use crate::scroll_view::{
+-    child_base, hit_chain, install_scroll_status, install_scroll_view, BlockToggle, TranscriptFocus,
++    child_base, install_scroll_status, install_scroll_view, TranscriptFocus,
+ };
+ use crate::startup_progress;
+ use crate::tips::{
+@@ -1069,44 +1068,19 @@ impl Mode {
+         }
+     }
+ 
+-    /// A queued header click toggles its block and pins the view, keeping
+-    /// the header on the row the click found it on (decision 6). A click on
+-    /// a body row, or outside every chain, queued nothing.
++    /// A queued click on a block's header (anywhere on its row) toggles
++    /// the block, and one on its fold line opens it. The header keeps the
++    /// screen row the click found it on. A click on any other body row, or
++    /// outside every block, does nothing.
+     fn drain_body_clicks(&mut self) {
+         let clicks = std::mem::take(&mut *self.pending_body_clicks.borrow_mut());
+-        if clicks.is_empty() {
+-            return;
+-        }
+         for click in clicks {
+-            let base = self.chat_base_row(click.width);
+-            let rel = base.and_then(|b| (click.buffer_row as usize).checked_sub(b));
+-            let hit = rel.and_then(|r| hit_chain(&self.transcript.chat, click.width, r));
+-            let Some((chain, block)) = hit else { continue };
+-            let toggle = BlockToggle {
+-                chain,
+-                block,
+-                buffer_row: click.buffer_row,
+-                context: click.context,
+-            };
+-            // The click shares `enter`'s primitive (see `set_block_expanded`):
+-            // both paths read the block's flag.
+-            let target = toggle
+-                .chain
+-                .borrow_mut()
+-                .as_any_mut()
+-                .and_then(|a| a.downcast_mut::<ToolChainComponent>())
+-                .and_then(|c| c.tool_blocks().get(toggle.block).cloned());
+-            let Some(target) = target else {
+-                continue;
+-            };
+-            let expanded = !target.borrow().is_expanded();
+-            self.set_block_expanded(&target, expanded);
+-            self.move_focus_on_click(&target);
+-            // Pin first, keeping the header on its row; the toggle opens
+-            // under it.
+-            self.tui
+-                .scroll_to_row(toggle.buffer_row, Some(toggle.context));
+-            self.dirty.set(true);
++            let rel = self
++                .chat_base_row(click.width)
++                .and_then(|base| (click.buffer_row as usize).checked_sub(base));
++            if let Some(rel) = rel {
++                self.click_fold(rel, click.width, click.context);
++            }
+         }
+     }
+ 
+diff --git a/crates/hoocode-code-tui-app/src/mode/transcript/focus.rs b/crates/hoocode-code-tui-app/src/mode/transcript/focus.rs
+index 0189ed64..596810cf 100644
+--- a/crates/hoocode-code-tui-app/src/mode/transcript/focus.rs
++++ b/crates/hoocode-code-tui-app/src/mode/transcript/focus.rs
+@@ -1,137 +1,85 @@
+-//! U21 single view P2: the pinned view's transcript focus. `ctrl+x u` focuses
+-//! the newest block and pins the view, and `ctrl+x o` opens or closes all
+-//! tool blocks (`toggle_all_tool_rows`). With a block focused over an empty
+-//! prompt, `{` and `}` move the focus between tool blocks, `enter` toggles
+-//! the focused block, `y` copies its raw output, and `esc` clears the focus.
+-//! `q` and `End` clear the focus and go back to live. Any other typed key
+-//! clears the focus and types at the prompt.
++//! The blocks of the transcript that open in place, and the pinned view's
++//! focus on one of them. One path for all of it: a click on a header row or
++//! a fold line, `ctrl+x u` (focus the newest block and pin the view), `{`
++//! and `}` (move the focus), `enter` (toggle the focused block), `y` (copy
++//! its raw text), and `ctrl+x o` (open or close them all). `esc` clears the
++//! focus. `q` and `End` clear the focus and go back to live. Any other
++//! typed key clears the focus and types at the prompt.
++//!
++//! Every path reads the same list (`chat_folds`: each chat child offers its
++//! blocks through `Component::fold_host`) and writes the block's own
++//! expanded flag through `FoldHost::set_fold_expanded`, so a click, `enter`
++//! and `ctrl+x o` always agree. A tool chain offers its tool rows and the
++//! thinking traces above them. Other chat children offer their own block.
+ //!
+ //! The scroll view queues the pinned keys as [`FocusIntent`]s (it owns no
+-//! chains); the mode drains them here, where the chains, the session and the
++//! blocks); the mode drains them here, where the chat, the session and the
+ //! clipboard live. The expanded state lives on each block, not here.
+ 
+-use std::rc::Rc;
+-
+ use hoocode_agent_types::AgentMessage;
+ use hoocode_ai_types::Content;
+ use hoocode_code_media::clipboard::{copy_to_clipboard, SystemClipboardHost};
+-use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
++use hoocode_tui_render::Fold;
+ 
+ use super::super::*;
+-use crate::scroll_view::{capture_top, reanchor_top, toggle_all_plan, FocusIntent};
++use crate::scroll_view::{
++    capture_top, chat_folds, find_fold, fold_at, fold_buffer_row, reanchor_top, set_fold_held,
++    toggle_all_plan, FocusIntent, FoldHit, FoldRef,
++};
+ 
+ /// What focusing the newest block pins: the tail, so the block is on screen.
+ fn pin_to_tail(mode: &mut Mode) {
+     mode.tui.scroll_to_row(i64::MAX, None);
+ }
+ 
+-/// The tool blocks of the transcript in order, across every chain.
+-fn focus_blocks(mode: &Mode) -> Vec<ToolBlock> {
+-    mode.transcript
+-        .chains
+-        .iter()
+-        .flat_map(|chain| chain.borrow().tool_blocks().to_vec())
+-        .collect()
++/// The blocks of the transcript that open in place, in order. A thinking
++/// trace hidden by `ctrl+x b` is not one, so the walk skips it.
++fn focus_folds(mode: &Mode) -> Vec<FoldRef> {
++    chat_folds(&mode.transcript.chat, mode.tui.transcript_width())
+ }
+ 
+-/// The chain holding `block`, if it is still in the transcript.
+-fn focus_chain(mode: &Mode, block: &ToolBlock) -> Option<Rc<RefCell<ToolChainComponent>>> {
+-    mode.transcript
+-        .chains
+-        .iter()
+-        .find(|chain| {
+-            chain
+-                .borrow()
+-                .tool_blocks()
+-                .iter()
+-                .any(|b| Rc::ptr_eq(b, block))
+-        })
+-        .cloned()
++/// Scroll the focused block's header into view, from the last layout. A
++/// row already comfortably in view stays where it is. Nothing when the
++/// layout is not ready yet.
++fn scroll_fold_into_view(mode: &mut Mode, id: &str) {
++    let row = fold_buffer_row(
++        &mode.tui,
++        &mode.transcript.chat,
++        mode.scroll_body.as_ref(),
++        id,
++    );
++    if let Some(row) = row {
++        mode.tui.scroll_to_row(row.max(0), None);
++    }
+ }
+ 
+-/// Scroll the focused block's header into view: the block's header row
+-/// (from the last render) over the chain's base. Falls back to the chain's
+-/// base when the header row is not placed yet. A row already comfortably in
+-/// view stays where it is. Nothing when the layout is not ready yet.
+-fn scroll_chain_into_view(
+-    mode: &mut Mode,
+-    chain: &Rc<RefCell<ToolChainComponent>>,
+-    block: &ToolBlock,
+-) {
+-    let width = mode.tui.transcript_width();
+-    let chat = &mode.transcript.chat;
+-    let index = match chat
+-        .borrow()
+-        .children()
+-        .iter()
+-        .position(|c| Rc::ptr_eq(c, &as_component(chain)))
+-    {
+-        Some(index) => index,
+-        None => return,
+-    };
+-    let rel = match chat.borrow().child_row_offsets(width) {
+-        Some(offsets) => match offsets.get(index).copied() {
+-            Some(rel) => rel,
+-            None => return,
+-        },
+-        None => return,
+-    };
+-    let target = match &mode.scroll_body {
+-        Some(body) => {
+-            let body_borrow = body.borrow();
+-            let offsets = match body_borrow.child_row_offsets(width) {
+-                Some(offsets) => offsets,
+-                None => return,
+-            };
+-            let chat_index = match body_borrow
+-                .children()
+-                .iter()
+-                .position(|c| Rc::ptr_eq(c, &as_component(chat)))
+-            {
+-                Some(chat_index) => chat_index,
+-                None => return,
+-            };
+-            match offsets.get(chat_index).copied() {
+-                Some(chat_base) => chat_base + rel,
+-                None => return,
++/// Push the transcript focus into every chat child that holds blocks, so
++/// the focused header draws the `›` gutter and the selection fill. Runs
++/// from `set_focus` and after every key (esc, q and End clear the shared
++/// state from the scroll view). A child takes a new render stamp only when
++/// its focus changes.
++fn sync_fold_focus(mode: &mut Mode) {
++    let focused = mode.focus.borrow().focused_call().map(str::to_string);
++    let children = mode.transcript.chat.borrow().children().clone();
++    for child in children {
++        if let Ok(mut component) = child.try_borrow_mut() {
++            if let Some(host) = component.fold_host_mut() {
++                host.set_fold_focus(focused.as_deref());
+             }
+         }
+-        None => rel,
+-    };
+-    // The block's header row when the last render placed it; the chain's
+-    // base otherwise (never a silent no-op).
+-    let header = chain
+-        .borrow()
+-        .tool_blocks()
+-        .iter()
+-        .position(|b| Rc::ptr_eq(b, block))
+-        .and_then(|index| chain.borrow().header_start_row(index))
+-        .unwrap_or(0);
+-    mode.tui
+-        .scroll_to_row(((target + header) as i64).max(0), None);
+-}
+-
+-/// Push the transcript focus into every chain, so the focused header draws
+-/// the `›` gutter and the paneSel fill. Runs from `set_focus` and after
+-/// every key (esc, q and End clear the shared state from the scroll view).
+-fn sync_chain_focus(mode: &mut Mode) {
+-    let focused = mode.focus.borrow().focused_call().map(str::to_string);
+-    for chain in &mode.transcript.chains {
+-        chain.borrow_mut().set_focused_call(focused.as_deref());
+     }
+ }
+ 
+-/// Focus `block`: remember it and show its header. The pinned hint row
+-/// (`enter open · y copy · { } move · esc clear`) teaches the keys.
+-fn set_focus(mode: &mut Mode, block: &ToolBlock) {
+-    let call_id = block.borrow().tool_call_id().to_string();
+-    mode.focus.borrow_mut().focus(&call_id);
++/// Focus the block `id`: remember it and show its header. The pinned hint
++/// row (`enter open · y copy · { } move · esc clear`) teaches the keys.
++fn set_focus(mode: &mut Mode, id: &str) {
++    mode.focus.borrow_mut().focus(id);
+     if !mode.tui.scroll_pinned() {
+         pin_to_tail(mode);
+-    } else if let Some(chain) = focus_chain(mode, block) {
+-        scroll_chain_into_view(mode, &chain, block);
++    } else {
++        scroll_fold_into_view(mode, id);
+     }
+-    sync_chain_focus(mode);
++    sync_fold_focus(mode);
+     mode.dirty.set(true);
+ }
+ 
+@@ -139,17 +87,29 @@ fn set_focus(mode: &mut Mode, block: &ToolBlock) {
+ /// or which end is already focused (named instead of re-focusing).
+ fn step_target(count: usize, current: Option<usize>, next: bool) -> Result<usize, &'static str> {
+     if count == 0 {
+-        return Err("No tool calls to focus yet.");
++        return Err(NO_BLOCKS);
+     }
+     match current {
+-        Some(i) if next && i + 1 >= count => Err("Already on the newest tool call."),
+-        Some(i) if !next && i == 0 => Err("Already on the oldest tool call."),
++        Some(i) if next && i + 1 >= count => Err("Already on the newest block."),
++        Some(i) if !next && i == 0 => Err("Already on the oldest block."),
+         Some(i) if next => Ok((i + 1).min(count - 1)),
+         Some(i) => Ok(i.saturating_sub(1)),
+         None => Ok(if next { 0 } else { count - 1 }),
+     }
+ }
+ 
++/// What the focus keys say when the transcript has no block to focus.
++const NO_BLOCKS: &str = "No blocks to focus yet.";
++
++/// What a click or `enter` says on a block that cannot open, so it never
++/// looks like the key did nothing.
++fn cannot_open_notice(fold: &Fold) -> String {
++    if fold.label == "TodoWrite" {
++        return "TodoWrite: the plan is in the task panel.".to_string();
++    }
++    format!("{}: no output to show.", fold.label)
++}
++
+ impl Mode {
+     /// Run the transcript keys the pinned view queued, in order.
+     pub(crate) fn drain_focus_intents(&mut self) {
+@@ -162,50 +122,37 @@ impl Mode {
+                 FocusIntent::Copy => self.copy_focused(),
+             }
+         }
+-        sync_chain_focus(self);
++        sync_fold_focus(self);
+     }
+ 
+     /// Focus the next or previous block; the ends say so instead of
+     /// re-focusing. With no blocks, say so instead of moving.
+     fn focus_step(&mut self, next: bool) {
+-        let blocks = focus_blocks(self);
+-        if blocks.is_empty() {
+-            self.show_status("No tool calls to focus yet.");
+-            return;
+-        }
++        let folds = focus_folds(self);
+         let current = self.focus.borrow().focused_call().map(str::to_string);
+-        let index = current.and_then(|call| {
+-            blocks
+-                .iter()
+-                .position(|b| b.borrow().tool_call_id() == call)
+-        });
+-        let at = match step_target(blocks.len(), index, next) {
+-            Ok(at) => at,
+-            Err(ends) => {
+-                self.show_status(ends);
+-                return;
++        let index = current.and_then(|id| folds.iter().position(|found| found.fold.id == id));
++        match step_target(folds.len(), index, next) {
++            Ok(at) => {
++                let id = folds[at].fold.id.clone();
++                set_focus(self, &id);
+             }
+-        };
+-        let block = blocks[at].clone();
+-        set_focus(self, &block);
++            Err(ends) => self.show_status(ends),
++        }
+     }
+ 
+     /// `ctrl+x u`: focus the newest block and pin the view.
+     pub(crate) fn focus_newest_and_pin(&mut self) {
+-        let newest = focus_blocks(self).pop();
+-        match newest {
+-            Some(block) => set_focus(self, &block),
+-            None => self.show_status("No tool calls to focus yet."),
++        match focus_folds(self).pop() {
++            Some(found) => set_focus(self, &found.fold.id),
++            None => self.show_status(NO_BLOCKS),
+         }
+     }
+ 
+-    /// The focused block, if its call is still in the transcript. A stale id
+-    /// (a retry took its chain out) clears the focus instead.
+-    fn focused_block(&mut self) -> Option<ToolBlock> {
+-        let call = self.focus.borrow().focused_call().map(str::to_string)?;
+-        let found = focus_blocks(self)
+-            .into_iter()
+-            .find(|b| b.borrow().tool_call_id() == call);
++    /// The focused block, if the transcript still holds it. A stale id (a
++    /// retry took its chain out) clears the focus instead.
++    fn focused_fold(&mut self) -> Option<FoldRef> {
++        let id = self.focus.borrow().focused_call().map(str::to_string)?;
++        let found = find_fold(&self.transcript.chat, self.tui.transcript_width(), &id);
+         if found.is_none() {
+             self.focus.borrow_mut().clear();
+             self.dirty.set(true);
+@@ -213,68 +160,103 @@ impl Mode {
+         found
+     }
+ 
+-    /// One primitive for both toggle paths (click + `enter`): set the block's
+-    /// own expanded flag. Both paths read the flag, so a click and `enter`
+-    /// always agree.
+-    pub(crate) fn set_block_expanded(&mut self, block: &ToolBlock, expanded: bool) {
+-        block.borrow_mut().set_expanded(expanded);
+-    }
+-
+-    /// A header click while a block is focused moves the focus onto the
+-    /// clicked block, so the next `enter` or `y` acts on it. With no focus
+-    /// the click leaves the keyboard alone: the mouse never takes it from the
++    /// A click while a block is focused moves the focus onto the clicked
++    /// block, so the next `enter` or `y` acts on it. With no focus the
++    /// click leaves the keyboard alone: the mouse never takes it from the
+     /// prompt.
+-    pub(crate) fn move_focus_on_click(&mut self, block: &ToolBlock) {
++    fn move_focus_on_click(&mut self, id: &str) {
+         if !self.focus.borrow().is_focused() {
+             return;
+         }
+-        let call_id = block.borrow().tool_call_id().to_string();
+-        self.focus.borrow_mut().focus(&call_id);
+-        sync_chain_focus(self);
++        self.focus.borrow_mut().focus(id);
++        sync_fold_focus(self);
+     }
+ 
+-    /// `enter` on a focused block: open it in place, or fold it back to one
+-    /// row. The header keeps its screen row while the body opens under it.
+-    fn toggle_focused(&mut self) {
+-        let Some(block) = self.focused_block() else {
++    /// A click on chat row `rel` (laid out at `width`), `context` screen
++    /// rows under the transcript's first screen row. On a header row it
++    /// toggles the block, on a fold line it opens it, and the header keeps
++    /// its screen row. A block that cannot open says so in the status slot.
++    /// Any other row does nothing.
++    pub(crate) fn click_fold(&mut self, rel: usize, width: u16, context: i64) {
++        let Some((found, hit)) = fold_at(&self.transcript.chat, width, rel) else {
+             return;
+         };
+-        let expanded = !block.borrow().is_expanded();
+-        if !self.tui.scroll_pinned() {
+-            pin_to_tail(self);
++        self.move_focus_on_click(&found.fold.id);
++        self.dirty.set(true);
++        if !found.fold.can_open {
++            self.show_status(&cannot_open_notice(&found.fold));
++            return;
+         }
+-        let anchor = capture_top(&self.tui, &self.transcript.chat, self.scroll_body.as_ref());
+-        self.set_block_expanded(&block, expanded);
+-        reanchor_top(
++        let expanded = match hit {
++            FoldHit::Header => !found.fold.expanded,
++            FoldHit::FoldLine => true,
++        };
++        // The header's own screen row: the clicked row, less the rows the
++        // click sits under the header's first row.
++        let under = found
++            .header_row()
++            .map_or(0, |header| rel.saturating_sub(header));
++        set_fold_held(
+             &mut self.tui,
+             &self.transcript.chat,
+             self.scroll_body.as_ref(),
+-            anchor,
++            &found.host,
++            &found.fold.id,
++            expanded,
++            Some(context - under as i64),
+         );
+-        self.dirty.set(true);
+     }
+ 
+-    /// `ctrl+x o`: open every tool block, or close them all when one is open.
+-    /// Frozen blocks are skipped (their output is gone), and an open that
+-    /// skips some says so in the status slot. A live view stays live, and a
+-    /// pinned one keeps its top row. Focus does not move.
+-    pub(crate) fn toggle_all_tool_rows(&mut self) {
+-        let blocks = focus_blocks(self);
+-        if blocks.is_empty() {
+-            self.show_status("No tool calls to open yet.");
++    /// `enter` on a focused block: open it in place, or fold it back to
++    /// its header. A header in view keeps its screen row while the body
++    /// opens under it; with the header off screen the top row stays put.
++    fn toggle_focused(&mut self) {
++        let Some(found) = self.focused_fold() else {
++            return;
++        };
++        self.dirty.set(true);
++        if !found.fold.can_open {
++            self.show_status(&cannot_open_notice(&found.fold));
+             return;
+         }
+-        let states: Vec<(bool, bool)> = blocks
++        let screen = fold_buffer_row(
++            &self.tui,
++            &self.transcript.chat,
++            self.scroll_body.as_ref(),
++            &found.fold.id,
++        )
++        .and_then(|row| self.tui.transcript_screen_row(row));
++        set_fold_held(
++            &mut self.tui,
++            &self.transcript.chat,
++            self.scroll_body.as_ref(),
++            &found.host,
++            &found.fold.id,
++            !found.fold.expanded,
++            screen,
++        );
++    }
++
++    /// `ctrl+x o`: open every block that can open, or close the open ones
++    /// when any is open. A live view stays live, and a pinned one keeps its
++    /// top row. Focus does not move.
++    pub(crate) fn toggle_all_tool_rows(&mut self) {
++        let folds = focus_folds(self);
++        let states: Vec<(bool, bool)> = folds
+             .iter()
+-            .map(|block| {
+-                let block = block.borrow();
+-                (block.is_expanded(), block.is_frozen())
+-            })
++            .map(|found| (found.fold.expanded, found.fold.can_open))
+             .collect();
+         let plan = toggle_all_plan(&states);
++        if plan.changed.is_empty() {
++            self.show_status("No blocks to open yet.");
++            return;
++        }
+         let anchor = capture_top(&self.tui, &self.transcript.chat, self.scroll_body.as_ref());
+         for &index in &plan.changed {
+-            self.set_block_expanded(&blocks[index], plan.expanded);
++            let found = &folds[index];
++            if let Some(host) = found.host.borrow_mut().fold_host_mut() {
++                host.set_fold_expanded(&found.fold.id, plan.expanded);
++            }
+         }
+         reanchor_top(
+             &mut self.tui,
+@@ -283,9 +265,6 @@ impl Mode {
+             anchor,
+         );
+         self.dirty.set(true);
+-        if let Some(notice) = plan.notice() {
+-            self.show_status(&notice);
+-        }
+     }
+ 
+     /// The session's raw result text for one tool call: the last result with
+@@ -312,20 +291,31 @@ impl Mode {
+         out
+     }
+ 
+-    /// `y` on a focused block: copy the raw output off the UI thread, never
+-    /// the rendered rows. Names the tool, so the notice says what landed.
++    /// `y` on a focused block: copy its raw text off the UI thread, never
++    /// the rendered rows. A tool call's output comes from the session; any
++    /// other block gives its own text. Names the block, so the notice says
++    /// what landed.
+     fn copy_focused(&mut self) {
+-        let Some(block) = self.focused_block() else {
++        let Some(found) = self.focused_fold() else {
+             return;
+         };
+-        let tool_name = block.borrow().tool_name().to_string();
+-        let call_id = block.borrow().tool_call_id().to_string();
+-        let raw = self.tool_result_text(&call_id);
++        let label = found.fold.label.clone();
++        let own = found
++            .host
++            .borrow()
++            .fold_host()
++            .and_then(|host| host.fold_text(&found.fold.id));
++        let (raw, subject) = match own {
++            Some(text) => (Some(text), label.clone()),
++            None => (
++                self.tool_result_text(&found.fold.id),
++                format!("{label} output"),
++            ),
++        };
+         let Some(raw) = raw.filter(|text| !text.trim().is_empty()) else {
+-            self.show_status(&format!("{tool_name}: no output to copy yet."));
++            self.show_status(&format!("{label}: no output to copy yet."));
+             return;
+         };
+-        let subject = format!("{tool_name} output");
+         let tx = self.tx.clone();
+         hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
+             let host = SystemClipboardHost {
+@@ -353,21 +343,18 @@ mod tests {
+ 
+     #[test]
+     fn stepping_past_either_end_names_it() {
+-        assert_eq!(
+-            step_target(0, None, true),
+-            Err("No tool calls to focus yet.")
+-        );
++        assert_eq!(step_target(0, None, true), Err("No blocks to focus yet."));
+         assert_eq!(step_target(3, None, true), Ok(0));
+         assert_eq!(step_target(3, None, false), Ok(2));
+         assert_eq!(step_target(3, Some(0), true), Ok(1));
+         assert_eq!(step_target(3, Some(1), false), Ok(0));
+         assert_eq!(
+             step_target(3, Some(2), true),
+-            Err("Already on the newest tool call.")
++            Err("Already on the newest block.")
+         );
+         assert_eq!(
+             step_target(3, Some(0), false),
+-            Err("Already on the oldest tool call.")
++            Err("Already on the oldest block.")
+         );
+     }
+ }
+diff --git a/crates/hoocode-code-tui-app/src/scroll_view.rs b/crates/hoocode-code-tui-app/src/scroll_view.rs
+index 66951907..0194a6ad 100644
+--- a/crates/hoocode-code-tui-app/src/scroll_view.rs
++++ b/crates/hoocode-code-tui-app/src/scroll_view.rs
+@@ -26,9 +26,8 @@ use hoocode_code_tui_keybindings::key_hint_text;
+ use std::cell::RefCell;
+ use std::rc::Rc;
+ 
+-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
+ use hoocode_tui_keys::{get_keybindings, is_key_release};
+-use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui};
++use hoocode_tui_render::{Component, ComponentHandle, Container, Fold, ScrollStatus, Tui};
+ 
+ use crate::status_line::{status_line_ansi, KeyHint, ScrollInfo, SearchInfo, StatusLineData};
+ 
+@@ -124,17 +123,6 @@ pub fn jump_to_user_message(
+     }
+ }
+ 
+-/// A header click waiting for the mode to act: the chain and block the
+-/// header toggles, and where the header sat when clicked. The mode drains
+-/// these after the TUI takes the event, while the layout still matches the
+-/// painted frame the click mapped to.
+-pub struct BlockToggle {
+-    pub chain: ComponentHandle,
+-    pub block: usize,
+-    pub buffer_row: i64,
+-    pub context: i64,
+-}
+-
+ /// The base buffer row of `child` in `parent`'s last render at `width`.
+ /// `None` before the first render, at another width, or when the child is
+ /// gone.
+@@ -150,32 +138,198 @@ pub fn child_base(parent: &Container, child: &ComponentHandle, width: u16) -> Op
+         .map(|i| offsets[i])
+ }
+ 
+-/// Hit-test a transcript buffer row against the chat: the chain and block
+-/// whose header holds it. Body rows and rows outside every chain are `None`
+-/// (a click there does nothing).
+-pub fn hit_chain(
++/// A block that opens in place, as the chat's last render drew it: the
++/// chat child that holds it, where that child starts in the chat, and the
++/// block's rows and state (rows count from the child's first row).
++#[derive(Clone)]
++pub struct FoldRef {
++    /// The chat child holding the block.
++    pub host: ComponentHandle,
++    /// The child's first row in the chat, when the chat is laid out at the
++    /// asked width.
++    pub base: Option<usize>,
++    /// The block in the child's last render.
++    pub fold: Fold,
++}
++
++impl FoldRef {
++    /// The header's first row in the chat.
++    pub fn header_row(&self) -> Option<usize> {
++        Some(self.base? + *self.fold.header.first()?)
++    }
++}
++
++/// What a click on a transcript row hit.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum FoldHit {
++    /// A header row: the click toggles the block.
++    Header,
++    /// The fold line under a partly shown body: the click opens the block.
++    FoldLine,
++}
++
++/// Every block of the chat that opens in place, in transcript order: the
++/// one list a click, the focus walk, `enter`, copy and open-all read. A
++/// chat child offers its blocks through `Component::fold_host`.
++pub fn chat_folds(chat: &Rc<RefCell<Container>>, width: u16) -> Vec<FoldRef> {
++    let chat_ref = chat.borrow();
++    let offsets = chat_ref.child_row_offsets(width);
++    let mut out = Vec::new();
++    for (index, child) in chat_ref.children().iter().enumerate() {
++        let Ok(component) = child.try_borrow() else {
++            continue;
++        };
++        let Some(host) = component.fold_host() else {
++            continue;
++        };
++        let base = offsets.as_ref().and_then(|o| o.get(index).copied());
++        out.extend(host.folds().into_iter().map(|fold| FoldRef {
++            host: child.clone(),
++            base,
++            fold,
++        }));
++    }
++    out
++}
++
++/// The block with this id, if the chat still holds it.
++pub fn find_fold(chat: &Rc<RefCell<Container>>, width: u16, id: &str) -> Option<FoldRef> {
++    chat_folds(chat, width)
++        .into_iter()
++        .find(|found| found.fold.id == id)
++}
++
++/// Hit-test a chat row (`rel` counts from the chat's first row) against the
++/// last render: the block whose header holds it, or whose fold line it is.
++/// Any other body row, and a row outside every block, is `None` (a click
++/// there does nothing).
++pub fn fold_at(
+     chat: &Rc<RefCell<Container>>,
+     width: u16,
+     rel: usize,
+-) -> Option<(ComponentHandle, usize)> {
+-    let chat_ref = chat.borrow();
+-    let offsets = chat_ref.child_row_offsets(width)?;
+-    let children = chat_ref.children();
+-    if children.len() != offsets.len() {
+-        return None;
++) -> Option<(FoldRef, FoldHit)> {
++    let (child, base) = {
++        let chat_ref = chat.borrow();
++        let offsets = chat_ref.child_row_offsets(width)?;
++        let children = chat_ref.children();
++        let i = offsets.iter().rposition(|o| *o <= rel)?;
++        (children[i].clone(), offsets[i])
++    };
++    let row = rel - base;
++    let folds = child.try_borrow().ok()?.fold_host()?.folds();
++    folds.into_iter().find_map(|fold| {
++        let hit = if fold.header.contains(&row) {
++            FoldHit::Header
++        } else if fold.fold_line == Some(row) && !fold.expanded {
++            FoldHit::FoldLine
++        } else {
++            return None;
++        };
++        Some((
++            FoldRef {
++                host: child.clone(),
++                base: Some(base),
++                fold,
++            },
++            hit,
++        ))
++    })
++}
++
++/// The chat's first row in the transcript buffer, from the last layout at
++/// `width`: the full-screen body holds the chat.
++fn chat_base(
++    chat: &Rc<RefCell<Container>>,
++    body: &Rc<RefCell<Container>>,
++    width: u16,
++) -> Option<usize> {
++    let chat_handle: ComponentHandle = chat.clone();
++    child_base(&body.borrow(), &chat_handle, width)
++}
++
++/// The transcript buffer row of a block's header, from the last layout.
++pub fn fold_buffer_row(
++    ui: &Tui,
++    chat: &Rc<RefCell<Container>>,
++    body: Option<&Rc<RefCell<Container>>>,
++    id: &str,
++) -> Option<i64> {
++    let width = ui.transcript_width();
++    let base = chat_base(chat, body?, width)?;
++    let header = find_fold(chat, width, id)?.header_row()?;
++    Some((base + header) as i64)
++}
++
++/// Opens or closes the block `id` of `host` and keeps the view still.
++///
++/// With `screen` (the header's screen row, counted from the transcript's
++/// first screen row) the header stays on that row: a click, and `enter` on
++/// a header in view. The view pins when it has to: a live view that still
++/// shows the header on its row at the tail stays live, and a transcript
++/// that fits the screen whole cannot hold a row, so it stays live too.
++/// Without `screen` the pinned top row stays where it is (the header is
++/// off screen), and a live view stays live.
++///
++/// The layout is taken fresh after the change, so the row is placed in the
++/// frame that will be painted, not the one before it. False when the host
++/// has no such block.
++pub fn set_fold_held(
++    ui: &mut Tui,
++    chat: &Rc<RefCell<Container>>,
++    body: Option<&Rc<RefCell<Container>>>,
++    host: &ComponentHandle,
++    id: &str,
++    expanded: bool,
++    screen: Option<i64>,
++) -> bool {
++    let top = capture_top(ui, chat, body);
++    let changed = host
++        .borrow_mut()
++        .fold_host_mut()
++        .is_some_and(|folds| folds.set_fold_expanded(id, expanded));
++    if !changed {
++        return false;
+     }
+-    let i = offsets.iter().rposition(|o| *o <= rel)?;
+-    if offsets.get(i + 1).is_some_and(|next| rel >= *next) {
+-        return None;
++    match (screen, body) {
++        (Some(screen), Some(body)) => hold_header(ui, chat, body, id, screen),
++        _ => reanchor_top(ui, chat, body, top),
+     }
+-    let chain = children[i].clone();
+-    let row = rel - offsets[i];
+-    let block = chain
+-        .borrow()
+-        .as_any()?
+-        .downcast_ref::<ToolChainComponent>()?
+-        .header_hit(row)?;
+-    Some((chain, block))
++    true
++}
++
++/// After a block changed, puts its header back on screen row `screen`.
++fn hold_header(
++    ui: &mut Tui,
++    chat: &Rc<RefCell<Container>>,
++    body: &Rc<RefCell<Container>>,
++    id: &str,
++    screen: i64,
++) {
++    let width = ui.transcript_width();
++    // A fresh layout: the offsets and the header rows of the next frame.
++    let total = body.borrow_mut().render(width).len() as i64;
++    let header = chat_base(chat, body, width).and_then(|base| {
++        find_fold(chat, width, id)
++            .and_then(|found| found.header_row())
++            .map(|row| (base + row) as i64)
++    });
++    let Some(header) = header else {
++        return;
++    };
++    // Rows that moved in place are not new output.
++    ui.reset_new_lines_count();
++    let max_top = total - ui.transcript_view_rows();
++    if max_top <= 0 {
++        // Everything fits: there is nothing to scroll, so the view is live.
++        ui.scroll_to_live();
++        return;
++    }
++    let top = (header - screen).clamp(0, max_top);
++    if !ui.scroll_pinned() && top >= max_top {
++        // Live, and the tail still shows the header on its row.
++        return;
++    }
++    ui.restore_scroll_top(Some(top));
+ }
+ 
+ /// Plain typed text rather than a chord (control bytes and escapes are keys).
+@@ -264,61 +418,36 @@ impl TranscriptFocus {
+     }
+ }
+ 
+-/// What `ctrl+x o` does to the tool blocks: open every live block, or close
+-/// every live block when one is open. Frozen blocks released their output, so
+-/// they are skipped and counted.
++/// What `ctrl+x o` does to the blocks that open in place: open every one,
++/// or close the open ones when any is open.
+ #[derive(Debug, Clone, PartialEq, Eq)]
+ pub struct ToggleAll {
+-    /// The state every live block is set to.
++    /// The state every block that can open is set to.
+     pub expanded: bool,
+-    /// Positions (in the input order) of the live blocks whose state changes.
++    /// Positions (in the input order) of the blocks whose state changes.
+     pub changed: Vec<usize>,
+-    /// Frozen blocks, left as they are.
+-    pub skipped: usize,
+-}
+-
+-impl ToggleAll {
+-    /// The status-slot notice for an open that skipped frozen blocks. A close
+-    /// and an open that skipped nothing say nothing.
+-    pub fn notice(&self) -> Option<String> {
+-        if !self.expanded || self.skipped == 0 {
+-            return None;
+-        }
+-        let opened = self.changed.len();
+-        let rows = if opened == 1 { "row" } else { "rows" };
+-        let (older, have) = if self.skipped == 1 {
+-            ("row", "has")
+-        } else {
+-            ("rows", "have")
+-        };
+-        Some(format!(
+-            "Opened {opened} {rows}. {skipped} older {older} {have} no output to show.",
+-            skipped = self.skipped
+-        ))
+-    }
+ }
+ 
+-/// The plan for `ctrl+x o`, from each block's `(expanded, frozen)` state in
+-/// transcript order. Opens every live block unless one is already open, in
+-/// which case it closes the open ones. Frozen blocks never count as open.
++/// The plan for `ctrl+x o`, from each block's `(expanded, can_open)` state
++/// in transcript order. Opens every block that can open unless one is
++/// already open, in which case it closes the open ones. A block that cannot
++/// open (no output, a stopped call) is left alone and never counts as open.
++/// An older tool row keeps its output, so it opens and closes like any
++/// other.
+ pub fn toggle_all_plan(blocks: &[(bool, bool)]) -> ToggleAll {
+-    let live: Vec<(usize, bool)> = blocks
++    let openable: Vec<(usize, bool)> = blocks
+         .iter()
+         .enumerate()
+-        .filter(|(_, (_, frozen))| !frozen)
++        .filter(|(_, (_, can_open))| *can_open)
+         .map(|(index, (expanded, _))| (index, *expanded))
+         .collect();
+-    let expanded = !live.iter().any(|(_, open)| *open);
+-    let changed = live
++    let expanded = !openable.iter().any(|(_, open)| *open);
++    let changed = openable
+         .iter()
+         .filter(|(_, open)| *open != expanded)
+         .map(|(index, _)| *index)
+         .collect();
+-    ToggleAll {
+-        expanded,
+-        changed,
+-        skipped: blocks.len() - live.len(),
+-    }
++    ToggleAll { expanded, changed }
+ }
+ 
+ /// A pinned-view transcript key the mode runs after the pass: the scroll
+@@ -743,6 +872,40 @@ impl ScrollView {
+ pub struct TopAnchor {
+     child: Option<ComponentHandle>,
+     rows_in: i64,
++    /// The block of that child the top row sits in (its header at or above
++    /// the row), and how far under the header. A child's rows move when a
++    /// block above the top row opens or closes inside it (a chain holds
++    /// many tool rows), so the row is found again from its own block.
++    fold: Option<(String, i64)>,
++}
++
++/// The block of `child` whose header sits at or above row `rows_in`, and
++/// the distance from that header.
++fn fold_above(child: &ComponentHandle, rows_in: i64) -> Option<(String, i64)> {
++    let component = child.try_borrow().ok()?;
++    let folds = component.fold_host()?.folds();
++    folds
++        .iter()
++        .filter_map(|fold| Some((fold, *fold.header.first()? as i64)))
++        .filter(|(_, header)| *header <= rows_in)
++        .max_by_key(|(_, header)| *header)
++        .map(|(fold, header)| (fold.id.clone(), rows_in - header))
++}
++
++/// Where the anchored row sits in `child` now: under its block's header,
++/// no further down than the block reaches. `None` when the block is gone.
++fn fold_rows_in(child: &ComponentHandle, id: &str, under: i64) -> Option<i64> {
++    let component = child.try_borrow().ok()?;
++    let folds = component.fold_host()?.folds();
++    let at = folds.iter().position(|fold| fold.id == id)?;
++    let header = *folds[at].header.first()? as i64;
++    // The rows of a closed block are gone: stay on its header.
++    let reach = match folds.get(at + 1).and_then(|next| next.header.first()) {
++        Some(next) => (*next as i64 - header - 1).max(0),
++        None => i64::MAX,
++    };
++    let under = under.min(reach);
++    Some(header + under)
+ }
+ 
+ /// The anchor of the pinned top row, from the last frame's layout. `None` when
+@@ -768,13 +931,17 @@ pub fn capture_top(
+         return Some(TopAnchor {
+             child: None,
+             rows_in: rel,
++            fold: None,
+         });
+     }
+     let offsets = chat.child_row_offsets(width)?;
+     let i = offsets.iter().rposition(|o| (*o as i64) <= rel)?;
++    let child = chat.children()[i].clone();
++    let rows_in = rel - offsets[i] as i64;
+     Some(TopAnchor {
+-        child: Some(chat.children()[i].clone()),
+-        rows_in: rel - offsets[i] as i64,
++        fold: fold_above(&child, rows_in),
++        child: Some(child),
++        rows_in,
+     })
+ }
+ 
+@@ -828,10 +995,15 @@ fn place_top(
+             let i = chat.children().iter().position(|c| Rc::ptr_eq(c, child))?;
+             let offsets = chat.child_row_offsets(width)?;
+             let start = offsets[i] as i64;
++            let rows_in = anchor
++                .fold
++                .as_ref()
++                .and_then(|(id, under)| fold_rows_in(child, id, *under))
++                .unwrap_or(anchor.rows_in);
+             // Stay inside the message: a fold can make it shorter than it was.
+             let within = match offsets.get(i + 1) {
+-                Some(next) => anchor.rows_in.min(*next as i64 - start - 1),
+-                None => anchor.rows_in,
++                Some(next) => rows_in.min(*next as i64 - start - 1),
++                None => rows_in,
+             };
+             start + within.max(0)
+         }
+@@ -918,10 +1090,10 @@ mod tests {
+     }
+ 
+     /// Two stacked chains: a header row of the second chain's second block
+-    /// hits `(chain, 1)`, while an expanded body row hits nothing. Rows are
++    /// hits that block, while an expanded body row hits nothing. Rows are
+     /// chat-relative, the same mapping the mode's click drain uses.
+     #[test]
+-    fn hit_chain_places_header_and_body_rows() {
++    fn fold_at_places_header_and_body_rows() {
+         hoocode_code_tui_theme::init_theme(Some("dark"), false);
+         let width: u16 = 80;
+         let chain0 = Rc::new(RefCell::new(ToolChainComponent::new()));
+@@ -952,15 +1124,24 @@ mod tests {
+             .header_start_row(1)
+             .expect("second block header");
+         let header_rel = chat_offsets[1] + header;
+-        let hit = hit_chain(&chat, width, header_rel).expect("header row hits");
+-        assert!(Rc::ptr_eq(&hit.0, &chain1_handle));
+-        assert_eq!(hit.1, 1);
++        let (found, hit) = fold_at(&chat, width, header_rel).expect("header row hits");
++        assert!(Rc::ptr_eq(&found.host, &chain1_handle));
++        assert_eq!(found.fold.id, "chain-1-b");
++        assert_eq!(hit, FoldHit::Header);
++        assert_eq!(found.header_row(), Some(header_rel));
+ 
+         // The row just above the second header is the expanded first
+         // block's body (no blank opens a run that shows a body), so it
+         // hits nothing.
+         assert!(header > 0, "second header leaves a body row above it");
+         assert_eq!(chain1.borrow().header_hit(header - 1), None);
+-        assert!(hit_chain(&chat, width, header_rel - 1).is_none());
++        assert!(fold_at(&chat, width, header_rel - 1).is_none());
++
++        // The one list every path reads holds all three blocks, in order.
++        let ids: Vec<String> = chat_folds(&chat, width)
++            .into_iter()
++            .map(|found| found.fold.id)
++            .collect();
++        assert_eq!(ids, ["chain-0", "chain-1-a", "chain-1-b"]);
+     }
+ }
+diff --git a/crates/hoocode-code-tui-widgets/src/fold.rs b/crates/hoocode-code-tui-widgets/src/fold.rs
+index a6b118f9..c6c1aaf7 100644
+--- a/crates/hoocode-code-tui-widgets/src/fold.rs
++++ b/crates/hoocode-code-tui-widgets/src/fold.rs
+@@ -213,3 +213,121 @@ pub fn fold_rows_tail(rows: Vec<String>, budget: Option<usize>) -> Folded {
+         .collect();
+     Folded { shown, hidden }
+ }
++
++// ---- Blocks that open in place: the indicator, the focus and the ids ----
++//
++// One look for every block that opens (`hoocode_tui_render::FoldHost`): a
++// dim `▸` after the header's last fact while the block is closed and can
++// open, a dim `▾` while it is open, and nothing on a block that cannot
++// open. The focused header takes the `›` gutter at column 0 and the
++// selection fill (reverse video with no colour).
++
++/// The cells the indicator takes at the end of a header: a space and the
++/// glyph. A header that can open is laid out this much narrower, so the
++/// indicator never drops.
++pub const INDICATOR_CELLS: usize = 2;
++
++/// The indicator's glyph: `▾` open, `▸` closed.
++fn indicator_glyph(expanded: bool) -> &'static str {
++    if expanded {
++        hoocode_tui_glyphs::status::OPEN_STR
++    } else {
++        hoocode_tui_glyphs::status::CLOSED_STR
++    }
++}
++
++/// The indicator as a span: a space, then the glyph in dim. It is a fact
++/// about the row, so it takes the facts' colour and no state colour.
++pub fn indicator_span(expanded: bool, palette: &Palette) -> Span<'static> {
++    Span::styled(format!(" {}", indicator_glyph(expanded)), palette.dim())
++}
++
++/// The indicator as a themed string, for rows built from text.
++pub fn indicator_text(expanded: bool) -> String {
++    theme().fg("dim", &format!(" {}", indicator_glyph(expanded)))
++}
++
++/// A rendered header row with the indicator after its last visible cell.
++/// A row with no room left is cut by two cells first, so the indicator
++/// always shows. The row comes back `width` cells wide.
++pub fn with_indicator(row: &str, expanded: bool, width: usize, palette: &Palette) -> String {
++    let trimmed = crate::trajectory::trim_end_styled(row);
++    let room = width.saturating_sub(INDICATOR_CELLS).max(1);
++    let mut spans = hoocode_tui_ratatui::truncate_spans(
++        hoocode_tui_ratatui::ansi_spans(&trimmed),
++        room,
++        ELLIPSIS,
++    );
++    spans.push(indicator_span(expanded, palette));
++    hoocode_tui_ratatui::row(spans, width)
++}
++
++/// Whether rows paint in monochrome (no colour): the focused fill is
++/// reverse video instead of the selection colour.
++pub(crate) fn mono() -> bool {
++    !hoocode_code_tui_theme::chalk::enabled()
++}
++
++/// The header's gutter cell: `›` in accent on the focused row (bold with
++/// no colour), else the blank that keeps column 0.
++pub fn gutter_span(focused: bool, palette: &Palette) -> Span<'static> {
++    if !focused {
++        return Span::raw(" ".to_string());
++    }
++    let mut style = palette.acc();
++    if mono() {
++        style = hoocode_tui_ratatui::bold(style);
++    }
++    Span::styled(
++        hoocode_tui_glyphs::status::MARKER_STR.to_string(),
++        style,
++    )
++}
++
++/// The focused row's band across every span of a header: the selection
++/// fill with colour, reverse video without.
++pub fn paint_focused(spans: &mut [Span<'static>], palette: &Palette) {
++    let fill = if mono() {
++        hoocode_tui_ratatui::reversed(hoocode_tui_ratatui::Style::default())
++    } else {
++        palette.bg("paneSel")
++    };
++    for span in spans.iter_mut() {
++        span.style = span.style.patch(fill);
++    }
++}
++
++/// A rendered header row drawn focused: `›` in the gutter (column 0, which
++/// the row keeps blank) and the fill across all `width` cells.
++pub fn focus_row(row: &str, width: usize, palette: &Palette) -> String {
++    let mut rest = hoocode_tui_ratatui::ansi_spans(row);
++    // Take the blank gutter cell off the front; a row that starts with
++    // text keeps it and gains the marker in front.
++    if let Some(first) = rest.first_mut() {
++        if let Some(tail) = first.content.strip_prefix(' ') {
++            *first = Span::styled(tail.to_string(), first.style);
++        }
++    }
++    let mut spans = vec![gutter_span(true, palette)];
++    spans.extend(rest);
++    let used = hoocode_tui_ratatui::spans_width(&spans);
++    if used < width {
++        spans.push(Span::raw(" ".repeat(width - used)));
++    }
++    paint_focused(&mut spans, palette);
++    hoocode_tui_ratatui::row(spans, width)
++}
++
++/// Whether a rendered row is a fold line (`… N more lines`, `… N earlier
++/// lines`): the one body row a click opens the block from.
++pub fn is_fold_line(row: &str) -> bool {
++    parse_more_lines(row).is_some()
++}
++
++/// A new id for a block that opens in place and has no id of its own (a
++/// tool call has its call id): `thinking-12`. Unique in the process.
++pub fn next_fold_id(kind: &str) -> String {
++    use std::sync::atomic::{AtomicU64, Ordering};
++    static NEXT: AtomicU64 = AtomicU64::new(1);
++    format!("{kind}-{}", NEXT.fetch_add(1, Ordering::Relaxed))
++}
+diff --git a/crates/hoocode-code-tui-widgets/src/tool_chain.rs b/crates/hoocode-code-tui-widgets/src/tool_chain.rs
+index d4469823..59bf71b3 100644
+--- a/crates/hoocode-code-tui-widgets/src/tool_chain.rs
++++ b/crates/hoocode-code-tui-widgets/src/tool_chain.rs
+@@ -9,12 +9,13 @@ use std::cell::RefCell;
+ use std::rc::Rc;
+ 
+ use hoocode_ai_types::Content;
+-use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
++use hoocode_tui_render::{fresh_stamp, mix_stamps, Component, Fold, FoldHost};
+ 
+ use hoocode_tui_ratatui::core::text::Span;
+-use hoocode_tui_ratatui::{Palette, Style};
++use hoocode_tui_ratatui::Palette;
+ 
+ use crate::assistant_message::AssistantMessageComponent;
++use crate::fold::{self, gutter_span, paint_focused};
+ use crate::tool_execution::ToolExecutionComponent;
+ use crate::tool_row;
+ use hoocode_tui_ratatui::row;
+@@ -129,38 +130,6 @@ fn sub_step_rows(
+     vec![row(spans, width)]
+ }
+ 
+-/// Whether rows paint in monochrome (no colour): the focused fill is
+-/// reverse video instead of paneSel.
+-fn mono() -> bool {
+-    !hoocode_code_tui_theme::chalk::enabled()
+-}
+-
+-/// The header's gutter cell: `›` in accent on the focused row (bold with
+-/// no colour), else the blank that keeps column 0.
+-fn gutter_span(focused: bool, palette: &Palette) -> Span<'static> {
+-    if !focused {
+-        return Span::raw(" ".to_string());
+-    }
+-    let mut style = palette.acc();
+-    if mono() {
+-        style = hoocode_tui_ratatui::bold(style);
+-    }
+-    Span::styled("›".to_string(), style)
+-}
+-
+-/// The focused row's band across every span of the header: paneSel with
+-/// colour, reverse video without.
+-fn paint_focused(spans: &mut [Span<'static>], palette: &Palette) {
+-    let fill = if mono() {
+-        hoocode_tui_ratatui::reversed(Style::default())
+-    } else {
+-        palette.bg("paneSel")
+-    };
+-    for span in spans.iter_mut() {
+-        span.style = span.style.patch(fill);
+-    }
+-}
+-
+ /// One header row in the chain's last render: its first row and how many
+ /// rows the header spans, with the block it toggles.
+ #[derive(Debug, Clone, Copy)]
+@@ -178,6 +147,9 @@ pub struct ToolChainComponent {
+     lead_ins: Vec<LeadIn>,
+     /// The header rows of the last render, for click-to-toggle.
+     header_map: Vec<HeaderHit>,
++    /// Every block of the last render that opens in place, in row order:
++    /// the tool rows, and the thinking traces drawn above them.
++    folds: Vec<Fold>,
+     /// The focused tool call's id, if the transcript has one in this chain:
+     /// its header draws the `›` gutter and the paneSel fill. Synced from
+     /// the transcript focus after every key (see `mode/transcript/focus.rs`).
+@@ -199,6 +171,7 @@ impl ToolChainComponent {
+             blocks: Vec::new(),
+             lead_ins: Vec::new(),
+             header_map: Vec::new(),
++            folds: Vec::new(),
+             focused_call: None,
+             state: ChainState::Running,
+             rev: fresh_stamp(),
+@@ -326,10 +299,23 @@ impl ToolChainComponent {
+         let w = width as usize;
+         let mut out: Vec<String> = Vec::new();
+         let mut header_map = Vec::new();
++        let mut folds = Vec::new();
+         let mut spaced = true;
+         for (i, block) in self.blocks.iter().enumerate() {
+             for lead in self.lead_ins.iter().filter(|l| l.before == i) {
++                let at = out.len();
+                 out.extend(lead.component.borrow_mut().render(width));
++                // A trace above the call opens in place too: its rows are
++                // the chain's rows from `at`.
++                if let Some(host) = lead.component.borrow().fold_host() {
++                    folds.extend(host.folds().into_iter().map(|mut fold| {
++                        for row in &mut fold.header {
++                            *row += at;
++                        }
++                        fold.fold_line = fold.fold_line.map(|row| row + at);
++                        fold
++                    }));
++                }
+             }
+             let parts = block.borrow_mut().step_parts(width);
+             let Some(_) = parts.header else {
+@@ -358,6 +344,11 @@ impl ToolChainComponent {
+             // (reverse video with no colour). Expanded and focused compose:
+             // the body still opens under a focused header.
+             let focused = self.focused_call.as_deref() == Some(call_id.as_str());
++            // A row that can open ends in the indicator (`▸` closed, `▾`
++            // open). Its two cells come off the header's room first, so it
++            // never drops; a row that cannot open draws none.
++            let can_open = block.borrow_mut().can_open(width, &parts);
++            let reserve = if can_open { fold::INDICATOR_CELLS } else { 0 };
+             // Single view: the header is one row, never wrapped. Its facts
+             // cut through `header_spans` (secondary drops first, then the
+             // target, then the reason); the gutter keeps column 0.
+@@ -373,10 +364,19 @@ impl ToolChainComponent {
+                     &primaries,
+                     &secondaries,
+                     reason.as_deref(),
+-                    w.saturating_sub(1),
++                    w.saturating_sub(1 + reserve),
+                     palette,
+                 ));
++                if can_open {
++                    spans.push(fold::indicator_span(open, palette));
++                }
+                 if focused {
++                    // The fill runs to the row's end, as a pane's selected
++                    // row does.
++                    let used = hoocode_tui_ratatui::spans_width(&spans);
++                    if used < w {
++                        spans.push(Span::raw(" ".repeat(w - used)));
++                    }
+                     paint_focused(&mut spans, palette);
+                 }
+                 out.push(row(spans, w));
+@@ -405,12 +405,29 @@ impl ToolChainComponent {
+             };
+             let body = whole_body(captured, parts.footer);
+             shown_body |= !body.is_empty();
++            // The fold line of a partly shown body opens the block too.
++            let fold_line = if open {
++                None
++            } else {
++                body.iter()
++                    .position(|row| fold::is_fold_line(row))
++                    .map(|at| out.len() + at)
++            };
++            folds.push(Fold {
++                id: call_id,
++                label: tool.clone(),
++                header: vec![start],
++                fold_line,
++                expanded: open,
++                can_open,
++            });
+             out.extend(body);
+             shown_body |= !parts.images.is_empty();
+             out.extend(parts.images);
+             spaced = !shown_body;
+         }
+         self.header_map = header_map;
++        self.folds = folds;
+         out
+     }
+ 
+@@ -418,6 +435,7 @@ impl ToolChainComponent {
+         // One palette per render pass, passed down to every row.
+         let palette = Palette::current();
+         self.header_map.clear();
++        self.folds.clear();
+         self.body_rows(width, &palette)
+     }
+ }
+@@ -431,6 +449,14 @@ impl Component for ToolChainComponent {
+         Some(self)
+     }
+ 
++    fn fold_host(&self) -> Option<&dyn FoldHost> {
++        Some(self)
++    }
++
++    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
++        Some(self)
++    }
++
+     fn render(&mut self, width: u16) -> Vec<String> {
+         self.rows(width)
+     }
+@@ -464,6 +490,56 @@ impl Component for ToolChainComponent {
+     }
+ }
+ 
++/// The chain's blocks that open in place: one per tool call, and the
++/// thinking traces it draws above them. A tool call's id is its call id.
++impl FoldHost for ToolChainComponent {
++    fn folds(&self) -> Vec<Fold> {
++        self.folds.clone()
++    }
++
++    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool {
++        if let Some(block) = self
++            .blocks
++            .iter()
++            .find(|block| block.borrow().tool_call_id() == id)
++        {
++            block.borrow_mut().set_expanded(expanded);
++            self.rev = fresh_stamp();
++            return true;
++        }
++        for lead in &self.lead_ins {
++            let mut component = lead.component.borrow_mut();
++            if let Some(host) = component.fold_host_mut() {
++                if host.set_fold_expanded(id, expanded) {
++                    self.rev = fresh_stamp();
++                    return true;
++                }
++            }
++        }
++        false
++    }
++
++    fn set_fold_focus(&mut self, id: Option<&str>) {
++        self.set_focused_call(id);
++        for lead in &self.lead_ins {
++            if let Some(host) = lead.component.borrow_mut().fold_host_mut() {
++                host.set_fold_focus(id);
++            }
++        }
++    }
++
++    /// A tool call's raw output is the session's (a frozen call released
++    /// its copy), so only a trace answers here.
++    fn fold_text(&self, id: &str) -> Option<String> {
++        self.lead_ins.iter().find_map(|lead| {
++            lead.component
++                .borrow()
++                .fold_host()
++                .and_then(|host| host.fold_text(id))
++        })
++    }
++}
++
+ #[cfg(test)]
+ mod shell_trailer_tests {
+     use super::*;
+diff --git a/crates/hoocode-code-tui-widgets/src/tool_execution.rs b/crates/hoocode-code-tui-widgets/src/tool_execution.rs
+index 20d77a6d..4423a1b1 100644
+--- a/crates/hoocode-code-tui-widgets/src/tool_execution.rs
++++ b/crates/hoocode-code-tui-widgets/src/tool_execution.rs
+@@ -1369,6 +1369,56 @@ impl ToolExecutionComponent {
+         self.set_expanded(!self.expanded);
+     }
+ 
++    /// Whether opening the block shows rows its closed row does not, so the
++    /// row draws the open or closed indicator and a click toggles it. A
++    /// stopped call has no body, TodoWrite is not a toggle (the plan is in
++    /// the task panel), and a call with no output has nothing to open.
++    /// `parts` are the rows the block just drew at `width`. A frozen block
++    /// reads the open body captured at freeze.
++    pub fn can_open(&mut self, width: u16, parts: &StepParts) -> bool {
++        let has_rows = |parts: &StepParts| {
++            let shown = |rows: &[String]| rows.iter().any(|row| !crate::is_blank(row));
++            shown(&parts.body) || shown(&parts.footer) || !parts.images.is_empty()
++        };
++        if self.tool_name == "TodoWrite" {
++            return false;
++        }
++        if self.frozen {
++            let interrupted = self.snapshot.as_ref().is_some_and(|s| s.interrupted);
++            return !interrupted
++                && self
++                    .frozen_lines
++                    .as_ref()
++                    .is_some_and(|frozen| has_rows(&frozen.parts));
++        }
++        if self.interrupted {
++            return false;
++        }
++        if self.is_agent() && !self.settled_sub_steps().is_empty() {
++            return true;
++        }
++        // Open, or closed with a peek or a running tail: the rows are there.
++        if has_rows(parts) || self.expanded {
++            return has_rows(parts);
++        }
++        if self.result.is_none() {
++            return false;
++        }
++        if !self.has_renderer_definition() {
++            return !self.text_output().trim().is_empty();
++        }
++        // Closed: the result renderer drew its trimmed rows and the block
++        // left them off. Any row there is a row opening shows.
++        match self.result_component.clone() {
++            Some(component) => component
++                .borrow_mut()
++                .render(width)
++                .iter()
++                .any(|row| !crate::is_blank(row)),
++            None => self.create_result_fallback().is_some(),
++        }
++    }
++
+     /// Whether the block draws everything uncut: its own toggle, open in
+     /// place (single view: every block starts as one row).
+     fn expanded(&self) -> bool {
+diff --git a/crates/hoocode-tui-glyphs/src/lib.rs b/crates/hoocode-tui-glyphs/src/lib.rs
+index add93ef9..9ee4d527 100644
+--- a/crates/hoocode-tui-glyphs/src/lib.rs
++++ b/crates/hoocode-tui-glyphs/src/lib.rs
+@@ -5,6 +5,9 @@
+ //! [`animation`] cycle the same set, so a spinner never introduces a glyph
+ //! the font cannot draw.
+ //!
++//! The one pair outside the circles is [`status::CLOSED`] and
++//! [`status::OPEN`], the state of a block that opens in place.
++//!
+ //! Glyph choice is a font-coverage decision, not taste: the half-filled
+ //! circles (`◐◑◒◓`) are missing from JetBrainsMono Nerd Font Mono, so the
+ //! terminal falls back to another font and the mark sits off-baseline next
+@@ -35,6 +38,19 @@ pub mod status {
+     /// The marker, as a string slice for span and row building.
+     pub const MARKER_STR: &str = "›";
+ 
++    /// A block that can open and is closed: `▸` (dim), after the header's
++    /// last fact. With [`OPEN`] the one pair outside the status circles
++    /// (added 2026-11-11): the row's state had no shape before, and no glyph
++    /// of the set reads as "closed" against "open". Both are one cell wide
++    /// and ship in JetBrains Mono (checked with `fc-query`).
++    pub const CLOSED: char = '▸';
++    /// Closed, as a string slice for span and row building.
++    pub const CLOSED_STR: &str = "▸";
++    /// A block that is open: `▾` (dim), in the same place.
++    pub const OPEN: char = '▾';
++    /// Open, as a string slice for span and row building.
++    pub const OPEN_STR: &str = "▾";
++
+     /// ASCII stand-ins for terminals without the glyphs above (for
+     /// `NO_COLOR`-style plain output or a font without coverage).
+     pub mod ascii {
+@@ -48,6 +64,10 @@ pub mod status {
+         pub const TODO: &str = "o";
+         /// Marker.
+         pub const MARKER: &str = ">";
++        /// A closed block that can open.
++        pub const CLOSED: &str = "+";
++        /// An open block.
++        pub const OPEN: &str = "-";
+     }
+ }
+ 
+@@ -97,6 +117,12 @@ mod tests {
+         assert_eq!(status::MARKER, '›');
+         assert_eq!(status::MARKER_STR, "›");
+         assert!(status::ascii::DONE.is_ascii() && status::ascii::MARKER.is_ascii());
++        assert_eq!(status::CLOSED, '▸');
++        assert_eq!(status::OPEN, '▾');
++        assert_eq!(status::CLOSED_STR, "▸");
++        assert_eq!(status::OPEN_STR, "▾");
++        assert!(status::ascii::CLOSED.is_ascii() && status::ascii::OPEN.is_ascii());
++        assert_ne!(status::ascii::CLOSED, status::ascii::OPEN);
+     }
+ 
+     #[test]
+diff --git a/crates/hoocode-tui-render/src/component.rs b/crates/hoocode-tui-render/src/component.rs
+index 4314ee96..6feef2f9 100644
+--- a/crates/hoocode-tui-render/src/component.rs
++++ b/crates/hoocode-tui-render/src/component.rs
+@@ -208,6 +208,63 @@ pub trait Component {
+     fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+         None
+     }
++
++    /// The blocks of this component that open and close in place, for
++    /// components that have any (see [`FoldHost`]).
++    fn fold_host(&self) -> Option<&dyn FoldHost> {
++        None
++    }
++
++    /// [`Self::fold_host`], mutably: a click or a key sets a block's state.
++    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
++        None
++    }
++}
++
++/// One block that opens and closes in place (a tool call, a thinking trace,
++/// a summary), as its component's last render drew it. Rows count from the
++/// component's first row.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct Fold {
++    /// Names the block inside its component and across the transcript: it
++    /// stays the same from frame to frame, so a focus can hold on to it.
++    pub id: String,
++    /// What the block is, for a notice (`Shell`, `thinking`).
++    pub label: String,
++    /// The header rows: a click on any of them toggles the block. The first
++    /// one is the row that keeps its place on screen when the block toggles.
++    pub header: Vec<usize>,
++    /// The fold line under a partly shown body (`… N more lines`): a click
++    /// on it opens the block.
++    pub fold_line: Option<usize>,
++    /// Whether the body is open.
++    pub expanded: bool,
++    /// Whether opening shows anything the closed block does not. A block
++    /// that cannot open draws no open or closed indicator.
++    pub can_open: bool,
++}
++
++/// A component whose blocks open and close in place. One interface for a
++/// click, the focus walk, `enter`, copy and open-all: the app reads the
++/// blocks of the last render here and sets their state through it.
++///
++/// A method that changes what the component draws takes a [`fresh_stamp`]
++/// (or calls [`note_change`]), as every other mutator does.
++pub trait FoldHost {
++    /// The blocks of the last render, in row order.
++    fn folds(&self) -> Vec<Fold>;
++
++    /// Opens or closes the block `id`. False when the component has no such
++    /// block.
++    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool;
++
++    /// Which block draws focused (the `›` gutter and the selection fill on
++    /// its header); `None`, or an id the component does not hold, clears it.
++    fn set_fold_focus(&mut self, id: Option<&str>);
++
++    /// The block's raw text, for copy. `None` when the component does not
++    /// keep it (the caller may know another source).
++    fn fold_text(&self, id: &str) -> Option<String>;
+ }
+ 
+ pub type ComponentHandle = Rc<RefCell<dyn Component>>;
+diff --git a/crates/hoocode-tui-render/src/lib.rs b/crates/hoocode-tui-render/src/lib.rs
+index 62d164ec..4a8699e4 100644
+--- a/crates/hoocode-tui-render/src/lib.rs
++++ b/crates/hoocode-tui-render/src/lib.rs
+@@ -11,7 +11,7 @@ mod tui;
+ 
+ pub use component::{
+     bump_render_epoch, change_counter, fresh_stamp, mix_stamps, note_change, render_epoch,
+-    Component, ComponentHandle, Container, FlexSpacer, Piece, Rendered, Slot,
++    Component, ComponentHandle, Container, FlexSpacer, Fold, FoldHost, Piece, Rendered, Slot,
+ };
+ pub use scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB, SCROLLBAR_TRACK};
+ pub use tui::{
+diff --git a/crates/hoocode-tui-render/src/tui.rs b/crates/hoocode-tui-render/src/tui.rs
+index a0acfded..5154acdb 100644
+--- a/crates/hoocode-tui-render/src/tui.rs
++++ b/crates/hoocode-tui-render/src/tui.rs
+@@ -188,10 +188,11 @@ pub type ScrollStatusFormatter = Box<dyn Fn(&ScrollStatus) -> String>;
+ /// Opens a clicked URL (`onHyperlink`).
+ pub type HyperlinkHandler = Box<dyn FnMut(&str)>;
+ 
+-/// A click on a transcript body cell (press and release on the same cell
+-/// that holds no link and is not the scrollbar column). The rows are
+-/// transcript buffer rows: `buffer_row` names the clicked row and `context`
+-/// how many buffer rows sit above it on screen, so pinning keeps the row
++/// A click on a transcript body row: a press and a release on the same
++/// row, anywhere on it but the scrollbar column, that did not open a link.
++/// `buffer_row` names the clicked row in the transcript buffer (the body's
++/// rows full-screen, the whole frame's otherwise) and `context` how many
++/// screen rows of the transcript sit above it, so pinning keeps the row
+ /// where the click found it. `width` is the transcript width the rows were
+ /// laid out at.
+ #[derive(Debug, Clone, Copy)]
+@@ -497,6 +498,10 @@ pub struct Tui {
+     /// Body rows on screen in the last full-screen frame: the first screen
+     /// row and the lines, for link clicks.
+     fullscreen_body_window: Option<(i64, Vec<String>)>,
++    /// Where that window sits in the body: the buffer row of its first
++    /// line, and how many blank rows pad the top of a live transcript
++    /// shorter than the body. A click maps a screen row back through both.
++    fullscreen_body_origin: (i64, i64),
+     /// Body rows the last full-screen frame showed (the view height).
+     fullscreen_view: i64,
+     /// Between `start` and `stop`: a full-screen mode change would desync the frame.
+@@ -569,6 +574,7 @@ impl Tui {
+             previous_screen: Vec::new(),
+             previous_screen_size: None,
+             fullscreen_body_window: None,
++            fullscreen_body_origin: (0, 0),
+             fullscreen_view: 0,
+             started: false,
+             fullscreen_seen_total: 0,
+@@ -755,6 +761,25 @@ impl Tui {
+         self.pinned_split(pane_len).0
+     }
+ 
++    /// The screen rows the transcript takes: the pinned window's height, or
++    /// the body's while live and full-screen.
++    pub fn transcript_view_rows(&self) -> i64 {
++        self.scroll_view_height()
++    }
++
++    /// The screen row, counted from the transcript's first screen row, that
++    /// showed transcript buffer row `row` in the last full-screen frame.
++    /// `None` when the row was off screen, or the screen is not full-screen.
++    pub fn transcript_screen_row(&self, row: i64) -> Option<i64> {
++        if !self.fullscreen {
++            return None;
++        }
++        let (_, lines) = self.fullscreen_body_window.as_ref()?;
++        let (start, pad) = self.fullscreen_body_origin;
++        let index = row - start + pad;
++        (row >= start && index < lines.len() as i64).then_some(index)
++    }
++
+     /// The body's `(lines, rows shown)` as the next frame would lay them out.
+     /// Before the first frame nothing has been measured, so scrolling asks here.
+     fn fullscreen_measure(&self) -> (i64, i64) {
+@@ -1441,8 +1466,9 @@ impl Tui {
+         (!out.is_empty()).then_some(out)
+     }
+ 
+-    /// The wheel scrolls; a click (press and release on the same cell) opens
+-    /// the link under it, else reports the body cell to `on_body_click`.
++    /// The wheel scrolls. A press and release on the same cell opens the link
++    /// under it. Otherwise a press and release on the same row, anywhere but
++    /// the scrollbar column, reports the body row to `on_body_click`.
+     /// Anything else is swallowed.
+     fn handle_mouse_event(&mut self, event: MouseEvent) {
+         match event.kind {
+@@ -1459,19 +1485,27 @@ impl Tui {
+                 self.pressed_cell = (event.button == 0).then_some((event.row, event.column));
+             }
+             MouseEventKind::Release => {
+-                let pressed = self.pressed_cell.take();
+-                if pressed != Some((event.row, event.column)) {
++                let Some((pressed_row, pressed_column)) = self.pressed_cell.take() else {
++                    return;
++                };
++                // The whole row is one target: the release may land on
++                // another cell of it. Another row is a drag, not a click.
++                if pressed_row != event.row {
+                     return;
+                 }
+-                // A link wins over the body; the scrollbar column pages on
+-                // press, so a release there reports nothing.
+-                if let Some(url) = self.hyperlink_at_screen_cell(event.row, event.column) {
+-                    if let Some(cb) = &mut self.on_hyperlink {
+-                        cb(&url);
++                // A link wins over the body, on its own cells only.
++                if pressed_column == event.column {
++                    if let Some(url) = self.hyperlink_at_screen_cell(event.row, event.column) {
++                        if let Some(cb) = &mut self.on_hyperlink {
++                            cb(&url);
++                        }
++                        return;
+                     }
+-                    return;
+                 }
+-                if event.column == self.terminal.columns() as i64 {
++                // The scrollbar column pages on press, so a click that
++                // touches it reports nothing.
++                let scrollbar = self.terminal.columns() as i64;
++                if event.column >= scrollbar || pressed_column >= scrollbar {
+                     return;
+                 }
+                 if let Some(click) = self.buffer_click_at(event.row) {
+@@ -1533,14 +1567,15 @@ impl Tui {
+         if self.fullscreen {
+             // Only body rows carry the transcript's clicks; `row` is 1-based.
+             let (first_row, lines) = self.fullscreen_body_window.as_ref()?;
+-            let buffer = row - 1 - first_row;
+-            let len = lines.len() as i64;
+-            if buffer < 0 || buffer >= len {
++            let index = row - 1 - first_row;
++            let (start, pad) = self.fullscreen_body_origin;
++            // The blank rows above a short live transcript are no row of it.
++            if index < pad || index >= lines.len() as i64 {
+                 return None;
+             }
+             return Some(BodyClick {
+-                buffer_row: buffer,
+-                context: buffer.min(self.scroll_view_height() - 1).max(0),
++                buffer_row: start + index - pad,
++                context: index,
+                 width,
+             });
+         }
+@@ -2428,7 +2463,9 @@ impl Tui {
+         // bottom chrome, padding the blank rows above it (M1 top-alignment
+         // revisited for this case only). Pinned keeps the top-held window, and
+         // a transcript that fills the body is already tail-aligned.
++        let mut window_pad = 0;
+         if !pinned && window_lines.len() < rows.body {
++            window_pad = rows.body - window_lines.len();
+             let mut padded = vec![String::new(); rows.body - window_lines.len()];
+             padded.append(&mut window_lines);
+             window_lines = padded;
+@@ -2490,6 +2527,7 @@ impl Tui {
+         // Screens under four rows show the bottom alone, which may leave rows blank.
+         out.resize(height, String::new());
+         self.fullscreen_body_window = Some((rows.top as i64, window_lines));
++        self.fullscreen_body_origin = (start as i64, window_pad as i64);
+         Screen {
+             rows: out,
+             cursor: cursor_at,
+diff --git a/crates/hoocode-tui-render/tests/it/body_click.rs b/crates/hoocode-tui-render/tests/it/body_click.rs
+new file mode 100644
+index 00000000..843d6753
+--- /dev/null
++++ b/crates/hoocode-tui-render/tests/it/body_click.rs
+@@ -0,0 +1,152 @@
++//! A click on a transcript row, full-screen: the row is reported as a row
++//! of the transcript (not of the screen), from anywhere on its line, and a
++//! press on one row with a release on another reports nothing.
++
++use crate::support::*;
++use hoocode_tui_render::{BodyClick, ComponentHandle, Container, Tui, TuiEvent};
++use std::cell::RefCell;
++use std::rc::Rc;
++
++const WIDTH: u16 = 40;
++const HEIGHT: u16 = 12;
++
++/// HUD, a body of `rows` rows, and a prompt row: the body shows 10 rows,
++/// on screen rows 2 to 11 (1-based).
++fn setup(rows: usize) -> (Tui, Rc<RefCell<Vec<BodyClick>>>) {
++    let (terminal, _term) = virtual_terminal(WIDTH, HEIGHT);
++    let mut tui = Tui::new(terminal, None);
++    tui.set_fullscreen(true);
++    tui.add_child(Lines::new(&["HUD"]));
++    let body = Rc::new(RefCell::new(Container::new()));
++    body.borrow_mut().add_child(Lines::body(rows));
++    let handle: ComponentHandle = body.clone();
++    tui.add_child(handle.clone());
++    tui.set_fullscreen_body(Some(handle));
++    tui.add_child(Lines::new(&["prompt"]));
++    let clicks = Rc::new(RefCell::new(Vec::new()));
++    let sink = clicks.clone();
++    tui.on_body_click = Some(Box::new(move |click| sink.borrow_mut().push(click)));
++    let _events = tui.start();
++    tui.request_render(true);
++    (tui, clicks)
++}
++
++fn send(tui: &mut Tui, data: &str) {
++    tui.process_event(TuiEvent::input(data));
++}
++
++fn press(tui: &mut Tui, row: usize, column: usize) {
++    send(tui, &format!("\x1b[<0;{column};{row}M"));
++}
++
++fn release(tui: &mut Tui, row: usize, column: usize) {
++    send(tui, &format!("\x1b[<0;{column};{row}m"));
++}
++
++fn click(tui: &mut Tui, row: usize, column: usize) {
++    press(tui, row, column);
++    release(tui, row, column);
++}
++
++#[test]
++fn a_live_long_transcript_reports_the_transcript_row() {
++    // 100 rows, 10 on screen: the live window starts at row 90, so screen
++    // row 2 (the first body row) is transcript row 90.
++    let (mut tui, clicks) = setup(100);
++    click(&mut tui, 2, 5);
++    click(&mut tui, 6, 5);
++    let seen: Vec<(i64, i64)> = clicks
++        .borrow()
++        .iter()
++        .map(|c| (c.buffer_row, c.context))
++        .collect();
++    assert_eq!(seen, [(90, 0), (94, 4)]);
++}
++
++#[test]
++fn a_pinned_transcript_reports_the_transcript_row() {
++    let (mut tui, clicks) = setup(100);
++    tui.scroll_to_top();
++    tui.request_render(true);
++    tui.scroll_by_lines(7);
++    tui.request_render(true);
++    click(&mut tui, 4, 5);
++    let seen: Vec<(i64, i64)> = clicks
++        .borrow()
++        .iter()
++        .map(|c| (c.buffer_row, c.context))
++        .collect();
++    assert_eq!(seen, [(9, 2)]);
++    assert_eq!(tui.transcript_screen_row(9), Some(2));
++    assert_eq!(tui.transcript_screen_row(6), None, "above the window");
++    assert_eq!(tui.transcript_screen_row(17), None, "below the window");
++}
++
++#[test]
++fn a_short_live_transcript_reports_rows_under_its_blank_top() {
++    // 3 rows in a 10-row body: bottom-anchored, on screen rows 9 to 11.
++    let (mut tui, clicks) = setup(3);
++    click(&mut tui, 4, 5);
++    assert!(clicks.borrow().is_empty(), "a blank row above is no row");
++    click(&mut tui, 9, 5);
++    click(&mut tui, 11, 5);
++    let seen: Vec<(i64, i64)> = clicks
++        .borrow()
++        .iter()
++        .map(|c| (c.buffer_row, c.context))
++        .collect();
++    assert_eq!(seen, [(0, 7), (2, 9)]);
++    assert_eq!(tui.transcript_screen_row(0), Some(7));
++}
++
++#[test]
++fn the_whole_row_is_one_target() {
++    let (mut tui, clicks) = setup(100);
++    // Press on one cell, release on another cell of the same row.
++    press(&mut tui, 5, 3);
++    release(&mut tui, 5, 30);
++    assert_eq!(clicks.borrow().len(), 1);
++    assert_eq!(clicks.borrow()[0].buffer_row, 93);
++    // The far right blank end of the row, one cell short of the scrollbar.
++    click(&mut tui, 5, usize::from(WIDTH) - 1);
++    assert_eq!(clicks.borrow().len(), 2);
++}
++
++#[test]
++fn another_row_the_scrollbar_and_the_chrome_report_nothing() {
++    let (mut tui, clicks) = setup(100);
++    // Press on one row, release on another: a drag, not a click.
++    press(&mut tui, 5, 3);
++    release(&mut tui, 6, 3);
++    // A release with no press.
++    release(&mut tui, 5, 3);
++    // The scrollbar column, pressed or released on.
++    click(&mut tui, 5, usize::from(WIDTH));
++    press(&mut tui, 5, 3);
++    release(&mut tui, 5, usize::from(WIDTH));
++    press(&mut tui, 5, usize::from(WIDTH));
++    release(&mut tui, 5, 3);
++    // The HUD row and the prompt row.
++    click(&mut tui, 1, 3);
++    click(&mut tui, usize::from(HEIGHT), 3);
++    // The right button.
++    send(&mut tui, "\x1b[<2;3;5M");
++    send(&mut tui, "\x1b[<2;3;5m");
++    assert!(clicks.borrow().is_empty(), "{:?}", clicks.borrow());
++}
++
++#[test]
++fn each_press_and_release_pair_is_one_click() {
++    let (mut tui, clicks) = setup(100);
++    // A double click arriving in one chunk, then three fast clicks.
++    send(
++        &mut tui,
++        "\x1b[<0;4;5M\x1b[<0;4;5m\x1b[<0;4;5M\x1b[<0;4;5m",
++    );
++    assert_eq!(clicks.borrow().len(), 2);
++    for _ in 0..3 {
++        click(&mut tui, 5, 4);
++    }
++    assert_eq!(clicks.borrow().len(), 5);
++    assert!(clicks.borrow().iter().all(|c| c.buffer_row == 93));
++}
+diff --git a/crates/hoocode-tui-render/tests/it/main.rs b/crates/hoocode-tui-render/tests/it/main.rs
+index 8d090ccb..e8e25bd6 100644
+--- a/crates/hoocode-tui-render/tests/it/main.rs
++++ b/crates/hoocode-tui-render/tests/it/main.rs
+@@ -1,6 +1,7 @@
+ // Test code slices literal fixtures; the string_slice lint guards production code.
+ #![allow(clippy::string_slice)]
+ 
++mod body_click;
+ mod cell_size_input;
+ mod container_cache;
+ mod cursor_parking;

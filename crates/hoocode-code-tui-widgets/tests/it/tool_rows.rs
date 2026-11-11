@@ -1,7 +1,7 @@
 //! The declutter tool rows (WP6a): ` ● Name subject  facts`, an indented dim
 //! body, single-view body rules, no step numbers, rails, `Took` lines or gutters.
-//! Goldens pin the screens in `docs/design/tui-declutter/mockups/dark/screens`
-//! (peek, full, failed, agent) at 100 columns.
+//! The goldens in `tests/golden/hoocode-code-tui-widgets/` are the source for
+//! these screens (peek, full, failed, agent) at 100 columns.
 
 use std::cell::RefCell;
 use std::rc::Rc;

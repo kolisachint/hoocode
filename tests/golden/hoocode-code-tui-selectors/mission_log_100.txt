@@ -1,7 +1,7 @@
   Sessions  /resume  2 sessions · this folder
- › wrap width                                     56y ago   wrap width
-   add a width check to wrap_text in src/wrap.rs  56y ago   clay-arbor · 5 messages
-                                                            last used 56y ago
+ › wrap width                                         now   wrap width
+   add a width check to wrap_text in src/wrap.rs      now   clay-arbor · 5 messages
+                                                            last used now
 
                                                             › why does wrap_text ignore width
  ▏ filter
@@ -15,21 +15,21 @@ r0 c19-20 fg=#e5e5e7 bg=#1e1e2a
 r0 c21-44 fg=#989898 bg=#1e1e2a
 r0 c45-99 fg=#e5e5e7 bg=#1e1e2a
 r1 c0-2 fg=#5cc8bb bg=#233239
-r1 c3-49 fg=#e5e5e7 bg=#233239
-r1 c50-56 fg=#989898 bg=#233239
+r1 c3-53 fg=#e5e5e7 bg=#233239
+r1 c54-56 fg=#989898 bg=#233239
 r1 c57 fg=#e5e5e7 bg=#233239
 r1 c58 fg=#e5e5e7 bg=#1e1e2a
 r1 c59-99 fg=#e5e5e7 bg=#292b40
-r2 c0-49 fg=#e5e5e7 bg=#1e1e2a
-r2 c50-56 fg=#989898 bg=#1e1e2a
+r2 c0-53 fg=#e5e5e7 bg=#1e1e2a
+r2 c54-56 fg=#989898 bg=#1e1e2a
 r2 c57-58 fg=#e5e5e7 bg=#1e1e2a
 r2 c59 fg=#e5e5e7 bg=#292b40
 r2 c60-82 fg=#989898 bg=#292b40
 r2 c83-99 fg=#e5e5e7 bg=#292b40
 r3 c0-58 fg=#e5e5e7 bg=#1e1e2a
 r3 c59 fg=#e5e5e7 bg=#292b40
-r3 c60-76 fg=#989898 bg=#292b40
-r3 c77-99 fg=#e5e5e7 bg=#292b40
+r3 c60-72 fg=#989898 bg=#292b40
+r3 c73-99 fg=#e5e5e7 bg=#292b40
 r4 c0-58 fg=#e5e5e7 bg=#1e1e2a
 r4 c59-99 fg=#e5e5e7 bg=#292b40
 r5 c0-58 fg=#e5e5e7 bg=#1e1e2a

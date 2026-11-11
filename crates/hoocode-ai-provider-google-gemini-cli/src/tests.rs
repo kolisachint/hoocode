@@ -626,3 +626,41 @@ fn a_safety_stop_is_an_unknown_error() {
     );
     assert_eq!(message.content.len(), 1);
 }
+
+// --- AU-3: 401 and 403 with a subscription token ---
+
+/// A rejected token is not refreshed or retried: the server sees one request
+/// and the error is final.
+fn assert_rejected_token(status_line: &'static str, code: u16, message: &str) {
+    let body = r#"{"error":{"code":401,"message":"Request had invalid authentication credentials.","status":"UNAUTHENTICATED"}}"#;
+    let rejected = (status_line, "application/json", body);
+    let server = serve_script(vec![rejected]);
+    let mut m = model();
+    m.base_url = server.base_url.clone();
+    let (events, result) = run_stream(m, API_KEY);
+    assert_eq!(kinds(&events), ["error"], "no start event");
+    assert_eq!(result.stop_reason, StopReason::Error);
+    assert_eq!(
+        result.error_message.as_deref(),
+        Some(format!("Cloud Code Assist API error ({code}): {message}").as_str())
+    );
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[test]
+fn rejected_subscription_token_401_fails_with_the_status_and_message() {
+    assert_rejected_token(
+        "HTTP/1.1 401 Unauthorized",
+        401,
+        "Request had invalid authentication credentials.",
+    );
+}
+
+#[test]
+fn rejected_subscription_token_403_fails_with_the_status_and_message() {
+    assert_rejected_token(
+        "HTTP/1.1 403 Forbidden",
+        403,
+        "Request had invalid authentication credentials.",
+    );
+}

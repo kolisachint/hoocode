@@ -58,7 +58,7 @@ files. A project's own `.hoocode/hoo-config.json` cannot turn it on. See
 
 Then sign in: run `/login` in the session, or set a provider key such as
 `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before starting. See the
-[quickstart](quickstart.md).
+[quickstart](quickstart.md). Subscription sign-in, including the Google client variables and the callback ports, is on the [sign-in page](login.md).
 
 ## npm or bun
 

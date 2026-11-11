@@ -2,8 +2,9 @@
 //! Live provider tests ported from hoocode `packages/ai/test/abort.test.ts` and
 //! the basic cases of `stream.test.ts` (text, streaming, tool calling).
 //!
-//! Ignored by default. Each test returns early (skip) when its provider's key is
-//! not set, like `describe.skipIf`. Run with e.g.
+//! Ignored by default. Each test panics, naming the variable, when its provider's
+//! key is not set: a run with `--ignored` must not pass without testing anything.
+//! Run with e.g.
 //! `ANTHROPIC_API_KEY=... cargo test -p hoocode-ai-registry --test live_e2e -- --ignored`.
 //! The remaining `stream.test.ts` cases (images, thinking, multi-turn, the other
 //! providers) are ledger 8.6.
@@ -196,43 +197,48 @@ macro_rules! live_suite {
         mod $suite {
             use super::*;
 
-            fn setup() -> Option<(Model, String)> {
-                let key = key($env)?;
-                Some((model($provider, $id, $api), key))
+            fn setup() -> (Model, String) {
+                let key = key($env).unwrap_or_else(|| {
+                    panic!(
+                        "{} is not set: this live test needs a real provider key",
+                        $env
+                    )
+                });
+                (model($provider, $id, $api), key)
             }
 
             #[tokio::test]
             #[ignore = "live: needs the provider key and network"]
             async fn basic_text() {
-                let Some((llm, key)) = setup() else { return };
+                let (llm, key) = setup();
                 basic_text_generation(llm, &key).await;
             }
 
             #[tokio::test]
             #[ignore = "live: needs the provider key and network"]
             async fn streaming() {
-                let Some((llm, key)) = setup() else { return };
+                let (llm, key) = setup();
                 handle_streaming(llm, &key).await;
             }
 
             #[tokio::test]
             #[ignore = "live: needs the provider key and network"]
             async fn tool_call() {
-                let Some((llm, key)) = setup() else { return };
+                let (llm, key) = setup();
                 handle_tool_call(llm, &key).await;
             }
 
             #[tokio::test]
             #[ignore = "live: needs the provider key and network"]
             async fn abort_mid_stream_then_follow_up() {
-                let Some((llm, key)) = setup() else { return };
+                let (llm, key) = setup();
                 abort_mid_stream(llm, &key).await;
             }
 
             #[tokio::test]
             #[ignore = "live: needs the provider key and network"]
             async fn abort_immediately() {
-                let Some((llm, key)) = setup() else { return };
+                let (llm, key) = setup();
                 immediate_abort(llm, &key).await;
             }
         }

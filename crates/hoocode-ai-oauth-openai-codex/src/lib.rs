@@ -222,11 +222,30 @@ fn parse_pasted(input: &str, state: &str) -> Result<Option<String>, String> {
     Ok(code)
 }
 
+/// The notice shown when the callback port is taken: the browser cannot
+/// return to this process, so only the pasted paths remain.
+pub fn port_in_use_message(port: u16) -> String {
+    format!(
+        "Port {port} is in use, so the browser cannot return here. Paste the code or the full redirect URL instead."
+    )
+}
+
 /// `loginOpenAICodex`.
 pub async fn login_openai_codex(
     fetch: &dyn Fetch,
     callbacks: &dyn OAuthLoginCallbacks,
     originator: Option<&str>,
+) -> Result<OAuthCredentials, String> {
+    login_on_port(fetch, callbacks, originator, CALLBACK_PORT).await
+}
+
+/// The login flow with the callback port passed in (the public entry point
+/// passes [`CALLBACK_PORT`]; tests pass a port they hold).
+async fn login_on_port(
+    fetch: &dyn Fetch,
+    callbacks: &dyn OAuthLoginCallbacks,
+    originator: Option<&str>,
+    port: u16,
 ) -> Result<OAuthCredentials, String> {
     let pkce = generate_pkce();
     let state = create_state();
@@ -236,17 +255,23 @@ pub async fn login_openai_codex(
         originator.unwrap_or(DEFAULT_ORIGINATOR),
     );
     // A port already in use leaves only the manual paths (the TS server
-    // resolves with a `waitForCode` of null).
-    let mut server = CallbackServer::start(CallbackServerOptions {
+    // resolves with a `waitForCode` of null), and says so.
+    let mut server = match CallbackServer::start(CallbackServerOptions {
         host: callback_host(),
-        port: CALLBACK_PORT,
+        port,
         path: CALLBACK_PATH.to_string(),
         expected_state: state.clone(),
         label: "OpenAI".to_string(),
         validation: CallbackValidation::StateThenCode,
     })
     .await
-    .ok();
+    {
+        Ok(server) => Some(server),
+        Err(_) => {
+            callbacks.on_progress(&port_in_use_message(port));
+            None
+        }
+    };
 
     callbacks.on_auth(OAuthAuthInfo {
         url,

@@ -1,0 +1,11 @@
+┌─ Sessions ─ /resume  2 sessions · this folder ───────────┬───────────────────────────────────────┐
+│ › wrap width                                         now │ wrap width                            │
+│   add a width check to wrap_text in src/wrap.rs      now │ clay-arbor · 5 messages               │
+│                                                          │ last used now                         │
+│                                                          │                                       │
+│                                                          │ › why does wrap_text ignore width     │
+│ ▏ filter                                                                                         │
+│ ↑↓ move · enter open · / search · esc close · f1 more                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r1 c1-57 bold

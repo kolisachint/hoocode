@@ -5,7 +5,8 @@
 //! `unicode-surrogate`, `xhigh` and `zen`.
 //!
 //! Every test is `#[ignore]`d and runs only the provider cases whose key is
-//! in the environment (TS `describe.skipIf`). Run with e.g.
+//! in the environment (TS `describe.skipIf`). A test panics, naming the
+//! variables, when no key of its matrix is set. Run with e.g.
 //! `OPENROUTER_API_KEY=... cargo test -p hoocode-ai-registry --test live_matrix -- --ignored`.
 //!
 //! Not covered here: the github-copilot / openai-codex cases (their APIs and
@@ -56,6 +57,35 @@ const fn completions(provider: &'static str, model: &'static str, key: &'static 
 
 fn env(var: &str) -> Option<String> {
     std::env::var(var).ok().filter(|v| !v.is_empty())
+}
+
+/// Panics, naming every variable, when none of `cases` has its key set: the
+/// test would run zero cases and pass without testing anything. Cases whose
+/// key is missing are still skipped one by one.
+fn require_any_key(cases: &[Case]) {
+    if cases.iter().any(|c| env(c.key).is_some()) {
+        return;
+    }
+    let mut vars: Vec<&str> = Vec::new();
+    for c in cases {
+        if !vars.contains(&c.key) {
+            vars.push(c.key);
+        }
+    }
+    panic!(
+        "none of the provider keys is set ({}): this live test needs at least one",
+        vars.join(", ")
+    );
+}
+
+/// The model and key of one case, panicking when its key is not set.
+fn resolve_required(case: Case) -> (Model, String) {
+    case.resolve().unwrap_or_else(|| {
+        panic!(
+            "{} is not set: this live test needs a real provider key in that variable",
+            case.key
+        )
+    })
 }
 
 impl Case {
@@ -348,6 +378,8 @@ async fn context_overflow_is_detected() {
             Error(Some(r"(?i)maximum context length is \d+ tokens")),
         ),
     ];
+    let keys: Vec<Case> = table.iter().map(|(c, _)| *c).collect();
+    require_any_key(&keys);
     for (case, expect) in table {
         let Some((model, key)) = case.resolve() else {
             continue;
@@ -420,7 +452,9 @@ fn empty_cases() -> Vec<Case> {
 #[tokio::test]
 #[ignore = "live: needs provider keys and network"]
 async fn empty_messages_are_handled() {
-    for case in empty_cases() {
+    let table = empty_cases();
+    require_any_key(&table);
+    for case in table {
         let Some((model, key)) = case.resolve() else {
             continue;
         };
@@ -583,6 +617,7 @@ async fn tool_results_with_images_reach_the_model() {
         ),
         case("anthropic", "claude-sonnet-4-5", "ANTHROPIC_OAUTH_TOKEN"),
     ];
+    require_any_key(&table);
     for case in table {
         let Some((model, key)) = case.resolve() else {
             continue;
@@ -610,6 +645,7 @@ async fn responses_expose_a_response_id() {
         case("openai", "gpt-5-mini", "OPENAI_API_KEY"),
         case("anthropic", "claude-sonnet-4-5", "ANTHROPIC_API_KEY"),
     ];
+    require_any_key(&table);
     for case in table {
         let Some((model, key)) = case.resolve() else {
             continue;
@@ -652,6 +688,7 @@ async fn token_usage_on_abort() {
         ],
         SHARED,
     );
+    require_any_key(&table);
     for case in table {
         let Some((model, key)) = case.resolve() else {
             continue;
@@ -767,6 +804,7 @@ async fn total_tokens_equal_the_sum_of_components() {
     .into_iter()
     .chain(SHARED[2..].iter().copied())
     .collect::<Vec<_>>();
+    require_any_key(&table);
     for case in table {
         let Some((model, key)) = case.resolve() else {
             continue;
@@ -838,6 +876,7 @@ async fn orphaned_tool_calls_are_filtered() {
         "Evaluate mathematical expressions",
         json!({"type": "object", "properties": {"expression": {"type": "string", "description": "The mathematical expression to evaluate"}}, "required": ["expression"]}),
     );
+    require_any_key(&table);
     for case in table {
         let Some((model, key)) = case.resolve() else {
             continue;
@@ -956,6 +995,7 @@ async fn unicode_in_tool_results_is_sent_safely() {
             "What did the tool return?",
         ),
     ];
+    require_any_key(&table);
     for case in table {
         let Some((model, key)) = case.resolve() else {
             continue;
@@ -994,11 +1034,11 @@ const FAILING_TOOL_CALL_ID: &str = "call_pAYbIr76hXIjncD9UE4eGfnS|t5nnb2qYMFWGSs
 #[tokio::test]
 #[ignore = "live: needs OPENROUTER_API_KEY and network"]
 async fn openrouter_handles_long_pipe_separated_tool_call_ids() {
-    let Some((model, key)) =
-        case("openrouter", "openai/gpt-5.3-codex", "OPENROUTER_API_KEY").resolve()
-    else {
-        return;
-    };
+    let (model, key) = resolve_required(case(
+        "openrouter",
+        "openai/gpt-5.3-codex",
+        "OPENROUTER_API_KEY",
+    ));
     let echo = tool(
         "echo",
         "Echoes the message back",
@@ -1091,10 +1131,7 @@ async fn xhigh(model: &Model, key: &str) -> AssistantMessage {
 #[tokio::test]
 #[ignore = "live: needs OPENAI_API_KEY and network"]
 async fn xhigh_reasoning_works_or_is_rejected_by_the_model() {
-    let Some((codex_max, key)) = case("openai", "gpt-5.1-codex-max", "OPENAI_API_KEY").resolve()
-    else {
-        return;
-    };
+    let (codex_max, key) = resolve_required(case("openai", "gpt-5.1-codex-max", "OPENAI_API_KEY"));
     let response = xhigh(&codex_max, &key).await;
     assert_eq!(
         response.stop_reason,
@@ -1115,7 +1152,7 @@ async fn xhigh_reasoning_works_or_is_rejected_by_the_model() {
         case("openai", "gpt-5-mini", "OPENAI_API_KEY"),
         completions("openai", "gpt-5-mini", "OPENAI_API_KEY"),
     ] {
-        let (model, key) = case.resolve().unwrap();
+        let (model, key) = resolve_required(case);
         let response = xhigh(&model, &key).await;
         assert_eq!(response.stop_reason, StopReason::Error);
         assert!(response.error_message.unwrap_or_default().contains("xhigh"));
@@ -1129,9 +1166,9 @@ async fn xhigh_reasoning_works_or_is_rejected_by_the_model() {
 #[tokio::test]
 #[ignore = "live: needs OPENCODE_API_KEY and network"]
 async fn opencode_models_say_hello() {
-    let Some(key) = env("OPENCODE_API_KEY") else {
-        return;
-    };
+    let key = env("OPENCODE_API_KEY").unwrap_or_else(|| {
+        panic!("OPENCODE_API_KEY is not set: this live test needs a real OpenCode key")
+    });
     for provider in ["opencode", "opencode-go"] {
         for model in hoocode_ai_models::get_models(provider) {
             let context = Context::new(String::new(), vec![user("Say hello.")], vec![]);

@@ -1,0 +1,9 @@
+┌─ Fork ─ /fork  message 2 of 3 ───────────────────────────────────────────────────────────────────┐
+│ The new session gets the selected message and everything above it; this one stays as it is.      │
+│   what does the wrap crate do?                                                                   │
+│ › add a width check to wrap_text in src/wrap.rs  carries 2 messages                              │
+│   lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor                   │
+│ ↑↓ move · enter fork · esc close                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r3 c1-68 bold

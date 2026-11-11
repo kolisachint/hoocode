@@ -214,9 +214,26 @@ pub fn update_message(command: Option<&str>) -> String {
     }
 }
 
-/// `hoocode update`: prints the command and exits 0. Nothing is downloaded or replaced.
-pub fn run_update_command(out: &mut dyn Write) -> i32 {
-    let _ = out.write_all(update_message(current_update_command()).as_bytes());
+const UPDATE_USAGE: &str = "Usage: hoocode update [--help]
+
+Print the command that updates hoocode. Nothing is downloaded or replaced.
+
+  --help, -h    Show this usage
+";
+
+/// `hoocode update [--help]`. With no argument it prints the command and exits 0;
+/// `--help` / `-h` print the usage on stdout and exit 0. Any other argument is an
+/// error: `Error: Unknown option: --x`, then the usage on stderr, exit 2.
+pub fn run_update_command(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    if let Some(bad) = args.iter().find(|a| !matches!(a.as_str(), "--help" | "-h")) {
+        let _ = writeln!(err, "Error: Unknown option: {bad}\n\n{UPDATE_USAGE}");
+        return 2;
+    }
+    if args.is_empty() {
+        let _ = out.write_all(update_message(current_update_command()).as_bytes());
+    } else {
+        let _ = out.write_all(UPDATE_USAGE.as_bytes());
+    }
     0
 }
 
@@ -455,6 +472,46 @@ mod tests {
             format!("To update hoocode, run:\n  {NPM_UPDATE_COMMAND}\n")
         );
         assert!(update_message(None).contains("tool you installed it with"));
+    }
+
+    #[test]
+    fn update_without_arguments_prints_the_command() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        assert_eq!(run_update_command(&[], &mut out, &mut err), 0);
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            update_message(current_update_command())
+        );
+        assert!(err.is_empty());
+    }
+
+    #[test]
+    fn update_help_prints_usage_on_stdout_and_exits_0() {
+        for flag in ["--help", "-h"] {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let code = run_update_command(&[flag.to_string()], &mut out, &mut err);
+            assert_eq!(code, 0, "{flag}");
+            let text = String::from_utf8(out).unwrap();
+            assert!(text.starts_with("Usage: hoocode update"), "{text}");
+            assert!(
+                !text.contains("To update hoocode"),
+                "help does not run the check"
+            );
+            assert!(err.is_empty(), "{flag}");
+        }
+    }
+
+    #[test]
+    fn update_unknown_argument_is_an_error_with_usage_on_stderr_exit_2() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = run_update_command(&["--bogus".to_string()], &mut out, &mut err);
+        assert_eq!(code, 2);
+        assert!(out.is_empty());
+        let text = String::from_utf8(err).unwrap();
+        assert!(
+            text.starts_with("Error: Unknown option: --bogus\n\nUsage: hoocode update"),
+            "{text}"
+        );
     }
 
     #[test]

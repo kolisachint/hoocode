@@ -300,7 +300,14 @@ class Normalizer:
                         # (a right-aligned column) does not move with the masked text.
                         replaced = replaced.ljust(m.end() - m.start())
                     matched = cells[m.start() : m.end()]
-                    if forced is None and len(replaced) == len(matched):
+                    if forced is None and keep_width:
+                        # The mask takes the first cell's style and its padding the
+                        # last cell's, so no style break from the masked text (a
+                        # longer or shorter version) lands inside the mask.
+                        body = len(m.expand(repl))
+                        first, tail = matched[0][1], matched[-1][1]
+                        new.extend((ch, first if i < body else tail) for i, ch in enumerate(replaced))
+                    elif forced is None and len(replaced) == len(matched):
                         # A same-length rewrite keeps each cell's own style.
                         new.extend((ch, cell[1]) for ch, cell in zip(replaced, matched))
                     else:

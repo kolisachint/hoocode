@@ -1,4 +1,4 @@
-  Keys  ?   plain   ctrl   leader   alt  128 bindings · 23 shown
+  Keys  ?   plain   ctrl   leader   alt  129 bindings · 24 shown
  prompt
  ctrl+x c  Copy the agent's last message to the clipboard    ctrl+x y  Yank pop    ctrl+x z  Redo
  transcript
@@ -6,6 +6,7 @@
  ctrl+x T  Cycle thinking level backward
  ctrl+x b  Toggle thinking blocks
  ctrl+x n  Attach to the subagent run of the last Agent block (read-only)
+ ctrl+x o  Open all tool blocks, or close them all when one is open
  ctrl+x t  Cycle thinking level (off → … → high)
  ctrl+x u  Focus the newest tool block and pin the view
  app
@@ -67,61 +68,64 @@ r7 c0-8 fg=#e5e5e7 bg=#1e1e2a
 r7 c9-72 fg=#989898 bg=#1e1e2a
 r7 c73-99 fg=#e5e5e7 bg=#1e1e2a
 r8 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r8 c9-47 fg=#989898 bg=#1e1e2a
-r8 c48-99 fg=#e5e5e7 bg=#1e1e2a
+r8 c9-66 fg=#989898 bg=#1e1e2a
+r8 c67-99 fg=#e5e5e7 bg=#1e1e2a
 r9 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r9 c9-54 fg=#989898 bg=#1e1e2a
-r9 c55-99 fg=#e5e5e7 bg=#1e1e2a
-r10 c0 fg=#e5e5e7 bg=#1e1e2a
-r10 c1-3 fg=#989898 bg=#1e1e2a
-r10 c4-99 fg=#e5e5e7 bg=#1e1e2a
-r11 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r11 c9-33 fg=#989898 bg=#1e1e2a
-r11 c34-99 fg=#e5e5e7 bg=#1e1e2a
+r9 c9-47 fg=#989898 bg=#1e1e2a
+r9 c48-99 fg=#e5e5e7 bg=#1e1e2a
+r10 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r10 c9-54 fg=#989898 bg=#1e1e2a
+r10 c55-99 fg=#e5e5e7 bg=#1e1e2a
+r11 c0 fg=#e5e5e7 bg=#1e1e2a
+r11 c1-3 fg=#989898 bg=#1e1e2a
+r11 c4-99 fg=#e5e5e7 bg=#1e1e2a
 r12 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r12 c9-40 fg=#989898 bg=#1e1e2a
-r12 c41-99 fg=#e5e5e7 bg=#1e1e2a
+r12 c9-33 fg=#989898 bg=#1e1e2a
+r12 c34-99 fg=#e5e5e7 bg=#1e1e2a
 r13 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r13 c9-33 fg=#989898 bg=#1e1e2a
-r13 c34-99 fg=#e5e5e7 bg=#1e1e2a
+r13 c9-40 fg=#989898 bg=#1e1e2a
+r13 c41-99 fg=#e5e5e7 bg=#1e1e2a
 r14 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r14 c9-35 fg=#989898 bg=#1e1e2a
-r14 c36-99 fg=#e5e5e7 bg=#1e1e2a
+r14 c9-33 fg=#989898 bg=#1e1e2a
+r14 c34-99 fg=#e5e5e7 bg=#1e1e2a
 r15 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r15 c9-43 fg=#989898 bg=#1e1e2a
-r15 c44-99 fg=#e5e5e7 bg=#1e1e2a
+r15 c9-35 fg=#989898 bg=#1e1e2a
+r15 c36-99 fg=#e5e5e7 bg=#1e1e2a
 r16 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r16 c9-30 fg=#989898 bg=#1e1e2a
-r16 c31-99 fg=#e5e5e7 bg=#1e1e2a
+r16 c9-43 fg=#989898 bg=#1e1e2a
+r16 c44-99 fg=#e5e5e7 bg=#1e1e2a
 r17 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r17 c9-33 fg=#989898 bg=#1e1e2a
-r17 c34-99 fg=#e5e5e7 bg=#1e1e2a
+r17 c9-30 fg=#989898 bg=#1e1e2a
+r17 c31-99 fg=#e5e5e7 bg=#1e1e2a
 r18 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r18 c9-37 fg=#989898 bg=#1e1e2a
-r18 c38-99 fg=#e5e5e7 bg=#1e1e2a
+r18 c9-33 fg=#989898 bg=#1e1e2a
+r18 c34-99 fg=#e5e5e7 bg=#1e1e2a
 r19 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r19 c9-39 fg=#989898 bg=#1e1e2a
-r19 c40-99 fg=#e5e5e7 bg=#1e1e2a
+r19 c9-37 fg=#989898 bg=#1e1e2a
+r19 c38-99 fg=#e5e5e7 bg=#1e1e2a
 r20 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r20 c9-71 fg=#989898 bg=#1e1e2a
-r20 c72-99 fg=#e5e5e7 bg=#1e1e2a
+r20 c9-39 fg=#989898 bg=#1e1e2a
+r20 c40-99 fg=#e5e5e7 bg=#1e1e2a
 r21 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r21 c9-29 fg=#989898 bg=#1e1e2a
-r21 c30-99 fg=#e5e5e7 bg=#1e1e2a
+r21 c9-71 fg=#989898 bg=#1e1e2a
+r21 c72-99 fg=#e5e5e7 bg=#1e1e2a
 r22 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r22 c9-53 fg=#989898 bg=#1e1e2a
-r22 c54-99 fg=#e5e5e7 bg=#1e1e2a
+r22 c9-29 fg=#989898 bg=#1e1e2a
+r22 c30-99 fg=#e5e5e7 bg=#1e1e2a
 r23 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r23 c9-23 fg=#989898 bg=#1e1e2a
-r23 c24-99 fg=#e5e5e7 bg=#1e1e2a
+r23 c9-53 fg=#989898 bg=#1e1e2a
+r23 c54-99 fg=#e5e5e7 bg=#1e1e2a
 r24 c0-8 fg=#e5e5e7 bg=#1e1e2a
-r24 c9-74 fg=#989898 bg=#1e1e2a
-r24 c75-99 fg=#e5e5e7 bg=#1e1e2a
-r25 c0-1 fg=#e5e5e7 bg=#2a2a36
-r25 c2-8 fg=#989898 bg=#2a2a36
-r25 c9-99 fg=#e5e5e7 bg=#2a2a36
-r26 c0-3 fg=#e5e5e7 bg=#1e1e2a
-r26 c4-12 fg=#989898 bg=#1e1e2a
-r26 c13-15 fg=#e5e5e7 bg=#1e1e2a
-r26 c16-21 fg=#989898 bg=#1e1e2a
-r26 c22-99 fg=#e5e5e7 bg=#1e1e2a
+r24 c9-23 fg=#989898 bg=#1e1e2a
+r24 c24-99 fg=#e5e5e7 bg=#1e1e2a
+r25 c0-8 fg=#e5e5e7 bg=#1e1e2a
+r25 c9-74 fg=#989898 bg=#1e1e2a
+r25 c75-99 fg=#e5e5e7 bg=#1e1e2a
+r26 c0-1 fg=#e5e5e7 bg=#2a2a36
+r26 c2-8 fg=#989898 bg=#2a2a36
+r26 c9-99 fg=#e5e5e7 bg=#2a2a36
+r27 c0-3 fg=#e5e5e7 bg=#1e1e2a
+r27 c4-12 fg=#989898 bg=#1e1e2a
+r27 c13-15 fg=#e5e5e7 bg=#1e1e2a
+r27 c16-21 fg=#989898 bg=#1e1e2a
+r27 c22-99 fg=#e5e5e7 bg=#1e1e2a

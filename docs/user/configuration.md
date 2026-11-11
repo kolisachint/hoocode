@@ -8,7 +8,7 @@ to move it.
 | File or folder | What it holds |
 |---|---|
 | `~/.hoocode/settings.json` | Global settings (`/settings` edits it) |
-| `~/.hoocode/auth.json` | Logins and keys saved by `/login` |
+| `~/.hoocode/auth.json` | Logins and keys saved by `/login`. See [sign-in](login.md) |
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
@@ -23,6 +23,24 @@ to move it.
 | `.hoocode/settings.json` | Project settings, merged over the global ones |
 | `.hoocode/skills/` | Project skills |
 | `AGENTS.md` or `CLAUDE.md` | Project instructions, read from the working folder and its parents |
+
+## Environment variables
+
+Each one is also listed by `hoocode --help`. Provider API keys (such as
+`ANTHROPIC_API_KEY`) are not listed here. The variables for Google sign-in are in
+[sign-in](login.md).
+
+| Variable | What it does |
+|---|---|
+| `HOOCODE_OFFLINE` | Disable startup network operations when set to `1`, `true` or `yes`. |
+| `HOOCODE_FULLSCREEN` | Set to `0` to run the interactive screen inline instead of full-screen. |
+| `HOOCODE_USER_AGENTS_DIR` | Folder for user plugins and `mcp.json` (default: `~/.agents`). |
+| `HOOCODE_PACKAGE_DIR` | Folder of hoocode's bundled files such as `CHANGELOG.md` (for Nix/Guix store paths). |
+| `HOOCODE_CODING_AGENT_SESSION_DIR` | Session storage directory (overridden by `--session-dir`). |
+| `HOOCODE_CA_CERT` | Path to an extra PEM CA bundle to trust for hoocode's own TLS traffic (additive; verification stays on). Precedence: `--ca-cert` > this > `NODE_EXTRA_CA_CERTS`. |
+| `HOOCODE_USE_SYSTEM_CA` | Also trust the OS/system CA store when set to `1`, `true` or `yes` (same as `--use-system-ca`). |
+| `NODE_EXTRA_CA_CERTS` | Path to an extra PEM CA bundle (the lowest-precedence CA source). |
+| `HOOCODE_TELEMETRY` | Set to `1`, `true` or `yes`, or `0`, `false` or `no`, to override the `enableInstallTelemetry` setting (OpenRouter app attribution headers). |
 
 ## MCP servers
 
@@ -80,7 +98,7 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
 - **Transcript**: one row per tool call, collapsed (`● Edit src/config.rs  +2 −2`).
   Click a header, or focus it and press `enter`, to show the full output; again to hide.
   A running Shell shows one dim tail line until it settles; a failed call stays collapsed.
-- **Pinned transcript keys**: `ctrl+x u` focuses the newest block from the prompt.
+- **Pinned transcript keys**: `ctrl+x u` focuses the newest block from the prompt, and `ctrl+x o` opens or closes all tool blocks.
   With a block focused and the prompt empty, `{` and `}` move between blocks,
   `enter` opens the focused block, `y` copies its raw output, and `esc` clears the
   focus. `End` goes back to live. Letters always type at the prompt. See

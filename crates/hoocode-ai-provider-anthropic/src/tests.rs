@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::request::tests::{catalog, test_model as ts_model, user};
+use crate::request::CLAUDE_CODE_VERSION;
 use hoocode_ai_stream::testing::serve_script;
 use hoocode_ai_stream::testing::{serve_error, serve_sse, serve_sse_then_hang};
 use hoocode_ai_types::Tool;
@@ -630,4 +631,136 @@ fn unknown_and_error_stop_reasons_end_in_error() {
         result.error_message.as_deref(),
         Some("An unknown error occurred")
     );
+}
+
+// --- AU-3 / AU-4: subscription (OAuth) tokens against a mock server ---
+
+const OAUTH_TOKEN: &str = "sk-ant-oat01-test-token";
+
+/// `stream_anthropic` with an OAuth token against a scripted server: the
+/// events, the result and the requests the server received.
+fn run_oauth(
+    model: Model,
+    context: Context,
+    script: Vec<(&str, &str, &str)>,
+) -> (
+    Vec<AssistantMessageEvent>,
+    AssistantMessage,
+    Vec<hoocode_ai_stream::testing::Recorded>,
+) {
+    let server = serve_script(script);
+    let mut model = model;
+    model.base_url = server.base_url.clone();
+    let s = stream_anthropic(
+        model,
+        context,
+        AnthropicOptions {
+            api_key: Some(OAUTH_TOKEN.into()),
+            cache_retention: Some(hoocode_ai_types::CacheRetention::None),
+            ..Default::default()
+        },
+    );
+    let result = s.result_blocking();
+    (collect(s), result, server.requests())
+}
+
+/// A rejected subscription token ends the stream with the status and the
+/// server's message, before any `start` event, after a single request (the
+/// SDK does not retry 401 or 403).
+fn assert_rejected_oauth_token(status_line: &str, code: u16, body: &str) {
+    let (events, result, requests) = run_oauth(
+        test_model(String::new()),
+        Context::new(String::new(), vec![user("hi")], vec![]),
+        vec![(status_line, SSE, body)],
+    );
+    assert_eq!(requests.len(), 1, "no retry on {code}");
+    assert_eq!(events.len(), 1, "no start event: {events:?}");
+    assert!(matches!(events[0], AssistantMessageEvent::Error { .. }));
+    assert_eq!(result.stop_reason, StopReason::Error);
+    assert_eq!(
+        result.error_message.as_deref(),
+        Some(format!("{code} {body}").as_str())
+    );
+}
+
+#[test]
+fn oauth_401_ends_the_stream_with_the_status_and_the_server_message() {
+    assert_rejected_oauth_token(
+        "HTTP/1.1 401 Unauthorized",
+        401,
+        r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#,
+    );
+}
+
+#[test]
+fn oauth_403_ends_the_stream_with_the_status_and_the_server_message() {
+    assert_rejected_oauth_token(
+        "HTTP/1.1 403 Forbidden",
+        403,
+        r#"{"type":"error","error":{"type":"permission_error","message":"OAuth token does not meet scope requirement"}}"#,
+    );
+}
+
+/// The Claude Code identity on the wire for an `sk-ant-oat` token: Bearer
+/// auth, the OAuth beta and app headers, the identity system block, and the
+/// tool renames out and back.
+#[test]
+fn oauth_stream_sends_the_claude_code_identity_and_maps_tool_names_both_ways() {
+    let body = sse_body(&[
+        ("message_start", json!({"type": "message_start", "message": {"id": "msg_oauth", "usage": usage_json(0)}}).to_string()),
+        ("content_block_start", json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {}}}).to_string()),
+        ("content_block_delta", json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"path\":\"a.rs\"}"}}).to_string()),
+        ("content_block_stop", json!({"type": "content_block_stop", "index": 0}).to_string()),
+        ("message_delta", json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": usage_json(4)}).to_string()),
+        ("message_stop", json!({"type": "message_stop"}).to_string()),
+    ]);
+    let tool = Tool {
+        name: "read".into(),
+        description: "Read a file.".into(),
+        parameters: json!({"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
+        defer_loading: None,
+    };
+    let context = Context::new("Be terse.".into(), vec![user("Read a.rs")], vec![tool]);
+    let (_, result, requests) =
+        run_oauth(test_model(String::new()), context, vec![(OK, SSE, body)]);
+
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.path, "/v1/messages");
+    assert_eq!(
+        request.header("authorization"),
+        Some("Bearer sk-ant-oat01-test-token")
+    );
+    assert_eq!(request.header("x-api-key"), None);
+    assert_eq!(
+        request.header("user-agent"),
+        Some(format!("claude-cli/{CLAUDE_CODE_VERSION}").as_str())
+    );
+    assert_eq!(request.header("x-app"), Some("cli"));
+    assert_eq!(
+        request.header("anthropic-beta"),
+        Some("claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14")
+    );
+
+    let sent = request.json();
+    assert_eq!(
+        sent["system"],
+        json!([
+            {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."},
+            {"type": "text", "text": "Be terse."},
+        ])
+    );
+    assert_eq!(sent["tools"][0]["name"], "Read");
+
+    // The streamed call comes back under the caller's tool name.
+    assert_eq!(result.stop_reason, StopReason::ToolUse);
+    assert_eq!(result.error_message, None);
+    match result.content.as_slice() {
+        [Content::ToolCall(call)] => {
+            assert_eq!(call.id, "toolu_1");
+            assert_eq!(call.name, "read");
+            assert_eq!(call.arguments, json!({"path": "a.rs"}));
+        }
+        other => panic!("expected one tool call, got {other:?}"),
+    }
 }

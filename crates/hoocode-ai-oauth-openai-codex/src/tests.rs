@@ -122,11 +122,26 @@ async fn refresh_reports_missing_fields_and_missing_account() {
 struct ManualPaste {
     auth_url: Mutex<String>,
     state_override: Option<&'static str>,
+    progress: Mutex<Vec<String>>,
+}
+
+impl ManualPaste {
+    fn new(state_override: Option<&'static str>) -> Self {
+        Self {
+            auth_url: Mutex::new(String::new()),
+            state_override,
+            progress: Mutex::new(Vec::new()),
+        }
+    }
 }
 
 impl OAuthLoginCallbacks for ManualPaste {
     fn on_auth(&self, info: OAuthAuthInfo) {
         *self.auth_url.lock().unwrap() = info.url;
+    }
+
+    fn on_progress(&self, message: &str) {
+        self.progress.lock().unwrap().push(message.to_string());
     }
 
     fn on_prompt(&self, _prompt: OAuthPrompt) -> BoxFuture<'_, Result<String, String>> {
@@ -156,10 +171,7 @@ async fn login_with_a_pasted_redirect_url_exchanges_the_code() {
         body: json!({"access_token": access_for_reply, "refresh_token": "r", "expires_in": 60})
             .to_string(),
     });
-    let callbacks = ManualPaste {
-        auth_url: Mutex::new(String::new()),
-        state_override: None,
-    };
+    let callbacks = ManualPaste::new(None);
     let creds = login_openai_codex(&fetch, &callbacks, None).await.unwrap();
     assert_eq!(creds.extra_str("accountId"), Some("acc_login"));
 
@@ -185,16 +197,46 @@ async fn login_with_a_pasted_redirect_url_exchanges_the_code() {
 #[tokio::test]
 async fn login_rejects_a_pasted_state_mismatch() {
     let fetch = FakeFetch::new(|_| unreachable!("no token request on a state mismatch"));
-    let callbacks = ManualPaste {
-        auth_url: Mutex::new(String::new()),
-        state_override: Some("other"),
-    };
+    let callbacks = ManualPaste::new(Some("other"));
     assert_eq!(
         login_openai_codex(&fetch, &callbacks, None)
             .await
             .unwrap_err(),
         "State mismatch"
     );
+}
+
+#[tokio::test]
+async fn a_taken_callback_port_warns_and_the_paste_path_completes() {
+    // Hold a port ourselves so the callback server's bind fails. Port 0 gives
+    // a free ephemeral port, so nothing here depends on a fixed port being free.
+    let held = match std::net::TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!("skipped: could not bind a probe port ({e})");
+            return;
+        }
+    };
+    let port = held.local_addr().unwrap().port();
+    let access = token_with_account("acc_busy");
+    let access_for_reply = access.clone();
+    let fetch = FakeFetch::new(move |_| HttpResponse {
+        status: 200,
+        status_text: "OK".into(),
+        body: json!({"access_token": access_for_reply, "refresh_token": "r", "expires_in": 60})
+            .to_string(),
+    });
+    let callbacks = ManualPaste::new(None);
+    let creds = login_on_port(&fetch, &callbacks, None, port).await.unwrap();
+    assert_eq!(creds.extra_str("accountId"), Some("acc_busy"));
+    let expected = port_in_use_message(port);
+    assert!(
+        callbacks.progress.lock().unwrap().contains(&expected),
+        "progress: {:?}",
+        callbacks.progress.lock().unwrap()
+    );
+    assert!(expected.starts_with(&format!("Port {port} is in use")));
+    drop(held);
 }
 
 #[test]

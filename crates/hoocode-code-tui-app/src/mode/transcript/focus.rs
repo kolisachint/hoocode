@@ -1,5 +1,6 @@
 //! U21 single view P2: the pinned view's transcript focus. `ctrl+x u` focuses
-//! the newest block and pins the view. With a block focused over an empty
+//! the newest block and pins the view, and `ctrl+x o` opens or closes all
+//! tool blocks (`toggle_all_tool_rows`). With a block focused over an empty
 //! prompt, `{` and `}` move the focus between tool blocks, `enter` toggles
 //! the focused block, `y` copies its raw output, and `esc` clears the focus.
 //! `q` and `End` clear the focus and go back to live. Any other typed key
@@ -7,8 +8,7 @@
 //!
 //! The scroll view queues the pinned keys as [`FocusIntent`]s (it owns no
 //! chains); the mode drains them here, where the chains, the session and the
-//! clipboard live. The per-block toggle stops are kept as overrides on the
-//! shared [`TranscriptFocus`], so they survive re-renders.
+//! clipboard live. The expanded state lives on each block, not here.
 
 use std::rc::Rc;
 
@@ -18,7 +18,7 @@ use hoocode_code_media::clipboard::{copy_to_clipboard, SystemClipboardHost};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 
 use super::super::*;
-use crate::scroll_view::{capture_top, reanchor_top, FocusIntent};
+use crate::scroll_view::{capture_top, reanchor_top, toggle_all_plan, FocusIntent};
 
 /// What focusing the newest block pins: the tail, so the block is on screen.
 fn pin_to_tail(mode: &mut Mode) {
@@ -214,12 +214,10 @@ impl Mode {
     }
 
     /// One primitive for both toggle paths (click + `enter`): set the block's
-    /// own expanded flag and record the stop in the override map. Both paths
-    /// read the flag, so a click and `enter` always agree.
+    /// own expanded flag. Both paths read the flag, so a click and `enter`
+    /// always agree.
     pub(crate) fn set_block_expanded(&mut self, block: &ToolBlock, expanded: bool) {
-        let call_id = block.borrow().tool_call_id().to_string();
         block.borrow_mut().set_expanded(expanded);
-        self.focus.borrow_mut().set_expanded(&call_id, expanded);
     }
 
     /// A header click while a block is focused moves the focus onto the
@@ -254,6 +252,40 @@ impl Mode {
             anchor,
         );
         self.dirty.set(true);
+    }
+
+    /// `ctrl+x o`: open every tool block, or close them all when one is open.
+    /// Frozen blocks are skipped (their output is gone), and an open that
+    /// skips some says so in the status slot. A live view stays live, and a
+    /// pinned one keeps its top row. Focus does not move.
+    pub(crate) fn toggle_all_tool_rows(&mut self) {
+        let blocks = focus_blocks(self);
+        if blocks.is_empty() {
+            self.show_status("No tool calls to open yet.");
+            return;
+        }
+        let states: Vec<(bool, bool)> = blocks
+            .iter()
+            .map(|block| {
+                let block = block.borrow();
+                (block.is_expanded(), block.is_frozen())
+            })
+            .collect();
+        let plan = toggle_all_plan(&states);
+        let anchor = capture_top(&self.tui, &self.transcript.chat, self.scroll_body.as_ref());
+        for &index in &plan.changed {
+            self.set_block_expanded(&blocks[index], plan.expanded);
+        }
+        reanchor_top(
+            &mut self.tui,
+            &self.transcript.chat,
+            self.scroll_body.as_ref(),
+            anchor,
+        );
+        self.dirty.set(true);
+        if let Some(notice) = plan.notice() {
+            self.show_status(&notice);
+        }
     }
 
     /// The session's raw result text for one tool call: the last result with

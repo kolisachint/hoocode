@@ -15,7 +15,7 @@ use hoocode_tui_ratatui::{spans_width, Palette};
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 
-use crate::support::lock;
+use crate::support::{lock, look, Look};
 
 fn secs(s: f64) -> Duration {
     Duration::from_secs_f64(s)
@@ -43,6 +43,14 @@ fn done() -> TurnResult {
 
 fn golden(name: &str, data: StatusLineData, width: u16) {
     let _g = lock(Some("dark"));
+    let mut component = status_line_component(data);
+    assert_golden!(name, render_golden(&mut component, width));
+}
+
+/// The same golden in another look (dark theme loaded first, then the look).
+fn golden_in(name: &str, data: StatusLineData, width: u16, variant: Look) {
+    let _g = lock(Some("dark"));
+    look(variant);
     let mut component = status_line_component(data);
     assert_golden!(name, render_golden(&mut component, width));
 }
@@ -384,4 +392,52 @@ fn no_color_uses_only_bold_and_dim() {
     assert!(plan.contains(Modifier::BOLD) && !plan.contains(Modifier::DIM));
     let row: String = spans.iter().map(|s| s.content.as_ref()).collect();
     assert!(row.contains("◉ working · 4s · esc stop"), "{row}");
+}
+
+fn extra_usage_data() -> StatusLineData {
+    let mut data = base();
+    data.extra_usage = true;
+    data
+}
+
+fn warning_data() -> StatusLineData {
+    let mut data = base();
+    data.notice = Some(StatusNotice::new(
+        NoticeLevel::Warning,
+        "context is almost full",
+    ));
+    data
+}
+
+/// The usage row (`extra usage  /settings`) and the one-row warning, light and monochrome.
+#[test]
+fn extra_usage_light_and_mono() {
+    golden_in(
+        "status_line_extra_usage_light_100x1",
+        extra_usage_data(),
+        100,
+        Look::Light,
+    );
+    golden_in(
+        "status_line_extra_usage_mono_100x1",
+        extra_usage_data(),
+        100,
+        Look::Mono,
+    );
+}
+
+#[test]
+fn warning_notice_light_and_mono() {
+    golden_in(
+        "status_line_warning_light_100x1",
+        warning_data(),
+        100,
+        Look::Light,
+    );
+    golden_in(
+        "status_line_warning_mono_100x1",
+        warning_data(),
+        100,
+        Look::Mono,
+    );
 }

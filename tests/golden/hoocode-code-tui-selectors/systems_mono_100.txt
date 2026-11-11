@@ -1,0 +1,18 @@
+┌─ Settings ─ /settings  4,140 tokens per turn · prompt 1,430 · tools 2,710 ───────────────────────┐
+│ › Tools        1 on               │ Tools                                                        │
+│   Tool output  200 lines · 8 KB   │ current   1 on                                               │
+│   Models       all models         │ price     2,710 tok/turn                                     │
+│   Context      3 settings         │                                                              │
+│   Behavior     6 settings         │ Enable or disable tools and tool groups (web, semantic       │
+│   Interface    8 settings         │ search), each priced by what its schema costs per turn.      │
+│   Plugins      3 settings         │ Changes persist across sessions.                             │
+│   Images       2 settings         │                                                              │
+│   Learning     5 settings         │ per turn  4,140 tokens                                       │
+│   Advanced     7 settings         │ prompt    1,430 tokens                                       │
+│                                   │ tools     2,710 tokens                                       │
+│                                   │ Read 162 · Shell 128                                         │
+│ ▏ filter                                                                                         │
+│ ↑↓ move · space toggle · enter open · esc close                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r1 c1-20 bold

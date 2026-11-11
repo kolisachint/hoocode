@@ -817,6 +817,58 @@ async fn retries_transient_http_errors() {
     assert_eq!(requests.lock().unwrap().len(), 2);
 }
 
+// -----------------------------------------------------------------------------
+// AU-3: 401 and 403 with a subscription token
+// -----------------------------------------------------------------------------
+
+/// The default transport (Auto) first tries the WebSocket handshake, which
+/// the server rejects; the SSE fallback then sends the request once. A 401
+/// or 403 is not retried and no refresh is attempted, so the error is final.
+async fn assert_rejected_token(status: &'static str, body: &str, message: &str) {
+    let rejected = || Reply {
+        status,
+        content_type: "application/json",
+        body: body.into(),
+        hold_open: false,
+    };
+    let (base, requests) = http_server(vec![rejected(), rejected()]).await;
+    let result = stream_codex_responses(
+        model("gpt-5.1-codex", &base),
+        say_hello(),
+        CodexOptions {
+            api_key: Some(mock_token()),
+            ..Default::default()
+        },
+    )
+    .result()
+    .await;
+    assert_eq!(result.stop_reason, StopReason::Error);
+    assert_eq!(result.error_message.as_deref(), Some(message));
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 2, "1 WebSocket handshake + 1 SSE attempt");
+    assert_eq!(requests[0].header("upgrade"), Some("websocket"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rejected_subscription_token_401_fails_with_the_server_message() {
+    assert_rejected_token(
+        "401 Unauthorized",
+        r#"{"error":{"message":"Your authentication token has been invalidated. Please try signing in again."}}"#,
+        "ChatGPT API error (401): Your authentication token has been invalidated. Please try signing in again.",
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rejected_subscription_token_403_fails_with_the_server_message() {
+    assert_rejected_token(
+        "403 Forbidden",
+        r#"{"error":{"message":"You do not have access to this model on your plan."}}"#,
+        "ChatGPT API error (403): You do not have access to this model on your plan.",
+    )
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn invalid_tokens_fail_with_the_ts_message() {
     let result = stream_codex_responses(
@@ -1025,14 +1077,24 @@ fn websocket_headers_drop_the_sse_ones() {
     assert_eq!(get("authorization"), Some("Bearer tok"));
 }
 
+/// The value of `var`, or a panic naming it: a live test needs a real credential.
+fn require_env(var: &str) -> String {
+    std::env::var(var)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            panic!(
+                "{var} is not set: this live test needs a real subscription token in that variable"
+            )
+        })
+}
+
 /// `openai-codex-cache-affinity-e2e.test.ts`: needs a ChatGPT OAuth access
 /// token in `OPENAI_CODEX_OAUTH_TOKEN`.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "live: needs OPENAI_CODEX_OAUTH_TOKEN"]
 async fn live_handles_sse_requests_with_aligned_cache_affinity_identifiers() {
-    let Ok(token) = std::env::var("OPENAI_CODEX_OAUTH_TOKEN") else {
-        return;
-    };
+    let token = require_env("OPENAI_CODEX_OAUTH_TOKEN");
     let model = hoocode_ai_models::get_model("openai-codex", "gpt-5.3-codex")
         .unwrap()
         .clone();

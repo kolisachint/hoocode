@@ -301,9 +301,9 @@ fn mark_last_user_message(payload: &Value) -> Option<Value> {
 #[tokio::test]
 #[ignore = "live: needs OPENROUTER_API_KEY"]
 async fn openrouter_preserves_cache_write_tokens_on_the_completions_stream() {
-    let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") else {
-        return;
-    };
+    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| {
+        panic!("OPENROUTER_API_KEY is not set: this live test needs a real OpenRouter key")
+    });
     let model = hoocode_ai_models::get_model("openrouter", "google/gemini-2.5-flash")
         .expect("openrouter google/gemini-2.5-flash")
         .clone();

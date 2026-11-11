@@ -1,0 +1,4 @@
+
+ Context at 82%: 164,203 of 200,000 tokens  ctrl+x n new session
+ Summarize the thread or start a fresh session.
+--- styles ---

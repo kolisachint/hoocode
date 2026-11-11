@@ -121,6 +121,17 @@ fn yellow(env: Env, text: &str) -> String {
     }
 }
 
+/// The second line of a top-level unknown-option error: where the usage is.
+const UNKNOWN_OPTION_HINT: &str = "Run `hoocode --help` for usage.";
+
+/// The first line of every unknown-option error: `Error: Unknown option: --x`, or
+/// `options:` for several. `names` are the flags as typed, e.g. `--login`. Each
+/// caller adds its own second line (where the usage is).
+pub(crate) fn unknown_option_error(names: &[String]) -> String {
+    let plural = if names.len() == 1 { "" } else { "s" };
+    format!("Error: Unknown option{plural}: {}", names.join(", "))
+}
+
 /// Flags from the pinned set that parse but are not implemented yet, in
 /// `Args` field order.
 pub fn unsupported_flags(a: &Args) -> Vec<&'static str> {
@@ -171,10 +182,10 @@ pub fn main(argv: &[String]) -> i32 {
         return keybindings_command::run(&argv[1..], &mut stdout, &mut stderr);
     }
     if argv.first().is_some_and(|a| a == "config") {
-        return config_command::run_config_command(env.color, &mut stderr);
+        return config_command::run_config_command(&argv[1..], env.color, &mut stdout, &mut stderr);
     }
     if argv.first().is_some_and(|a| a == "update") {
-        return hoocode_code_update::run_update_command(&mut stdout);
+        return hoocode_code_update::run_update_command(&argv[1..], &mut stdout, &mut stderr);
     }
     if argv
         .first()
@@ -215,6 +226,12 @@ pub fn run(
     if !parsed.diagnostics.is_empty() {
         for d in &parsed.diagnostics {
             let line = match d.kind {
+                // A short flag such as `-x` comes through as a diagnostic; it gets the
+                // same hint as the long-flag path below.
+                DiagnosticKind::Error if d.message.starts_with("Unknown option") => red(
+                    env.color,
+                    &format!("Error: {}\n{UNKNOWN_OPTION_HINT}", d.message),
+                ),
                 DiagnosticKind::Error => red(env.color, &format!("Error: {}", d.message)),
                 DiagnosticKind::Warning => yellow(env, &format!("Warning: {}", d.message)),
             };
@@ -291,15 +308,8 @@ pub fn run(
             .iter()
             .map(|(name, _)| format!("--{name}"))
             .collect();
-        let plural = if names.len() == 1 { "" } else { "s" };
-        writeln!(
-            err,
-            "{}",
-            red(
-                env.color,
-                &format!("Error: Unknown option{plural}: {}", names.join(", "))
-            )
-        )?;
+        let message = format!("{}\n{UNKNOWN_OPTION_HINT}", unknown_option_error(&names));
+        writeln!(err, "{}", red(env.color, &message))?;
         return Ok(1);
     }
 
@@ -434,7 +444,11 @@ mod tests {
     fn error_diagnostics_exit_1() {
         assert_eq!(
             run_with(&["-x"], TTY),
-            (1, String::new(), "Error: Unknown option: -x\n".into())
+            (
+                1,
+                String::new(),
+                "Error: Unknown option: -x\nRun `hoocode --help` for usage.\n".into()
+            )
         );
     }
 
@@ -472,11 +486,11 @@ mod tests {
     fn unknown_long_flags_are_errors_without_extensions() {
         assert_eq!(
             run_with(&["--login", "anthropic", "-p", "hi"], TTY).2,
-            "Error: Unknown option: --login\n"
+            "Error: Unknown option: --login\nRun `hoocode --help` for usage.\n"
         );
         assert_eq!(
             run_with(&["--a", "--b=1"], TTY).2,
-            "Error: Unknown options: --a, --b\n"
+            "Error: Unknown options: --a, --b\nRun `hoocode --help` for usage.\n"
         );
     }
 

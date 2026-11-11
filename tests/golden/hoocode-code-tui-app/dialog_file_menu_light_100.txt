@@ -1,0 +1,11 @@
+         › wrap.rs                         src/wrap.rs
+           wrap_tests.rs                   tests/wrap_tests.rs
+ ›look at @wr
+--- styles ---
+r0 c8-62 fg=#2b2f36 bg=#c3dcdc bold
+r1 c8-23 fg=#2b2f36 bg=#e8e8f0
+r1 c24-62 fg=#555864 bg=#e8e8f0
+r2 c0-1 fg=#2b2f36 bg=#dadbe6
+r2 c2-12 bg=#dadbe6
+r2 c13 bg=#dadbe6 inverse
+r2 c14-99 fg=#2b2f36 bg=#dadbe6

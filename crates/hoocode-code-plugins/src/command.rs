@@ -31,6 +31,18 @@ remove <name> [--scope user|project] | update [name] | trust"
     )
 }
 
+/// A message that says what a command is missing (`install needs a plugin name`) and where
+/// its usage is. The CLI has `hoocode plugin --help`; a session has no help form (`/plugin`
+/// with no words lists, and `/plugin help` is a usage error), so there it shows the usage of
+/// the one command: `form` is that command's words after the prefix.
+fn missing(prefix: &str, what: &str, form: &str) -> String {
+    if prefix.starts_with('/') {
+        format!("{what}. Usage: {prefix} {form}")
+    } else {
+        format!("{what}. Run `{prefix} --help` for usage.")
+    }
+}
+
 /// Run one plugin command. `words` are the words after `prefix`; `current` gives the plugin set
 /// `list` describes (the session's loaded set, or a fresh load from disk).
 pub fn run(
@@ -62,15 +74,15 @@ pub fn run(
             Ok(Reply::text(lines.join("\n")))
         }
         ["install", rest @ ..] => {
-            let (spec, scope) = spec_and_scope(rest, prefix)?;
+            let (spec, scope) = spec_and_scope(rest, prefix, "install")?;
             let installed = install::install(paths, &spec, scope.unwrap_or(Scope::User))?;
             Ok(Reply {
                 text: installed_text(&installed, prefix),
                 changed: true,
             })
         }
-        ["remove" | "uninstall", rest @ ..] => {
-            let (name, scope) = spec_and_scope(rest, prefix)?;
+        [verb @ ("remove" | "uninstall"), rest @ ..] => {
+            let (name, scope) = spec_and_scope(rest, prefix, verb)?;
             let removed = install::remove(paths, &name, scope)?;
             Ok(Reply {
                 text: format!(
@@ -107,8 +119,14 @@ pub fn run(
     }
 }
 
-/// The plugin name (or `name@marketplace` spec) and the `--scope`, in either order.
-pub fn spec_and_scope(words: &[&str], prefix: &str) -> Result<(String, Option<Scope>), String> {
+/// The plugin name (or `name@marketplace` spec) and the `--scope`, in either order. `verb` is
+/// the command the words belong to (`install`, `remove`), for the message when the name is
+/// missing.
+pub fn spec_and_scope(
+    words: &[&str],
+    prefix: &str,
+    verb: &str,
+) -> Result<(String, Option<Scope>), String> {
     let mut positional = Vec::new();
     let mut scope = None;
     let mut rest = words.iter();
@@ -127,6 +145,11 @@ pub fn spec_and_scope(words: &[&str], prefix: &str) -> Result<(String, Option<Sc
     }
     match positional.as_slice() {
         [one] => Ok(((*one).to_owned(), scope)),
+        [] => Err(missing(
+            prefix,
+            &format!("{verb} needs a plugin name"),
+            &format!("{verb} <name[@marketplace]> [--scope user|project]"),
+        )),
         _ => Err(usage(prefix)),
     }
 }
@@ -145,7 +168,13 @@ fn marketplace_add_args(words: &[&str], prefix: &str) -> Result<(String, bool), 
             _ => return Err(usage(prefix)),
         }
     }
-    source.map(|s| (s, trust)).ok_or_else(|| usage(prefix))
+    source.map(|s| (s, trust)).ok_or_else(|| {
+        missing(
+            prefix,
+            "marketplace add needs a source",
+            "marketplace add <source> [--trust]",
+        )
+    })
 }
 
 fn marketplace_text(paths: &Paths) -> Result<String, String> {
@@ -206,34 +235,54 @@ mod tests {
     #[test]
     fn spec_and_scope_takes_the_flag_in_either_place() {
         assert_eq!(
-            spec_and_scope(&["tool@mk", "--scope", "project"], P).unwrap(),
+            spec_and_scope(&["tool@mk", "--scope", "project"], P, "install").unwrap(),
             ("tool@mk".to_owned(), Some(Scope::Project))
         );
         assert_eq!(
-            spec_and_scope(&["--scope", "user", "tool"], P).unwrap(),
+            spec_and_scope(&["--scope", "user", "tool"], P, "remove").unwrap(),
             ("tool".to_owned(), Some(Scope::User))
         );
         assert_eq!(
-            spec_and_scope(&["tool"], P).unwrap(),
+            spec_and_scope(&["tool"], P, "install").unwrap(),
             ("tool".to_owned(), None)
         );
     }
 
     #[test]
     fn spec_and_scope_refuses_bad_input() {
-        assert!(spec_and_scope(&[], P).unwrap_err().starts_with("Usage"));
-        assert!(spec_and_scope(&["a", "b"], P)
+        assert_eq!(
+            spec_and_scope(&[], P, "install").unwrap_err(),
+            "install needs a plugin name. Usage: /plugin install <name[@marketplace]> [--scope user|project]"
+        );
+        assert!(spec_and_scope(&["a", "b"], P, "install")
             .unwrap_err()
             .starts_with("Usage"));
-        assert!(spec_and_scope(&["a", "--scope"], P)
+        assert!(spec_and_scope(&["a", "--scope"], P, "install")
             .unwrap_err()
             .contains("needs"));
-        assert!(spec_and_scope(&["a", "--scope", "team"], P)
+        assert!(spec_and_scope(&["a", "--scope", "team"], P, "install")
             .unwrap_err()
             .contains("unknown scope"));
-        assert!(spec_and_scope(&["a", "--force"], P)
+        assert!(spec_and_scope(&["a", "--force"], P, "install")
             .unwrap_err()
             .contains("unknown option"));
+    }
+
+    #[test]
+    fn a_missing_name_in_the_cli_points_at_the_plugin_help() {
+        let cli = "hoocode plugin";
+        assert_eq!(
+            spec_and_scope(&[], cli, "install").unwrap_err(),
+            "install needs a plugin name. Run `hoocode plugin --help` for usage."
+        );
+        assert_eq!(
+            spec_and_scope(&[], cli, "remove").unwrap_err(),
+            "remove needs a plugin name. Run `hoocode plugin --help` for usage."
+        );
+        assert_eq!(
+            marketplace_add_args(&[], cli).unwrap_err(),
+            "marketplace add needs a source. Run `hoocode plugin --help` for usage."
+        );
     }
 
     #[test]
@@ -261,9 +310,10 @@ mod tests {
             marketplace_add_args(&["--trust", "owner/repo"], P).unwrap(),
             ("owner/repo".to_owned(), true)
         );
-        assert!(marketplace_add_args(&[], P)
-            .unwrap_err()
-            .starts_with("Usage"));
+        assert_eq!(
+            marketplace_add_args(&[], P).unwrap_err(),
+            "marketplace add needs a source. Usage: /plugin marketplace add <source> [--trust]"
+        );
         assert!(marketplace_add_args(&["a", "b"], P)
             .unwrap_err()
             .starts_with("Usage"));

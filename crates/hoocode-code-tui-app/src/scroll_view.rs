@@ -24,7 +24,6 @@
 
 use hoocode_code_tui_keybindings::key_hint_text;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
@@ -220,17 +219,14 @@ fn focused_hints() -> Vec<KeyHint> {
 
 /// U21 single view (P2): which tool block the pinned view has focused, if
 /// any. The id is a tool call id: blocks come and go (a retry takes chains
-/// out), so a missing id resolves to no focus. The focused toggle keeps its
-/// `expanded` overrides here by call id; the tool output dial wipes them
-/// when it moves every block at once.
+/// out), so a missing id resolves to no focus.
 #[derive(Debug, Default)]
 pub struct TranscriptFocus {
     focused_call: Option<String>,
-    expanded: HashMap<String, bool>,
 }
 
 impl TranscriptFocus {
-    /// No focus, no overrides.
+    /// No focus.
     pub fn new() -> Self {
         Self::default()
     }
@@ -250,24 +246,9 @@ impl TranscriptFocus {
         self.focused_call = Some(call_id.to_string());
     }
 
-    /// Drop the focus, keeping the toggle overrides.
+    /// Drop the focus.
     pub fn clear(&mut self) {
         self.focused_call = None;
-    }
-
-    /// Remember the focused toggle's stop for one block.
-    pub fn set_expanded(&mut self, call_id: &str, expanded: bool) {
-        self.expanded.insert(call_id.to_string(), expanded);
-    }
-
-    /// The focused toggle's stop for one block, if it moved it.
-    pub fn expanded_override(&self, call_id: &str) -> Option<bool> {
-        self.expanded.get(call_id).copied()
-    }
-
-    /// Forget every focused toggle stop (the dial moved every block).
-    pub fn clear_expanded(&mut self) {
-        self.expanded.clear();
     }
 
     /// The focused block among `blocks`, in order; `None` when its call is
@@ -280,6 +261,63 @@ impl TranscriptFocus {
         blocks
             .iter()
             .find(|block| block.borrow().tool_call_id() == call)
+    }
+}
+
+/// What `ctrl+x o` does to the tool blocks: open every live block, or close
+/// every live block when one is open. Frozen blocks released their output, so
+/// they are skipped and counted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToggleAll {
+    /// The state every live block is set to.
+    pub expanded: bool,
+    /// Positions (in the input order) of the live blocks whose state changes.
+    pub changed: Vec<usize>,
+    /// Frozen blocks, left as they are.
+    pub skipped: usize,
+}
+
+impl ToggleAll {
+    /// The status-slot notice for an open that skipped frozen blocks. A close
+    /// and an open that skipped nothing say nothing.
+    pub fn notice(&self) -> Option<String> {
+        if !self.expanded || self.skipped == 0 {
+            return None;
+        }
+        let opened = self.changed.len();
+        let rows = if opened == 1 { "row" } else { "rows" };
+        let (older, have) = if self.skipped == 1 {
+            ("row", "has")
+        } else {
+            ("rows", "have")
+        };
+        Some(format!(
+            "Opened {opened} {rows}. {skipped} older {older} {have} no output to show.",
+            skipped = self.skipped
+        ))
+    }
+}
+
+/// The plan for `ctrl+x o`, from each block's `(expanded, frozen)` state in
+/// transcript order. Opens every live block unless one is already open, in
+/// which case it closes the open ones. Frozen blocks never count as open.
+pub fn toggle_all_plan(blocks: &[(bool, bool)]) -> ToggleAll {
+    let live: Vec<(usize, bool)> = blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, frozen))| !frozen)
+        .map(|(index, (expanded, _))| (index, *expanded))
+        .collect();
+    let expanded = !live.iter().any(|(_, open)| *open);
+    let changed = live
+        .iter()
+        .filter(|(_, open)| *open != expanded)
+        .map(|(index, _)| *index)
+        .collect();
+    ToggleAll {
+        expanded,
+        changed,
+        skipped: blocks.len() - live.len(),
     }
 }
 

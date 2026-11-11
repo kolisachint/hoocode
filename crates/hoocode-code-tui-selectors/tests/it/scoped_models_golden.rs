@@ -10,7 +10,7 @@ use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 use serde_json::json;
 
-use crate::support::lock;
+use crate::support::{lock, look, Look};
 
 fn model(provider: &str, id: &str, name: &str) -> Model {
     serde_json::from_value(json!({
@@ -98,4 +98,18 @@ fn scoped_models_picker_100() {
 fn scoped_models_picker_80() {
     let _g = lock();
     check("scoped_models_picker_80", 80);
+}
+
+#[test]
+fn scoped_models_picker_light_100() {
+    let _g = lock();
+    look(Look::Light);
+    check("scoped_models_picker_light_100", 100);
+}
+
+#[test]
+fn scoped_models_picker_mono_100() {
+    let _g = lock();
+    look(Look::Mono);
+    check("scoped_models_picker_mono_100", 100);
 }
