@@ -115,12 +115,14 @@ jobs:
   guards:
     # Cheap repo guards: the old-name guard (it uses git grep, so the
     # checkout must be a normal one), no key name typed into a UI string
-    # (K-9: hints come from the keymap), and the crate map matches the workspace.
+    # (K-9: hints come from the keymap), plain words in TUI text, and the crate map
+    # matches the workspace.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - run: scripts/ci/no_cortex.sh
       - run: python3 scripts/ci/no_literal_keys.py
+      - run: scripts/ci/plain_words.sh
       - run: python3 scripts/maps/packages.py --check
 
   subagent-evals:
