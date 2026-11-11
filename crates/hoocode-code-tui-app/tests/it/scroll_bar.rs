@@ -97,12 +97,13 @@ fn scrolled_shows_the_range_new_lines_and_the_live_key() {
     let _g = lock(Some("dark"));
     let text = row(&scrolled(false));
     assert!(
-        text.starts_with(" scrolled 43–61 of 78 · ↓ 3 new  esc live"),
+        text.starts_with(" scrolled 43–61 of 78 · ↓ 3 new  ctrl+x u focus · esc live"),
         "{text:?}"
     );
     assert!(
-        // The view word is gone, so the cost fits at 100 columns.
-        text.ends_with("amber-harbor · claude-haiku-5-5 · 42% context · $1.23"),
+        // The two hints take the cost's room at 100 columns: the right side
+        // drops the cost, then the session name, and keeps the model and context.
+        text.ends_with("  claude-haiku-5-5 · 42% context"),
         "{text:?}"
     );
 }

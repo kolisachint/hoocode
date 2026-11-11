@@ -201,6 +201,23 @@ fn hints(pairs: &[(&str, &str)]) -> Vec<KeyHint> {
         .collect()
 }
 
+/// The pinned view's hints with a block focused: `enter open · y copy ·
+/// { } move · esc clear`. The brace pair is one hint, its two keys read from
+/// the bindings and joined with a space.
+fn focused_hints() -> Vec<KeyHint> {
+    let mut keys = hints(&[
+        ("app.scroll.expandFocused", "open"),
+        ("app.scroll.copyFocused", "copy"),
+    ]);
+    let previous = hint_key("app.scroll.focusPrevious");
+    let next = hint_key("app.scroll.focusNext");
+    if !previous.is_empty() && !next.is_empty() {
+        keys.push(KeyHint::new(format!("{previous} {next}"), "move"));
+    }
+    keys.extend(hints(&[("app.scroll.exit", "clear")]));
+    keys
+}
+
 /// U21 single view (P2): which tool block the pinned view has focused, if
 /// any. The id is a tool call id: blocks come and go (a retry takes chains
 /// out), so a missing id resolves to no focus. The focused toggle keeps its
@@ -268,8 +285,8 @@ impl TranscriptFocus {
 
 /// A pinned-view transcript key the mode runs after the pass: the scroll
 /// view queues it and stays dumb, so the mode keeps the chains, the session
-/// and the clipboard. Esc and G clear the shared focus themselves, so they
-/// ride no intent.
+/// and the clipboard. Esc, `q` and End clear the shared focus themselves, so
+/// they ride no intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusIntent {
     /// `{`: focus the previous tool block.
@@ -285,9 +302,10 @@ pub enum FocusIntent {
 /// The status line's left slot for a pinned view: `search  query  1 match`
 /// while searching, else `scrolled 43–61 of 78 · ↓ 3 new`. The keys come
 /// from the bindings: `enter next · esc close` for a search (`enter find`
-/// while the query is typed), `esc live` for the scrolled view, and with a
-/// block focused `enter open · y copy · esc clear`. With a
-/// picker focused the arrows and escape are its keys, so none are named.
+/// while the query is typed), `ctrl+x u focus · esc live` for the scrolled
+/// view, and with a block focused `enter open · y copy · { } move · esc
+/// clear`. With a picker focused the arrows and escape are its keys, so none
+/// are named.
 pub fn scroll_slot(status: &ScrollStatus, focus: bool) -> (Option<ScrollInfo>, Option<SearchInfo>) {
     if let Some(search) = &status.search {
         let enter = if search.typing { "find" } else { "next" };
@@ -304,13 +322,12 @@ pub fn scroll_slot(status: &ScrollStatus, focus: bool) -> (Option<ScrollInfo>, O
     let keys = if status.picker {
         Vec::new()
     } else if focus {
-        hints(&[
-            ("app.scroll.expandFocused", "open"),
-            ("app.scroll.copyFocused", "copy"),
-            ("app.scroll.exit", "clear"),
-        ])
+        focused_hints()
     } else {
-        hints(&[("app.scroll.exit", "live")])
+        hints(&[
+            ("app.scroll.focusNewest", "focus"),
+            ("app.scroll.exit", "live"),
+        ])
     };
     (
         Some(ScrollInfo {
@@ -424,7 +441,7 @@ impl ScrollView {
         self.focus.as_ref().is_some_and(|f| f.borrow().is_focused())
     }
 
-    /// Drop the focus through the shared state (esc, G).
+    /// Drop the focus through the shared state (esc, q, End).
     fn clear_focus(&mut self) {
         if let Some(focus) = &self.focus {
             focus.borrow_mut().clear();
@@ -503,6 +520,11 @@ impl ScrollView {
             // The view can un-pin without passing through here (a wheel notch
             // reaching the bottom): a stale query must not swallow keys.
             self.typing = None;
+            // A typed key at the live prompt types, and a focus left over from
+            // a pinned view does not outlive it.
+            if is_typed_text(data) && self.editor_focused(ui) {
+                self.clear_focus();
+            }
             return self.handle_live(ui, data);
         }
         if !self.editor_focused(ui) {
@@ -546,15 +568,26 @@ impl ScrollView {
             ui.commit_scroll_search();
         }
 
-        // `/` opens the search from the pinned view over an empty prompt (K-P4).
-        let bare_ok = !is_typed_text(data) || (self.editor_empty)();
+        let typed = is_typed_text(data);
+        let empty = (self.editor_empty)();
+        let focused = self.focus_is_set();
+        let searching = ui.scroll_search_active();
+        // While a search is open, a bare key is the search's over an empty
+        // prompt (K-P4). Otherwise `/` opens a search only from a focused block
+        // over an empty prompt: at the prompt a typed `/` is a slash command.
+        let bare_ok = !typed || empty;
+        let search_bare_ok = if searching {
+            bare_ok
+        } else {
+            !typed || (focused && empty)
+        };
         if matches(data, "app.scroll.search")
-            || (bare_ok && matches(data, "app.scroll.searchInView"))
+            || (search_bare_ok && matches(data, "app.scroll.searchInView"))
         {
             self.open_search(ui);
             return true;
         }
-        if ui.scroll_search_active() {
+        if searching {
             // Locked: enter steps to the next contact (M8e3).
             if matches(data, "tui.select.confirm") || matches(data, "app.scroll.searchNext") {
                 ui.scroll_search_step(-1);
@@ -572,14 +605,21 @@ impl ScrollView {
             }
         }
 
-        // U21 single view (P2): the transcript focus keys, over an empty prompt
-        // and outside a search. They queue for the mode (which owns the chains)
-        // instead of unpinning; esc and End clear the shared focus themselves.
-        // With no focus set, enter and y keep their old behaviour below.
-        if !ui.scroll_search_active() && (self.editor_empty)() {
-            if matches(data, "app.scroll.bottom") && self.focus_is_set() {
-                self.clear_focus();
-            }
+        // K-P4 (2026-11-11): at the prompt a bare printable key always types.
+        // Only a focused block over an empty prompt lets one act as a
+        // transcript key. Any other typed key clears the focus, goes back to
+        // live and types. A search that is open keeps its own rule below.
+        if !searching && typed && (!focused || !empty) {
+            self.clear_focus();
+            ui.scroll_to_live();
+            return false;
+        }
+
+        // U21 single view (P2): the transcript focus keys, with a block focused
+        // over an empty prompt and outside a search. They queue for the mode
+        // (which owns the chains) instead of unpinning. Enter and y keep their
+        // old behaviour below when no block is focused.
+        if !searching && focused && empty {
             if matches(data, "app.scroll.focusPrevious") {
                 self.queue_focus(FocusIntent::Previous);
                 return true;
@@ -588,21 +628,19 @@ impl ScrollView {
                 self.queue_focus(FocusIntent::Next);
                 return true;
             }
-            if self.focus_is_set() {
-                if matches(data, "app.scroll.expandFocused") {
-                    self.queue_focus(FocusIntent::Toggle);
-                    return true;
-                }
-                if matches(data, "app.scroll.copyFocused") {
-                    self.queue_focus(FocusIntent::Copy);
-                    return true;
-                }
-                // Esc clears the focus only and stays pinned: it never stops
-                // the turn. `q` (the exit's other key) keeps leaving the view.
-                if data == "\x1b" && matches(data, "app.scroll.exit") {
-                    self.clear_focus();
-                    return true;
-                }
+            if matches(data, "app.scroll.expandFocused") {
+                self.queue_focus(FocusIntent::Toggle);
+                return true;
+            }
+            if matches(data, "app.scroll.copyFocused") {
+                self.queue_focus(FocusIntent::Copy);
+                return true;
+            }
+            // Esc clears the focus only and stays pinned: it never stops the
+            // turn. `q` (the exit's other key) is handled below.
+            if data == "\x1b" && matches(data, "app.scroll.exit") {
+                self.clear_focus();
+                return true;
             }
         }
 
@@ -615,18 +653,23 @@ impl ScrollView {
         if plain_line && !(self.editor_empty)() {
             return false;
         }
-        // A bare letter (j, k, [, ], q) steps the view only over an empty
-        // prompt (K-P4). Otherwise it goes back to live and types.
-        if is_typed_text(data) && !(self.editor_empty)() {
+        // Only reached while a search is open: a typed key over prompt text
+        // goes back to live and types, as it always has.
+        if typed && !empty {
             ui.scroll_to_live();
             return false;
         }
-        // Exit before the ends, so bindings sharing a key still get out.
+        // Exit before the ends, so bindings sharing a key still get out. `q`
+        // with a block focused clears the focus and goes live.
         if matches(data, "app.scroll.exit") {
+            self.clear_focus();
             ui.scroll_to_live();
             // A running agent takes the escape as its abort, as it does from the
-            // tail. `q` is only ever a pager key, so it never reaches the prompt.
-            return !(self.agent_busy)() || is_typed_text(data);
+            // tail. `q` is only ever a pager key here, so it never reaches the prompt.
+            return !(self.agent_busy)() || typed;
+        }
+        if matches(data, "app.scroll.bottom") {
+            self.clear_focus();
         }
         if scroll_step(ui, data) {
             return true;
@@ -641,8 +684,12 @@ impl ScrollView {
         } else if matches(data, "app.scroll.nextMessage") {
             self.jump(ui, TurnDirection::Next);
         } else {
-            // Anything else: back to live, and the key does its usual job.
+            // Anything else: back to live, and the key does its usual job. A
+            // typed key also drops the focus, so it cannot outlive the typing.
             ui.scroll_to_live();
+            if typed && !searching {
+                self.clear_focus();
+            }
             return false;
         }
         true

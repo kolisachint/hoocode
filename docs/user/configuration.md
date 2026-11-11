@@ -80,10 +80,11 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
 - **Transcript**: one row per tool call, collapsed (`● Edit src/config.rs  +2 −2`).
   Click a header, or focus it and press `enter`, to show the full output; again to hide.
   A running Shell shows one dim tail line until it settles; a failed call stays collapsed.
-- **Pinned transcript keys**: with the view pinned and the prompt empty, `{` and `}`
-  move between blocks, `enter` opens the focused block, `y` copies its raw output,
-  `esc` clears the focus, and `G` goes back to live. `ctrl+x u` jumps to the newest
-  block from the prompt. See [Keybindings](keybindings.md).
+- **Pinned transcript keys**: `ctrl+x u` focuses the newest block from the prompt.
+  With a block focused and the prompt empty, `{` and `}` move between blocks,
+  `enter` opens the focused block, `y` copies its raw output, and `esc` clears the
+  focus. `End` goes back to live. Letters always type at the prompt. See
+  [Keybindings](keybindings.md).
 - **View dial (phasing out)**: the `outline` / `peek` / `full` dial still works until
   P5 removes it: `toolOutputView` in `settings.json` is still read (the old name
   `radar` still parses as `outline`), `ctrl+x o` / `ctrl+x O` still cycle the view,
