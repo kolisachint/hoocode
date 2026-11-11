@@ -7,8 +7,7 @@
 //!
 //! The scroll view queues the pinned keys as [`FocusIntent`]s (it owns no
 //! chains); the mode drains them here, where the chains, the session and the
-//! clipboard live. The per-block toggle stops are kept as overrides on the
-//! shared [`TranscriptFocus`], so they survive re-renders.
+//! clipboard live. The expanded state lives on each block, not here.
 
 use std::rc::Rc;
 
@@ -214,12 +213,10 @@ impl Mode {
     }
 
     /// One primitive for both toggle paths (click + `enter`): set the block's
-    /// own expanded flag and record the stop in the override map. Both paths
-    /// read the flag, so a click and `enter` always agree.
+    /// own expanded flag. Both paths read the flag, so a click and `enter`
+    /// always agree.
     pub(crate) fn set_block_expanded(&mut self, block: &ToolBlock, expanded: bool) {
-        let call_id = block.borrow().tool_call_id().to_string();
         block.borrow_mut().set_expanded(expanded);
-        self.focus.borrow_mut().set_expanded(&call_id, expanded);
     }
 
     /// A header click while a block is focused moves the focus onto the

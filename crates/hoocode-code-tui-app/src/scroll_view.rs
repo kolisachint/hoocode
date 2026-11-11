@@ -24,7 +24,6 @@
 
 use hoocode_code_tui_keybindings::key_hint_text;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
@@ -220,17 +219,14 @@ fn focused_hints() -> Vec<KeyHint> {
 
 /// U21 single view (P2): which tool block the pinned view has focused, if
 /// any. The id is a tool call id: blocks come and go (a retry takes chains
-/// out), so a missing id resolves to no focus. The focused toggle keeps its
-/// `expanded` overrides here by call id; the tool output dial wipes them
-/// when it moves every block at once.
+/// out), so a missing id resolves to no focus.
 #[derive(Debug, Default)]
 pub struct TranscriptFocus {
     focused_call: Option<String>,
-    expanded: HashMap<String, bool>,
 }
 
 impl TranscriptFocus {
-    /// No focus, no overrides.
+    /// No focus.
     pub fn new() -> Self {
         Self::default()
     }
@@ -250,24 +246,9 @@ impl TranscriptFocus {
         self.focused_call = Some(call_id.to_string());
     }
 
-    /// Drop the focus, keeping the toggle overrides.
+    /// Drop the focus.
     pub fn clear(&mut self) {
         self.focused_call = None;
-    }
-
-    /// Remember the focused toggle's stop for one block.
-    pub fn set_expanded(&mut self, call_id: &str, expanded: bool) {
-        self.expanded.insert(call_id.to_string(), expanded);
-    }
-
-    /// The focused toggle's stop for one block, if it moved it.
-    pub fn expanded_override(&self, call_id: &str) -> Option<bool> {
-        self.expanded.get(call_id).copied()
-    }
-
-    /// Forget every focused toggle stop (the dial moved every block).
-    pub fn clear_expanded(&mut self) {
-        self.expanded.clear();
     }
 
     /// The focused block among `blocks`, in order; `None` when its call is
