@@ -182,7 +182,7 @@ pub fn main(argv: &[String]) -> i32 {
         return keybindings_command::run(&argv[1..], &mut stdout, &mut stderr);
     }
     if argv.first().is_some_and(|a| a == "config") {
-        return config_command::run_config_command(env.color, &mut stderr);
+        return config_command::run_config_command(&argv[1..], env.color, &mut stdout, &mut stderr);
     }
     if argv.first().is_some_and(|a| a == "update") {
         return hoocode_code_update::run_update_command(&argv[1..], &mut stdout, &mut stderr);

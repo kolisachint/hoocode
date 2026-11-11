@@ -26,7 +26,8 @@ For managing plugins without starting a session:
 | `hoocode plugin <command>` | Every `/plugin` command: `marketplace add`, `update`, `trust` and the rest |
 
 `hoocode <command> --help` shows the options for `install`, `remove`, `list`,
-`plugin` and `app-server`.
+`plugin`, `app-server`, `update` and `config`. `config --help` prints its usage
+and does not open the picker.
 
 ## Common flags
 
