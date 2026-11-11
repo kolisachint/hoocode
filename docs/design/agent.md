@@ -162,6 +162,33 @@ Current state (see AG-1):
 - Spec version: the old target `2026-07-28` is not pinned in our code. rmcp negotiates it (AG-10).
 - Subagents get `mcp_` tools only when their tool list names them or inherits all tools.
 
+### Subscription logins: client identity and OAuth state
+
+Logins for Claude (`anthropic`), ChatGPT (`openai-codex`) and Gemini (`google-gemini-cli`, with Antigravity) send a pinned client identity. These are source constants:
+
+| Constant or header | File | Value | Sent as |
+|---|---|---|---|
+| `CLAUDE_CODE_VERSION` | `crates/hoocode-ai-provider-anthropic/src/request.rs:20` | `2.1.280` | `user-agent: claude-cli/<version>` on OAuth requests |
+| `DEFAULT_ANTIGRAVITY_VERSION` | `crates/hoocode-ai-provider-google-gemini-cli/src/lib.rs:41` | `1.18.4` | Antigravity `User-Agent`. Env `HOOCODE_ANTIGRAVITY_VERSION` overrides it (existing, not added) |
+| Gemini CLI headers | `crates/hoocode-ai-provider-google-gemini-cli/src/lib.rs` (`provider_headers`) | `google-cloud-sdk vscode_cloudshelleditor/0.1`, `gl-node/22.17.0` | `User-Agent`, `X-Goog-Api-Client` |
+| Google OAuth `User-Agent` | `crates/hoocode-ai-oauth-google/src/gemini_cli.rs:104`, `antigravity.rs:145` | `google-api-nodejs-client/9.15.1` | token and login requests |
+| `CODEX_ORIGINATOR` | `crates/hoocode-ai-provider-openai-codex/src/lib.rs:62` | `pi` | `originator` header and the `user-agent` prefix |
+| `DEFAULT_ORIGINATOR` | `crates/hoocode-ai-oauth-openai-codex/src/lib.rs:25` | `pi` | `originator` in the authorize URL. Must equal `CODEX_ORIGINATOR` |
+
+Not one of the three, same rule: `crates/hoocode-ai-oauth-github-copilot/src/lib.rs:13,17-19` (`GitHubCopilotChat/0.35.0`, `vscode/1.107.0`, `copilot-chat/0.35.0`).
+
+Refresh: `grep -rn "CLAUDE_CODE_VERSION\|DEFAULT_ANTIGRAVITY_VERSION\|CODEX_ORIGINATOR\|DEFAULT_ORIGINATOR\|google-api-nodejs-client\|gl-node\|vscode_cloudshelleditor\|GitHubCopilotChat" crates`. The list above is the whole set.
+
+OAuth `state`, as built:
+
+| Provider | `state` sent | Callback check | Pasted input check |
+|---|---|---|---|
+| Anthropic | the PKCE verifier (`crates/hoocode-ai-oauth-anthropic/src/lib.rs:51`) | the callback server rejects a mismatch before it takes the code (`crates/hoocode-ai-oauth/src/callback.rs:219`, `CodeAndState`) | `parse_pasted` rejects a mismatch (`lib.rs:196`). A bare code with no `state` is accepted and the verifier is used |
+| Google | the PKCE verifier (`crates/hoocode-ai-oauth-google/src/lib.rs:142`) | the flow compares to the verifier and fails with `OAuth state mismatch - possible CSRF attack` (`lib.rs:221`, `CodeAndStateDeferred`) | the same check (`lib.rs:235-236`). A pasted URL with no `state` is accepted |
+| ChatGPT | a random UUID, not the verifier (`crates/hoocode-ai-oauth-openai-codex/src/lib.rs:37`, `:251`) | the callback server rejects a mismatch, then requires the code (`callback.rs:171`, `StateThenCode`) | `parse_pasted` rejects a mismatch when one is present (`lib.rs:219`). A bare code is accepted |
+
+All three compare the returned `state` to the one they sent. A pasted bare code skips the comparison; that is the user's own paste.
+
 ### Plugins
 
 Formats read:
@@ -294,6 +321,8 @@ rpc (`--mode rpc`):
 | 2026-11-06 | The category key is `c`, bare letter, in `/scoped-models`. |
 | 2026-11-06 | rpc fails closed: a gated tool is denied unless `auto_allow` lists it. Approval dialogs over rpc are not built. |
 | 2026-11-07 | `DocSearch` is removed (with single-view decision 7): discovery via the prompt skill/agent listing, `Read`, CLI help and user pages. AG-19 closed as No. Code removal with the robustness matrix is the next session. |
+| 2026-11-11 | Pinned client identity (the table above) stays as source constants. A person refreshes them by hand in a normal PR, when a provider refuses the old value or at each minor release, whichever comes first. No runtime fetch. No new env override. (AU-6) |
+| 2026-11-11 | OAuth `state` is kept as built. Anthropic and Google send the PKCE verifier as `state`; ChatGPT sends a random UUID. Not verified against each provider's own client: the Claude Code login could not be read for how it builds `state` (its authorize endpoints were checked). Code unchanged. Risk: the verifier is in the authorize URL, so it can show in browser history and logs, which weakens PKCE against a leaked code. The redirect goes to a loopback address, and the code is single-use and short-lived. Revisit if a provider rejects it, or when someone can compare with the provider's client. (AU-7) |
 
 ## Open
 
