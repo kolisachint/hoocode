@@ -1,6 +1,7 @@
 //! U21 P2 transcript focus keys (Muse-only, fast): the pinned-view keys for
 //! moving between tool blocks, toggling, copying raw output and pinning the
-//! newest, and the dropped expand-all (`ctrl+x o` stays unbound).
+//! newest. `ctrl+x o` opens or closes all tool blocks (`app.scroll.toggleAll`),
+//! a leader key of its own, not a focus key.
 
 use hoocode_code_tui_keybindings::{keybinding, AppKeybindingsManager, Context};
 use hoocode_tui_keys::get_keybindings;
@@ -34,6 +35,17 @@ fn the_focus_keys_live_in_the_scroll_context() {
 }
 
 #[test]
+fn the_open_all_key_is_a_leader_sequence_at_the_prompt() {
+    let m = manager();
+    assert_eq!(m.get_keys("app.scroll.toggleAll"), vec!["ctrl+x o"]);
+    let table = m.leader_table(Context::Prompt);
+    assert_eq!(
+        table.get("ctrl+x o").map(String::as_str),
+        Some("app.scroll.toggleAll")
+    );
+}
+
+#[test]
 fn the_newest_key_is_a_leader_sequence_at_the_prompt() {
     let m = manager();
     let table = m.leader_table(Context::Prompt);
@@ -45,9 +57,8 @@ fn the_newest_key_is_a_leader_sequence_at_the_prompt() {
 
 #[test]
 fn no_focus_binding_takes_ctrl_x_o() {
-    // Decision 5 (no expand-all in v1): none of the focus keys answers the
-    // old expand-all sequence. The dial's own `ctrl+x o` goes away with it
-    // in P5; P2 only adds no binding on the sequence.
+    // `ctrl+x o` is the open-all key (`app.scroll.toggleAll`). It needs no
+    // focus, so no focus key answers it.
     manager().install();
     let live = get_keybindings();
     for id in [

@@ -264,6 +264,63 @@ impl TranscriptFocus {
     }
 }
 
+/// What `ctrl+x o` does to the tool blocks: open every live block, or close
+/// every live block when one is open. Frozen blocks released their output, so
+/// they are skipped and counted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToggleAll {
+    /// The state every live block is set to.
+    pub expanded: bool,
+    /// Positions (in the input order) of the live blocks whose state changes.
+    pub changed: Vec<usize>,
+    /// Frozen blocks, left as they are.
+    pub skipped: usize,
+}
+
+impl ToggleAll {
+    /// The status-slot notice for an open that skipped frozen blocks. A close
+    /// and an open that skipped nothing say nothing.
+    pub fn notice(&self) -> Option<String> {
+        if !self.expanded || self.skipped == 0 {
+            return None;
+        }
+        let opened = self.changed.len();
+        let rows = if opened == 1 { "row" } else { "rows" };
+        let (older, have) = if self.skipped == 1 {
+            ("row", "has")
+        } else {
+            ("rows", "have")
+        };
+        Some(format!(
+            "Opened {opened} {rows}. {skipped} older {older} {have} no output to show.",
+            skipped = self.skipped
+        ))
+    }
+}
+
+/// The plan for `ctrl+x o`, from each block's `(expanded, frozen)` state in
+/// transcript order. Opens every live block unless one is already open, in
+/// which case it closes the open ones. Frozen blocks never count as open.
+pub fn toggle_all_plan(blocks: &[(bool, bool)]) -> ToggleAll {
+    let live: Vec<(usize, bool)> = blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, frozen))| !frozen)
+        .map(|(index, (expanded, _))| (index, *expanded))
+        .collect();
+    let expanded = !live.iter().any(|(_, open)| *open);
+    let changed = live
+        .iter()
+        .filter(|(_, open)| *open != expanded)
+        .map(|(index, _)| *index)
+        .collect();
+    ToggleAll {
+        expanded,
+        changed,
+        skipped: blocks.len() - live.len(),
+    }
+}
+
 /// A pinned-view transcript key the mode runs after the pass: the scroll
 /// view queues it and stays dumb, so the mode keeps the chains, the session
 /// and the clipboard. Esc, `q` and End clear the shared focus themselves, so

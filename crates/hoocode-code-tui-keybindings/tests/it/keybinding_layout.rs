@@ -59,6 +59,7 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.message.followUp",
     "app.message.dequeue",
     "app.scroll.focusNewest",
+    "app.scroll.toggleAll",
     "app.history.search",
     "app.clipboard.copyMessage",
     "app.clipboard.pasteImage",
@@ -659,7 +660,7 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings|hotkeys)"),
         (
             "Overlays",
-            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest)|session\.(toggle|rename|delete)|models\.|tree\.)",
+            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest|toggleAll)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
         ("Lists", r"^app\.list\."),
         ("Dialogs", r"^app\.dialog\."),

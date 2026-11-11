@@ -80,7 +80,7 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
 - **Transcript**: one row per tool call, collapsed (`● Edit src/config.rs  +2 −2`).
   Click a header, or focus it and press `enter`, to show the full output; again to hide.
   A running Shell shows one dim tail line until it settles; a failed call stays collapsed.
-- **Pinned transcript keys**: `ctrl+x u` focuses the newest block from the prompt.
+- **Pinned transcript keys**: `ctrl+x u` focuses the newest block from the prompt, and `ctrl+x o` opens or closes all tool blocks.
   With a block focused and the prompt empty, `{` and `}` move between blocks,
   `enter` opens the focused block, `y` copies its raw output, and `esc` clears the
   focus. `End` goes back to live. Letters always type at the prompt. See

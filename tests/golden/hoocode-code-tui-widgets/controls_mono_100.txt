@@ -1,4 +1,4 @@
-┌─ Keys ─ ?   plain   ctrl   leader   alt  128 bindings · 23 shown ────────────────────────────────┐
+┌─ Keys ─ ?   plain   ctrl   leader   alt  129 bindings · 24 shown ────────────────────────────────┐
 │ prompt                                                                                           │
 │ ctrl+x c  Copy the agent's last message to the clipboard    ctrl+x y  Yank pop    ctrl+x z  Redo │
 │ transcript                                                                                       │
@@ -6,6 +6,7 @@
 │ ctrl+x T  Cycle thinking level backward                                                          │
 │ ctrl+x b  Toggle thinking blocks                                                                 │
 │ ctrl+x n  Attach to the subagent run of the last Agent block (read-only)                         │
+│ ctrl+x o  Open all tool blocks, or close them all when one is open                               │
 │ ctrl+x t  Cycle thinking level (off → … → high)                                                  │
 │ ctrl+x u  Focus the newest tool block and pin the view                                           │
 │ app                                                                                              │

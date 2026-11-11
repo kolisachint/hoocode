@@ -594,6 +594,13 @@
    "Focus the newest tool block and pin the view"
   ],
   [
+   "app.scroll.toggleAll",
+   [
+    "ctrl+x o"
+   ],
+   "Open all tool blocks, or close them all when one is open"
+  ],
+  [
    "app.panel.nextTab",
    [
     "right",

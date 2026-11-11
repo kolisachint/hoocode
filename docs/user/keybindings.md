@@ -142,8 +142,11 @@ keyboard alone.
 
 Keys can be rebound in `keybindings.json`.
 
-There is no expand-all in v1: open the blocks you need. The focus is not saved,
-so a resumed session opens collapsed.
+**Ctrl+X o** (`app.scroll.toggleAll`) opens every tool block, or closes them all
+when one is open. It works from the prompt and does not move the focus. A block
+older than the newest 50 has released its output, so it is skipped, and the
+status line says how many rows opened and how many were skipped. The focus is
+not saved, so a resumed session opens collapsed.
 
 ## The approval card
 
