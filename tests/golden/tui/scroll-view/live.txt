@@ -1,20 +1,20 @@
 
-«» «fg=#5cc8bb»- «»beta item 9
-«» «fg=#5cc8bb»- «»beta item 10
-«» «fg=#5cc8bb»- «»beta item 11
-«» «fg=#5cc8bb»- «»beta item 12
-«» «fg=#5cc8bb»- «»beta item 13
-«» «fg=#5cc8bb»- «»beta item 14
-«» «fg=#5cc8bb»- «»beta item 15
-«» «fg=#5cc8bb»- «»beta item 16
-«» «fg=#5cc8bb»- «»beta item 17
-«» «fg=#5cc8bb»- «»beta item 18
-«» «fg=#5cc8bb»- «»beta item 19
-«» «fg=#5cc8bb»- «»beta item 20
-«» «fg=#5cc8bb»- «»beta item 21
-«» «fg=#5cc8bb»- «»beta item 22
-«» «fg=#5cc8bb»- «»beta item 23
-«» «fg=#5cc8bb»- «»beta item 24
-«» «fg=#5cc8bb»- «»beta item 25
+«» «fg=#5cc8bb»- «»beta item 9                                                                                     ░
+«» «fg=#5cc8bb»- «»beta item 10                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 11                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 12                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 13                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 14                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 15                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 16                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 17                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 18                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 19                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 20                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 21                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 22                                                                                    ┃
+«» «fg=#5cc8bb»- «»beta item 23                                                                                    ┃
+«» «fg=#5cc8bb»- «»beta item 24                                                                                    ┃
+«» «fg=#5cc8bb»- «»beta item 25                                                                                    ┃
 «bg=#2a2a36;fg=#e5e5e7» «bg=#2a2a36;fg=#5cc8bb»›«bg=#2a2a36» «bg=#2a2a36;inverse» 
-«» «fg=#b5bd68»●«fg=#989898» done · <DUR> · 120 tokens«<masked: session name>»  peek · <session> ·«fg=#989898» mock-model
+«» «fg=#989898»scrolled 49–65 of 65  «fg=#e5e5e7»enter«fg=#989898» open · «fg=#e5e5e7»y«fg=#989898» copy · «fg=#e5e5e7»{ }«fg=#989898» move · «fg=#e5e5e7»esc«fg=#989898» clear«<masked: session name>»  <session> · mock-model          

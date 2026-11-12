@@ -45,7 +45,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 ### Then
 
 8. [UI-28](tui.md#open) Hard-coded keys into the keymap, and the scoped models category key (S). Done 2026-11-12 (a683043)
-10. [UI-33](tui.md#open) Refresh the stale screen goldens (M)
 13. [RT-6](runtime.md#open) CodeSearch: compile term regexes once (S)
 14. [RT-7](runtime.md#open) UserMessageComponent: render stamp at construction (S)
 15. [RT-8](runtime.md#open) `ShellOutput` wait on a Condvar (S)

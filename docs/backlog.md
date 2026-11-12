@@ -35,25 +35,8 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 9 | UI-33 | Refresh the screen goldens. Notes below. | M |
 | 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
 | 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
-
-### UI-33: screen goldens
-
-`python3 scripts/tui/goldens.py check all` on 2026-11-11: `subagent-task` passes, nine differ. None was accepted. The harness got two fixes (one style across the version mask; the random session name in the status line is masked).
-
-| Scenario | Difference | Likely action |
-|---|---|---|
-| `chat-basic`, `session-resume` | Status line lost the view word; picker rows and hints changed | Accept after a read |
-| `permission-prompt` | Option rows and hint changed | Accept in UI-33 (the hint change is done in UI-34) |
-| `tool-bash`, `tool-edit` | Tool rows are the single-view rows now (`exit 0 · 3 lines`) | Fix the waits, accept |
-| `slash-commands` | `/session` has no "Session Info" header | Accept after a read |
-| `subagent-attach` | The run finishes before the `running` wait looks | Fix the scenario timing |
-| `scroll-view` | "first question" not in the `previous-message` snapshot | Look: timing or a real change |
-| `message-queue` | Queue order changed and "Restored 2 queued messages to editor" is gone | Look first: may be a real bug |
-
-Also seen on the real screen: a tool call that fails its own input validation shows `⊗ Read notes.txt` with no reason. Failed rows should carry one.
 
 ## Done in this session (2026-11-11, second session)
 
@@ -64,7 +47,7 @@ All on `main` through one PR, label `rust:patch`.
 | UI-6 | 78 component goldens: every dialog and notice in dark, light and monochrome at 100 columns. |
 | UI-30 | The write-only override map in `TranscriptFocus` is gone. |
 | UI-24 | `ctrl+x o` (`app.scroll.toggleAll`) opens or closes all tool rows. Frozen rows are skipped with a notice. |
-| Screen check | Harness fixes only (see UI-33). |
+| Screen check | Harness fixes, then the goldens refreshed on 2026-11-12 (UI-33, closed). |
 | AU-1 | New user page `docs/user/login.md`. |
 | AU-2 | Live tests fail when run with `--ignored` and no credential, in the provider crates, `hoocode-ai-registry` and `hoocode-agent-compaction`. |
 | AU-3, AU-4 | Mock tests: 401 and 403 on the three stream paths; refresh on expiry through `AuthStorage::get_api_key` with the real provider ids; an Anthropic OAuth stream test. |

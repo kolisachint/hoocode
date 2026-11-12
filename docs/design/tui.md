@@ -572,6 +572,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-34: the rows of `/hotkeys` (controls) indent 3, like every pane row. Group names keep indent 1. |
 | 2026-11-12 | UI-34: every task panel tab shows done over total: `plan 1/3 · agents 1/1 · mcp 1/1`. The strip sits at column 3, the same as the rows. (Decided to match the screen, as a Minor fix.) |
 | 2026-11-12 | UI-34: the resource listing's section headers (`[Skills]`, `[Commands]`, `[Agents]`, `[MCP]`) are ink bold. Yellow marks only what blocks the user. |
+| 2026-11-12 | UI-33: a failed row names its reason for every tool, not only Shell: the first error line, or for a validation error its first problem (`path: message`). Dim, after the header facts; the `⊗` mark is unchanged. Pinned by `tests/it/tool_rows.rs`. The screen goldens follow the keymap: follow-up is leader `f`, take back is leader `d` (one message each), the attach is leader `n`, `[` jumps to your previous message only with a block focused (K-P4), and the `/session` block has no header. |
 
 ## Open
 
@@ -587,7 +588,6 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
-| UI-33 | Screen goldens are stale: 9 of 10 scenarios differ. They predate the single view (2026-11-07). | M | Before the next release check | Review each diff, fix the timing waits in `subagent-attach` and `scroll-view`, then `update`. List in [docs/backlog.md](../backlog.md). |
 
 ## Not doing
 

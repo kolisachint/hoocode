@@ -53,7 +53,8 @@
     {
       "snapshot": "picker",
       "contains": [
-        "Sessions  /resume", "this folder",
+        "Sessions  /resume",
+        "this folder",
         "remember the word apple"
       ]
     },
@@ -105,6 +106,11 @@
       "_why": "the session slug (detail column, status line) is derived from the random session id",
       "pattern": "[a-z]+-[a-z]+(?= · (mock-model|\\d+ messages))",
       "replace": "<slug>"
+    },
+    {
+      "_why": "the gap before the message count moves with the random session name's length (the slug rule above keeps the length); the count sits two columns after the model",
+      "pattern": " {2,}(· \\d+ messages)",
+      "replace": "  \\1"
     }
   ]
 }
