@@ -130,6 +130,12 @@ impl SettingsList {
             .collect()
     }
 
+    /// Whether the list takes a search query (`enableSearch`). A list without
+    /// one has no filter row.
+    pub fn search_enabled(&self) -> bool {
+        self.search_enabled
+    }
+
     /// The search query, for console rendering.
     pub fn query_text(&self) -> &str {
         self.search_input

@@ -42,7 +42,7 @@ use hoocode_tui_components::{
 };
 use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
-use hoocode_tui_util::{visible_width, wrap_text_with_ansi};
+use hoocode_tui_util::{slice_by_column, visible_width, wrap_text_with_ansi};
 
 use crate::framed_list::layout;
 use crate::small_selectors::thinking_level_description;
@@ -501,6 +501,9 @@ impl Component for ListSubmenu {
         let cancel = key_hint_text("tui.select.cancel");
         let hints: Vec<(&str, &str)> = if opens {
             vec![(&movement, "move"), (&confirm, "open"), (&cancel, "back")]
+        } else if list.filtered_items().is_empty() {
+            // Nothing matches, so there is no row to toggle or change.
+            vec![(&movement, "move"), (&cancel, "back")]
         } else {
             vec![
                 (&movement, "move"),
@@ -916,22 +919,53 @@ impl FlagStringEditSubmenu {
 }
 
 /// The input's text with the caret at its cursor: a `▏` between the text
-/// before and after the cursor.
-fn input_with_caret(input: &Input) -> Line<'static> {
+/// before and after the cursor, windowed to `width` cells so the caret stays
+/// in view. A cut edge shows `…`.
+fn input_with_caret(input: &Input, width: usize) -> Line<'static> {
     let value = input.get_value();
-    let cursor = input.get_cursor();
-    Line::from(vec![
-        Span::raw(hoocode_tui_util::text_slice::prefix(value, cursor).to_string()),
-        Span::raw("▏".to_string()),
-        Span::raw(hoocode_tui_util::text_slice::suffix_from(value, cursor).to_string()),
-    ])
+    let col = visible_width(hoocode_tui_util::text_slice::prefix(
+        value,
+        input.get_cursor(),
+    ));
+    let (start, end) = caret_window(visible_width(value), col, width);
+    let mut spans = Vec::new();
+    if start > 0 {
+        spans.push(Span::raw("…".to_string()));
+    }
+    spans.push(Span::raw(slice_by_column(value, start, col - start, true)));
+    spans.push(Span::raw("▏".to_string()));
+    spans.push(Span::raw(slice_by_column(value, col, end - col, true)));
+    if end < visible_width(value) {
+        spans.push(Span::raw("…".to_string()));
+    }
+    Line::from(spans)
+}
+
+/// The columns `[start, end)` of a `total`-cell value that show around the
+/// caret at column `col` in `width` cells. The window follows
+/// `Input::render`'s scroll: the caret stays near the middle and the window is
+/// clamped at both ends. Each cut edge and the caret take one cell.
+fn caret_window(total: usize, col: usize, width: usize) -> (usize, usize) {
+    if total < width {
+        return (0, total);
+    }
+    let budget = width.saturating_sub(3);
+    let half = budget / 2;
+    let start = if col < half {
+        0
+    } else if col + half > total {
+        total.saturating_sub(budget)
+    } else {
+        col - half
+    };
+    (start, (start + budget).min(total))
 }
 
 impl Component for FlagStringEditSubmenu {
     fn render(&mut self, width: u16) -> Vec<String> {
         let input = self.input.borrow();
         let mut console = Console::new(self.name.clone(), String::new());
-        console.query = Some(input_with_caret(&input));
+        console.query = Some(input_with_caret(&input, console.row_width(width as usize)));
         drop(input);
         console.set_hints(
             &[
@@ -2168,13 +2202,17 @@ impl Component for SettingsSelectorComponent {
 /// sub-panes share it. The chip and count come from `name` and `count`; one
 /// row per visible setting (`setting_row`, the selected row's ` › ` comes from
 /// the pane); the selected setting's detail beside the rows from 100 columns
-/// (`setting_detail`), under them below; the filter row and the scroll footer.
+/// (`setting_detail`), under them below; the filter row (searchable lists
+/// only) and the scroll footer.
 /// Hints are the caller's. Keys, filtering and events stay with the list.
 fn settings_console(list: &SettingsList, name: &str, count: String, width: usize) -> Console {
     let inner = width.saturating_sub(2);
     let mut console = Console::new(name, count);
     let query = list.query_text().to_string();
-    console.query = Some(query_row(&query, false));
+    // Only a searchable list has a filter row; the others take no typing.
+    if list.search_enabled() {
+        console.query = Some(query_row(&query, false));
+    }
     let max_label = list
         .items()
         .iter()

@@ -250,3 +250,129 @@ fn settings_list_kinds_share_the_sub_pane_chrome() {
         );
     }
 }
+
+/// A list with no search (Tool output) has no filter row; a searchable one
+/// (Interface) has it.
+#[test]
+fn settings_list_without_search_has_no_filter_row() {
+    let _g = lock();
+    let mut pane = pane(Rc::default());
+    open_by_keys(&mut pane, None, "Tool output");
+    let text = render_golden(&mut pane, 100);
+    assert!(
+        !text.contains("▏ filter"),
+        "Tool output has a filter row in\n{text}"
+    );
+
+    let mut pane = pane_with_interface();
+    let text = render_golden(&mut pane, 100);
+    assert!(
+        text.contains("▏ filter"),
+        "Interface has no filter row in\n{text}"
+    );
+}
+
+/// Open the Interface category by keys (it is searchable).
+fn pane_with_interface() -> SettingsSelectorComponent {
+    let mut pane = pane(Rc::default());
+    open_by_keys(&mut pane, None, "Interface");
+    pane
+}
+
+/// The text row with the caret (`▏`) in a rendered pane.
+fn caret_row(text: &str) -> &str {
+    text.lines()
+        .find(|l| l.contains('▏'))
+        .unwrap_or_else(|| panic!("no caret row in\n{text}"))
+}
+
+/// A 200-character string value at width 80: with the cursor at the end the
+/// row shows the last characters and the caret; at the start, the first.
+#[test]
+fn settings_flag_long_value_keeps_the_caret_in_view() {
+    let _g = lock();
+    // Fifty distinct four-digit numbers: no ten-character run repeats.
+    let long: String = (0..50).map(|i| format!("{i:04}")).collect();
+    let mut cfg = config();
+    cfg.flags[1].value = FlagValue::String(long.clone());
+    let mut pane = SettingsSelectorComponent::new(cfg, |_| {});
+    open_flag_editor(&mut pane);
+
+    pane.handle_input("\x05");
+    let text = render_golden(&mut pane, 80);
+    let row = caret_row(&text);
+    assert!(
+        row.contains(&long[190..]),
+        "no tail of the value in {row:?}"
+    );
+    assert!(
+        !row.contains(&long[..10]),
+        "head shown at the end in {row:?}"
+    );
+    assert!(row.contains('…'), "no cut edge in {row:?}");
+    assert!(
+        row.trim_end().ends_with('▏'),
+        "caret not at the end in {row:?}"
+    );
+
+    pane.handle_input("\x01");
+    let text = render_golden(&mut pane, 80);
+    let row = caret_row(&text);
+    assert!(row.contains(&long[..10]), "no head of the value in {row:?}");
+    assert!(
+        !row.contains(&long[190..]),
+        "tail shown at the start in {row:?}"
+    );
+    assert!(row.contains('▏'), "no caret in {row:?}");
+}
+
+/// A list whose filter matches nothing has no row to toggle or change, so
+/// its hint drops `space toggle` and `enter change`.
+#[test]
+fn settings_list_hint_with_no_match_has_only_move_and_back() {
+    let _g = lock();
+    let mut pane = pane(Rc::default());
+    open_by_keys(&mut pane, None, "Flags");
+    let flags = pane
+        .settings_list()
+        .borrow()
+        .open_submenu()
+        .expect("the Flags submenu");
+    submenu_list(&flags)
+        .expect("a settings-list submenu")
+        .borrow_mut()
+        .apply_filter("zzz");
+    let text = render_golden(&mut pane, 100);
+    assert!(
+        text.contains("↑↓ move · esc back"),
+        "missing move and back in\n{text}"
+    );
+    assert!(!text.contains("space toggle"), "toggle hint in\n{text}");
+    assert!(!text.contains("enter change"), "change hint in\n{text}");
+}
+
+/// Reopening Thinking level after a pick puts the cursor on the level now in use.
+#[test]
+fn settings_thinking_reopens_on_the_level_in_use() {
+    let _g = lock();
+    let mut pane = pane(Rc::default());
+    open_thinking(&mut pane);
+    pane.handle_input(DOWN);
+    pane.handle_input("\r");
+    // The pick closed the level pane; Behavior is open again.
+    let behavior = pane
+        .settings_list()
+        .borrow()
+        .open_submenu()
+        .expect("the Behavior submenu");
+    submenu_list(&behavior)
+        .expect("a settings-list submenu")
+        .borrow_mut()
+        .apply_filter("Thinking level");
+    pane.handle_input("\r");
+    let text = render_golden(&mut pane, 100);
+    assert!(
+        text.lines().any(|l| l.starts_with(" › ● high")),
+        "cursor not on the level in use in\n{text}"
+    );
+}
