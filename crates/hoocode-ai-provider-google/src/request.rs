@@ -45,6 +45,8 @@ pub struct GoogleOptions {
     pub project: Option<String>,
     pub location: Option<String>,
     pub on_payload: Option<hoocode_ai_types::OnPayload>,
+    /// Sent as `x-opencode-session` for OpenCode Go only (Go routes on it).
+    pub session_id: Option<String>,
 }
 
 fn base_options(
@@ -61,6 +63,7 @@ fn base_options(
         api_key: api_key.or_else(|| options.api_key.clone().filter(|k| !k.is_empty())),
         headers: options.headers.clone(),
         on_payload: options.on_payload.clone(),
+        session_id: options.session_id.clone(),
         ..Default::default()
     }
 }
@@ -94,25 +97,28 @@ pub fn simple_google_options(
         };
     };
     let effort = effort(model, level);
-    let thinking =
-        if is_gemini3_pro(&model.id) || is_gemini3_flash(&model.id) || is_gemma4(&model.id) {
-            GoogleThinking {
-                enabled: true,
-                level: Some(thinking_level(&effort, &model.id, true).to_string()),
-                budget_tokens: None,
-            }
-        } else {
-            GoogleThinking {
-                enabled: true,
-                budget_tokens: Some(google_budget(
-                    &model.id,
-                    &effort,
-                    options.thinking_budgets.as_ref(),
-                    true,
-                )),
-                level: None,
-            }
-        };
+    let thinking = if is_gemini3_pro(&model.id)
+        || is_gemini3_flash(&model.id)
+        || is_gemini4(&model.id)
+        || is_gemma4(&model.id)
+    {
+        GoogleThinking {
+            enabled: true,
+            level: Some(thinking_level(&effort, &model.id, true).to_string()),
+            budget_tokens: None,
+        }
+    } else {
+        GoogleThinking {
+            enabled: true,
+            budget_tokens: Some(google_budget(
+                &model.id,
+                &effort,
+                options.thinking_budgets.as_ref(),
+                true,
+            )),
+            level: None,
+        }
+    };
     GoogleOptions {
         thinking: Some(thinking),
         ..base
@@ -130,24 +136,25 @@ pub fn simple_vertex_options(model: &Model, options: &SimpleStreamOptions) -> Go
         };
     };
     let effort = effort(model, level);
-    let thinking = if is_gemini3_pro(&model.id) || is_gemini3_flash(&model.id) {
-        GoogleThinking {
-            enabled: true,
-            level: Some(thinking_level(&effort, &model.id, false).to_string()),
-            budget_tokens: None,
-        }
-    } else {
-        GoogleThinking {
-            enabled: true,
-            budget_tokens: Some(google_budget(
-                &model.id,
-                &effort,
-                options.thinking_budgets.as_ref(),
-                false,
-            )),
-            level: None,
-        }
-    };
+    let thinking =
+        if is_gemini3_pro(&model.id) || is_gemini3_flash(&model.id) || is_gemini4(&model.id) {
+            GoogleThinking {
+                enabled: true,
+                level: Some(thinking_level(&effort, &model.id, false).to_string()),
+                budget_tokens: None,
+            }
+        } else {
+            GoogleThinking {
+                enabled: true,
+                budget_tokens: Some(google_budget(
+                    &model.id,
+                    &effort,
+                    options.thinking_budgets.as_ref(),
+                    false,
+                )),
+                level: None,
+            }
+        };
     GoogleOptions {
         thinking: Some(thinking),
         ..base
@@ -178,6 +185,11 @@ fn is_gemini3_flash(model_id: &str) -> bool {
     is_gemini3(model_id, "flash")
 }
 
+/// `/gemini-4-/`: level-only (no budget), and MINIMAL is rejected.
+fn is_gemini4(model_id: &str) -> bool {
+    model_id.to_lowercase().contains("gemini-4-")
+}
+
 /// `/gemma-?4/`.
 fn is_gemma4(model_id: &str) -> bool {
     let lower = model_id.to_lowercase();
@@ -189,6 +201,13 @@ fn thinking_level(effort: &ThinkingLevel, model_id: &str, gemma: bool) -> &'stat
     if is_gemini3_pro(model_id) {
         return match effort {
             ThinkingLevel::Minimal | ThinkingLevel::Low => "LOW",
+            _ => "HIGH",
+        };
+    }
+    if is_gemini4(model_id) {
+        return match effort {
+            ThinkingLevel::Minimal | ThinkingLevel::Low => "LOW",
+            ThinkingLevel::Medium => "MEDIUM",
             _ => "HIGH",
         };
     }
@@ -235,9 +254,9 @@ fn google_budget(
     table[index]
 }
 
-/// `getDisabledThinkingConfig`: Gemini 3 cannot turn thinking fully off.
+/// `getDisabledThinkingConfig`: Gemini 3 and 4 cannot turn thinking fully off.
 fn disabled_thinking_config(model_id: &str, gemma: bool) -> Value {
-    if is_gemini3_pro(model_id) {
+    if is_gemini3_pro(model_id) || is_gemini4(model_id) {
         json!({"thinkingLevel": "LOW"})
     } else if is_gemini3_flash(model_id) || (gemma && is_gemma4(model_id)) {
         json!({"thinkingLevel": "MINIMAL"})
@@ -467,6 +486,17 @@ pub fn gemini_client_config(model: &Model, api_key: &str, options: &GoogleOption
         http.api_version = Some(String::new());
     }
     http.headers = merged_headers(model, options);
+    // OpenCode Go routes on a stable session header (`opencodeSessionId`).
+    if model.provider == "opencode-go" {
+        if let Some(session_id) = options.session_id.as_deref() {
+            let headers = http.headers.get_or_insert_default();
+            headers.insert("x-opencode-session".into(), session_id.to_string());
+            // A User-Agent from the model or the caller wins, in any case.
+            if !headers.keys().any(|k| k.eq_ignore_ascii_case("user-agent")) {
+                headers.insert("User-Agent".into(), "hoocode".into());
+            }
+        }
+    }
     ClientConfig {
         vertexai: false,
         api_key: Some(api_key.to_string()),

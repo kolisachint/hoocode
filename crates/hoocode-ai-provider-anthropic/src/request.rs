@@ -17,7 +17,7 @@ use hoocode_ai_util::{
 use serde_json::{json, Value};
 
 /// Claude Code version mimicked on OAuth requests (`claudeCodeVersion`).
-pub(crate) const CLAUDE_CODE_VERSION: &str = "2.1.280";
+pub(crate) const CLAUDE_CODE_VERSION: &str = "2.1.322";
 
 /// Claude Code 2.x tool names in canonical casing (`claudeCodeTools`).
 const CLAUDE_CODE_TOOLS: &[&str] = &[

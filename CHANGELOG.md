@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: ChatGPT subscription requests no longer crash (2026-11-12)
+- **Every `openai-codex` request failed in 0.2.41** with "Could not automatically determine the process-level CryptoProvider". The binary carries two rustls crypto backends, so the WebSocket connect could not pick one. It now uses `ring`, as the HTTP client does.
+- **Claude subscription requests send Claude Code 2.1.322.** Anthropic rejected Claude Fable 5.2 for the old pin (2.1.280) with `claude_code_version_too_old`.
+
+### Added: Claude Fable 5.2, Gemini 4 Carbon and GPT-6.1 Sol (2026-11-12)
+- **models.dev sync:** Claude Fable 5.2 (Anthropic, Copilot, OpenCode, OpenRouter, Vercel, with `xhigh`) and Gemini 4 Carbon (Google, Vertex, Copilot, OpenCode, OpenRouter, Vercel), 21 models in all, and 3 price updates.
+- **By hand:** `openai-codex/gpt-6.1-sol` and `opencode-go/gemini-4-argon`. Which ChatGPT models work depends on the plan: the Go plan allows only `gpt-6-luna`, `gpt-5.6-luna` and `gpt-5.6-terra`.
+- **Gemini 4 thinking works.** Gemini 4 rejects a thinking budget and the `MINIMAL` level, so hoocode sends `LOW`, `MEDIUM` or `HIGH` (Google, Vertex, Gemini CLI). Gemini 4 cannot turn thinking off, so `off` is not offered for it.
+- **OpenCode Go's Gemini route gets `x-opencode-session`,** which it requires.
+
 ### Changed: the TUI follows the design (2026-11-12)
 - **Every block opens and closes the same way.** A click, `enter` or `ctrl+x o` toggles any block, not only tool rows, and each block shows an open or closed indicator. The startup listing has a `Resources` header.
 - **The permission card, the interrupted-run row, settings and scoped models take rebound keys** from `keybindings.json`. The action ids are `app.permission.edit`, `app.permission.pick1` to `app.permission.pick3`, `app.dialog.yes`, `app.dialog.no` and `app.dialog.always` (permission card); `app.subagent.view` and `app.subagent.resume` (interrupted run); `app.settings.toggle` (settings); and `app.models.category` (scoped models).

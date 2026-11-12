@@ -1090,13 +1090,16 @@ fn require_env(var: &str) -> String {
 }
 
 /// `openai-codex-cache-affinity-e2e.test.ts`: needs a ChatGPT OAuth access
-/// token in `OPENAI_CODEX_OAUTH_TOKEN`.
+/// token in `OPENAI_CODEX_OAUTH_TOKEN`. `HOOCODE_CODEX_LIVE_MODEL` picks the
+/// model (default `gpt-5.3-codex`): each ChatGPT plan allows its own set.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "live: needs OPENAI_CODEX_OAUTH_TOKEN"]
 async fn live_handles_sse_requests_with_aligned_cache_affinity_identifiers() {
     let token = require_env("OPENAI_CODEX_OAUTH_TOKEN");
-    let model = hoocode_ai_models::get_model("openai-codex", "gpt-5.3-codex")
-        .unwrap()
+    let model_id =
+        std::env::var("HOOCODE_CODEX_LIVE_MODEL").unwrap_or_else(|_| "gpt-5.3-codex".into());
+    let model = hoocode_ai_models::get_model("openai-codex", &model_id)
+        .unwrap_or_else(|| panic!("openai-codex/{model_id} is not in the catalog"))
         .clone();
     let context = Context::new(
         "You are a helpful assistant. Reply exactly as requested.".into(),

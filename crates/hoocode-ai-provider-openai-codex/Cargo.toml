@@ -26,6 +26,7 @@ hoocode-ai-util = { workspace = true }
 base64 = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "time", "sync", "net"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
@@ -35,4 +36,7 @@ uuid = { version = "1", features = ["v4"] }
 libc = "0.2"
 
 [dev-dependencies]
+# Both rustls backends on, as in the hoocode binary (rmcp's reqwest brings
+# aws-lc-rs), so the WebSocket connect test reproduces the provider choice.
+rustls = { version = "0.23", default-features = false, features = ["ring", "aws-lc-rs"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util", "time", "net", "io-util"] }

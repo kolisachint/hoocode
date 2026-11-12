@@ -341,7 +341,7 @@ fn oauth_tokens_get_claude_code_identity_and_tool_names() {
         header(&headers, "anthropic-beta"),
         Some("claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14")
     );
-    assert_eq!(header(&headers, "user-agent"), Some("claude-cli/2.1.280"));
+    assert_eq!(header(&headers, "user-agent"), Some("claude-cli/2.1.322"));
     assert_eq!(header(&headers, "x-app"), Some("cli"));
     assert_eq!(
         params["system"],

@@ -314,6 +314,40 @@ fn thinking_levels_and_budgets_per_family() {
 }
 
 #[test]
+fn gemini4_uses_levels_without_minimal_or_budget() {
+    assert_eq!(
+        thinking_config("google", "gemini-4-argon", Some(ThinkingLevel::Medium)),
+        json!({"includeThoughts": true, "thinkingLevel": "MEDIUM"})
+    );
+    assert_eq!(
+        thinking_config("google", "gemini-4-carbon", Some(ThinkingLevel::Minimal)),
+        json!({"includeThoughts": true, "thinkingLevel": "LOW"})
+    );
+    assert_eq!(
+        thinking_config("google", "gemini-4-carbon", Some(ThinkingLevel::High)),
+        json!({"includeThoughts": true, "thinkingLevel": "HIGH"})
+    );
+    assert_eq!(
+        thinking_config("google", "gemini-4-argon", None),
+        json!({"thinkingLevel": "LOW"})
+    );
+    assert_eq!(
+        thinking_config(
+            "google-vertex",
+            "gemini-4-argon",
+            Some(ThinkingLevel::Medium)
+        ),
+        json!({"includeThoughts": true, "thinkingLevel": "MEDIUM"})
+    );
+    assert_eq!(
+        thinking_config("google-vertex", "gemini-4-argon", None),
+        json!({"thinkingLevel": "LOW"})
+    );
+    assert!(is_gemini4("google/gemini-4-carbon"));
+    assert!(!is_gemini4("gemini-3-flash-preview"));
+}
+
+#[test]
 fn params_carry_generation_settings_tools_and_tool_choice() {
     let model = catalog("google", "gemini-2.5-flash");
     let mut context = hello();
@@ -373,6 +407,82 @@ fn sdk_parts_are_reordered_like_part_to_mldev() {
         serde_json::to_string(&sdk_body(&params, false)["contents"]).unwrap(),
         r#"[{"parts":[{"text":"t","thought":true,"thoughtSignature":"s"},{"functionCall":{"id":"i","args":{},"name":"n"},"thoughtSignature":"s"},{"inlineData":{"data":"d","mimeType":"image/png"}}],"role":"model"}]"#
     );
+}
+
+fn endpoint_headers(model: &Model, options: &GoogleOptions) -> Vec<(String, String)> {
+    gemini_client_config(model, "gk", options)
+        .endpoint("gemini-2.5-flash")
+        .headers
+}
+
+fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+}
+
+#[test]
+fn opencode_go_sends_the_session_header_on_the_gemini_api() {
+    let mut model = catalog("google", "gemini-2.5-flash");
+    model.provider = "opencode-go".into();
+    let options = GoogleOptions {
+        session_id: Some("go-session-123".into()),
+        ..Default::default()
+    };
+    let headers = endpoint_headers(&model, &options);
+    assert_eq!(
+        header(&headers, "x-opencode-session"),
+        Some("go-session-123")
+    );
+    assert_eq!(header(&headers, "user-agent"), Some("hoocode"));
+}
+
+#[test]
+fn opencode_go_keeps_the_callers_user_agent() {
+    let mut model = catalog("google", "gemini-2.5-flash");
+    model.provider = "opencode-go".into();
+    let options = GoogleOptions {
+        session_id: Some("go-session-123".into()),
+        headers: Some(HashMap::from([("user-agent".into(), "mine".into())])),
+        ..Default::default()
+    };
+    let headers = endpoint_headers(&model, &options);
+    assert_eq!(header(&headers, "user-agent"), Some("mine"));
+    assert_eq!(
+        header(&headers, "x-opencode-session"),
+        Some("go-session-123")
+    );
+}
+
+#[test]
+fn google_provider_does_not_send_the_opencode_session_header() {
+    let model = catalog("google", "gemini-2.5-flash");
+    let options = GoogleOptions {
+        session_id: Some("go-session-123".into()),
+        ..Default::default()
+    };
+    let headers = endpoint_headers(&model, &options);
+    assert_eq!(header(&headers, "x-opencode-session"), None);
+}
+
+#[test]
+fn opencode_go_without_a_session_id_sends_no_session_header() {
+    let mut model = catalog("google", "gemini-2.5-flash");
+    model.provider = "opencode-go".into();
+    let headers = endpoint_headers(&model, &GoogleOptions::default());
+    assert_eq!(header(&headers, "x-opencode-session"), None);
+}
+
+#[test]
+fn base_options_forwards_the_session_id() {
+    let model = catalog("google", "gemini-2.5-flash");
+    let simple = SimpleStreamOptions {
+        session_id: Some("go-session-123".into()),
+        ..Default::default()
+    };
+    let options = base_options(&model, &simple, None);
+    assert_eq!(options.session_id.as_deref(), Some("go-session-123"));
 }
 
 #[test]
