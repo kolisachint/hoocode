@@ -105,7 +105,7 @@
       "snapshot": "after-tool",
       "contains": [
         "src/app.ts",
-        "… 4 more lines",
+        "… 3 more lines",
         "wrote tools/util.py"
       ]
     }

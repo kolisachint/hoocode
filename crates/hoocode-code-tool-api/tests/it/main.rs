@@ -1,1 +1,1 @@
-mod path_utils_ts;
+mod path_utils;

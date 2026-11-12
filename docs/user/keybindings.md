@@ -30,8 +30,9 @@ work in it. A `null` or `"none"` unbinds a key in that context:
 }
 ```
 
-Contexts are `Global`, `Prompt`, `Leader`, `Scroll`, `Picker`, `Panel`, `Dialog`,
-`Tree` and `Models`. A key is written as `"shift+enter"`, and a space means a
+Contexts are `Global`, `Prompt`, `Leader`, `Scroll`, `Picker`, `Subagent`, `Panel`,
+`Dialog`, `Tree` and `Models`. `Subagent` holds the keys of an interrupted run's
+choice in the session picker, so `r` can be rename in `Picker` and resume here. A key is written as `"shift+enter"`, and a space means a
 sequence, as in `"ctrl+x m"`. A single capital letter is Shift plus that letter:
 `"G"` is the same key as `"shift+g"`, the one that types a capital G.
 
@@ -120,8 +121,11 @@ How each kind is delivered follows its mode in `/settings` (`steering-mode`,
 
 ## Pinned transcript blocks
 
-Each tool call is one row. PgUp (or the mouse wheel) pins the view, and a click on
-a header toggles it open. At the prompt a letter types, even when the view is pinned.
+Each tool call is one row, and so is each thinking trace, summary, `!` command, skill
+block, background-run notice and the startup resource listing: a block that can open
+ends its header in a dim `▸` (closed) or `▾` (open). PgUp (or the mouse wheel) pins
+the view, and a click anywhere on a header row toggles it open. At the prompt a
+letter types, even when the view is pinned.
 **Ctrl+X u** focuses the newest block and pins the view. Only with a block focused
 and the prompt empty do letters act as transcript keys:
 
@@ -135,18 +139,19 @@ and the prompt empty do letters act as transcript keys:
 - **Home** jumps to the start of the transcript; **End** goes back to live and
   clears the focus.
 
-Any other letter clears the focus, goes back to live and types. A click toggles a
-block. If a block is already focused, the click also moves the focus to it, so
+Any other letter clears the focus, goes back to live and types. A click on a header
+row toggles its block (press and release on the same row; a press on one row and a
+release on another does nothing, and neither does a click on a body row). A click on
+a row that cannot open says so in the status line. If a block is already focused, the click also moves the focus to it, so
 **Enter** and **y** act on it next. With no block focused, a click leaves the
 keyboard alone.
 
 Keys can be rebound in `keybindings.json`.
 
-**Ctrl+X o** (`app.scroll.toggleAll`) opens every tool block, or closes them all
-when one is open. It works from the prompt and does not move the focus. A block
-older than the newest 50 has released its output, so it is skipped, and the
-status line says how many rows opened and how many were skipped. The focus is
-not saved, so a resumed session opens collapsed.
+**Ctrl+X o** (`app.scroll.toggleAll`) opens every block that can open, or closes
+them all when one is open. It works from the prompt and does not move the focus.
+A block with nothing to open is left alone. The focus is not saved, so a resumed
+session opens collapsed.
 
 ## The approval card
 
@@ -157,12 +162,24 @@ while the reply field is empty:
 - **a** highlights the always row (where one is offered). **Enter** confirms it.
   Pressing `a` alone does not answer. Where no always row is offered, `a` types
   into the reply.
-- **1**, **2** and **3** pick a row. **Up** and **Down** move the highlight, and
-  **Enter** picks it. **Esc** refuses.
+- **1**, **2** and **3** pick a row (`app.permission.pick1` to `app.permission.pick3`),
+  and **e** edits the command first (`app.permission.edit`). **Up** and **Down**
+  move the highlight, and **Enter** picks it. **Esc** refuses.
 
 Once the reply has text, letters type into it, and Enter sends it as the reason
 for the refusal. `y`, `n` and `a` are the dialog keys `app.dialog.yes`,
 `app.dialog.no` and `app.dialog.always`.
+
+## Other picker keys
+
+These can be rebound like any other key:
+
+- **v** and **r** on an interrupted subagent run in the session picker
+  (`app.subagent.view`, `app.subagent.resume`, context `Subagent`). **r** is still
+  rename everywhere else.
+- **Space** toggles the picked row in settings (`app.settings.toggle`). With a non-empty search, Space types into the search instead.
+- **c** cycles the category of the selected model in the scoped models picker
+  (`app.models.category`). The hint row shows its key.
 
 ## Terminals
 

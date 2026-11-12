@@ -3,6 +3,8 @@
 //! dark and light themes.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use hoocode_code_tui_theme::*;
 use serde_json::Value;
@@ -11,7 +13,7 @@ const SEMANTICS: &str = include_str!("../../color-semantics.json");
 const THEME_SCHEMA: &str = include_str!("../../themes/theme-schema.json");
 
 /// Role categories that are not entries of `roles`.
-const FIXED_ROLES: [&str; 5] = ["markdown", "syntax", "diff", "thinking-level", "legacy"];
+const FIXED_ROLES: [&str; 4] = ["markdown", "syntax", "diff", "legacy"];
 
 fn semantics() -> Value {
     serde_json::from_str(SEMANTICS).expect("color-semantics.json parses")
@@ -168,5 +170,77 @@ fn every_token_role_is_a_known_role() {
             .as_str()
             .unwrap_or_else(|| panic!("{name}: `role` is a string"));
         assert!(known.contains(role), "{name}: unknown role `{role}`");
+    }
+}
+
+/// Source files that may name the warning token: the blocking dialogs, where
+/// yellow marks the thing that blocks the user (`blocking` in the roles above).
+const BLOCKING_DIALOG_FILES: [&str; 5] = [
+    "pane.rs",
+    "card_frame.rs",
+    "clearance_card.rs",
+    "ask_options.rs",
+    "end_shift.rs",
+];
+
+/// The crates that paint the transcript, the transient rows and the pickers.
+const DRAWING_CRATES: [&str; 3] = [
+    "hoocode-code-tui-widgets",
+    "hoocode-code-tui-app",
+    "hoocode-code-tui-selectors",
+];
+
+/// Spellings of the warning token in source: the literal, and the palette
+/// helper that reads the `warn` token (which falls back to `warning`).
+const WARNING_SPELLINGS: [&str; 3] = ["\"warning\"", "\"warn\"", ".warn()"];
+
+fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+        let path = entry.expect("directory entry").path();
+        if path.is_dir() {
+            rust_files(&path, out);
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn warning_token_is_used_only_by_blocking_dialogs() {
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut offenders = Vec::new();
+    let mut found = BTreeSet::new();
+    for krate in DRAWING_CRATES {
+        let mut files = Vec::new();
+        rust_files(&crates.join(krate).join("src"), &mut files);
+        for file in files {
+            let name = file
+                .file_name()
+                .expect("file name")
+                .to_string_lossy()
+                .into_owned();
+            let text = fs::read_to_string(&file).expect("readable source");
+            if BLOCKING_DIALOG_FILES.contains(&name.as_str()) {
+                found.insert(name);
+                continue;
+            }
+            if WARNING_SPELLINGS
+                .iter()
+                .any(|spelling| text.contains(spelling))
+            {
+                offenders.push(file.display().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "yellow (the warning token) marks only blocking dialogs; move these to ink bold or dim:\n{}",
+        offenders.join("\n")
+    );
+    for allowed in BLOCKING_DIALOG_FILES {
+        assert!(
+            found.contains(allowed),
+            "BLOCKING_DIALOG_FILES names `{allowed}`, which is not in the drawing crates; remove it"
+        );
     }
 }

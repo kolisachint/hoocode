@@ -78,9 +78,9 @@ fn renders_header_question_options_and_custom_row() {
     let _g = lock();
     let (mut c, _, _) = pane();
     let out = out(&mut c);
-    assert!(out.contains("Question"), "{out}");
+    assert!(!out.contains("Question"), "{out}");
     assert!(
-        out.contains("where should retry logic live?  1 of 2"),
+        out.contains("where should retry logic live?   1 of 2"),
         "{out}"
     );
     assert!(out.contains("the http client is shared by every provider adapter"));
@@ -118,7 +118,7 @@ fn advances_with_right_and_submits_on_the_last_step() {
     let o = out(&mut c);
     assert!(o.contains("retry lives in"), "{o}");
     assert!(o.contains("hoocode-ai"));
-    assert!(o.contains("backoff strategy?  2 of 2"));
+    assert!(o.contains("backoff strategy?   2 of 2"));
     c.handle_input(DOWN);
     c.handle_input(RIGHT);
     assert_eq!(*submitted.borrow(), answers(&["hoocode-ai", "fixed 1s"]));
@@ -141,9 +141,9 @@ fn steps_back_with_left() {
     let _g = lock();
     let (mut c, submitted, _) = pane();
     c.handle_input("1");
-    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
+    assert!(out(&mut c).contains("backoff strategy?   2 of 2"));
     c.handle_input(LEFT);
-    assert!(out(&mut c).contains("where should retry logic live?  1 of 2"));
+    assert!(out(&mut c).contains("where should retry logic live?   1 of 2"));
     c.handle_input("2");
     c.handle_input("1");
     assert_eq!(
@@ -167,7 +167,7 @@ fn accepts_a_typed_custom_answer() {
     type_custom(&mut c);
     assert!(out(&mut c).contains("per-provider"));
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
+    assert!(out(&mut c).contains("backoff strategy?   2 of 2"));
     c.handle_input("2");
     assert_eq!(*submitted.borrow(), answers(&["per-provider", "fixed 1s"]));
 }
@@ -179,12 +179,12 @@ fn gives_the_arrows_to_the_text_once_typed() {
     type_custom(&mut c);
     c.handle_input(LEFT);
     let o = out(&mut c);
-    assert!(o.contains("where should retry logic live?  1 of 2"), "{o}");
+    assert!(o.contains("where should retry logic live?   1 of 2"), "{o}");
     assert!(o.contains("per-provider"));
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("where should retry logic live?  1 of 2"));
+    assert!(out(&mut c).contains("where should retry logic live?   1 of 2"));
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
+    assert!(out(&mut c).contains("backoff strategy?   2 of 2"));
     c.handle_input("2");
     assert_eq!(*submitted.borrow(), answers(&["per-provider", "fixed 1s"]));
 }
@@ -197,7 +197,7 @@ fn commits_a_custom_answer_with_enter_anywhere() {
     c.handle_input(LEFT);
     c.handle_input(LEFT);
     c.handle_input(ENTER);
-    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
+    assert!(out(&mut c).contains("backoff strategy?   2 of 2"));
     c.handle_input("2");
     assert_eq!(*submitted.borrow(), answers(&["per-provider", "fixed 1s"]));
 }
@@ -209,7 +209,7 @@ fn does_not_submit_an_empty_custom_answer() {
     c.handle_input(DOWN);
     c.handle_input(DOWN);
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("where should retry logic live?  1 of 2"));
+    assert!(out(&mut c).contains("where should retry logic live?   1 of 2"));
     assert_eq!(*submitted.borrow(), None);
 }
 
@@ -283,7 +283,7 @@ fn a_letter_on_an_option_starts_the_answer() {
     c.handle_input("z");
     assert!(out(&mut c).contains('z'));
     c.handle_input(ENTER);
-    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
+    assert!(out(&mut c).contains("backoff strategy?   2 of 2"));
     c.handle_input("2");
     assert_eq!(*submitted.borrow(), answers(&["z", "fixed 1s"]));
 }
@@ -293,7 +293,7 @@ fn tab_advances_like_right() {
     let _g = lock();
     let (mut c, _, _) = pane();
     c.handle_input("\t");
-    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
+    assert!(out(&mut c).contains("backoff strategy?   2 of 2"));
 }
 
 #[test]

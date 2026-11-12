@@ -366,7 +366,7 @@ fn a_shell_step_shows_the_end_of_its_output_and_counts_only_hidden_output_lines(
     let block = shell_block(&rows_of(40), false);
     let mut chain = chain_with(vec![block.clone()]);
     let shut = render(&mut chain, 100);
-    assert!(shut[0].ends_with("exit 0 · 40 lines · 8.2s"), "{shut:?}");
+    assert!(shut[0].ends_with("exit 0 · 40 lines · 8.2s ▸"), "{shut:?}");
     assert!(
         !shut.iter().any(|r| r.contains("row-")),
         "shut, no body: {shut:?}"
@@ -381,7 +381,7 @@ fn a_shell_step_shows_the_end_of_its_output_and_counts_only_hidden_output_lines(
     );
     assert!(!rows.iter().any(|r| r.contains("Took")), "{rows:?}");
     assert!(!rows.iter().any(|r| r.contains("more line")), "{rows:?}");
-    assert!(rows[0].ends_with("exit 0 · 40 lines · 8.2s"), "{rows:?}");
+    assert!(rows[0].ends_with("exit 0 · 40 lines · 8.2s ▾"), "{rows:?}");
 }
 
 #[test]
@@ -395,7 +395,7 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     let shut = render(&mut chain, 100);
     assert!(
         shut[0].contains('⊗')
-            && shut[0].ends_with("exit 1 · error[E0308]: mismatched types · 8 lines · 8.2s"),
+            && shut[0].ends_with("exit 1 · error[E0308]: mismatched types · 8 lines · 8.2s ▸"),
         "{shut:?}"
     );
     assert!(!shut.join("\n").contains("could not compile"), "{shut:?}");
@@ -404,7 +404,7 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     let rows = render(&mut chain, 100);
     assert!(
         rows[0].contains('⊗')
-            && rows[0].ends_with("exit 1 · error[E0308]: mismatched types · 8 lines · 8.2s"),
+            && rows[0].ends_with("exit 1 · error[E0308]: mismatched types · 8 lines · 8.2s ▾"),
         "{rows:?}"
     );
     let joined = rows.join("\n");

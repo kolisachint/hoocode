@@ -1,6 +1,6 @@
 # Backlog and handover
 
-Status (2026-11-11, evening): handover from the second TUI session of the day. It closed part of the list and was wound up early at the user's request. This is not the last TUI session. The plan stays in [design/roadmap.md](design/roadmap.md); the rules stay in [design/tui.md](design/tui.md). When this page and those disagree, they win and this page is stale.
+Status (2026-11-12): handover from the TUI session that worked the UI-25 to UI-34 rows and closed the roadmap TUI rows UI-15, UI-16, UI-18 and UI-20. `docs/wip/` is empty (the folder is absent). This is not the last TUI session. The plan stays in [design/roadmap.md](design/roadmap.md); the rules stay in [design/tui.md](design/tui.md). When this page and those disagree, they win and this page is stale.
 
 How to use it: read "Start here", then do "Next session" top to bottom. Delete rows as they land.
 
@@ -26,129 +26,36 @@ Environment notes:
 
 How to spend less in the next session (the user asked for this):
 
-- Two usage limits were hit in this session. The cause was long agent briefs, three-commit agents, and agents that each re-read the design docs and ran the workspace clippy.
+- Two usage limits were hit in the 2026-11-11 session. The cause was long agent briefs, three-commit agents, and agents that each re-read the design docs and ran the workspace clippy.
 - Give one agent one row. Name the files. Let it run `cargo clippy -p <crate>` and `cargo nextest run -p <crate>` only. Run the workspace checks once, at the end, in the main session.
 - Do not start a parallel lane for fewer than three rows.
-- Start from the two patches. They hold real work.
+- Start from the patch. It holds real work.
 
 ## Next session: in this order
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 1 | UI-25, UI-31 | One toggle mechanism for every block. Apply `docs/wip/2026-11-11-block-toggle.patch` (`git apply`; it applied clean on the commit that added it), read it, finish it. Scope and acceptance are under "Block toggle" below. | M |
-| 2 | UI-28 | Apply `docs/wip/2026-11-11-ui-28-keys.patch` and finish it. Scope under "Keys" below. | S |
-| 3 | UI-27 | Settings search: Space types into a non-empty query and toggles only when the query is empty (`code-tui-selectors/src/config_selector.rs`). | S |
-| 4 | UI-26 | `/hotkeys`: group by the five rows of "Where a key acts", show every meaning of a bare key, show non-letter keys (`code-tui-widgets/src/controls.rs`). | S |
-| 5 | UI-32 | Deeper panes match the settings pane: no stray blank rows. The selected row's name is bold in every pane. Sessions, Settings and Fork are not bold today. | S |
-| 6 | UI-29 | The warning-colour list below. | S |
-| 7 | Schema drift | `schema.rs` `COLOR_PROPERTIES` lists `dim` twice and leaves out `mcp`; the `toolBandBg` text says "peek view"; decide whether the uncalled `thinkingOff`…`thinkingXhigh` tokens stay. | S |
-| 8 | UI-34 | The 21 differences below. Fix the screen or fix `tui.md`, one by one. | M |
-| 9 | UI-33 | Refresh the screen goldens. Notes below. | M |
-| 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
-| 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
+| 1 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
+| 2 | Non-tool blocks toggle | Check on the real binary in tmux, with mouse sequences, that thinking, notice and other non-tool blocks open and close. Only tool rows were checked (UI-25, UI-31). | S |
+| 3 | Token `mcp` | No reader. The theme registry fills it, the schema lists it, and `color-semantics.json` marks it `legacy`, but nothing draws it. Decide: keep it or delete it. | S |
+| 4 | Open TUI rows | UI-7, UI-12, UI-13, UI-14, UI-17 and UI-19 are still open in [design/tui.md](design/tui.md), each with its trigger or gate. | — |
 
-### Block toggle (UI-25 and UI-31)
+## Done in this session (2026-11-12)
 
-The user asked on 2026-11-11: tool collapse and expand must work reliably, the row must show its state, and a click anywhere on the row's line must toggle it.
-
-What is true in the code today:
-
-- Click and Enter toggle tool rows only. `drain_body_clicks` (`code-tui-app/src/mode/mod.rs`) calls `hit_chain`, which knows only `ToolChainComponent` and its `header_map`.
-- Thinking, the skill block, `!` shell blocks, the background notice, compaction and branch summaries and the startup listing have an `expanded` setter. No production code calls it. They have no focus gutter. `tui.md` "Blocks that toggle besides tool calls" describes the intent.
-- A click toggles only on a press and release on the same header cell.
-
-What the patch holds (unfinished; it may not compile, and it was not tested): a `FoldHost`-style trait in `hoocode-tui-render` (`component.rs`, `tui.rs`) so any body component can expose its header rows, its `expanded` flag and its focused look; changes to `fold.rs`, `tool_chain.rs`, `tool_execution.rs`, `scroll_view.rs`, `mode/transcript/focus.rs`, `mode/mod.rs`; a glyph module change; and a new test `crates/hoocode-tui-render/tests/it/body_click.rs`. It stopped while adding `can_open` to the tool block and making the chain a host.
-
-Done when:
-
-- A press and release on the same header row toggles, anywhere on the line up to the scrollbar column. Press on one row and release on another does nothing. Body rows do nothing. A link still opens.
-- The row shows whether it is open, in colour and in monochrome, with no extra row, the mark at column 1 and the name at column 3. Rows that cannot open (no output, TodoWrite, frozen, stopped) show no indicator. Write the rule as a dated decision in `tui.md`.
-- Thinking, summaries, `!` blocks, the skill block, the background notice and the startup listing toggle by click, by Enter on focus, and by `ctrl+x o`. `ctrl+x u`, `{` and `}` walk them. Hidden thinking is skipped.
-- A click on a frozen row says once in the status slot that it has no output.
-- Checked on the real binary in tmux with real mouse sequences (`ESC [ < 0 ; col ; row M` then `m`), in colour, with `NO_COLOR=1`, at 80 and 40 columns.
-
-### Keys (UI-28)
-
-Move into the keymap, following the Quit family (`app.quit.stop-jobs`): `e` and `1`–`3` on the permission card, `v` and `r` on the session picker's interrupted-run row, Space in settings. In the scoped models picker and the model picker, the category and provider keys come from the keymap, and the scoped models hint row shows the category key (user, 2026-11-11). Keep the hint row at four items, then `f1 more`. The patch touches `clearance_card.rs`, `keybindings/src/defaults.rs` and `keybindings.rs`, the gold fixture, the layout test, `config_selector.rs`, `scoped_models_selector.rs` and `session_selector.rs`. It stopped at the scoped models hint row. No tests yet: add one per moved key that a rebound key acts and shows its new name. Then fix the "Built deviations" line in `tui.md`.
-
-### UI-29: warning colour outside blocking dialogs
-
-The rule is "yellow marks only the thing that blocks the user". These still use the `warning` token. Move each to ink bold or dim, or add it as a named exception in `color-semantics.json` with a test.
-
-| Where | What |
-|---|---|
-| `code-tui-widgets/src/text_block.rs` (`DetailTone::Warn`) | Status words such as MCP `auth needed` |
-| `code-tui-widgets/src/tools/read.rs` (3 sites), `tools/web.rs`, `tools/bash.rs` | Truncation notes |
-| `code-tui-app/src/resource_display.rs` | Context warnings in the startup listing |
-| `code-tui-widgets/src/task_panel.rs` | `press x again to cancel`, and the task note cue |
-| `code-tui-widgets/src/bash_execution.rs` | `(cancelled)` |
-| `code-tui-app/src/transient_lines.rs` | Retry notice |
-| `code-tui-selectors/src/model_selector.rs` | `expired` |
-| `code-tui-widgets/src/controls.rs` | Key-file problems in `/hotkeys` |
-| `code-tui-widgets/src/tool_signal.rs` | Draws nothing in production since the dial went |
-
-### UI-34: golden versus design
-
-Found while pinning the dialogs (UI-6). The goldens pin the screen as built. Names are golden files under `tests/golden/<crate>/`.
-
-| # | Where | Drawn | Design |
-|---|---|---|---|
-| 1 | `clearance_shell_100` hint | `1–3 pick · y yes · n no · e edit` | `1–3 pick · e edit first · or type a reply` |
-| 2 | `clearance_shell_100`, `ask_card_100` selected row | The digit after `›` is accent | Only `›` is coloured |
-| 3 | `end_shift_jobs_100` | Accent chip | Quit is listed under blocking dialogs (yellow chip). Decide |
-| 4 | `docking_auth_100` | Accent chip | `tui.md` lists Log in under both blocking dialogs and plain titles. Decide |
-| 5 | `docking_auth_100` URL row | Accent | Accent is for `›`, `◉`, code and the chip |
-| 6 | `ask_card_100` | Chip holds the word `Question`; the question is ink | "Yellow chip with the question text" |
-| 7 | `mission_log_100`, `flight_path_100`, `scoped_models_picker_100` hints | Five items | At most four, then `f1 more` |
-| 8 | Selected row | Bold in Models, Tree, Theme, Scoped models; not in Sessions, Settings, Fork | User, 2026-11-11: bold everywhere (UI-32) |
-| 9 | `flight_path_100` role labels | `user` accent, `assistant` green | Accent and green are reserved |
-| 10 | `scoped_models_picker_100`, `hull_100` | Green `●` for "on" and "current" | Green is the done mark and `+n` |
-| 11 | `hull_100` preview | `Shell` dim bold, `exit 1` dim | Tool name ink bold, `exit N` red |
-| 12 | `flight_plan_mcp_100` | Server label uses token `mcp` (role "legacy") | No design role |
-| 13 | `notice_info_value_dark_100` | Key hint `ctrl+x n` splits at the first space, so only `ctrl+x` is ink (`notification_panel.rs`, `split_once`) | The whole key is ink |
-| 14 | `status_line_warning_100x1` | Ink, same as info | A warning's first row is ink bold |
-| 15 | `status_line_extra_usage_100x1` | ` · /settings` | Key hint after two spaces |
-| 16 | `notice_joined_mono_100` | Blank row above, indent 1 | Indent 3, no blank row; monochrome only drops the fill |
-| 17 | `dialog_slash_menu_mono_100`, `dialog_file_menu_mono_100` | Selected row not bold | Monochrome selected row keeps ` › ` and bold |
-| 18 | `dialog_slash_menu_dark_100` | Menu at column 0 | Left edge under the typed token |
-| 19 | All panes | `›` at column 0, chip and filter at column 1 | Minor |
-| 20 | `controls_100` | Rows at column 1 | Rows indent 3 |
-| 21 | `task_panel_tabs_unfocused_80` | `mcp 1/1`, strip at column 2 | `mcp 1`, glyphs at column 3. Minor |
-
-### UI-33: screen goldens
-
-`python3 scripts/tui/goldens.py check all` on 2026-11-11: `subagent-task` passes, nine differ. None was accepted. The harness got two fixes (one style across the version mask; the random session name in the status line is masked).
-
-| Scenario | Difference | Likely action |
-|---|---|---|
-| `chat-basic`, `session-resume` | Status line lost the view word; picker rows and hints changed | Accept after a read |
-| `permission-prompt` | Option rows and hint changed | Accept after UI-34 row 1 |
-| `tool-bash`, `tool-edit` | Tool rows are the single-view rows now (`exit 0 · 3 lines`) | Fix the waits, accept |
-| `slash-commands` | `/session` has no "Session Info" header | Accept after a read |
-| `subagent-attach` | The run finishes before the `running` wait looks | Fix the scenario timing |
-| `scroll-view` | "first question" not in the `previous-message` snapshot | Look: timing or a real change |
-| `message-queue` | Queue order changed and "Restored 2 queued messages to editor" is gone | Look first: may be a real bug |
-
-Also seen on the real screen: a tool call that fails its own input validation shows `⊗ Read notes.txt` with no reason. Failed rows should carry one.
-
-## Done in this session (2026-11-11, second session)
-
-All on `main` through one PR, label `rust:patch`.
+On branch `claude/great-maxwell-n95s34`. Not pushed, and no PR yet.
 
 | Item | What changed |
 |---|---|
-| UI-6 | 78 component goldens: every dialog and notice in dark, light and monochrome at 100 columns. |
-| UI-30 | The write-only override map in `TranscriptFocus` is gone. |
-| UI-24 | `ctrl+x o` (`app.scroll.toggleAll`) opens or closes all tool rows. Frozen rows are skipped with a notice. |
-| Screen check | Harness fixes only (see UI-33). |
-| AU-1 | New user page `docs/user/login.md`. |
-| AU-2 | Live tests fail when run with `--ignored` and no credential, in the provider crates, `hoocode-ai-registry` and `hoocode-agent-compaction`. |
-| AU-3, AU-4 | Mock tests: 401 and 403 on the three stream paths; refresh on expiry through `AuthStorage::get_api_key` with the real provider ids; an Anthropic OAuth stream test. |
-| AU-5 | The ChatGPT login says when port 1455 is taken. Claude and Google already fail with the bind error. |
-| AU-6, AU-7 | Decisions in `design/agent.md`: pinned client versions are refreshed by hand; the OAuth `state` stays as built. |
-| Found by AU-3 | A rejected token (401, 403) is no longer retried for 7 s on the ChatGPT and Gemini paths. The ChatGPT error names the status. |
-| Issues | #107, #153, #154, #157, #106, #155 fixed. #152 (the `migrate` command is gone) and #156 (the HUD is gone) are obsolete. |
-| Dependencies | #180 (minor and patch group), #167 (model catalog), #164 (sha2 0.11), #162 (jsonwebtoken 11), #161 (jsonschema 0.60) folded in. #163 (windows-sys 0.61) not taken: no Windows target to compile it. |
+| UI-25, UI-31 | One toggle for every block: a click, `enter` or `ctrl+x o` opens and closes it. Each block shows an open or closed indicator. The startup listing has a `Resources` header. (7a5905e) |
+| UI-28 | The permission card, the interrupted-run row, settings and scoped models read their keys from the keymap. (a683043) |
+| UI-27 | Space types into a non-empty settings search. (bd99349) |
+| UI-26 | `/hotkeys` groups keys by where they act. (21a3f8a) |
+| UI-32 | The selected row is bold in every pane, with no stray blank rows. (1484fe7) |
+| UI-29 | Yellow only on what blocks the user. (1d105c1) |
+| Schema drift | The theme schema lists every colour token once. `thinkingOff` to `thinkingXhigh` are removed; old themes still load. (613240f) |
+| UI-34 | The golden-versus-design differences are worked through and the dialogs and notices follow the design. Decisions are dated rows in `tui.md`. (c17e401, 3024e3c) |
+| UI-33 | A failed tool row names its reason for every tool. The screen goldens are refreshed. (37a1cca, 8c8cd38) |
+| Roadmap rows | UI-15 (no exit summary), UI-16 (minus 2), UI-18 (the replay fixture stays: `crates/hoocode-code-main/tests/it/replay.rs` reads it), UI-20 (the 30 `*_ts*.rs` test files lost the `ts`). Recorded in `tui.md`. |
 
 Known behaviour kept on purpose:
 
@@ -182,7 +89,7 @@ Open auth notes: the pinned Claude Code version is `2.1.280` and the published o
 
 Agents cannot delete remote branches in the cloud session. Checked against `main` on 2026-11-11.
 
-- Merged, nothing unmerged: `claude/design-docs-unified`, `claude/ecstatic-archimedes-ej8zwn`, `claude/haiku-agents-concurrency-72r3pt`, `claude/themes-keybindings-design-nwqgis`, `claude/upbeat-pasteur-n4rk4m`, `tui-visual-overhaul`, `dependabot/cargo/rand-0.10.3`, and `claude/festive-gauss-q4m0lg` after this PR merges.
+- Merged, nothing unmerged: `claude/design-docs-unified`, `claude/ecstatic-archimedes-ej8zwn`, `claude/haiku-agents-concurrency-72r3pt`, `claude/themes-keybindings-design-nwqgis`, `claude/upbeat-pasteur-n4rk4m`, `tui-visual-overhaul`, `dependabot/cargo/rand-0.10.3`, and, after this PR merges, `claude/festive-gauss-q4m0lg` and `claude/great-maxwell-n95s34`.
 - Superseded by this PR or by `main`: `agent/responses-parallel-args` (#171, fixed on `main` in 888eccac), `agent/shell-exit-chip` (#172, the single view replaced it), `fix/tui-goldens-version-mask` (#170, harness fix taken by hand), `bot/models-sync` (#167), `dependabot/cargo/cargo-minor-patch-1575fb4005` (#180), `dependabot/cargo/sha2-0.11.1`, `dependabot/cargo/jsonwebtoken-11.1.0`, `dependabot/cargo/jsonschema-0.60.2`.
 - From before the history restart (no common base with `main`, last commit 2026-10-09 to 2026-10-29): `agent/muse-integrate`, `agent/ui-prompt-fixes`, `ci/models-sync-use-gh-token`, `claude/all-next-2026-10-14`, `claude/core-step1-reliability`, `claude/design-system-extraction-6t4r9r`, `claude/fix-agent-loop-registry-flake`, `claude/fix-bash-idle-tick-flake`, `claude/friendly-wozniak-ek34vd`, `claude/tui-next-2026-10-14`, `claude/website-who-code-updates-t75o9t`, `dependabot/cargo/cargo-minor-patch-5854e3a6c1`, `dependabot/cargo/crossterm-0.29.0`, `dependabot/cargo/fancy-regex-0.19.2`, `dependabot/github_actions/actions/setup-python-7`, `docs/readme-landscape-demo`, `docs/v2-trailer`, `feat/footer-toolcalls-cleanup`, `fix/app-server-scoped-models`, `fix/fuzz-build-target`, `fix/ui-row-reclaim`. Look once before deleting the two `docs/` branches: they hold README media.
 - Keep: `main`, `dependabot/cargo/windows-sys-0.61.2` (#163, open).
@@ -192,7 +99,7 @@ Agents cannot delete remote branches in the cloud session. Checked against `main
 ```text
 Continue the TUI work. Read CLAUDE.md, then docs/backlog.md. Do the table
 "Next session: in this order", top to bottom, as far as the budget allows.
-Rows 1 and 2 start from the patches in docs/wip/.
+docs/wip/ is empty, so no row starts from a patch.
 
 How to work:
 - Spend little. One Haiku agent per row, a short brief that names the files,

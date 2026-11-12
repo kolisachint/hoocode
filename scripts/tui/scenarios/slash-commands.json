@@ -1,5 +1,5 @@
 {
-  "description": "Slash commands: typing '/sess' narrows the command menu to /session, Enter runs it (the Session Info block in the transcript). The unfiltered menu is not compared: hoocode's core extensions add ~14 commands that arrive with the extension runner (12.3). --no-session keeps the file line fixed.",
+  "description": "Slash commands: typing '/sess' narrows the command menu to /session, Enter runs it (the session info block in the transcript, which has no header since the single view). The unfiltered menu is not compared: hoocode's core extensions add ~14 commands that arrive with the extension runner (12.3). --no-session keeps the file line fixed.",
   "phase": "11.4a",
   "terminal": {
     "cols": 100,
@@ -46,7 +46,7 @@
       ]
     },
     {
-      "wait_for": "Session Info",
+      "wait_for": "Tool Results",
       "timeout": 20
     },
     {
@@ -56,9 +56,9 @@
     {
       "snapshot": "session-info",
       "contains": [
-        "Session Info",
-        "Messages",
-        "Tokens"
+        "Name (auto)",
+        "Tool Calls",
+        "Input"
       ]
     }
   ],

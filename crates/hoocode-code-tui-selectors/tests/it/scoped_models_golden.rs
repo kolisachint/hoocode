@@ -77,7 +77,9 @@ fn check(name: &str, width: u16) {
             text.contains("effort low · cheap"),
             "{name}: missing the selected row's facts in\n{text}"
         );
-        let hint = format!("{} search", format_key_text("/", false));
+        // The hint row shows the category key from the keymap, as its second
+        // of four items (then `f1 more`).
+        let hint = format!("{} category", format_key_text("c", false));
         assert!(
             text.contains(&hint),
             "{name}: missing hint {hint:?} in\n{text}"

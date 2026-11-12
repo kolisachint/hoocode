@@ -37,73 +37,46 @@ fn settled_block(id: usize) -> ToolBlock {
 
 #[test]
 fn opens_every_block_when_none_is_open() {
-    let plan = toggle_all_plan(&[(false, false), (false, false), (false, false)]);
+    let plan = toggle_all_plan(&[(false, true), (false, true), (false, true)]);
     assert_eq!(
         plan,
         ToggleAll {
             expanded: true,
             changed: vec![0, 1, 2],
-            skipped: 0,
         }
     );
 }
 
 #[test]
 fn closes_every_block_when_any_is_open() {
-    let plan = toggle_all_plan(&[(false, false), (true, false), (true, false)]);
+    let plan = toggle_all_plan(&[(false, true), (true, true), (true, true)]);
     assert!(!plan.expanded);
     assert_eq!(plan.changed, vec![1, 2]);
-    assert_eq!(plan.skipped, 0);
-    assert_eq!(plan.notice(), None, "closing needs no notice");
 }
 
 #[test]
-fn a_frozen_open_block_does_not_count_as_open() {
-    // The only open block is frozen, so nothing live is open: open all.
-    let plan = toggle_all_plan(&[(true, true), (false, false)]);
+fn a_block_that_cannot_open_is_left_alone_and_never_counts_as_open() {
+    // The only open block cannot open (a stopped call), so nothing that
+    // can open is open: open all of those, and leave it be.
+    let plan = toggle_all_plan(&[(true, false), (false, true)]);
     assert!(plan.expanded);
     assert_eq!(plan.changed, vec![1]);
-    assert_eq!(plan.skipped, 1);
 }
 
 #[test]
-fn frozen_blocks_are_skipped_and_the_open_says_so() {
+fn older_rows_open_like_any_other() {
+    // A frozen row keeps its output, so it opens and closes with the rest.
     let mut states = vec![(false, true); 30];
-    states.extend(vec![(false, false); 12]);
+    states.extend(vec![(false, true); 12]);
     let plan = toggle_all_plan(&states);
     assert!(plan.expanded);
-    assert_eq!(plan.changed.len(), 12);
-    assert_eq!(plan.skipped, 30);
-    assert!(plan.changed.iter().all(|index| *index >= 30));
-    assert_eq!(
-        plan.notice().as_deref(),
-        Some("Opened 12 rows. 30 older rows have no output to show.")
-    );
+    assert_eq!(plan.changed.len(), 42);
 }
 
 #[test]
-fn the_notice_reads_singular_for_one_row() {
-    let plan = toggle_all_plan(&[(false, true), (false, false)]);
-    assert_eq!(
-        plan.notice().as_deref(),
-        Some("Opened 1 row. 1 older row has no output to show.")
-    );
-}
-
-#[test]
-fn an_open_that_skips_nothing_says_nothing() {
+fn with_nothing_that_can_open_it_changes_nothing() {
     let plan = toggle_all_plan(&[(false, false), (false, false)]);
-    assert_eq!(plan.notice(), None);
-}
-
-#[test]
-fn with_no_live_blocks_it_opens_nothing_and_still_names_the_frozen_ones() {
-    let plan = toggle_all_plan(&[(false, true), (false, true)]);
     assert!(plan.changed.is_empty());
-    assert_eq!(
-        plan.notice().as_deref(),
-        Some("Opened 0 rows. 2 older rows have no output to show.")
-    );
 }
 
 #[test]
@@ -115,7 +88,7 @@ fn the_plan_drives_the_blocks_flag_that_enter_reads() {
     let blocks: Vec<ToolBlock> = (0..3).map(settled_block).collect();
     let states: Vec<(bool, bool)> = blocks
         .iter()
-        .map(|b| (b.borrow().is_expanded(), b.borrow().is_frozen()))
+        .map(|b| (b.borrow().is_expanded(), !b.borrow().is_frozen()))
         .collect();
     let plan = toggle_all_plan(&states);
     for &index in &plan.changed {
@@ -132,7 +105,7 @@ fn the_plan_drives_the_blocks_flag_that_enter_reads() {
     // The next press sees open blocks, so it closes the open ones only.
     let states: Vec<(bool, bool)> = blocks
         .iter()
-        .map(|b| (b.borrow().is_expanded(), b.borrow().is_frozen()))
+        .map(|b| (b.borrow().is_expanded(), !b.borrow().is_frozen()))
         .collect();
     let again = toggle_all_plan(&states);
     assert!(!again.expanded, "an open block means close all");

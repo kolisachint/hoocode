@@ -102,7 +102,17 @@ fn thinking_is_one_dim_line_with_no_glyph_and_no_header() {
             .map(|l| crate::support::strip(l).trim_end().to_string())
             .filter(|l| !l.is_empty())
             .collect();
-        assert_eq!(rows, vec![" Weighing the options…"], "{display:?}");
+        // Only a trace that can open ends in the closed indicator.
+        let mark = if display == ThinkingDisplay::Full {
+            " ▸"
+        } else {
+            ""
+        };
+        assert_eq!(
+            rows,
+            vec![format!(" Weighing the options…{mark}")],
+            "{display:?}"
+        );
     }
     // One sentence reads whole.
     let mut c = AssistantMessageComponent::new(

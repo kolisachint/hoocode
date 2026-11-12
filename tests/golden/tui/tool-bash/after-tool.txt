@@ -17,18 +17,18 @@
 
 
 
+
+
+
+«fg=#989898» Resources«» «fg=#989898»▸
+
 «bg=#2a2a36;fg=#5cc8bb» › «bg=#2a2a36;fg=#e5e5e7»run the commands«bg=#2a2a36»                                                                                
 
-«» «fg=#b5bd68»●«» «bold;fg=#e5e5e7»Shell«» «fg=#e5e5e7»printf 'alpha\nbeta\ngamma\n' | sort -r«»  «fg=#989898»exit 0
-«»    «fg=#989898»gamma
-«»    «fg=#989898»beta
-«»    «fg=#989898»alpha
+«» «fg=#b5bd68»●«» «bold;fg=#e5e5e7»Shell«» «fg=#e5e5e7»printf 'alpha\nbeta\ngamma\n' | sort -r«»  «fg=#989898»exit 0 · 3 lines ▸
 
 «» Running them.
-
-«» «fg=#d58181»⊗«» «bold;fg=#e5e5e7»Shell«» «fg=#e5e5e7»echo boom; exit 3«»  «fg=#d58181»exit 3
-«»    «fg=#989898»boom
+«» «fg=#d58181»⊗«» «bold;fg=#e5e5e7»Shell«» «fg=#e5e5e7»echo boom; exit 3«»  «fg=#d58181»exit 3«fg=#989898» · boom · 4 lines ▸
 
 «» Sorted, then failed with 3.
 «bg=#2a2a36;fg=#e5e5e7» «bg=#2a2a36;fg=#5cc8bb»›«bg=#2a2a36» «bg=#2a2a36;inverse» 
-«» «fg=#b5bd68»●«fg=#989898» done · <DUR> · 240 tokens · «fg=#d58181»1 failed call«<masked: session name>»  peek · <session> ·«fg=#989898» mock-model
+«» «fg=#b5bd68»●«fg=#989898» done · <DUR> · 240 tokens · 1 failed call«<masked: session name>»  <session> · mock-model                                

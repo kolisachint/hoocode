@@ -1,6 +1,6 @@
 
- ● Read src/config.rs  12 lines
- ● Edit src/config.rs  +2 −2
+ ● Read src/config.rs  12 lines ▸
+ ● Edit src/config.rs  +2 −2 ▸
      12     let mut cfg = Config::default();
     -14     let raw = read_file(path)?;
     -15     apply_env(&mut cfg);
@@ -8,16 +8,16 @@
     +15     let raw = read_file(path)?;
     … 2 more lines
 
- ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 12 lines · 8.2s
+ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 12 lines · 8.2s ▸
 --- styles ---
 r1 c1 fg=#b5bd68
 r1 c3-6 fg=#e5e5e7 bold
 r1 c8-20 fg=#e5e5e7
-r1 c23-30 fg=#989898
+r1 c23-32 fg=#989898
 r2 c1 fg=#b5bd68
 r2 c3-6 fg=#e5e5e7 bold
 r2 c8-20 fg=#e5e5e7
-r2 c23-27 fg=#989898
+r2 c23-29 fg=#989898
 r3 c4-43 fg=#989898
 r4 c4 fg=#d58181
 r4 c5-38 fg=#989898
@@ -31,4 +31,4 @@ r8 c4-17 fg=#989898
 r10 c1 fg=#b5bd68
 r10 c3-7 fg=#e5e5e7 bold
 r10 c9-52 fg=#e5e5e7
-r10 c55-78 fg=#989898
+r10 c55-80 fg=#989898

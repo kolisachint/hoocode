@@ -1,2 +1,2 @@
-mod native_search_ts;
+mod native_search;
 mod search;

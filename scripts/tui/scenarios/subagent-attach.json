@@ -1,5 +1,5 @@
 {
-  "description": "Interactive: the model delegates to a general-purpose subagent in the foreground, and its answer comes from the mock LLM after a delay. Ctrl+N attaches to the run of the newest Agent block while it runs: the header row names the run and its state, the prompt is replaced by a read-only hint, and the run's answer streams in as it settles. Esc goes back to the session, whose Agent block now holds the answer. Ctrl+N again shows the finished run from its transcript.",
+  "description": "Interactive: the model delegates to a general-purpose subagent in the foreground, and its answer comes from the mock LLM after a delay. ctrl+x n attaches to the run of the newest Agent block while it runs: the header row names the run and its state, the prompt is replaced by a read-only hint, and the run's answer streams in as it settles. Esc goes back to the session, whose Agent block now holds the answer. Ctrl+N again shows the finished run from its transcript.",
   "phase": "TUI T3.3/T3.4",
   "terminal": {
     "cols": 100,
@@ -62,7 +62,7 @@
       "sleep": 1.0
     },
     {
-      "keys": ["C-n"]
+      "keys": ["C-x", "n"]
     },
     {
       "wait_for": "general-purpose · Compute a product · running",

@@ -4,7 +4,7 @@
 //! `+pattern` / `-pattern` entry to the settings file it belongs to. Themes
 //! are not listed: they are picked with `/theme`, not switched off here.
 
-use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, SPACE_KEY};
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -377,6 +377,14 @@ impl ResourceList {
         self.cursor.select(first);
     }
 
+    /// A printable key with a non-empty query is typed into the query, even
+    /// when it is the toggle key (Space by default). Empty query: it toggles.
+    fn types_into_query(&self, data: &str) -> bool {
+        let mut chars = data.chars();
+        let printable = matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_control());
+        printable && !self.search.get_value().is_empty()
+    }
+
     /// `filterItems`: resources whose name, type or path contains the query,
     /// with the headers above them.
     fn filter_items(&mut self, query: &str) {
@@ -572,7 +580,7 @@ impl ResourceList {
                 key_pair_hint("tui.select.up", "tui.select.down").as_str(),
                 "move",
             ),
-            (SPACE_KEY, "toggle"),
+            (key_hint_text("app.settings.toggle").as_str(), "toggle"),
             (key_hint_text("tui.select.cancel").as_str(), "close"),
         ]);
         console
@@ -712,7 +720,9 @@ impl Component for ResourceList {
             if let Some(cb) = &mut self.on_exit {
                 cb();
             }
-        } else if data == " " || kb.matches(data, "tui.select.confirm") {
+        } else if (kb.matches(data, "app.settings.toggle") && !self.types_into_query(data))
+            || kb.matches(data, "tui.select.confirm")
+        {
             self.toggle_selected();
         } else {
             self.search.handle_input_with(data, &kb);

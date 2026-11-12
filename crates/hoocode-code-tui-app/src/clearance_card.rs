@@ -3,10 +3,10 @@
 //! row, an `access:` row only when the call writes, uses the network or
 //! pipes, then numbered options (`1 yes`, `2 yes, always for <program> this
 //! session`, `3 no, tell it why`), the reply row and the hint row (`1–3 pick ·
-//! y yes · n no · e edit`: `a` still highlights the always row). `1`/`2`/`3`
-//! pick, `e` edits the command first (`edit`), and every other letter types a reply
+//! e edit first · or type a reply`: `a` still highlights the always row). `1`/`2`/`3`
+//! pick, `e` edits the command first, and every other letter types a reply
 //! that `enter` sends as the denial's reason. While the reply is empty, `y`
-//! answers yes and `n` no at once; `a` only moves the highlight to the always
+//! answers yes and `n` no at once (the hint does not list them); `a` only moves the highlight to the always
 //! row, and `enter` confirms it. With no always row, `a` types like any letter.
 //!
 //! `e edit first` cannot run inside the gate (the call's arguments are
@@ -192,7 +192,8 @@ impl ClearanceCard {
             let count = options.len();
             let item_budget = width.saturating_sub(4);
             for (i, (label, scope)) in options.into_iter().enumerate() {
-                let number = format!("{}  ", i + 1);
+                // The row's number is the key that picks it (K-P5).
+                let number = format!("{}  ", key_hint_text(PICK_IDS[i.min(2)]));
                 let inline = match &scope {
                     Some(scope) => format!("{label} {scope}"),
                     None => label.clone(),
@@ -215,21 +216,26 @@ impl ClearanceCard {
             }
             pane.selected = Some(self.selected.min(count - 1));
             pane.input = Some(input_line(&self.reply, "or type a reply", self.focused));
-            let pick = format!("1–{count}");
-            let yes = key_hint_text("app.dialog.yes");
-            let no = key_hint_text("app.dialog.no");
-            // `a` still highlights the always row; the hint keeps four
-            // items at every width (mock §S4).
-            pane.hint = fit_hint_line(
-                &[
-                    (pick.as_str(), "pick"),
-                    (yes.as_str(), "yes"),
-                    (no.as_str(), "no"),
-                    ("e", "edit"),
-                ],
+            let pick = format!(
+                "{}–{}",
+                key_hint_text(PICK_IDS[0]),
+                key_hint_text(PICK_IDS[count.min(PICK_IDS.len()) - 1])
+            );
+            let edit = key_hint_text("app.permission.edit");
+            // The hint names the design's items only. `y` and `n` still
+            // answer while the reply is empty (decision 2026-11-05); the
+            // hint does not list them.
+            let mut hint = fit_hint_line(
+                &[(pick.as_str(), "pick"), (edit.as_str(), "edit first")],
                 false,
                 width,
             );
+            let tail = "or type a reply";
+            if hint.width() + " · ".len() + tail.len() <= width.saturating_sub(2) {
+                hint.spans.push(Span::styled(" · ", st.dim_style()));
+                hint.spans.push(Span::styled(tail, st.dim_style()));
+            }
+            pane.hint = hint;
         }
         pane.style = Some(st);
         pane
@@ -247,6 +253,13 @@ impl ClearanceCard {
         }
     }
 }
+
+/// The option keys, in order: `pick1` answers option 1, and so on.
+const PICK_IDS: [&str; 3] = [
+    "app.permission.pick1",
+    "app.permission.pick2",
+    "app.permission.pick3",
+];
 
 impl Component for ClearanceCard {
     fn render(&mut self, width: u16) -> Vec<String> {
@@ -296,16 +309,16 @@ impl Component for ClearanceCard {
             // Esc alone is no (spec §6.2).
             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),
             "\r" | "\n" => self.choose(self.selected),
-            "e" => {
+            _ if kb.matches(data, "app.permission.edit") => {
                 self.editing = true;
                 self.edit.set_value(self.editable());
                 // Editing starts at the end of the command (ctrl+e).
                 self.edit.handle_input("\x05");
                 self.edit.set_focused(self.focused);
             }
-            "1" => self.choose(0),
-            "2" if count >= 2 => self.choose(1),
-            "3" if count >= 3 => self.choose(2),
+            _ if kb.matches(data, "app.permission.pick1") => self.choose(0),
+            _ if kb.matches(data, "app.permission.pick2") && count >= 2 => self.choose(1),
+            _ if kb.matches(data, "app.permission.pick3") && count >= 3 => self.choose(2),
             // The dialog letters (K-P4), only here with no reply typed: y and n
             // answer at once. a moves the highlight to the always row; enter confirms it.
             _ if kb.matches(data, "app.dialog.yes") => self.choose(0),

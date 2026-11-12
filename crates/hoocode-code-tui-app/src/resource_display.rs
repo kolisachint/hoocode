@@ -433,7 +433,8 @@ pub fn show_loaded_resources_with_details(
         };
     }
     let t = theme();
-    let section_header = |name: &str| t.fg("mdHeading", &format!("[{name}]"));
+    // Section headers are ink bold: yellow marks only what blocks the user.
+    let section_header = |name: &str| t.bold(&t.fg("text", &format!("[{name}]")));
     let format_compact_list = |items: Vec<String>| {
         let mut labels: Vec<String> = items
             .into_iter()
@@ -675,20 +676,23 @@ pub fn show_loaded_resources_with_details(
         }
         if !detail_sections.is_empty() {
             let details = detail_sections.join("\n\n");
-            let block = Rc::new(RefCell::new(ExpandableText::new(
-                String::new,
-                move || details.clone(),
-                // `getStartupExpansionState`: verbose, or asked open.
-                listing.verbose || listing.expanded,
-                0,
-                0,
-            )));
+            let block = Rc::new(RefCell::new(
+                ExpandableText::new(
+                    String::new,
+                    move || details.clone(),
+                    // `getStartupExpansionState`: verbose, or asked open.
+                    listing.verbose || listing.expanded,
+                    0,
+                    0,
+                )
+                .with_header(t.fg("dim", " Resources")),
+            ));
             let component: ComponentHandle = block.clone();
             out.push(component);
             details_handle = Some(block);
         }
         for warning in &listing.context_warnings {
-            out.push(handle(Text::new(t.fg("warning", warning), 0, 0)));
+            out.push(handle(Text::new(t.fg("ink", &t.bold(warning)), 0, 0)));
         }
     }
 

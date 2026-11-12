@@ -505,7 +505,7 @@ fn not_joined_the_band_renders_as_before() {
 }
 
 #[test]
-fn joined_in_monochrome_the_band_keeps_todays_rendering() {
+fn joined_in_monochrome_the_band_keeps_its_rows_and_drops_the_fill() {
     let _g = lock(Some("dark"));
     hoocode_code_tui_theme::chalk::set_enabled(false);
     let mut s = setup(None);
@@ -521,7 +521,8 @@ fn joined_in_monochrome_the_band_keeps_todays_rendering() {
     let lines = s.panel.render(WIDTH);
     let plain = s.rows(WIDTH);
     hoocode_code_tui_theme::chalk::set_enabled(true);
-    assert_eq!(lines[0], "");
+    // Indent 3, no blank row above, no border and no fill.
+    assert_eq!(lines[0], "   Mode: build");
     assert!(lines.iter().all(|l| !l.contains(";48;2;")));
-    assert_eq!(plain[1], " Mode: build");
+    assert_eq!(plain[0], "   Mode: build");
 }

@@ -3,7 +3,7 @@
 │   ● gpt-5-mini  on                                                                               │
 │   ○ gpt-5  off                                                                                   │
 │ ▏ filter                                                                                         │
-│ enter on / off · / search · s save to settings · esc close · f1 more                             │
+│ enter on / off · c category · s save to settings · esc close · f1 more                           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 --- styles ---
 r1 c1-60 bold

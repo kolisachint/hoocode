@@ -5,6 +5,9 @@
 //! [`animation`] cycle the same set, so a spinner never introduces a glyph
 //! the font cannot draw.
 //!
+//! The one pair outside the circles is [`status::CLOSED`] and
+//! [`status::OPEN`], the state of a block that opens in place.
+//!
 //! Glyph choice is a font-coverage decision, not taste: the half-filled
 //! circles (`◐◑◒◓`) are missing from JetBrainsMono Nerd Font Mono, so the
 //! terminal falls back to another font and the mark sits off-baseline next
@@ -35,6 +38,19 @@ pub mod status {
     /// The marker, as a string slice for span and row building.
     pub const MARKER_STR: &str = "›";
 
+    /// A block that can open and is closed: `▸` (dim), after the header's
+    /// last fact. With [`OPEN`] the one pair outside the status circles
+    /// (added 2026-11-11): the row's state had no shape before, and no glyph
+    /// of the set reads as "closed" against "open". Both are one cell wide
+    /// and ship in JetBrains Mono (checked with `fc-query`).
+    pub const CLOSED: char = '▸';
+    /// Closed, as a string slice for span and row building.
+    pub const CLOSED_STR: &str = "▸";
+    /// A block that is open: `▾` (dim), in the same place.
+    pub const OPEN: char = '▾';
+    /// Open, as a string slice for span and row building.
+    pub const OPEN_STR: &str = "▾";
+
     /// ASCII stand-ins for terminals without the glyphs above (for
     /// `NO_COLOR`-style plain output or a font without coverage).
     pub mod ascii {
@@ -48,6 +64,10 @@ pub mod status {
         pub const TODO: &str = "o";
         /// Marker.
         pub const MARKER: &str = ">";
+        /// A closed block that can open.
+        pub const CLOSED: &str = "+";
+        /// An open block.
+        pub const OPEN: &str = "-";
     }
 }
 
@@ -97,6 +117,12 @@ mod tests {
         assert_eq!(status::MARKER, '›');
         assert_eq!(status::MARKER_STR, "›");
         assert!(status::ascii::DONE.is_ascii() && status::ascii::MARKER.is_ascii());
+        assert_eq!(status::CLOSED, '▸');
+        assert_eq!(status::OPEN, '▾');
+        assert_eq!(status::CLOSED_STR, "▸");
+        assert_eq!(status::OPEN_STR, "▾");
+        assert!(status::ascii::CLOSED.is_ascii() && status::ascii::OPEN.is_ascii());
+        assert_ne!(status::ascii::CLOSED, status::ascii::OPEN);
     }
 
     #[test]

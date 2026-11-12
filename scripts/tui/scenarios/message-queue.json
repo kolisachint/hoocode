@@ -1,5 +1,5 @@
 {
-  "description": "Queueing while the agent works: during a slow answer, Enter queues a steering message and alt+Enter a follow-up (listed above the prompt with the dequeue hint); alt+Up brings both back into the prompt. On a second slow turn a steer and a follow-up are queued and delivered: the steer as the next request, the follow-up after it; the model requests are compared. --no-session keeps the footer fixed.",
+  "description": "Queueing while the agent works: during a slow answer, Enter queues a steering message and ctrl+x f a follow-up (listed above the prompt with the dequeue hint); ctrl+x d takes back the last queued message, one per press. On a second slow turn a steer and a follow-up are queued and delivered: the steer as the next request, the follow-up after it; the model requests are compared. --no-session keeps the footer fixed.",
   "phase": "11.4g",
   "terminal": {
     "cols": 100,
@@ -74,7 +74,8 @@
     },
     {
       "keys": [
-        "M-Enter"
+        "C-x",
+        "f"
       ]
     },
     {
@@ -93,11 +94,14 @@
     },
     {
       "keys": [
-        "M-Up"
+        "C-x",
+        "d",
+        "C-x",
+        "d"
       ]
     },
     {
-      "wait_gone": "queued · sends after",
+      "wait_gone": "sends after",
       "timeout": 20
     },
     {
@@ -143,6 +147,10 @@
       "timeout": 30
     },
     {
+      "wait_gone": "Restored 1 queued message",
+      "timeout": 20
+    },
+    {
       "wait_stable": 1.0,
       "timeout": 20
     },
@@ -181,7 +189,8 @@
     },
     {
       "keys": [
-        "M-Enter"
+        "C-x",
+        "f"
       ]
     },
     {

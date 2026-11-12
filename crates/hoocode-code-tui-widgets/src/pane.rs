@@ -353,8 +353,14 @@ impl Pane {
         let mut spans = Vec::new();
         if !self.title.is_empty() {
             if st.mono || self.chip == Chip::Plain {
+                // A plain title keeps the chip's gap before the command.
+                let pad = if self.chip == Chip::Plain && !st.mono {
+                    " "
+                } else {
+                    ""
+                };
                 spans.push(Span::styled(
-                    self.title.clone(),
+                    format!("{}{pad}", self.title),
                     st.text_style().add_modifier(Modifier::BOLD),
                 ));
             } else {
@@ -546,13 +552,20 @@ impl Pane {
                 Row::Item(line, is_selected) => {
                     if *is_selected {
                         fill(&mut buf, x0, y, col_w, st.fill(st.pane_sel));
-                        put(
-                            &mut buf,
-                            x0,
-                            y,
-                            col_w.min(GUTTER),
-                            &Line::styled(PANE_CURSOR, st.accent_style()),
-                        );
+                        // Only the `›` is accent; the spaces around it keep
+                        // the row's ink (design: "Only `›` is coloured").
+                        put(&mut buf, x0, y, col_w.min(GUTTER), &{
+                            let cursor = Line::from(vec![
+                                Span::styled(" ", st.text_style()),
+                                Span::styled("›", st.accent_style()),
+                                Span::styled(" ", st.text_style()),
+                            ]);
+                            if st.mono {
+                                emboldened(&cursor)
+                            } else {
+                                cursor
+                            }
+                        });
                         let line = if st.mono {
                             emboldened(line)
                         } else {

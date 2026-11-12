@@ -5,7 +5,7 @@
 //! `esc` stays).
 
 use hoocode_code_tui_keybindings::{key_hint_text, matches_app_key};
-use hoocode_code_tui_widgets::pane::{fit_hint_line, hint_line, Pane, PaneStyle};
+use hoocode_code_tui_widgets::pane::{fit_hint_line, hint_line, Chip, Pane, PaneStyle};
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
@@ -230,6 +230,8 @@ impl Component for EndShiftJobsCard {
     fn render(&mut self, width: u16) -> Vec<String> {
         let st = PaneStyle::current();
         let mut pane = Pane::new("Quit?");
+        // Quit with jobs blocks until the user answers: a yellow chip.
+        pane.chip = Chip::Warn;
         let width = width as usize;
         pane.facts = Line::from(vec![Span::styled(self.facts(width), st.dim_style())]);
         pane.rows = self.rows();

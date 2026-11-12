@@ -1,4 +1,4 @@
-  Question   where should retry logic live?  1 of 2
+  where should retry logic live?   1 of 2
    the http client is shared by every provider adapter
  › 1  hoocode-ai  unified provider client
    2  agent-core  runtime wrap each tool call
@@ -6,15 +6,16 @@
  1–2 pick · tab next question · esc skip
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
-r0 c1-10 fg=#14141c bg=#f0c674 bold
-r0 c11-42 fg=#e5e5e7 bg=#1e1e2a
-r0 c43-50 fg=#989898 bg=#1e1e2a
-r0 c51-99 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-32 fg=#14141c bg=#f0c674 bold
+r0 c33-34 fg=#e5e5e7 bg=#1e1e2a
+r0 c35-40 fg=#989898 bg=#1e1e2a
+r0 c41-99 fg=#e5e5e7 bg=#1e1e2a
 r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r1 c3-53 fg=#989898 bg=#1e1e2a
 r1 c54-99 fg=#e5e5e7 bg=#1e1e2a
-r2 c0-2 fg=#5cc8bb bg=#233239
-r2 c3-17 fg=#e5e5e7 bg=#233239
+r2 c0 fg=#e5e5e7 bg=#233239
+r2 c1 fg=#5cc8bb bg=#233239
+r2 c2-17 fg=#e5e5e7 bg=#233239
 r2 c18-40 fg=#989898 bg=#233239
 r2 c41-99 fg=#e5e5e7 bg=#233239
 r3 c0-17 fg=#e5e5e7 bg=#1e1e2a

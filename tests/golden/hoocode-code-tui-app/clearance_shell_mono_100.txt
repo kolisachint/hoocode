@@ -5,7 +5,7 @@
 │   2  yes, always for printf this session                                                         │
 │   3  no, tell it why                                                                             │
 │ ▏ or type a reply                                                                                │
-│ 1–3 pick · y yes · n no · e edit                                                                 │
+│ 1–3 pick · e edit first · or type a reply                                                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 --- styles ---
 r3 c1-9 bold

@@ -178,6 +178,36 @@ const OPTIONS_SCOPE: &[&str] = &[
     "app.options.back",
 ];
 
+/// The interrupted-run choice on a session row (`v` view, `r` resume, esc
+/// back). It owns its keys while open, so `r` is the rename key only outside it.
+const INTERRUPTED_RUN_SCOPE: &[&str] = &[
+    "tui.select.cancel",
+    "app.subagent.view",
+    "app.subagent.resume",
+];
+
+/// The clearance (permission) card: letters and digits answer while no reply
+/// is typed (K-P4).
+const PERMISSION_SCOPE: &[&str] = &[
+    "app.dialog.yes",
+    "app.dialog.no",
+    "app.dialog.always",
+    "app.permission.edit",
+    "app.permission.pick1",
+    "app.permission.pick2",
+    "app.permission.pick3",
+];
+
+/// The settings list: Space toggles the picked row (the search query only
+/// sees it while it has text).
+const SETTINGS_SCOPE: &[&str] = &[
+    "tui.select.up",
+    "tui.select.down",
+    "tui.select.confirm",
+    "tui.select.cancel",
+    "app.settings.toggle",
+];
+
 const SCROLL_SCOPE: &[&str] = &[
     "app.scroll.lineUp",
     "app.scroll.lineDown",
@@ -209,6 +239,9 @@ const SCOPES: &[(&str, &[&str])] = &[
     ("task panel", PANEL_SCOPE),
     ("attached view", ATTACHED_SCOPE),
     ("options pane", OPTIONS_SCOPE),
+    ("interrupted run choice", INTERRUPTED_RUN_SCOPE),
+    ("permission card", PERMISSION_SCOPE),
+    ("settings list", SETTINGS_SCOPE),
     ("pinned scroll view", SCROLL_SCOPE),
 ];
 
@@ -657,13 +690,14 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),
         ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|panel\.focus$)"),
         ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|shiftLineUp|shiftLineDown|search)$"),
-        ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings|hotkeys)"),
+        ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings\.open|hotkeys)"),
         (
             "Overlays",
-            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest|toggleAll)|session\.(toggle|rename|delete)|models\.|tree\.)",
+            r"^app\.(options\.|subagent\.(attach|detach|view|resume)$|settings\.toggle$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious|focusPrevious|focusNext|expandFocused|copyFocused|focusNewest|toggleAll)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
         ("Lists", r"^app\.list\."),
         ("Dialogs", r"^app\.dialog\."),
+        ("Permission", r"^app\.permission\."),
     ]
     .into_iter()
     .map(|(name, re)| (name, Regex::new(re).unwrap()))

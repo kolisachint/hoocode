@@ -501,3 +501,27 @@ impl Drop for ChalkGuard {
         hoocode_code_tui_theme::chalk::set_enabled(true);
     }
 }
+
+/// A call that fails its own input validation names the first problem on
+/// its failed row, dim after two spaces, not a bare `⊗ Read`.
+#[test]
+fn a_failed_read_row_names_its_validation_problem() {
+    let _g = lock();
+    let error = "Validation failed for tool \"Read\":\n  - path: must have required property 'path'\n\nReceived arguments:\n{}";
+    let read = block("Read", json!({}), error, json!({}), true);
+    let mut c = chain(vec![read]);
+    let rows: Vec<String> = c
+        .render(100)
+        .iter()
+        .map(|l| strip(l).trim_end().to_string())
+        .collect();
+    let row = rows
+        .iter()
+        .find(|r| r.contains("Read"))
+        .unwrap_or_else(|| panic!("{rows:?}"));
+    assert!(row.contains('⊗'), "{rows:?}");
+    assert!(
+        row.contains("  path: must have required property 'path'"),
+        "{rows:?}"
+    );
+}

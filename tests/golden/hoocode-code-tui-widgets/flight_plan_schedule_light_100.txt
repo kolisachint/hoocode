@@ -9,7 +9,9 @@ r0 c1-7 fg=#f8f8fb bg=#00625c bold
 r0 c8 fg=#2b2f36 bg=#e8e8f0
 r0 c9-25 fg=#555864 bg=#e8e8f0
 r0 c26-99 fg=#2b2f36 bg=#e8e8f0
-r1 c0-2 fg=#00625c bg=#c3dcdc
+r1 c0 fg=#2b2f36 bg=#c3dcdc
+r1 c1 fg=#00625c bg=#c3dcdc
+r1 c2 fg=#2b2f36 bg=#c3dcdc
 r1 c3 fg=#555864 bg=#c3dcdc
 r1 c4 fg=#2b2f36 bg=#c3dcdc
 r1 c5-26 fg=#555864 bg=#c3dcdc

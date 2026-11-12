@@ -16,15 +16,15 @@
 
 
 
-
+«fg=#989898» Resources«» «fg=#989898»▸
 
 «bg=#2a2a36;fg=#5cc8bb» › «bg=#2a2a36;fg=#e5e5e7»Ask a subagent what 6 times 7 is.«bg=#2a2a36»                                                               
 
-«» «fg=#b5bd68»●«» «bold;fg=#e5e5e7»Agent«» «fg=#e5e5e7»general-purpose · Compute a product«»  «fg=#989898»<DUR>
+«» «fg=#b5bd68»●«» «bold;fg=#e5e5e7»Agent«» «fg=#e5e5e7»general-purpose · Compute a product«fg=#989898» ▸
 
 «» The subagent says 6 times 7 is 42.
-«bg=#1e1e2a;fg=#e5e5e7»   «bg=#1e1e2a;fg=#b5bd68»●«bg=#1e1e2a;fg=#e5e5e7» «bg=#1e1e2a;fg=#4ec9b0»general-purpose«bg=#1e1e2a;fg=#e5e5e7»  «bg=#1e1e2a;fg=#989898»Compute a product«bg=#1e1e2a;fg=#e5e5e7»                                                  «bg=#1e1e2a;fg=#989898»120 tokens
+«bg=#1e1e2a;fg=#e5e5e7»   «bg=#1e1e2a;fg=#989898»●«bg=#1e1e2a;fg=#e5e5e7» «bg=#1e1e2a;fg=#4ec9b0»general-purpose«bg=#1e1e2a;fg=#e5e5e7»  «bg=#1e1e2a;fg=#989898»Compute a product«bg=#1e1e2a;fg=#e5e5e7»  «bg=#1e1e2a;fg=#989898»120 tokens
 «bg=#1e1e2a;fg=#e5e5e7» «bg=#5cc8bb;bold;fg=#14141c» Subagent runs 
-«bg=#233239;fg=#5cc8bb» › general-purpose · complete · What is 6 times 7? Reply with the number only. · dispatch-<id>…
-«bg=#1e1e2a;fg=#e5e5e7» ↑↓«bg=#1e1e2a;fg=#989898» navigate · «bg=#1e1e2a;fg=#e5e5e7»enter«bg=#1e1e2a;fg=#989898» select · «bg=#1e1e2a;fg=#e5e5e7»esc«bg=#1e1e2a;fg=#989898» cancel
-«» «fg=#b5bd68»●«fg=#989898» done · <DUR> · 240 tokens«<masked: session name>»  peek · <session> ·«fg=#989898» mock-model
+«bg=#233239;fg=#e5e5e7» «bg=#233239;fg=#5cc8bb»›«bg=#233239;fg=#e5e5e7» «bg=#233239;fg=#5cc8bb»general-purpose · complete · What is 6 times 7? Reply with the number only. · dispatch-<id>…
+«bg=#1e1e2a;fg=#e5e5e7» ↑↓«bg=#1e1e2a;fg=#989898» move · «bg=#1e1e2a;fg=#e5e5e7»enter«bg=#1e1e2a;fg=#989898» open · «bg=#1e1e2a;fg=#e5e5e7»esc«bg=#1e1e2a;fg=#989898» close
+«» «fg=#b5bd68»●«fg=#989898» done · <DUR> · 240 tokens«<masked: session name>»  <session> · mock-model                                                

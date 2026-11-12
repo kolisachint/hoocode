@@ -1,12 +1,12 @@
 
- ● Read …/src/tool_chain.rs  1451 lines
- ● Shell cargo test -p…  exit 0
+ ● Read …/tool_chain.rs  1451 lines ▸
+ ● Shell cargo test -p…  exit 0 ▸
 --- styles ---
 r1 c1 fg=#b5bd68
 r1 c3-6 fg=#e5e5e7 bold
-r1 c8-26 fg=#e5e5e7
-r1 c29-38 fg=#989898
+r1 c8-22 fg=#e5e5e7
+r1 c25-36 fg=#989898
 r2 c1 fg=#b5bd68
 r2 c3-7 fg=#e5e5e7 bold
 r2 c9-22 fg=#e5e5e7
-r2 c25-30 fg=#989898
+r2 c25-32 fg=#989898

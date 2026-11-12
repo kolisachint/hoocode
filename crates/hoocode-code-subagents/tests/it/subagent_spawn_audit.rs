@@ -4,7 +4,7 @@
 //! result writes, the cumulative token budget across the inherited-model
 //! retry, the process-group kill, and cancellation (pool and Agent tool). The
 //! roster and task panel cases are in
-//! `hoocode-code-tui-app/tests/subagent_spawn_audit_ts.rs`.
+//! `hoocode-code-tui-app/tests/subagent_spawn_audit.rs`.
 //!
 //! Not ported: "survives a stream error without throwing and detaches
 //! itself": a Node stream `error` event with no listener; the Rust reader is

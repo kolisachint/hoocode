@@ -33,8 +33,8 @@
 
 «bg=#2a2a36;fg=#5cc8bb» › «bg=#2a2a36;fg=#e5e5e7»first question«bg=#2a2a36»                                                                                  
 
-«» «fg=#989898»Restored 2 queued messages to editor
+«» «fg=#989898»Restored 1 queued message to editor
 «bg=#2a2a36;fg=#e5e5e7» «bg=#2a2a36;fg=#5cc8bb»›«bg=#2a2a36» steer this way
 
 «bg=#2a2a36;fg=#e5e5e7»   and then this«bg=#2a2a36;fg=#e5e5e7;inverse» 
-«» «fg=#f0c674»◉«fg=#989898» working · <DUR> · esc stop«<masked: session name>»  peek · <session> ·«fg=#989898» mock-model
+«» «fg=#5cc8bb»◉«fg=#989898» working · <DUR> · esc stop«<masked: session name>»  <session> · mock-model                                                 

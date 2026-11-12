@@ -1,9 +1,10 @@
-┌─────────────────────────────────────────────┐
-│ › model       switch the model              │
-│   resume      resume a session from history │
-│   settings    open settings                 │
-│   hotkeys     show the keys                 │
-└─────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────┐
+  │ › model       switch the model              │
+  │   resume      resume a session from history │
+  │   settings    open settings                 │
+  │   hotkeys     show the keys                 │
+  └─────────────────────────────────────────────┘
  ›/
 --- styles ---
+r1 c3-47 bold
 r6 c3 inverse

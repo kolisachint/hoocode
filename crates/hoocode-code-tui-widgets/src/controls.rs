@@ -1,6 +1,8 @@
 //! The Keys pane (`/hotkeys`, which-key style): one layer's bindings in
-//! a grid grouped as prompt, transcript and app, each `key  what it does`.
-//! Below 100 columns the groups stack in one column.
+//! a grid grouped by where the key acts, the five rows of "Where a key
+//! acts" (docs/design/tui.md), each `key  what it does`. A key with a
+//! different meaning in two places is listed under each. Below 100 columns
+//! the groups take one column.
 //!
 //! Everything on screen comes from the real keybindings: the keys from the
 //! bindings' effective keys (user customizations included), the actions
@@ -13,14 +15,16 @@
 //! keys.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use hoocode_code_tui_keybindings::{key_hint_text, keybindings, KeybindingEntry};
+use hoocode_code_tui_keybindings::{
+    context_of, key_hint_text, keybindings, Context, KeybindingEntry,
+};
 use hoocode_code_tui_theme::style_input;
 use hoocode_tui_components::Input;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
@@ -60,42 +64,30 @@ fn lit_key(key: &str) -> String {
         .join("+")
 }
 
-/// The single letter a key names, with its layer: `g` is plain, `ctrl+g` is
-/// ctrl, `alt+m` is alt, and `ctrl+x m` (a leader sequence, K-P2) is leader
-/// with the step's own character, so `m` and `M` stay apart. Chords with
-/// anything else name no cap.
-fn layer_cap(key: &str) -> Option<(Layer, char)> {
-    if let Some((_, step)) = key.split_once(' ') {
-        let mut chars = step.chars();
-        return match (chars.next(), chars.next()) {
-            (Some(c), None) => Some((Layer::Leader, c)),
-            _ => None,
-        };
+/// The layer a key is listed on, or `None` for a chord it cannot name.
+/// A bare key (no modifier, or `shift` alone) is plain, whatever the key:
+/// letters, digits, punctuation and named keys (`enter`, `esc`, arrows,
+/// `f1`). `ctrl+` and `alt+` keys are their own layers. `ctrl+x <step>` is
+/// the leader layer, the step kept as typed (K-P2), so `m` and `M` stay
+/// apart. Any other modifier names no layer.
+fn layer_of(key: &str) -> Option<Layer> {
+    if let Some((lead, step)) = key.split_once(' ') {
+        let ok = !lead.is_empty() && !step.is_empty() && !step.contains([' ', '+']);
+        return ok.then_some(Layer::Leader);
     }
-    let lower = key.to_ascii_lowercase();
-    let (layer, letter) = match lower.split_once('+') {
-        None => {
-            let mut chars = lower.chars();
-            let c = chars.next().filter(|c| c.is_ascii_alphabetic())?;
-            if chars.next().is_some() {
-                return None;
-            }
-            (Layer::Plain, c)
-        }
-        Some(("ctrl", rest)) => (Layer::Ctrl, single_letter(rest)?),
-        Some(("alt" | "option", rest)) => (Layer::Alt, single_letter(rest)?),
-        _ => return None,
-    };
-    Some((layer, letter))
-}
-
-fn single_letter(s: &str) -> Option<char> {
-    let mut chars = s.chars();
-    let c = chars.next().filter(|c| c.is_ascii_alphabetic())?;
-    if chars.next().is_some() {
+    let parts: Vec<&str> = key.split('+').collect();
+    let (name, modifiers) = parts.split_last()?;
+    if name.is_empty() {
         return None;
     }
-    Some(c)
+    let modifiers: Vec<String> = modifiers.iter().map(|m| m.to_ascii_lowercase()).collect();
+    match modifiers.as_slice() {
+        [] => Some(Layer::Plain),
+        [m] if m == "shift" => Some(Layer::Plain),
+        [m] if m == "ctrl" => Some(Layer::Ctrl),
+        [m] if m == "alt" || m == "option" => Some(Layer::Alt),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -129,88 +121,93 @@ impl Layer {
     }
 }
 
-/// What part of the app a binding belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Group {
+/// The five rows of "Where a key acts" (docs/design/tui.md), in table
+/// order. The derived order is the table's, so groups sort by it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Place {
     Prompt,
-    Transcript,
-    App,
+    Block,
+    Picker,
+    Dialog,
+    Panel,
 }
 
-impl Group {
+impl Place {
+    const ALL: [Place; 5] = [
+        Place::Prompt,
+        Place::Block,
+        Place::Picker,
+        Place::Dialog,
+        Place::Panel,
+    ];
+
+    /// The row's name, as the table writes it.
     fn name(self) -> &'static str {
         match self {
-            Group::Prompt => "prompt",
-            Group::Transcript => "transcript",
-            Group::App => "app",
+            Place::Prompt => "Prompt",
+            Place::Block => "Block focused (pinned, prompt empty)",
+            Place::Picker => "Picker or pane, empty filter",
+            Place::Dialog => "Blocking dialog, empty reply",
+            Place::Panel => "Task panel focused",
         }
     }
 }
 
-/// The group of a binding id: the editor and its clipboard keys are the
-/// prompt; scrolling, tool output, thinking, subagent and tree keys are the
-/// transcript; the rest is the app.
-fn group_of(id: &str) -> Group {
-    if id.starts_with("tui.") || id == "app.clear" || id.starts_with("app.clipboard.") {
-        Group::Prompt
-    } else if [
-        "app.scroll.",
-        "app.tools.",
-        "app.thinking.",
-        "app.subagent.",
-        "app.tree.",
-    ]
-    .iter()
-    .any(|prefix| id.starts_with(prefix))
-    {
-        Group::Transcript
-    } else {
-        Group::App
+/// The row of "Where a key acts" a binding answers in, from its keymap
+/// context. The transcript's keys are the Scroll context; a quit choice is
+/// asked in a dialog, not at the prompt.
+fn place_of(entry: &KeybindingEntry) -> Place {
+    if entry.id.starts_with("app.quit.") {
+        return Place::Dialog;
+    }
+    match context_of(entry.id) {
+        Context::Global | Context::Prompt | Context::Leader => Place::Prompt,
+        Context::Scroll => Place::Block,
+        Context::Picker | Context::Subagent | Context::Tree | Context::Models => Place::Picker,
+        Context::Panel => Place::Panel,
+        Context::Dialog => Place::Dialog,
     }
 }
 
-/// One shown binding.
+/// One shown binding: its key as the layer prints it, its description, and
+/// the row it acts in.
 struct Action {
     key: String,
     text: String,
-    group: Group,
+    place: Place,
 }
 
-/// The bindings of one layer by cap, in cap order. Later entries win a
-/// shared cap, so app bindings name a key over the TUI library's editing
-/// defaults. One row per binding: an entry with two keys on one layer
-/// keeps its smallest cap, so `app.hotkeys.open` (`ctrl+x ?`, `ctrl+x k`)
-/// prints `Show keyboard shortcuts` once, not twice. `query` keeps the
-/// actions whose key or description contains it; empty keeps all.
+/// The bindings of one layer: one row per key in each place, so every key
+/// the layer holds is shown (a binding with two keys on it shows both). A
+/// key shared by two bindings in one place shows the later one, as the app's
+/// binding names a key over the TUI library's editing default. The same bare
+/// key in two places shows once per place. `query` keeps the actions whose
+/// key or description contains it; empty keeps all. Sorted by place, then key.
 fn layer_actions(
     entries: &[(&KeybindingEntry, Vec<String>)],
     layer: Layer,
     query: &str,
 ) -> Vec<Action> {
-    let mut by_cap: BTreeMap<char, (&KeybindingEntry, String)> = BTreeMap::new();
+    let mut by_place_key: BTreeMap<(Place, String), &KeybindingEntry> = BTreeMap::new();
     for (entry, keys) in entries {
         for key in keys {
-            if let Some((key_layer, cap)) = layer_cap(key) {
-                if key_layer == layer {
-                    by_cap.insert(cap, (*entry, lit_key(key)));
-                }
+            if layer_of(key) == Some(layer) {
+                by_place_key.insert((place_of(entry), lit_key(key)), *entry);
             }
         }
     }
     let needle = query.to_lowercase();
-    let mut shown: HashSet<&str> = HashSet::new();
-    by_cap
-        .into_values()
-        .filter(|(entry, key)| {
+    by_place_key
+        .into_iter()
+        .filter(|((_, key), entry)| {
             needle.is_empty()
                 || key.to_lowercase().contains(&needle)
                 || entry.description.to_lowercase().contains(&needle)
         })
-        .filter(|(entry, _)| shown.insert(entry.id))
-        .map(|(entry, key)| Action {
+        .map(|((place, key), entry)| Action {
             key,
             text: entry.description.to_string(),
-            group: group_of(entry.id),
+            place,
         })
         .collect()
 }
@@ -242,7 +239,8 @@ fn grid(items: &[&Action], cols: usize, inner: usize) -> Vec<Line<'static>> {
         .collect();
     (0..rows)
         .map(|r| {
-            let mut spans: Vec<Span<'static>> = Vec::new();
+            // Rows indent 3: the pane's one column and two more here.
+            let mut spans: Vec<Span<'static>> = vec![Span::raw("  ")];
             for (c, col_width) in col_widths.iter().enumerate() {
                 let Some(action) = items.get(c * rows + r) else {
                     continue;
@@ -254,57 +252,61 @@ fn grid(items: &[&Action], cols: usize, inner: usize) -> Vec<Line<'static>> {
                     spans.push(Span::raw(" ".repeat(col_width - used + 4)));
                 }
             }
-            Line::from(truncate_spans(spans, inner))
+            Line::from(truncate_spans(spans, inner.saturating_sub(2)))
         })
         .collect()
 }
 
-/// A group's header row.
-fn group_header(group: Group) -> Line<'static> {
+/// A group's header row: the row's name, in ink.
+fn group_header(place: Place) -> Line<'static> {
     Line::from(vec![Span::styled(
-        group.name().to_string(),
-        Palette::current().dim(),
+        place.name().to_string(),
+        Palette::current().ink(),
     )])
 }
 
-/// The groups as rows: prompt first (three columns across), then
-/// transcript and app side by side when the width allows, else stacked.
+/// The width, in cells, of `items` laid out in `cols` columns by `grid`.
+fn grid_width(items: &[&Action], cols: usize) -> usize {
+    if items.is_empty() {
+        return 0;
+    }
+    let cols = cols.clamp(1, items.len());
+    let rows = items.len().div_ceil(cols);
+    let key_width = items
+        .iter()
+        .map(|a| visible_width(&a.key))
+        .max()
+        .unwrap_or(0);
+    let cells: usize = (0..cols)
+        .map(|c| {
+            items
+                .iter()
+                .skip(c * rows)
+                .take(rows)
+                .map(|a| key_width + 2 + visible_width(&a.text))
+                .max()
+                .unwrap_or(0)
+        })
+        .sum();
+    cells + 4 * (cols - 1)
+}
+
+/// The five rows as groups, in table order: a header and its keys. Each
+/// group takes the most columns that fit the width (three from 100
+/// columns), so no key is cut off at the edge. Every row keeps its header,
+/// so a row with nothing on this layer shows an empty group.
 fn group_rows(actions: &[Action], width: usize) -> Vec<Line<'static>> {
     let inner = width.saturating_sub(2);
-    let of =
-        |group: Group| -> Vec<&Action> { actions.iter().filter(|a| a.group == group).collect() };
-    let wide = width >= GRID_MIN_WIDTH;
+    let max_cols = if width >= GRID_MIN_WIDTH { 3 } else { 1 };
     let mut rows = Vec::new();
-    let prompt = of(Group::Prompt);
-    if !prompt.is_empty() {
-        rows.push(group_header(Group::Prompt));
-        rows.extend(grid(&prompt, if wide { 3 } else { 1 }, inner));
-    }
-    let column = |group: Group| -> Vec<Line<'static>> {
-        let items = of(group);
-        if items.is_empty() {
-            return Vec::new();
-        }
-        let mut lines = vec![group_header(group)];
-        lines.extend(grid(&items, 1, inner));
-        lines
-    };
-    let (left, right) = (column(Group::Transcript), column(Group::App));
-    let left_width = left.iter().map(|l| l.width()).max().unwrap_or(0) + 4;
-    let right_width = right.iter().map(|l| l.width()).max().unwrap_or(0);
-    if wide && !left.is_empty() && !right.is_empty() && left_width + right_width <= inner {
-        for i in 0..left.len().max(right.len()) {
-            let mut spans = left.get(i).map(|l| l.spans.clone()).unwrap_or_default();
-            let used = left.get(i).map(|l| l.width()).unwrap_or(0);
-            if let Some(line) = right.get(i) {
-                spans.push(Span::raw(" ".repeat(left_width - used)));
-                spans.extend(line.spans.iter().cloned());
-            }
-            rows.push(Line::from(spans));
-        }
-    } else {
-        rows.extend(left);
-        rows.extend(right);
+    for place in Place::ALL {
+        rows.push(group_header(place));
+        let items: Vec<&Action> = actions.iter().filter(|a| a.place == place).collect();
+        let cols = (1..=max_cols)
+            .rev()
+            .find(|&c| grid_width(&items, c) <= inner)
+            .unwrap_or(1);
+        rows.extend(grid(&items, cols, inner));
     }
     rows
 }
@@ -410,9 +412,8 @@ impl Default for ControlsComponent {
 }
 
 impl Component for ControlsComponent {
-    /// The Keys pane: the layer's bindings grouped as prompt, transcript
-    /// and app, then the filter row and the hint row. Both come from the
-    /// real keybindings.
+    /// The Keys pane: the layer's bindings grouped by where they act, then
+    /// the filter row and the hint row. Both come from the real keybindings.
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
         let all = keybindings();
@@ -440,7 +441,7 @@ impl Component for ControlsComponent {
             let noun = if count == 1 { "problem" } else { "problems" };
             console.top.push(Line::from(vec![Span::styled(
                 format!("keybindings.json · {count} {noun}"),
-                Palette::current().warn(),
+                bold(Palette::current().ink()),
             )]));
             for problem in &self.problems {
                 console.top.push(Line::from(truncate_spans(

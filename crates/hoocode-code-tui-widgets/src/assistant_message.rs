@@ -10,9 +10,10 @@ use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_ratatui::Palette;
-use hoocode_tui_render::{fresh_stamp, Component, ComponentHandle, Container};
+use hoocode_tui_render::{fresh_stamp, Component, ComponentHandle, Container, Fold, FoldHost};
 use hoocode_tui_util::js_regex::is_js_space;
 
+use crate::fold::{decorate_header, FoldState, INDICATOR_CELLS};
 use crate::outline::{self, STEP_INDENT};
 
 use crate::wrap_zone;
@@ -230,6 +231,8 @@ fn think_line(thinking: &str) -> String {
 /// with `…` at the width.
 struct ThinkingLine {
     text: String,
+    /// Cells kept free at the end for the open or closed indicator.
+    reserve: usize,
 }
 
 impl Component for ThinkingLine {
@@ -244,10 +247,36 @@ impl Component for ThinkingLine {
         let mut spans = vec![Span::raw(" ".to_string())];
         spans.extend(hoocode_tui_ratatui::truncate_spans(
             text,
-            width.saturating_sub(2).max(1),
+            width.saturating_sub(2 + self.reserve).max(1),
             "…",
         ));
         vec![hoocode_tui_ratatui::row(spans, width)]
+    }
+}
+
+/// A thinking trace drawn two cells narrower than its room, so the first row
+/// has the cells the open or closed indicator takes.
+struct NarrowTrace {
+    inner: ComponentHandle,
+}
+
+impl Component for NarrowTrace {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let pad = " ".repeat(INDICATOR_CELLS);
+        let inner = width.saturating_sub(INDICATOR_CELLS as u16).max(1);
+        let mut rows = self.inner.borrow_mut().render(inner);
+        for row in &mut rows {
+            row.push_str(&pad);
+        }
+        rows
+    }
+
+    fn render_stamp(&self) -> Option<u64> {
+        self.inner.borrow().render_stamp()
+    }
+
+    fn invalidate(&mut self) {
+        self.inner.borrow_mut().invalidate();
     }
 }
 
@@ -445,6 +474,13 @@ impl Component for GappedSegment {
     }
 }
 
+/// The first thinking block of a message, as the last update drew it.
+struct ThinkingFold {
+    child: usize,
+    can_open: bool,
+    text: String,
+}
+
 /// A complete (or streaming) assistant message: its text and thinking blocks,
 /// and the abort/error line when it has no tool calls.
 pub struct AssistantMessageComponent {
@@ -454,6 +490,13 @@ pub struct AssistantMessageComponent {
     /// Single view (UI-21 P4): the block's own toggle. Collapsed, thinking
     /// is its first sentence on one dim line; expanded, the whole trace.
     expanded: bool,
+    /// The thinking trace's fold: its id and focus.
+    fold: FoldState,
+    /// Which child of `content` is the first thinking block, with whether
+    /// opening it shows more than its one line, and its text.
+    thinking: Option<ThinkingFold>,
+    /// The row of the last render that the trace's header took.
+    last_header: Option<usize>,
     /// The turn (header number) this message belongs to; `None` before the
     /// first turn. The transcript groups prose by it, and the turn's own end
     /// line stands in for a plain abort line.
@@ -522,6 +565,9 @@ impl AssistantMessageComponent {
             thinking_display,
             markdown_theme,
             expanded: false,
+            fold: FoldState::new("thinking"),
+            thinking: None,
+            last_header: None,
             outline_mission: None,
             outline_prose_shown: false,
             last_message: None,
@@ -570,6 +616,12 @@ impl AssistantMessageComponent {
             handle(GappedSegment { md: md.clone() })
         } else {
             md.clone()
+        };
+        // A thinking trace leaves its indicator two cells.
+        let child = if thinking {
+            handle(NarrowTrace { inner: child })
+        } else {
+            child
         };
         self.markdown_cache.insert(
             key,
@@ -753,6 +805,7 @@ impl AssistantMessageComponent {
         }
 
         self.content.clear();
+        self.thinking = None;
 
         let has_visible_content = message.content.iter().any(|c| self.is_visible_block(c));
         if has_visible_content {
@@ -774,6 +827,21 @@ impl AssistantMessageComponent {
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
+                    let first =
+                        self.thinking.is_none() && self.thinking_display == ThinkingDisplay::Full;
+                    let can_open = think_line(&t.thinking) != js_trim(&t.thinking);
+                    if first {
+                        self.thinking = Some(ThinkingFold {
+                            child: self.content.children().len(),
+                            can_open,
+                            text: t.thinking.clone(),
+                        });
+                    }
+                    let reserve = if first && can_open {
+                        INDICATOR_CELLS
+                    } else {
+                        0
+                    };
                     if self.expanded && self.thinking_display == ThinkingDisplay::Full {
                         self.add_markdown_block(
                             BlockKey::Thinking(i),
@@ -784,6 +852,7 @@ impl AssistantMessageComponent {
                     } else {
                         self.content.add_child(handle(ThinkingLine {
                             text: think_line(&t.thinking),
+                            reserve,
                         }));
                     }
                     if visible_after {
@@ -943,6 +1012,14 @@ impl Component for AssistantMessageComponent {
         Some(self.rev)
     }
 
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        Some(self)
+    }
+
     fn invalidate(&mut self) {
         self.rev = fresh_stamp();
         // Cached blocks may be detached right now; drop their caches too.
@@ -954,6 +1031,50 @@ impl Component for AssistantMessageComponent {
     }
 }
 
+/// The message's thinking trace opens in place. Hidden thinking (`ctrl+x b`,
+/// or the outline view) is no block: the walk skips it.
+impl FoldHost for AssistantMessageComponent {
+    fn folds(&self) -> Vec<Fold> {
+        if self.thinking_display != ThinkingDisplay::Full {
+            return Vec::new();
+        }
+        let Some(fold) = &self.thinking else {
+            return Vec::new();
+        };
+        vec![Fold {
+            id: self.fold.id().to_string(),
+            label: "thinking".to_string(),
+            header: self.last_header.into_iter().collect(),
+            fold_line: None,
+            expanded: self.expanded,
+            can_open: fold.can_open,
+        }]
+    }
+
+    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool {
+        if !self.fold.is(id) {
+            return false;
+        }
+        self.set_expanded(expanded);
+        true
+    }
+
+    fn set_fold_focus(&mut self, id: Option<&str>) {
+        let before = self.fold.focused();
+        self.fold.set_focus(id);
+        if before != self.fold.focused() {
+            self.rev = fresh_stamp();
+        }
+    }
+
+    fn fold_text(&self, id: &str) -> Option<String> {
+        if !self.fold.is(id) {
+            return None;
+        }
+        self.thinking.as_ref().map(|fold| fold.text.clone())
+    }
+}
+
 impl AssistantMessageComponent {
     /// The render body, without the width-diagnosis logging.
     fn render_inner(&mut self, width: u16) -> Vec<String> {
@@ -962,14 +1083,39 @@ impl AssistantMessageComponent {
         if self.thinking_display == ThinkingDisplay::Omit {
             return self.render_outline(width, &palette);
         }
-        if self.has_tool_calls {
-            return self.content.render(width);
-        }
-        let lines = self.content.render(width);
-        if lines.is_empty() {
+        let mut lines = self.content.render(width);
+        self.decorate_thinking(&mut lines, width, &palette);
+        if self.has_tool_calls || lines.is_empty() {
             return lines;
         }
         wrap_zone(lines)
+    }
+
+    /// The trace's header row takes the indicator and the focused look, and
+    /// its place is kept for the fold host.
+    fn decorate_thinking(&mut self, lines: &mut [String], width: u16, palette: &Palette) {
+        self.last_header = None;
+        let Some(fold) = &self.thinking else {
+            return;
+        };
+        let Some(row) = self
+            .content
+            .child_row_offsets(width)
+            .and_then(|offsets| offsets.get(fold.child).copied())
+            .filter(|row| *row < lines.len())
+        else {
+            return;
+        };
+        self.last_header = Some(row);
+        decorate_header(
+            lines,
+            &[row],
+            fold.can_open,
+            self.expanded,
+            self.fold.focused(),
+            usize::from(width),
+            palette,
+        );
     }
 }
 

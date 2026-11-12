@@ -20,12 +20,13 @@
 //! returns `None` and the caller keeps the plain rendering.
 
 use hoocode_code_tui_theme::theme;
-use hoocode_tui_render::Component;
+use hoocode_tui_ratatui::Palette;
+use hoocode_tui_render::{Component, Fold, FoldHost};
 use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use crate::fold::ELLIPSIS;
+use crate::fold::{decorate_header, FoldState, ELLIPSIS, INDICATOR_CELLS};
 use crate::tools::subagent::{elapsed_text, label_color, peek_gutter, strip_markdown};
 
 /// How a background subagent ended, as its notice words it.
@@ -157,6 +158,7 @@ pub struct BackgroundNoticeComponent {
     notice: BackgroundNotice,
     elapsed: Option<String>,
     expanded: bool,
+    fold: FoldState,
 }
 
 impl BackgroundNoticeComponent {
@@ -175,7 +177,13 @@ impl BackgroundNoticeComponent {
             notice,
             elapsed,
             expanded: true,
+            fold: FoldState::new("background"),
         }
+    }
+
+    /// Whether opening shows anything: a summary or a model line.
+    fn can_open(&self) -> bool {
+        !strip_markdown(&self.notice.summary).is_empty() || self.notice.model.is_some()
     }
 
     /// The block's own toggle; collapsed is the one-line head, expanded
@@ -276,7 +284,14 @@ impl Component for BackgroundNoticeComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
         let t = theme();
-        let mut lines = vec![self.head_line(width)];
+        // A head that can open leaves its indicator two cells.
+        let can_open = self.can_open();
+        let head_room = if can_open {
+            width.saturating_sub(INDICATOR_CELLS)
+        } else {
+            width
+        };
+        let mut lines = vec![self.head_line(head_room)];
         if self.expanded {
             let summary = strip_markdown(&self.notice.summary);
             if !summary.is_empty() {
@@ -293,9 +308,62 @@ impl Component for BackgroundNoticeComponent {
                 lines.push(format!("  {}", t.fg("dim", &line)));
             }
         }
-        lines
+        let mut lines: Vec<String> = lines
             .into_iter()
             .map(|line| truncate_to_width(&line, width, ELLIPSIS, false))
-            .collect()
+            .collect();
+        decorate_header(
+            &mut lines,
+            &[0],
+            can_open,
+            self.expanded,
+            self.fold.focused(),
+            width,
+            &Palette::current(),
+        );
+        lines
+    }
+
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        Some(self)
+    }
+}
+
+impl FoldHost for BackgroundNoticeComponent {
+    fn folds(&self) -> Vec<Fold> {
+        vec![Fold {
+            id: self.fold.id().to_string(),
+            label: "Background run".to_string(),
+            header: vec![0],
+            fold_line: None,
+            expanded: self.expanded,
+            can_open: self.can_open(),
+        }]
+    }
+
+    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool {
+        if !self.fold.is(id) {
+            return false;
+        }
+        self.set_expanded(expanded);
+        true
+    }
+
+    fn set_fold_focus(&mut self, id: Option<&str>) {
+        self.fold.set_focus(id);
+    }
+
+    fn fold_text(&self, id: &str) -> Option<String> {
+        self.fold.is(id).then(|| {
+            let mut text = format!("{} {}", self.notice.label, self.notice.description);
+            if !self.notice.summary.is_empty() {
+                text.push_str(&format!("\n{}", self.notice.summary));
+            }
+            text
+        })
     }
 }

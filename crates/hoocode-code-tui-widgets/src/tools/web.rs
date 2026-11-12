@@ -59,7 +59,7 @@ pub fn format_webfetch_result(
             .is_some_and(|v| v.as_bool().unwrap_or(!v.is_null()));
         let cut = if truncated {
             let at = present(result.details, "maxTokens").unwrap_or_else(|| estimate.clone());
-            t.fg("warning", &format!(" (truncated at {})", js_number(&at)))
+            t.fg("dim", &format!(" (truncated at {})", js_number(&at)))
         } else {
             String::new()
         };

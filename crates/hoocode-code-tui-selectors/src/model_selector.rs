@@ -17,7 +17,7 @@ use hoocode_code_tui_widgets::console::{query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
@@ -151,7 +151,7 @@ impl State {
         };
         let mut head = vec![Span::styled(model.id.clone(), pal.ink())];
         if self.expired.contains(&model.provider) {
-            head.push(Span::styled("  expired".to_string(), pal.warn()));
+            head.push(Span::styled("  expired".to_string(), bold(pal.ink())));
         } else if models_are_equal(self.current.as_ref(), Some(model)) {
             head.push(Span::styled("  in use".to_string(), pal.dim()));
         }
@@ -193,13 +193,13 @@ fn models_text(count: usize) -> String {
 /// gutter and the selection band): `● id  price · ctx · thinking`. The
 /// mark carries the state (`●` the model in use, `○` the rest); the price
 /// is primary and never drops, context then thinking drop right-to-left.
-/// A model whose login expired says so as fact text (`expired`, warn),
+/// A model whose login expired says so as fact text (`expired`, ink bold),
 /// never colour alone.
 fn model_row(model: &Model, expired: bool, current: Option<&Model>, width: usize) -> Line<'static> {
     let pal = Palette::current();
     let mut primary = vec![(format_price(&model.cost), pal.dim())];
     if expired {
-        primary.push(("expired".to_string(), pal.warn()));
+        primary.push(("expired".to_string(), bold(pal.ink())));
     }
     let thinking = if model.reasoning { "thinking" } else { "fixed" };
     let secondary = vec![

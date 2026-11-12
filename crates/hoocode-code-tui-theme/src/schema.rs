@@ -10,7 +10,7 @@ use crate::color::RawColor;
 pub type ColorValue = RawColor;
 
 /// Required color tokens, in schema order.
-pub const REQUIRED_COLOR_TOKENS: [&str; 51] = [
+pub const REQUIRED_COLOR_TOKENS: [&str; 45] = [
     // Core UI
     "accent",
     "border",
@@ -60,21 +60,16 @@ pub const REQUIRED_COLOR_TOKENS: [&str; 51] = [
     "syntaxType",
     "syntaxOperator",
     "syntaxPunctuation",
-    // Thinking level borders
-    "thinkingOff",
-    "thinkingMinimal",
-    "thinkingLow",
-    "thinkingMedium",
-    "thinkingHigh",
-    "thinkingXhigh",
     // Bash mode
     "bashMode",
 ];
 
 /// Every color property the schema declares, in declaration order, with
-/// whether it is optional. The trailing ten are the Mission Control chrome
-/// tokens (spec §2.3); they are optional so older custom themes keep loading.
-const COLOR_PROPERTIES: [(&str, bool); 86] = [
+/// whether it is optional. Each name appears once. The Mission Control chrome
+/// tokens (spec §2.3) come last; they are optional so older custom themes keep
+/// loading. Unknown keys in a theme file are ignored, so a file that still sets
+/// a removed token loads.
+pub const COLOR_PROPERTIES: [(&str, bool); 80] = [
     ("accent", false),
     ("border", false),
     ("borderAccent", false),
@@ -121,12 +116,6 @@ const COLOR_PROPERTIES: [(&str, bool); 86] = [
     ("syntaxType", false),
     ("syntaxOperator", false),
     ("syntaxPunctuation", false),
-    ("thinkingOff", false),
-    ("thinkingMinimal", false),
-    ("thinkingLow", false),
-    ("thinkingMedium", false),
-    ("thinkingHigh", false),
-    ("thinkingXhigh", false),
     ("bashMode", false),
     ("agent1", true),
     ("agent2", true),
@@ -134,6 +123,7 @@ const COLOR_PROPERTIES: [(&str, bool); 86] = [
     ("agent4", true),
     ("agent5", true),
     ("agent6", true),
+    ("mcp", true),
     ("brandBg", true),
     ("brandText", true),
     ("paperShadow", true),
@@ -153,7 +143,6 @@ const COLOR_PROPERTIES: [(&str, bool); 86] = [
     ("chipFg", true),
     // Mission Control chrome (spec §2.3).
     ("ink", true),
-    ("dim", true),
     ("faint", true),
     ("acc", true),
     ("ok", true),

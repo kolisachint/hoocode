@@ -11,8 +11,8 @@ pub(crate) fn capabilities_lock() -> MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+mod autocomplete;
 mod autocomplete_dropdown;
-mod autocomplete_ts;
 mod common;
 mod editor;
 mod file_search;
@@ -27,4 +27,4 @@ mod paper_sheet;
 #[path = "../../../hoocode-tui-render/tests/it/support/mod.rs"]
 mod render_support;
 mod scroll_images;
-mod truncated_text_ts;
+mod truncated_text;

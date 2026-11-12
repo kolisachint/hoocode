@@ -96,6 +96,25 @@ fn shell_failure_reason(output: &str) -> Option<String> {
     first
 }
 
+/// The one-line reason of a failed call that is not Shell. A validation error
+/// (`Validation failed for tool "…":` then `  - path: message` lines) gives
+/// its first problem; any other error gives its first non-empty line.
+fn tool_failure_reason(output: &str) -> Option<String> {
+    let mut lines = output.lines().map(str::trim).filter(|l| !l.is_empty());
+    let first = lines.next()?;
+    if first.starts_with("Validation failed for tool") {
+        let detail = output
+            .lines()
+            .map(str::trim)
+            .find_map(|l| l.strip_prefix("- "))
+            .filter(|d| !d.is_empty());
+        if let Some(detail) = detail {
+            return Some(detail.to_string());
+        }
+    }
+    Some(first.to_string())
+}
+
 /// Distinct files in CodeSearch output: its `path:start-end [sources]`
 /// headers. Snippet lines are indented; notices start with `[`.
 fn search_file_count(output: &str) -> usize {
@@ -503,6 +522,9 @@ pub struct ToolExecutionComponent {
     /// A failed call's first error line, kept when it freezes: the result is
     /// released then, and the outline's HIT row still reads its snippet.
     frozen_error: String,
+    /// A failed call's reason (see [`Self::failure_reason`]), kept when it
+    /// freezes: the result is released then, and the row still shows it.
+    frozen_reason: Option<String>,
     /// The step's clock (M4): block creation starts it, `update_result`
     /// stops it. Rebuilt history settles at once, so its span reads ~0.
     started: Instant,
@@ -610,6 +632,7 @@ impl ToolExecutionComponent {
             frozen_parts_fit: None,
             frozen_entry: None,
             frozen_error: String::new(),
+            frozen_reason: None,
             started: Instant::now(),
             settled_at: None,
             rev: fresh_stamp(),
@@ -1004,22 +1027,32 @@ impl ToolExecutionComponent {
         };
         let primary = flatten(primary_runs);
         let mut secondary = flatten(secondary_runs);
+        // The reason is the first secondary fact of a failed row, exactly
+        // when `failure_reason` found one (`fact_runs` pushes it first).
         let mut reason = None;
-        if self.tool_name == "Shell" && self.is_error() && !secondary.is_empty() {
-            // Live, the output still in tells whether a reason was found;
-            // frozen, the payloads are released, but `freeze` kept the
-            // first error line, which is non-empty exactly when a reason
-            // was recorded first.
-            let recorded = if self.frozen {
-                !self.frozen_error.trim().is_empty()
-            } else {
-                shell_failure_reason(&self.text_output()).is_some()
-            };
-            if recorded {
-                reason = Some(secondary.remove(0));
-            }
+        if !secondary.is_empty() && self.failure_reason().is_some() {
+            reason = Some(secondary.remove(0));
         }
         (target, primary, secondary, reason)
+    }
+
+    /// Why a failed call failed, in one line, for its row: a failed Shell
+    /// call's first error line, or for any other tool the first line of its
+    /// error (a validation error names its first problem, `path: message`).
+    /// Frozen rows read what `freeze` kept. `None` when the call did not fail,
+    /// was stopped, or its output says nothing.
+    pub fn failure_reason(&self) -> Option<String> {
+        if self.frozen {
+            return self.frozen_reason.clone();
+        }
+        if !self.is_error() {
+            return None;
+        }
+        let text = self.text_output();
+        if self.tool_name == "Shell" {
+            return shell_failure_reason(&text);
+        }
+        tool_failure_reason(&text)
     }
 
     /// The row's facts unstyled: the primary facts (never dropped by the cut
@@ -1051,13 +1084,15 @@ impl ToolExecutionComponent {
                         tone: FactTone::Err,
                     }]);
                 }
-                // The reason first, then the size: the duration drops first.
-                if let Some(reason) = shell_failure_reason(&self.text_output()) {
-                    secondary.push(vec![FactSegment {
-                        text: reason,
-                        tone: FactTone::Dim,
-                    }]);
-                }
+            }
+            // The reason first, then the size: the duration drops first.
+            if let Some(reason) = self.failure_reason() {
+                secondary.push(vec![FactSegment {
+                    text: reason,
+                    tone: FactTone::Dim,
+                }]);
+            }
+            if self.tool_name == "Shell" {
                 if let Some(size) = dim_run(lines_fact(shell_output_lines(&self.text_output()))) {
                     secondary.push(size);
                 }
@@ -1369,6 +1404,56 @@ impl ToolExecutionComponent {
         self.set_expanded(!self.expanded);
     }
 
+    /// Whether opening the block shows rows its closed row does not, so the
+    /// row draws the open or closed indicator and a click toggles it. A
+    /// stopped call has no body, TodoWrite is not a toggle (the plan is in
+    /// the task panel), and a call with no output has nothing to open.
+    /// `parts` are the rows the block just drew at `width`. A frozen block
+    /// reads the open body captured at freeze.
+    pub fn can_open(&mut self, width: u16, parts: &StepParts) -> bool {
+        let has_rows = |parts: &StepParts| {
+            let shown = |rows: &[String]| rows.iter().any(|row| !crate::is_blank(row));
+            shown(&parts.body) || shown(&parts.footer) || !parts.images.is_empty()
+        };
+        if self.tool_name == "TodoWrite" {
+            return false;
+        }
+        if self.frozen {
+            let interrupted = self.snapshot.as_ref().is_some_and(|s| s.interrupted);
+            return !interrupted
+                && self
+                    .frozen_lines
+                    .as_ref()
+                    .is_some_and(|frozen| has_rows(&frozen.parts));
+        }
+        if self.interrupted {
+            return false;
+        }
+        if self.is_agent() && !self.settled_sub_steps().is_empty() {
+            return true;
+        }
+        // Open, or closed with a peek or a running tail: the rows are there.
+        if has_rows(parts) || self.expanded {
+            return has_rows(parts);
+        }
+        if self.result.is_none() {
+            return false;
+        }
+        if !self.has_renderer_definition() {
+            return !self.text_output().trim().is_empty();
+        }
+        // Closed: the result renderer drew its trimmed rows and the block
+        // left them off. Any row there is a row opening shows.
+        match self.result_component.clone() {
+            Some(component) => component
+                .borrow_mut()
+                .render(width)
+                .iter()
+                .any(|row| !crate::is_blank(row)),
+            None => self.create_result_fallback().is_some(),
+        }
+    }
+
     /// Whether the block draws everything uncut: its own toggle, open in
     /// place (single view: every block starts as one row).
     fn expanded(&self) -> bool {
@@ -1465,6 +1550,7 @@ impl ToolExecutionComponent {
             self.rev = fresh_stamp();
             self.snapshot = Some(self.row_snapshot());
             self.frozen_entry = Some(self.chain_entry());
+            self.frozen_reason = self.failure_reason();
             self.frozen_error = self
                 .error_text()
                 .lines()

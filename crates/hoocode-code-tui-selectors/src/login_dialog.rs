@@ -21,6 +21,7 @@ use std::rc::Rc;
 use hoocode_ai_types::AbortSignal;
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{hints, Console};
+use hoocode_code_tui_widgets::pane::Chip;
 use hoocode_tui_components::Input;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_keys::get_keybindings;
@@ -115,7 +116,7 @@ impl LoginDialogComponent {
     pub fn show_auth(&mut self, url: &str, instructions: Option<&str>) {
         let pal = Palette::current();
         self.separate();
-        self.rows.push(line(format!("1 {url}"), pal.acc()));
+        self.rows.push(line(format!("1 {url}"), pal.ink()));
         self.rows.push(line(
             format!(
                 "scan, or {} to open the browser",
@@ -197,6 +198,8 @@ impl Component for LoginDialogComponent {
     /// and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         let mut console = Console::new("Log in · /login", self.provider_name.clone());
+        // The login is opened by the user and blocks nothing: a plain title.
+        console.chip = Chip::Plain;
         console.top = self.rows.clone();
         if self.awaiting_input {
             let query = self.input.borrow().get_value().to_string();

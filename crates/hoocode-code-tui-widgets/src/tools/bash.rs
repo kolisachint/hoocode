@@ -148,10 +148,7 @@ fn build_result(
                 ));
             }
         }
-        format!(
-            "\n{}",
-            t.fg("warning", &format!("[{}]", warnings.join(". ")))
-        )
+        format!("\n{}", t.fg("dim", &format!("[{}]", warnings.join(". "))))
     });
 
     BashResult {

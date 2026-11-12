@@ -31,6 +31,11 @@ pub fn context_of(id: &str) -> Context {
     if id == "app.subagent.detach" {
         return Context::Prompt;
     }
+    // The interrupted-run keys share `r` and `v` with the picker's own keys,
+    // so they get a group of their own (see `Context::Subagent`).
+    if matches!(id, "app.subagent.view" | "app.subagent.resume") {
+        return Context::Subagent;
+    }
     let picker_session = matches!(
         id,
         "app.session.togglePath"
@@ -40,9 +45,16 @@ pub fn context_of(id: &str) -> Context {
             | "app.session.delete"
             | "app.session.deleteNoninvasive"
     );
-    if id.starts_with("tui.select.") || id.starts_with("app.list.") || picker_session {
+    if id.starts_with("tui.select.")
+        || id.starts_with("app.list.")
+        || id == "app.settings.toggle"
+        || picker_session
+    {
         Context::Picker
-    } else if id.starts_with("app.dialog.") || id.starts_with("app.options.") {
+    } else if id.starts_with("app.dialog.")
+        || id.starts_with("app.options.")
+        || id.starts_with("app.permission.")
+    {
         Context::Dialog
     } else if id.starts_with("app.tree.") {
         Context::Tree

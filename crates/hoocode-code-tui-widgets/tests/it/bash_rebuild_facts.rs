@@ -52,7 +52,7 @@ fn rebuilt_shell_row_shows_the_stored_duration_in_its_facts() {
     let _g = lock();
     let rows = rows(json!({"durationMs": 1234}), false, false, "ok");
     assert_eq!(
-        rows[0], " ● Shell cargo test  exit 0 · 1 line · 1.2s",
+        rows[0], " ● Shell cargo test  exit 0 · 1 line · 1.2s ▾",
         "{rows:?}"
     );
     assert_eq!(rows[1], "    ok", "{rows:?}");
@@ -63,7 +63,10 @@ fn rebuilt_shell_row_shows_the_stored_duration_in_its_facts() {
 fn result_without_a_stored_duration_shows_the_exit_alone() {
     let _g = lock();
     let rows = rows(Value::Null, false, false, "ok");
-    assert_eq!(rows[0], " ● Shell cargo test  exit 0 · 1 line", "{rows:?}");
+    assert_eq!(
+        rows[0], " ● Shell cargo test  exit 0 · 1 line ▾",
+        "{rows:?}"
+    );
 }
 
 #[test]
@@ -71,7 +74,7 @@ fn a_running_call_shows_no_facts_and_no_elapsed_row() {
     let _g = lock();
     // Partial output: the live clock lives in the status line, not the row.
     let rows = rows(json!({"durationMs": 1234}), true, false, "ok");
-    assert_eq!(rows[0], " ◉ Shell cargo test", "{rows:?}");
+    assert_eq!(rows[0], " ◉ Shell cargo test ▸", "{rows:?}");
     assert!(!rows.iter().any(|r| r.contains("Elapsed")), "{rows:?}");
 }
 
@@ -85,7 +88,7 @@ fn a_failed_call_names_its_exit_code_and_leaves_the_exit_line_out_of_the_body() 
         "boom\n\nCommand exited with code 3",
     );
     assert_eq!(
-        rows[0], " ⊗ Shell cargo test  exit 3 · boom · 3 lines · 3.1s",
+        rows[0], " ⊗ Shell cargo test  exit 3 · boom · 3 lines · 3.1s ▾",
         "{rows:?}"
     );
     assert_eq!(rows[1], "    boom", "{rows:?}");
@@ -102,7 +105,7 @@ fn a_failed_call_without_an_exit_code_shows_the_duration_alone() {
         "Command timed out after 1 seconds",
     );
     assert_eq!(
-        rows[0], " ⊗ Shell cargo test  Command timed out after 1 seconds · 1 line · 1.0s",
+        rows[0], " ⊗ Shell cargo test  Command timed out after 1 seconds · 1 line · 1.0s ▾",
         "{rows:?}"
     );
 }

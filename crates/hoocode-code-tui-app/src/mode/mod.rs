@@ -43,7 +43,6 @@ use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
 use hoocode_code_tui_widgets::tool_chain::ChainState;
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
 use hoocode_tui_render::{
@@ -67,9 +66,7 @@ use crate::notification_panel::{NotificationKind, NotificationPanel};
 use crate::perf::Perf;
 use crate::record_row::RecordRows;
 use crate::resource_display::{format_display_path, ResourceListing};
-use crate::scroll_view::{
-    child_base, hit_chain, install_scroll_status, install_scroll_view, BlockToggle, TranscriptFocus,
-};
+use crate::scroll_view::{child_base, install_scroll_status, install_scroll_view, TranscriptFocus};
 use crate::startup_progress;
 use crate::tips::{
     render_tip, tip_ttl, TipRotation, TipRotationOptions, TipsController, TipsControllerOptions,
@@ -1069,44 +1066,19 @@ impl Mode {
         }
     }
 
-    /// A queued header click toggles its block and pins the view, keeping
-    /// the header on the row the click found it on (decision 6). A click on
-    /// a body row, or outside every chain, queued nothing.
+    /// A queued click on a block's header (anywhere on its row) toggles
+    /// the block, and one on its fold line opens it. The header keeps the
+    /// screen row the click found it on. A click on any other body row, or
+    /// outside every block, does nothing.
     fn drain_body_clicks(&mut self) {
         let clicks = std::mem::take(&mut *self.pending_body_clicks.borrow_mut());
-        if clicks.is_empty() {
-            return;
-        }
         for click in clicks {
-            let base = self.chat_base_row(click.width);
-            let rel = base.and_then(|b| (click.buffer_row as usize).checked_sub(b));
-            let hit = rel.and_then(|r| hit_chain(&self.transcript.chat, click.width, r));
-            let Some((chain, block)) = hit else { continue };
-            let toggle = BlockToggle {
-                chain,
-                block,
-                buffer_row: click.buffer_row,
-                context: click.context,
-            };
-            // The click shares `enter`'s primitive (see `set_block_expanded`):
-            // both paths read the block's flag.
-            let target = toggle
-                .chain
-                .borrow_mut()
-                .as_any_mut()
-                .and_then(|a| a.downcast_mut::<ToolChainComponent>())
-                .and_then(|c| c.tool_blocks().get(toggle.block).cloned());
-            let Some(target) = target else {
-                continue;
-            };
-            let expanded = !target.borrow().is_expanded();
-            self.set_block_expanded(&target, expanded);
-            self.move_focus_on_click(&target);
-            // Pin first, keeping the header on its row; the toggle opens
-            // under it.
-            self.tui
-                .scroll_to_row(toggle.buffer_row, Some(toggle.context));
-            self.dirty.set(true);
+            let rel = self
+                .chat_base_row(click.width)
+                .and_then(|base| (click.buffer_row as usize).checked_sub(base));
+            if let Some(rel) = rel {
+                self.click_fold(rel, click.width, click.context);
+            }
         }
     }
 

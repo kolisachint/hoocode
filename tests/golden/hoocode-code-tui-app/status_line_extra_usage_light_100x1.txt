@@ -1,5 +1,5 @@
- extra usage · /settings                      amber-harbor · claude-haiku-5-5 · 42% context · $1.23
+ extra usage  /settings                       amber-harbor · claude-haiku-5-5 · 42% context · $1.23
 --- styles ---
-r0 c1-11 fg=#555864
-r0 c12-23 fg=#2b2f36
+r0 c1-13 fg=#555864
+r0 c14-22 fg=#2b2f36
 r0 c46-98 fg=#555864

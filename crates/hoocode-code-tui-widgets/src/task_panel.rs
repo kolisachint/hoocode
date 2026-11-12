@@ -581,7 +581,7 @@ fn flight_status_style(status: TaskStatus) -> Style {
 }
 
 /// A row's facts plus their style: the waypoint's elapsed time and run
-/// facts, the usage count, the next firing, a warning note, or the
+/// facts, the usage count, the next firing, a note, or the
 /// armed-cancel ask. Plain strings, laid out left to right by [`flight_row`];
 /// only the armed-cancel ask still pins right.
 fn flight_detail(
@@ -598,7 +598,7 @@ fn flight_detail(
         } else {
             "cancel"
         };
-        return Some((vec![format!("press x again to {word}")], pal.warn()));
+        return Some((vec![format!("press x again to {word}")], pal.dim()));
     }
     if let Some(note) = &task.note {
         // A schedule row's failed run still says when the job fires next.
@@ -608,7 +608,7 @@ fn flight_detail(
         let style = if task.status == TaskStatus::Failed {
             pal.err()
         } else {
-            pal.warn()
+            pal.dim()
         };
         return Some((vec![format!("{note}{next}")], style));
     }
@@ -758,7 +758,8 @@ fn flight_row(
     let tag = if is_mcp {
         Some((
             task.subagent_mode.as_deref().unwrap_or("mcp").to_string(),
-            pal.style("mcp"),
+            // The server label is ink: MCP has no colour role of its own.
+            pal.ink(),
         ))
     } else {
         task.subagent_mode

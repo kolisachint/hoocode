@@ -302,6 +302,12 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "Back from an attached subagent run to the session",
         ),
         entry(
+            "app.subagent.view",
+            &["v"],
+            "Interrupted run: view the transcript",
+        ),
+        entry("app.subagent.resume", &["r"], "Interrupted run: resume it"),
+        entry(
             "app.options.next",
             &["right"],
             "Confirm and advance to the next question",
@@ -403,6 +409,11 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             &[],
             "Tree filter: cycle backward",
         ),
+        entry(
+            "app.settings.toggle",
+            &["space"],
+            "Settings: toggle the picked row",
+        ),
         // ── Lists — bare letters, live while the query is empty (K-P4)
         entry("app.list.up", &["k"], "List: move up"),
         entry("app.list.down", &["j"], "List: move down"),
@@ -413,6 +424,15 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry("app.dialog.yes", &["y"], "Dialog: yes"),
         entry("app.dialog.no", &["n"], "Dialog: no"),
         entry("app.dialog.always", &["a"], "Dialog: always"),
+        // ── Permission — the clearance card's own keys (K-P4, bare while no reply is typed)
+        entry(
+            "app.permission.edit",
+            &["e"],
+            "Permission: edit the command first",
+        ),
+        entry("app.permission.pick1", &["1"], "Permission: pick option 1"),
+        entry("app.permission.pick2", &["2"], "Permission: pick option 2"),
+        entry("app.permission.pick3", &["3"], "Permission: pick option 3"),
     ]
 }
 
