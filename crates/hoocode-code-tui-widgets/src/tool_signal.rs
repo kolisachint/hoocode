@@ -1,33 +1,15 @@
-//! `components/tool-signal.ts`: the outline view's one-line row per call.
-//!
-//! ```text
-//! ● bash            npm run check                             412 lines
-//! ● read            packages/tui/src/keys.ts                 1451 lines
-//! ● edit            src/core/keybindings.ts                         ok
-//! ```
+//! The tool-result types the tool blocks share: the result text, memoized
+//! per image mode, and the call's subject for the chain line.
 
 use std::cell::OnceCell;
 use std::path::Path;
-use std::rc::Rc;
 
 use hoocode_ai_types::Content;
-use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
-use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::is_js_space;
-use hoocode_tui_util::{truncate_to_width, visible_width};
 use serde_json::Value;
 
 use crate::render_utils::get_text_output;
-
-/// Width of the tool-name column (`CodeSearch` is the longest built-in).
-const VERB_WIDTH: usize = 14;
-/// Gap between the verb column and the subject.
-const VERB_GAP: usize = 2;
-/// Minimum space kept for the flush-right signal before the subject is trimmed.
-const MIN_SIGNAL_GAP: usize = 2;
-/// Outline target width in display columns. A longer target ends in `…`.
-const OUTLINE_TARGET_WIDTH: usize = 40;
 
 /// Argument names that carry a call's subject, most specific first.
 const SUBJECT_KEYS: [&str; 12] = [
@@ -78,17 +60,6 @@ fn subject_source(args: &Value, cwd: &str) -> String {
         Some(r) if utf16_len(&r) < utf16_len(subject) => r,
         _ => subject.to_string(),
     }
-}
-
-/// The outline target: the first non-blank line, cut to `OUTLINE_TARGET_WIDTH` columns.
-fn outline_target(args: &Value, cwd: &str) -> String {
-    let source = subject_source(args, cwd);
-    let first = source
-        .lines()
-        .map(js_trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("");
-    truncate_to_width(first, OUTLINE_TARGET_WIDTH, "…", false)
 }
 
 /// The subject a chain line names a call by. An Agent call is named by its
@@ -205,110 +176,10 @@ impl std::ops::Deref for ResultHolder {
     }
 }
 
-/// `ToolSignalInput`.
-#[derive(Debug, Clone, Default)]
-pub struct ToolSignalInput {
-    pub tool_name: String,
-    pub args: Value,
-    pub cwd: String,
-    /// Shared with the tool block, so each rebuild hands it over without a copy.
-    pub result: Option<Rc<ResultHolder>>,
-    pub is_partial: bool,
-    pub show_images: bool,
-    /// The newest call in the transcript. Themes that set `activeToolBg` mark it.
-    pub is_latest: bool,
-}
-
-/// `toolSignal`: how much output came back, or why none did.
-pub fn tool_signal(input: &ToolSignalInput) -> (String, &'static str) {
-    let Some(result) = &input.result else {
-        return (
-            if input.is_partial {
-                "running".into()
-            } else {
-                String::new()
-            },
-            "warning",
-        );
-    };
-    if result.is_error {
-        return ("error".into(), "error");
-    }
-    let output = result.text(input.show_images);
-    if js_trim(output).is_empty() {
-        return ("ok".into(), "success");
-    }
-    let lines = output.split('\n').count();
-    (
-        format!("{lines} {}", if lines == 1 { "line" } else { "lines" }),
-        "success",
-    )
-}
-
-/// `renderToolSignalLine`: one outline row, without the status dot.
-pub fn render_tool_signal_line(input: &ToolSignalInput, width: usize) -> String {
-    let name = truncate_to_width(&input.tool_name, VERB_WIDTH, "…", false);
-    let verb = format!("{name:<w$}", w = VERB_WIDTH + VERB_GAP);
-    let (signal, color) = tool_signal(input);
-    let subject = outline_target(&input.args, &input.cwd);
-
-    let available = width;
-    let signal_width = if signal.is_empty() {
-        0
-    } else {
-        visible_width(&signal) + MIN_SIGNAL_GAP
-    };
-    let subject_width = available.saturating_sub(visible_width(&verb) + signal_width);
-    let shown_subject = if subject_width > 0 {
-        truncate_to_width(&subject, subject_width, "…", false)
-    } else {
-        String::new()
-    };
-    let left_width = visible_width(&verb) + visible_width(&shown_subject);
-    let min_pad = if signal.is_empty() { 0 } else { MIN_SIGNAL_GAP };
-    let pad = min_pad.max(
-        (available as isize - left_width as isize - visible_width(&signal) as isize).max(0)
-            as usize,
-    );
-
-    let t = theme();
-    let stroke = input.is_latest && t.has_bg("activeToolBg");
-    let content = format!(
-        "{}{}",
-        t.fg("toolTitle", &t.bold(&verb)),
-        t.fg("toolOutput", &shown_subject)
-    );
-    let content = if stroke {
-        t.bg("activeToolBg", &content)
-    } else {
-        content
-    };
-    format!("{content}{}{}", " ".repeat(pad), t.fg(color, &signal))
-}
-
-/// `ToolSignalComponent`.
-pub struct ToolSignalComponent {
-    input: ToolSignalInput,
-}
-
-impl ToolSignalComponent {
-    pub fn new(input: ToolSignalInput) -> Self {
-        Self { input }
-    }
-
-    pub fn set_input(&mut self, input: ToolSignalInput) {
-        self.input = input;
-    }
-}
-
-impl Component for ToolSignalComponent {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        vec![render_tool_signal_line(&self.input, width as usize)]
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::*;
 
     fn holder(text: &str) -> Rc<ResultHolder> {
@@ -385,20 +256,5 @@ line two
     fn an_update_is_a_new_holder_with_its_own_text() {
         assert_eq!(holder("old").text(false), "old");
         assert_eq!(holder("new").text(false), "new");
-    }
-
-    #[test]
-    fn a_outline_signal_counts_the_memoized_lines() {
-        hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        let input = ToolSignalInput {
-            tool_name: "Bash".into(),
-            result: Some(holder(
-                "a
-b
-c",
-            )),
-            ..Default::default()
-        };
-        assert_eq!(tool_signal(&input).0, "3 lines");
     }
 }

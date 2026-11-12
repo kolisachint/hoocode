@@ -691,7 +691,7 @@ pub fn show_loaded_resources_with_details(
             details_handle = Some(block);
         }
         for warning in &listing.context_warnings {
-            out.push(handle(Text::new(t.fg("warning", warning), 0, 0)));
+            out.push(handle(Text::new(t.fg("ink", &t.bold(warning)), 0, 0)));
         }
     }
 

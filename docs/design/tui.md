@@ -268,7 +268,7 @@ Setting `theme` takes a name, `auto`, or `auto:<light>:<dark>`. Choosing one in 
 | Accent chip (bg / text) | `#5cc8bb` / `#14141c` bold | `#00625c` / `#f8f8fb` bold |
 | Blocking chip (bg / text) | `#f0c674` / `#14141c` bold | `#f0c674` / `#2b2f36` bold |
 
-In light, panes are darker than the page. Dark panes are lighter than the base. Yellow is for blocking only. Some non-blocking places still use this token. They are listed under UI-29.
+In light, panes are darker than the page. Dark panes are lighter than the base. Yellow is for blocking only. A guard test in `crates/hoocode-code-tui-theme/tests/it/color_semantics.rs` keeps the warning token to the blocking dialog files.
 
 Contrast: every text colour on every surface is at least 4.5:1 (WCAG). The tightest pairs, checked on 2026-11-07, are dim and red on the dark selection (4.59:1), and green on the light selection (4.64:1). Do not lighten dim or darken `paneSel`. Light has one grey, so facts are told apart by position: two spaces after the target, and the body at column 4.
 
@@ -557,6 +557,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-27 closed: in settings, Space (`app.settings.toggle`) types into a non-empty search and toggles only when the search is empty. The rule holds for whatever key is bound to the toggle when that key is printable. Tests in `picker_keymap.rs`. |
 | 2026-11-12 | UI-26 closed: `/hotkeys` groups each layer's keys by the five rows of "Where a key acts", in that order: Prompt, Block focused (pinned, prompt empty), Picker or pane, empty filter, Blocking dialog, empty reply, Task panel focused. A row comes from the key's keymap context; the transcript's keys are Block focused and `app.quit.*` is a dialog. A bare key with a meaning in two places is listed under each. Non-letter keys (digits, `[`, `{`, `enter`, `esc`, arrows, function keys) are listed. Every key on the layer is its own line. Each group takes the most columns that fit, so no key is cut. Test: `tests/it/controls_places.rs`. |
 | 2026-11-12 | UI-32 closed: the selected row's name is bold in every pane, in colour and in monochrome. Settings, Sessions and Fork now bold it (as Models, Tree, Theme and Scoped models did). Config already did. The deeper panes' goldens show no stray blank row to remove: the blank rows left are detail separators, which the settings pane has too. Pinned by `tests/it/selected_row_bold.rs`. Goldens `systems_*`, `mission_log_*` and `stage_separation_*` changed by the bold only. |
+| 2026-11-12 | UI-29 closed: yellow (the warning token) marks only blocking dialogs. Status words, `(cancelled)`, `expired`, the retry notice, context warnings and key-file problems are ink bold. Truncation notes and the `press x again` and task note cues are dim. `tool_signal.rs` keeps its shared result types; its unused outline signal renderer is deleted. The guard test fails on any warning-token use outside the blocking dialog files. |
 
 ## Open
 
@@ -572,7 +573,6 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
-| UI-29 | Remaining non-blocking uses of the warning colour. | S | None | The list is in [docs/backlog.md](../backlog.md) (UI-29). The warning colour is for blocking only. |
 | UI-33 | Screen goldens are stale: 9 of 10 scenarios differ. They predate the single view (2026-11-07). | M | Before the next release check | Review each diff, fix the timing waits in `subagent-attach` and `scroll-view`, then `update`. List in [docs/backlog.md](../backlog.md). |
 | UI-34 | 21 places where a dialog or notice golden differs from this page. | M | After UI-32 | List in [docs/backlog.md](../backlog.md). Fix the screen or fix this page, one by one. |
 

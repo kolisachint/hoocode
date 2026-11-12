@@ -24,7 +24,7 @@ use hoocode_code_tui_keybindings::{
 use hoocode_code_tui_theme::style_input;
 use hoocode_tui_components::Input;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
@@ -440,7 +440,7 @@ impl Component for ControlsComponent {
             let noun = if count == 1 { "problem" } else { "problems" };
             console.top.push(Line::from(vec![Span::styled(
                 format!("keybindings.json · {count} {noun}"),
-                Palette::current().warn(),
+                bold(Palette::current().ink()),
             )]));
             for problem in &self.problems {
                 console.top.push(Line::from(truncate_spans(

@@ -212,7 +212,7 @@
     "\u001b[38;2;152;152;152m  project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                           ",
     "\u001b[38;2;152;152;152m    bad frontmatter\u001b[39m                                                                                 ",
     "\u001b[38;2;213;129;129m  no path error\u001b[39m                                                                                     ",
-    "\u001b[38;2;240;198;116mCould not read /w/BROKEN.md\u001b[39m                                                                         "
+    "\u001b[38;2;229;229;231m\u001b[1mCould not read /w/BROKEN.md\u001b[22m\u001b[39m                                                                         "
    ]
   },
   "quiet_diag": {

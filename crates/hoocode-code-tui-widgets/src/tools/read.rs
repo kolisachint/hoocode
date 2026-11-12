@@ -285,7 +285,7 @@ fn format_read_result(
             text.push_str(&format!(
                 "\n{}",
                 t.fg(
-                    "warning",
+                    "dim",
                     &format!("[First line exceeds {} limit]", format_size(max_bytes))
                 )
             ));
@@ -293,7 +293,7 @@ fn format_read_result(
             text.push_str(&format!(
                 "\n{}",
                 t.fg(
-                    "warning",
+                    "dim",
                     &format!(
                         "[Truncated: showing {} of {} lines ({} line limit)]",
                         num("outputLines", 0),
@@ -306,7 +306,7 @@ fn format_read_result(
             text.push_str(&format!(
                 "\n{}",
                 t.fg(
-                    "warning",
+                    "dim",
                     &format!(
                         "[Truncated: {} lines shown ({} limit)]",
                         num("outputLines", 0),

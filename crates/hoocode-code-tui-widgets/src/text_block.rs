@@ -9,10 +9,10 @@
 //!
 //! - S22 MCP status: ` MCP servers` in bold with an optional dim detail
 //!   (the config paths, `~/.agents/mcp.json · ./.agents/mcp.json`), then one
-//!   glyph row per server at indent 3: `●` in success, `◉` in warning, `⊗` in
+//!   glyph row per server at indent 3: `●` in success, `◉` in accent, `⊗` in
 //!   error; the name in ink padded to the longest name plus two; the source
 //!   in dim padded to the longest source plus two; then the state. The state
-//!   is ink for values (`4 tools`), warning when it waits on the user
+//!   is ink for values (`4 tools`), ink bold when it waits on the user
 //!   (`auth needed`), dim for reasons (`timeout after 30s`). An overflow
 //!   hint (`/mcp login github`) stays inline behind two spaces while it fits
 //!   and wraps to an ink continuation line at indent 5 below it. The source
@@ -50,7 +50,7 @@ const DETAIL_MIN_WIDTH: usize = 60;
 pub enum StatusTone {
     /// Done: `●` in success.
     Ready,
-    /// Waiting on the user: `◉` in warning.
+    /// Waiting on the user: `◉` in accent.
     Working,
     /// Failed: `⊗` in error.
     Failed,
@@ -81,16 +81,16 @@ pub enum DetailTone {
     Ink,
     /// A reason: dim.
     Dim,
-    /// Waiting on the user: warning.
-    Warn,
+    /// A status word that needs the user's eye: ink bold. Yellow is for
+    /// blocking dialogs only (`color-semantics.json`).
+    Bold,
 }
 
 impl DetailTone {
     fn token(self) -> &'static str {
         match self {
-            DetailTone::Ink => "ink",
+            DetailTone::Ink | DetailTone::Bold => "ink",
             DetailTone::Dim => "dim",
-            DetailTone::Warn => "warning",
         }
     }
 }
@@ -109,12 +109,12 @@ pub struct StatusRow {
 
 impl StatusRow {
     /// The mock's default tones: a ready row states ink values, a working
-    /// row warns, a failed row dims its reason. Override with
+    /// row states its wait in ink bold, a failed row dims its reason. Override with
     /// [`StatusRow::with_state_tone`] when a row differs.
     pub fn new(tone: StatusTone, name: &str, source: &str, state: &str) -> Self {
         let state_tone = match tone {
             StatusTone::Ready => DetailTone::Ink,
-            StatusTone::Working => DetailTone::Warn,
+            StatusTone::Working => DetailTone::Bold,
             StatusTone::Failed => DetailTone::Dim,
         };
         Self {
@@ -250,7 +250,10 @@ impl TextBlockComponent {
                 row.name,
                 " ".repeat(name_width + 2 - visible_width(&row.name))
             );
-            let state = t.fg(row.state_tone.token(), &row.state);
+            let state = match row.state_tone {
+                DetailTone::Bold => t.fg("ink", &t.bold(&row.state)),
+                tone => t.fg(tone.token(), &row.state),
+            };
             let head = format!("   {glyph} {}", t.fg("ink", &name));
             let full = if row.source.is_empty() || width < DETAIL_MIN_WIDTH {
                 format!("{head}{state}")

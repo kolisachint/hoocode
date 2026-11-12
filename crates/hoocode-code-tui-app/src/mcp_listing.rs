@@ -142,12 +142,12 @@ mod tests {
     }
 
     #[test]
-    fn auth_needed_reads_warning_yellow_and_the_glyph_accent() {
+    fn auth_needed_reads_ink_bold_and_the_glyph_accent() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         hoocode_code_tui_theme::chalk::set_enabled(true);
         let text = format_listing(&[server("remote", "project", McpStatus::AuthNeeded, 0)]);
         let t = hoocode_code_tui_theme::theme();
-        assert!(text.contains(&t.fg("warning", "auth needed")));
+        assert!(text.contains(&t.fg("ink", &t.bold("auth needed"))));
         // The waiting glyph shares the status row's working tone, which is
         // accent (yellow is for blocking only, decision 2026-11-07).
         assert!(text.contains(&t.fg("accent", "◉")));

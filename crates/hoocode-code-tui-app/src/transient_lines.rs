@@ -1,11 +1,11 @@
 //! The transient rows above the prompt: the runtime warning (memory shedding,
 //! UI stall), the auto-retry notice, extension statuses and startup progress.
-//! Each is one row cut to the width, dim or yellow, no fill. The two-row
+//! Each is one row cut to the width, dim or ink bold, no fill. The two-row
 //! footer that used to carry them is gone (declutter: the status line under
 //! the prompt holds the session facts).
 
 use hoocode_code_tui_keybindings::{which_key_rows, LeaderEntry};
-use hoocode_tui_ratatui::{paint, Palette};
+use hoocode_tui_ratatui::{bold, paint, Palette};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
 
@@ -152,7 +152,10 @@ impl TransientLines {
         // plus the which-key popup once due, the search its query row and
         // its keys row.
         if let Some(notice) = &self.retry_notice {
-            lines.push(cut(&paint(pal.warn(), &sanitize_status_text(notice)), "…"));
+            lines.push(cut(
+                &paint(bold(pal.ink()), &sanitize_status_text(notice)),
+                "…",
+            ));
         } else if let Some(leader) = &self.leader {
             lines.push(cut(&paint(pal.dim(), &leader.text), "…"));
             for row in which_key_rows(&leader.which_key, width) {
@@ -167,7 +170,7 @@ impl TransientLines {
             lines.push(cut(&paint(pal.dim(), shown), "…"));
             lines.push(cut(&paint(pal.dim(), hints), "…"));
         } else if let Some(notice) = &self.notice {
-            lines.push(cut(&paint(pal.warn(), notice), "…"));
+            lines.push(cut(&paint(bold(pal.ink()), notice), "…"));
         }
         let statuses = self.data.get_extension_statuses();
         if !statuses.is_empty() {

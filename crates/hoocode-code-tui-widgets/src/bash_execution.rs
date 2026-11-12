@@ -12,7 +12,7 @@ use hoocode_code_tool_bash::shell::strip_ansi;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Loader;
 use hoocode_tui_ratatui::core::text::Span;
-use hoocode_tui_ratatui::{ansi_spans, row, Palette};
+use hoocode_tui_ratatui::{ansi_spans, bold, row, Palette};
 use hoocode_tui_render::{Component, Fold, FoldHost};
 use hoocode_tui_util::{truncate_to_width, wrap_text_with_ansi};
 
@@ -322,7 +322,7 @@ impl BashExecutionComponent {
             footer.push(row(
                 vec![
                     Span::raw(" ".repeat(BODY_INDENT)),
-                    Span::styled("(cancelled)".to_string(), palette.warn()),
+                    Span::styled("(cancelled)".to_string(), bold(palette.ink())),
                 ],
                 width,
             ));
@@ -335,7 +335,7 @@ impl BashExecutionComponent {
                     Span::raw(" ".repeat(BODY_INDENT)),
                     Span::styled(
                         format!("Output truncated. Full output: {path}"),
-                        palette.warn(),
+                        palette.dim(),
                     ),
                 ],
                 width,

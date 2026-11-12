@@ -35,28 +35,11 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 6 | UI-29 | The warning-colour list below. | S |
 | 7 | Schema drift | `schema.rs` `COLOR_PROPERTIES` lists `dim` twice and leaves out `mcp`; the `toolBandBg` text says "peek view"; decide whether the uncalled `thinkingOff`…`thinkingXhigh` tokens stay. | S |
 | 8 | UI-34 | The 21 differences below. Fix the screen or fix `tui.md`, one by one. | M |
 | 9 | UI-33 | Refresh the screen goldens. Notes below. | M |
 | 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
 | 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
-
-### UI-29: warning colour outside blocking dialogs
-
-The rule is "yellow marks only the thing that blocks the user". These still use the `warning` token. Move each to ink bold or dim, or add it as a named exception in `color-semantics.json` with a test.
-
-| Where | What |
-|---|---|
-| `code-tui-widgets/src/text_block.rs` (`DetailTone::Warn`) | Status words such as MCP `auth needed` |
-| `code-tui-widgets/src/tools/read.rs` (3 sites), `tools/web.rs`, `tools/bash.rs` | Truncation notes |
-| `code-tui-app/src/resource_display.rs` | Context warnings in the startup listing |
-| `code-tui-widgets/src/task_panel.rs` | `press x again to cancel`, and the task note cue |
-| `code-tui-widgets/src/bash_execution.rs` | `(cancelled)` |
-| `code-tui-app/src/transient_lines.rs` | Retry notice |
-| `code-tui-selectors/src/model_selector.rs` | `expired` |
-| `code-tui-widgets/src/controls.rs` | Key-file problems in `/hotkeys` |
-| `code-tui-widgets/src/tool_signal.rs` | Draws nothing in production since the dial went |
 
 ### UI-34: golden versus design
 
