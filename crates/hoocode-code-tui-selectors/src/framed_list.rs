@@ -38,12 +38,14 @@ pub type DetailFn = fn(&SelectItem) -> Vec<Line<'static>>;
 /// "Row format"): `mark + bold name + ink target + dim facts joined with ·`.
 ///
 /// The mark carries the state so a row never reads as colour alone: `●`
-/// (ink) for the row holding the state, `○` (dim) for the rest. The name
-/// never cuts; secondary facts drop whole, right-to-left; the target
-/// shortens at a word (a first word longer than the budget is cut hard,
-/// so a single long token still fits); primary facts never drop. A final
-/// `truncate_line` guard keeps the row within `width` no matter what. The
-/// cut order mirrors `tool_row::header_spans`, measured with visible
+/// (ink) for the row holding the state, `○` (dim) for the rest. Secondary
+/// facts drop whole, right-to-left; the target shortens at a word (a first
+/// word longer than the budget is cut hard, so a single long token still
+/// fits); then, when primary facts are set, the name cuts at a word so the
+/// primary facts keep their place (`● claude-sonnet-5-5  anthropic · on`
+/// becomes `● claude-son…  anthropic · on`); primary facts never drop. A
+/// final `truncate_line` guard keeps the row within `width` no matter what.
+/// The cut order mirrors `tool_row::header_spans`, measured with visible
 /// widths. It lives here rather than reusing that helper because `Mark`
 /// has no `○` shape and picker facts keep their own colours (the green
 /// `configured`, the ink `on`, the warn `expired`).
@@ -62,7 +64,7 @@ pub(crate) fn picker_row(
     } else {
         (status::TODO_STR, pal.dim())
     };
-    let render_text = |target: &str, secs: &[(String, Style)]| -> String {
+    let render_text = |name: &str, target: &str, secs: &[(String, Style)]| -> String {
         let mut out = format!("{mark} {name}");
         if !target.is_empty() {
             out.push(' ');
@@ -77,14 +79,14 @@ pub(crate) fn picker_row(
     };
     // Step 1: secondary facts drop whole, right to left.
     let mut kept = secondary;
-    while visible_width(&render_text(target, &kept)) > width {
+    while visible_width(&render_text(name, target, &kept)) > width {
         if kept.pop().is_none() {
             break;
         }
     }
     // Step 2: the target shortens at a word against the kept facts.
     let mut short = target.to_string();
-    if visible_width(&render_text(&short, &kept)) > width {
+    if visible_width(&render_text(name, &short, &kept)) > width {
         let facts = fact_texts(&primary, &kept);
         let facts_len = if facts.is_empty() {
             0
@@ -95,6 +97,14 @@ pub(crate) fn picker_row(
             .saturating_add(if short.is_empty() { 0 } else { 1 });
         short = truncate_at_word(target, width.saturating_sub(head_len + facts_len));
     }
+    // Step 3: the name cuts at a word against the primary facts, so they keep
+    // their place. Only with primary facts: a row without them keeps its name.
+    let mut shown_name = name.to_string();
+    if !primary.is_empty() && visible_width(&render_text(name, &short, &kept)) > width {
+        let fixed = visible_width(&render_text(name, &short, &kept)) - visible_width(name);
+        shown_name = truncate_at_word(name, width.saturating_sub(fixed));
+    }
+    let name = shown_name.as_str();
     let mut spans = vec![
         Span::styled(mark.to_string(), mark_style),
         Span::raw(" ".to_string()),

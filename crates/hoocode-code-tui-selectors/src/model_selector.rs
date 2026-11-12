@@ -190,14 +190,18 @@ fn models_text(count: usize) -> String {
 }
 
 /// One model row (content only; the console adds the ` › ` marker or
-/// gutter and the selection band): `● id  price · ctx · thinking`. The
-/// mark carries the state (`●` the model in use, `○` the rest); the price
-/// is primary and never drops, context then thinking drop right-to-left.
-/// A model whose login expired says so as fact text (`expired`, ink bold),
-/// never colour alone.
+/// gutter and the selection band): `● id  provider · price · ctx · thinking`.
+/// The mark carries the state (`●` the model in use, `○` the rest). The
+/// provider and price are primary and never drop (the id cuts first, so the
+/// same id from two providers reads as two rows); context then thinking drop
+/// right-to-left. A model whose login expired says so as fact text
+/// (`expired`, ink bold), never colour alone.
 fn model_row(model: &Model, expired: bool, current: Option<&Model>, width: usize) -> Line<'static> {
     let pal = Palette::current();
-    let mut primary = vec![(format_price(&model.cost), pal.dim())];
+    let mut primary = vec![
+        (model.provider.clone(), pal.dim()),
+        (format_price(&model.cost), pal.dim()),
+    ];
     if expired {
         primary.push(("expired".to_string(), bold(pal.ink())));
     }

@@ -63,9 +63,9 @@ fn full_ids(models: &[Model]) -> Vec<String> {
 }
 
 /// The model id on each list row, in order (the row format: mark, id,
-/// then the price, then the `expired` fact). `price` picks the rows: the
-/// detail column beside the list prints on the same lines. The test models
-/// are free.
+/// then the provider, then the price, then the `expired` fact). `price`
+/// picks the rows: the detail column beside the list prints on the same
+/// lines. The test models are free.
 fn listed_ids(rendered: &str, price: &str) -> Vec<String> {
     rendered
         .lines()
@@ -85,6 +85,8 @@ fn listed_ids(rendered: &str, price: &str) -> Vec<String> {
             if ["name", "provider", "context", "price", "thinking"].contains(&id) {
                 return None;
             }
+            let _provider = cols.next()?;
+            let _separator = cols.next()?;
             let row_price = cols.next()?;
             (row_price == price).then(|| id.to_string())
         })

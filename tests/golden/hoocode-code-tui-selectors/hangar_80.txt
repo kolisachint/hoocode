@@ -1,6 +1,6 @@
   Models  /model  showing scoped · 2 models
- › ● mock-large  free · 128k · thinking
-   ○ mock-fast  free · 128k · thinking
+ › ● mock-large  mock · free · 128k · thinking
+   ○ mock-fast  mock · free · 128k · thinking
  mock-large  in use
  name      Mock Large
  provider  mock
@@ -20,15 +20,15 @@ r1 c1 fg=#5cc8bb bg=#233239
 r1 c2-4 fg=#e5e5e7 bg=#233239
 r1 c5-14 fg=#e5e5e7 bg=#233239 bold
 r1 c15-16 fg=#e5e5e7 bg=#233239
-r1 c17-38 fg=#989898 bg=#233239
-r1 c39-79 fg=#e5e5e7 bg=#233239
+r1 c17-45 fg=#989898 bg=#233239
+r1 c46-79 fg=#e5e5e7 bg=#233239
 r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
 r2 c3 fg=#989898 bg=#1e1e2a
 r2 c4 fg=#e5e5e7 bg=#1e1e2a
 r2 c5-13 fg=#e5e5e7 bg=#1e1e2a bold
 r2 c14-15 fg=#e5e5e7 bg=#1e1e2a
-r2 c16-37 fg=#989898 bg=#1e1e2a
-r2 c38-79 fg=#e5e5e7 bg=#1e1e2a
+r2 c16-44 fg=#989898 bg=#1e1e2a
+r2 c45-79 fg=#e5e5e7 bg=#1e1e2a
 r3 c0-10 fg=#e5e5e7 bg=#292b40
 r3 c11-18 fg=#989898 bg=#292b40
 r3 c19-79 fg=#e5e5e7 bg=#292b40

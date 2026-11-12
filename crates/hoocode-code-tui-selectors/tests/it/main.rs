@@ -15,6 +15,7 @@ mod picker_letter_gate;
 mod picker_widths;
 mod platform_settings_pane;
 mod plugin_settings_keyboard;
+mod provider_rows;
 mod scoped_models_golden;
 mod selected_row_bold;
 mod session_selector;

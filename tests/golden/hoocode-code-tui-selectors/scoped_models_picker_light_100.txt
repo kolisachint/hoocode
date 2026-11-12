@@ -1,7 +1,7 @@
   Scoped models  /scoped-models  2 of 3 on · this session only
- › ● claude-haiku-5-5  on · alias haiku · effort low · cheap
-   ● gpt-5-mini  on
-   ○ gpt-5  off
+ › ● claude-haiku-5-5  anthropic · on · alias haiku · effort low · cheap
+   ● gpt-5-mini  openai · on
+   ○ gpt-5  openai · off
  ▏ filter
  enter on / off · c category · s save to settings · esc close · f1 more
 --- styles ---
@@ -16,19 +16,23 @@ r1 c0 fg=#2b2f36 bg=#c3dcdc
 r1 c1 fg=#00625c bg=#c3dcdc
 r1 c2-4 fg=#2b2f36 bg=#c3dcdc
 r1 c5-20 fg=#2b2f36 bg=#c3dcdc bold
-r1 c21-24 fg=#2b2f36 bg=#c3dcdc
-r1 c25-59 fg=#555864 bg=#c3dcdc
-r1 c60-99 fg=#2b2f36 bg=#c3dcdc
+r1 c21-22 fg=#2b2f36 bg=#c3dcdc
+r1 c23-34 fg=#555864 bg=#c3dcdc
+r1 c35-36 fg=#2b2f36 bg=#c3dcdc
+r1 c37-71 fg=#555864 bg=#c3dcdc
+r1 c72-99 fg=#2b2f36 bg=#c3dcdc
 r2 c0-4 fg=#2b2f36 bg=#e8e8f0
 r2 c5-14 fg=#2b2f36 bg=#e8e8f0 bold
-r2 c15-99 fg=#2b2f36 bg=#e8e8f0
+r2 c15-16 fg=#2b2f36 bg=#e8e8f0
+r2 c17-25 fg=#555864 bg=#e8e8f0
+r2 c26-99 fg=#2b2f36 bg=#e8e8f0
 r3 c0-2 fg=#2b2f36 bg=#e8e8f0
 r3 c3 fg=#555864 bg=#e8e8f0
 r3 c4 fg=#2b2f36 bg=#e8e8f0
 r3 c5-9 fg=#2b2f36 bg=#e8e8f0 bold
 r3 c10-11 fg=#2b2f36 bg=#e8e8f0
-r3 c12-14 fg=#555864 bg=#e8e8f0
-r3 c15-99 fg=#2b2f36 bg=#e8e8f0
+r3 c12-23 fg=#555864 bg=#e8e8f0
+r3 c24-99 fg=#2b2f36 bg=#e8e8f0
 r4 c0-1 fg=#2b2f36 bg=#dadbe6
 r4 c2-8 fg=#555864 bg=#dadbe6
 r4 c9-99 fg=#2b2f36 bg=#dadbe6
