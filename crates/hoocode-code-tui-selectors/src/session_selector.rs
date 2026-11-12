@@ -33,7 +33,7 @@ use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
 use hoocode_home::shorten_path;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key, KeybindingsManager};
-use hoocode_tui_ratatui::{Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::js_trim;
 use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
@@ -804,12 +804,12 @@ impl SessionList {
     /// One session row (content only; the pane adds the ` › ` marker or
     /// gutter and the selection band): the tree prefix, the branch, the
     /// name, and the facts right-aligned (search hits, then the age).
-    /// Never bold: only the selected row carries ` › ` (mock §S8). The
-    /// rest of a session shows in the detail column.
+    /// The selected row's name is bold, as in every other pane; the rest of
+    /// a session shows in the detail column.
     fn console_row(
         &self,
         i: usize,
-        _selected: bool,
+        selected: bool,
         inner: usize,
         now: DateTime<Utc>,
     ) -> Line<'static> {
@@ -895,13 +895,16 @@ impl SessionList {
             false,
         ));
         let name_width = visible_width(&truncated) as i64;
-        let name_span = if is_confirming_delete {
+        let mut name_span = if is_confirming_delete {
             Span::styled(truncated, pal.err())
         } else if is_current {
             Span::styled(truncated, pal.acc())
         } else {
             Span::raw(truncated)
         };
+        if selected {
+            name_span.style = bold(name_span.style);
+        }
         spans.push(name_span);
         let spacing = (room - prefix_width - branch_width - name_width - right_width).max(1);
         spans.push(Span::raw(" ".repeat(spacing as usize)));

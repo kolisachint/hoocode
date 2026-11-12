@@ -35,7 +35,6 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 5 | UI-32 | Deeper panes match the settings pane: no stray blank rows. The selected row's name is bold in every pane. Sessions, Settings and Fork are not bold today. | S |
 | 6 | UI-29 | The warning-colour list below. | S |
 | 7 | Schema drift | `schema.rs` `COLOR_PROPERTIES` lists `dim` twice and leaves out `mcp`; the `toolBandBg` text says "peek view"; decide whether the uncalled `thinkingOff`…`thinkingXhigh` tokens stay. | S |
 | 8 | UI-34 | The 21 differences below. Fix the screen or fix `tui.md`, one by one. | M |
@@ -72,7 +71,6 @@ Found while pinning the dialogs (UI-6). The goldens pin the screen as built. Nam
 | 5 | `docking_auth_100` URL row | Accent | Accent is for `›`, `◉`, code and the chip |
 | 6 | `ask_card_100` | Chip holds the word `Question`; the question is ink | "Yellow chip with the question text" |
 | 7 | `mission_log_100`, `flight_path_100`, `scoped_models_picker_100` hints | Five items | At most four, then `f1 more` |
-| 8 | Selected row | Bold in Models, Tree, Theme, Scoped models; not in Sessions, Settings, Fork | User, 2026-11-11: bold everywhere (UI-32) |
 | 9 | `flight_path_100` role labels | `user` accent, `assistant` green | Accent and green are reserved |
 | 10 | `scoped_models_picker_100`, `hull_100` | Green `●` for "on" and "current" | Green is the done mark and `+n` |
 | 11 | `hull_100` preview | `Shell` dim bold, `exit 1` dim | Tool name ink bold, `exit N` red |

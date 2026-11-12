@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use hoocode_code_tui_widgets::console::Console;
 use hoocode_tui_components::PickerCursor;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::is_js_space;
 use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
@@ -65,7 +65,7 @@ impl UserMessageList {
 /// One message row (content only; the pane adds the ` › ` marker or
 /// gutter and the selection band): the text on one line, cut to the inner
 /// width. The selected row says how many messages the new session carries.
-fn message_row(text: &str, carries: Option<usize>, width: usize) -> Line<'static> {
+fn message_row(text: &str, carries: Option<usize>, width: usize, selected: bool) -> Line<'static> {
     let pal = Palette::current();
     let normalized = text.replace('\n', " ");
     let normalized = normalized.trim_matches(is_js_space);
@@ -82,7 +82,15 @@ fn message_row(text: &str, carries: Option<usize>, width: usize) -> Line<'static
         "…",
         false,
     );
-    let mut spans = vec![Span::raw(strip_vt_control_characters(&truncated))];
+    let text_style = if selected {
+        bold(Style::default())
+    } else {
+        Style::default()
+    };
+    let mut spans = vec![Span::styled(
+        strip_vt_control_characters(&truncated),
+        text_style,
+    )];
     if let Some(suffix) = suffix {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(suffix, pal.dim()));
@@ -184,6 +192,7 @@ impl Component for UserMessageSelectorComponent {
                         &list.messages[i].text,
                         (i == selected).then_some(selected + 1),
                         width,
+                        i == selected,
                     )
                 })
                 .collect();

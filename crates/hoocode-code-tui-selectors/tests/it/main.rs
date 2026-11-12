@@ -16,6 +16,7 @@ mod picker_widths;
 mod platform_settings_pane;
 mod plugin_settings_keyboard;
 mod scoped_models_golden;
+mod selected_row_bold;
 mod session_selector;
 mod session_selector_search;
 mod session_subagent_delete;

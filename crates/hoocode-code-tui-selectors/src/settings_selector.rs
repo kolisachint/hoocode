@@ -37,7 +37,7 @@ use hoocode_tui_components::{
     Input, SelectItem, SelectList, SettingItem, SettingsList, SettingsListOptions, Spacer,
     SubmenuOutcome, Text,
 };
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::{visible_width, wrap_text_with_ansi};
 
@@ -2051,7 +2051,7 @@ impl Component for SettingsSelectorComponent {
             .clone()
             .filter_map(|i| {
                 let (label, value, _, _) = items.get(i)?;
-                Some(setting_row(label, value, max_label))
+                Some(setting_row(label, value, max_label, i == selected))
             })
             .collect();
         console.selected = window.clone().position(|i| i == selected);
@@ -2128,14 +2128,19 @@ impl Component for SettingsSelectorComponent {
 /// One setting row (content only; the pane adds the ` › ` marker or
 /// gutter and the selection band): the label padded to the pane's column,
 /// then the value, dim.
-fn setting_row(label: &str, value: &str, label_width: usize) -> Line<'static> {
+/// One setting's row: the label (bold on the selected row, as the other
+/// panes' selected names are), padded to the label column, then the dim value.
+fn setting_row(label: &str, value: &str, label_width: usize, selected: bool) -> Line<'static> {
     let pal = Palette::current();
-    let padded = format!(
-        "{label}{}",
-        " ".repeat(label_width.saturating_sub(visible_width(label)))
-    );
+    let padding = " ".repeat(label_width.saturating_sub(visible_width(label)));
+    let name = if selected {
+        Span::styled(label.to_string(), bold(Style::default()))
+    } else {
+        Span::raw(label.to_string())
+    };
     Line::from(vec![
-        Span::raw(padded),
+        name,
+        Span::raw(padding),
         Span::raw("  ".to_string()),
         Span::styled(value.to_string(), pal.dim()),
     ])
