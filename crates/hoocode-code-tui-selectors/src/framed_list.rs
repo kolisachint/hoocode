@@ -34,16 +34,24 @@ pub(crate) fn layout(min: usize, max: usize) -> SelectListLayoutOptions {
 /// What a pane shows beside the list for the selected item.
 pub type DetailFn = fn(&SelectItem) -> Vec<Line<'static>>;
 
+/// The fewest cells a picker row's name keeps when its primary facts push
+/// it to cut (`picker_row`). A shorter name is never cut.
+const NAME_FLOOR: usize = 12;
+
 /// One depth-2 picker row on the U21/U22 row grammar (`docs/design/tui.md`
 /// "Row format"): `mark + bold name + ink target + dim facts joined with ·`.
 ///
 /// The mark carries the state so a row never reads as colour alone: `●`
-/// (ink) for the row holding the state, `○` (dim) for the rest. The name
-/// never cuts; secondary facts drop whole, right-to-left; the target
-/// shortens at a word (a first word longer than the budget is cut hard,
-/// so a single long token still fits); primary facts never drop. A final
-/// `truncate_line` guard keeps the row within `width` no matter what. The
-/// cut order mirrors `tool_row::header_spans`, measured with visible
+/// (ink) for the row holding the state, `○` (dim) for the rest. Secondary
+/// facts drop whole, right-to-left; the target shortens at a word (a first
+/// word longer than the budget is cut hard, so a single long token still
+/// fits); then, when primary facts are set, the name cuts at a word, but
+/// only once every secondary fact is gone and never below
+/// [`NAME_FLOOR`] cells (or its full length, when shorter), so the id keeps
+/// its place before the primary facts (`● claude-sonnet-5-5  anthropic · on`
+/// becomes `● claude-son…  anthropic · on`); primary facts never drop. A
+/// final `truncate_line` guard keeps the row within `width` no matter what.
+/// The cut order mirrors `tool_row::header_spans`, measured with visible
 /// widths. It lives here rather than reusing that helper because `Mark`
 /// has no `○` shape and picker facts keep their own colours (the green
 /// `configured`, the ink `on`, the warn `expired`).
@@ -62,7 +70,7 @@ pub(crate) fn picker_row(
     } else {
         (status::TODO_STR, pal.dim())
     };
-    let render_text = |target: &str, secs: &[(String, Style)]| -> String {
+    let render_text = |name: &str, target: &str, secs: &[(String, Style)]| -> String {
         let mut out = format!("{mark} {name}");
         if !target.is_empty() {
             out.push(' ');
@@ -77,14 +85,14 @@ pub(crate) fn picker_row(
     };
     // Step 1: secondary facts drop whole, right to left.
     let mut kept = secondary;
-    while visible_width(&render_text(target, &kept)) > width {
+    while visible_width(&render_text(name, target, &kept)) > width {
         if kept.pop().is_none() {
             break;
         }
     }
     // Step 2: the target shortens at a word against the kept facts.
     let mut short = target.to_string();
-    if visible_width(&render_text(&short, &kept)) > width {
+    if visible_width(&render_text(name, &short, &kept)) > width {
         let facts = fact_texts(&primary, &kept);
         let facts_len = if facts.is_empty() {
             0
@@ -95,6 +103,17 @@ pub(crate) fn picker_row(
             .saturating_add(if short.is_empty() { 0 } else { 1 });
         short = truncate_at_word(target, width.saturating_sub(head_len + facts_len));
     }
+    // Step 3: the name cuts at a word against the primary facts, so they keep
+    // their place. It runs only when no secondary fact is left (step 1 drops
+    // them all before it can overflow) and it keeps at least `NAME_FLOOR`
+    // cells. Only with primary facts: a row without them keeps its name.
+    let mut shown_name = name.to_string();
+    if !primary.is_empty() && visible_width(&render_text(name, &short, &kept)) > width {
+        let fixed = visible_width(&render_text(name, &short, &kept)) - visible_width(name);
+        let floor = NAME_FLOOR.min(visible_width(name));
+        shown_name = truncate_at_word(name, width.saturating_sub(fixed).max(floor));
+    }
+    let name = shown_name.as_str();
     let mut spans = vec![
         Span::styled(mark.to_string(), mark_style),
         Span::raw(" ".to_string()),
