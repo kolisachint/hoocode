@@ -39,7 +39,13 @@ fn check_look(name: &str, width: u16, variant: Look) {
         text.contains("bindings") && text.contains("shown"),
         "{name}: missing binding count in\n{text}"
     );
-    for group in ["prompt", "transcript", "app"] {
+    for group in [
+        "Prompt",
+        "Block focused (pinned, prompt empty)",
+        "Picker or pane, empty filter",
+        "Blocking dialog, empty reply",
+        "Task panel focused",
+    ] {
         assert!(
             text.lines()
                 .any(|l| l.trim_start_matches(['│', ' ']).starts_with(group)),
@@ -53,13 +59,13 @@ fn check_look(name: &str, width: u16, variant: Look) {
     assert_golden!(name, rendered);
 }
 
-/// The grouped grid: prompt keys across, transcript and app side by side.
+/// The grouped grid: one group per row of "Where a key acts", in table order.
 #[test]
 fn controls_100() {
     check("controls_100", 100);
 }
 
-/// Below the spec width: the groups stack in one column.
+/// Below 100 columns the groups take one column.
 #[test]
 fn controls_80() {
     check("controls_80", 80);

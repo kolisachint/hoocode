@@ -35,7 +35,6 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 4 | UI-26 | `/hotkeys`: group by the five rows of "Where a key acts", show every meaning of a bare key, show non-letter keys (`code-tui-widgets/src/controls.rs`). | S |
 | 5 | UI-32 | Deeper panes match the settings pane: no stray blank rows. The selected row's name is bold in every pane. Sessions, Settings and Fork are not bold today. | S |
 | 6 | UI-29 | The warning-colour list below. | S |
 | 7 | Schema drift | `schema.rs` `COLOR_PROPERTIES` lists `dim` twice and leaves out `mcp`; the `toolBandBg` text says "peek view"; decide whether the uncalled `thinkingOff`…`thinkingXhigh` tokens stay. | S |

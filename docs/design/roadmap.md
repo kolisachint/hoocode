@@ -48,16 +48,15 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 9. [UI-32](tui.md#open) Deeper panes match the settings pane; selected row bold everywhere (S)
 10. [UI-33](tui.md#open) Refresh the stale screen goldens (M)
 11. [UI-34](tui.md#open) Work through the 21 golden-versus-design differences (M)
-12. [UI-26](tui.md#open) `/hotkeys` shows one meaning per bare key and omits non-letter keys (S)
-14. [UI-29](tui.md#open) Remaining non-blocking uses of the warning colour (S)
-15. [RT-6](runtime.md#open) CodeSearch: compile term regexes once (S)
-16. [RT-7](runtime.md#open) UserMessageComponent: render stamp at construction (S)
-17. [RT-8](runtime.md#open) `ShellOutput` wait on a Condvar (S)
-18. [RT-9](runtime.md#open) `MessageUpdate` sets dirty (S)
-19. [RT-10](runtime.md#open) Approvals stop freezing the batch (L)
-20. [RT-11](runtime.md#open) Tool progress: latest per call id (M)
-21. [RT-12](runtime.md#open) SSE 16 MiB cap in provider decoders (S). Rule debt.
-22. [RT-13](runtime.md#open) Cap unbounded channels outside the runtime (M). Rule debt.
+12. [UI-29](tui.md#open) Remaining non-blocking uses of the warning colour (S)
+13. [RT-6](runtime.md#open) CodeSearch: compile term regexes once (S)
+14. [RT-7](runtime.md#open) UserMessageComponent: render stamp at construction (S)
+15. [RT-8](runtime.md#open) `ShellOutput` wait on a Condvar (S)
+16. [RT-9](runtime.md#open) `MessageUpdate` sets dirty (S)
+17. [RT-10](runtime.md#open) Approvals stop freezing the batch (L)
+18. [RT-11](runtime.md#open) Tool progress: latest per call id (M)
+19. [RT-12](runtime.md#open) SSE 16 MiB cap in provider decoders (S). Rule debt.
+20. [RT-13](runtime.md#open) Cap unbounded channels outside the runtime (M). Rule debt.
 23. [RT-14](runtime.md#open) LLM first-byte and idle deadline (S). Rule debt.
 24. [RT-15](runtime.md#open) Compaction off io and tools (M). Rule debt.
 25. [RT-16](runtime.md#open) Step 0: measured 10 and 15 turn baseline (S). Gates RT-17 to RT-20.
