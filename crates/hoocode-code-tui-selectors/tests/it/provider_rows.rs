@@ -1,6 +1,7 @@
 //! Two providers can offer the same model id. Both pickers show the provider
-//! on every row, so the rows differ; the provider is a primary fact, so it
-//! survives a narrow width (the id cuts first).
+//! on every row, so the rows differ. The provider is a primary fact and the
+//! id cuts only after the secondary facts are gone, so at 100 columns (detail
+//! column open) and at 60 the id reads whole, followed by the provider.
 
 use hoocode_ai_types::Model;
 use hoocode_code_settings::ScopedModel;
@@ -10,6 +11,8 @@ use hoocode_tui_render::Component;
 use serde_json::json;
 
 use crate::support::{lock, strip};
+
+const ID: &str = "claude-sonnet-5-5";
 
 fn model(provider: &str, id: &str, name: &str) -> Model {
     serde_json::from_value(json!({
@@ -24,50 +27,43 @@ fn model(provider: &str, id: &str, name: &str) -> Model {
 /// The same id from two providers.
 fn twins() -> Vec<Model> {
     vec![
-        model("anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
-        model("openrouter", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
+        model("anthropic", ID, "Claude Sonnet 5.5"),
+        model("openrouter", ID, "Claude Sonnet 5.5"),
     ]
 }
 
-/// The rendered rows that carry `provider` as their first fact: the provider
-/// sits after the id (or its `…` cut) and before the dim `·` facts. The
-/// detail column's `provider  name` line never has the `·` after it.
-fn rows_of(rendered: &str, provider: &str) -> Vec<String> {
-    let fact = format!("{provider} · ");
-    rendered
-        .lines()
-        .filter(|line| line.contains(&fact))
-        .map(|line| line.trim_matches(['│', '┃', ' ']).to_string())
-        .collect()
+/// Exactly one list row shows the whole id, then the provider. The detail
+/// column prints `claude-sonnet-5-5` on its own, never before a provider.
+fn assert_full_id_row(rendered: &str, provider: &str, width: u16) {
+    let row = format!("{ID}  {provider}");
+    let hits = rendered.lines().filter(|line| line.contains(&row)).count();
+    assert_eq!(hits, 1, "width {width}, {provider}:\n{rendered}");
 }
 
 #[test]
-fn model_picker_shows_the_provider_on_each_twin_row() {
+fn model_picker_shows_the_full_id_and_provider_on_each_twin_row() {
     let _g = lock();
     for width in [100, 60] {
         let mut selector = ModelSelectorComponent::new(None, Ok(twins()), None, vec![], None);
         let rendered = strip(&selector.render(width));
-        let anthropic = rows_of(&rendered, "anthropic");
-        let openrouter = rows_of(&rendered, "openrouter");
-        assert_eq!(anthropic.len(), 1, "width {width}:\n{rendered}");
-        assert_eq!(openrouter.len(), 1, "width {width}:\n{rendered}");
-        assert_ne!(anthropic, openrouter, "width {width}:\n{rendered}");
+        assert_full_id_row(&rendered, "anthropic", width);
+        assert_full_id_row(&rendered, "openrouter", width);
     }
 }
 
 #[test]
-fn scoped_models_picker_shows_the_provider_on_each_twin_row() {
+fn scoped_models_picker_shows_the_full_id_and_provider_on_each_twin_row() {
     let _g = lock();
     for width in [100, 60] {
         let scoped = vec![
             ScopedModel {
-                model: "anthropic/claude-sonnet-5-5".into(),
+                model: format!("anthropic/{ID}"),
                 effort: None,
                 category: None,
                 alias: None,
             },
             ScopedModel {
-                model: "openrouter/claude-sonnet-5-5".into(),
+                model: format!("openrouter/{ID}"),
                 effort: None,
                 category: None,
                 alias: None,
@@ -75,10 +71,7 @@ fn scoped_models_picker_shows_the_provider_on_each_twin_row() {
         ];
         let mut selector = ScopedModelsSelectorComponent::new(twins(), Some(scoped));
         let rendered = strip(&selector.render(width));
-        let anthropic = rows_of(&rendered, "anthropic");
-        let openrouter = rows_of(&rendered, "openrouter");
-        assert_eq!(anthropic.len(), 1, "width {width}:\n{rendered}");
-        assert_eq!(openrouter.len(), 1, "width {width}:\n{rendered}");
-        assert_ne!(anthropic, openrouter, "width {width}:\n{rendered}");
+        assert_full_id_row(&rendered, "anthropic", width);
+        assert_full_id_row(&rendered, "openrouter", width);
     }
 }

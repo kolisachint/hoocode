@@ -63,10 +63,11 @@ fn full_ids(models: &[Model]) -> Vec<String> {
 }
 
 /// The model id on each list row, in order (the row format: mark, id,
-/// then the provider, then the price, then the `expired` fact). `price`
-/// picks the rows: the detail column beside the list prints on the same
-/// lines. The test models are free.
-fn listed_ids(rendered: &str, price: &str) -> Vec<String> {
+/// then the provider, then the secondary facts). `provider` picks the rows:
+/// the detail column beside the list prints on the same lines, and its
+/// `id  in use` line has no provider after the id. Price may drop on a
+/// narrow row, so it is not the key.
+fn listed_ids(rendered: &str, provider: &str) -> Vec<String> {
     rendered
         .lines()
         .filter_map(|line| {
@@ -85,10 +86,8 @@ fn listed_ids(rendered: &str, price: &str) -> Vec<String> {
             if ["name", "provider", "context", "price", "thinking"].contains(&id) {
                 return None;
             }
-            let _provider = cols.next()?;
-            let _separator = cols.next()?;
-            let row_price = cols.next()?;
-            (row_price == price).then(|| id.to_string())
+            let row_provider = cols.next()?;
+            (row_provider == provider).then(|| id.to_string())
         })
         .collect()
 }
@@ -144,7 +143,7 @@ fn preserves_scoped_model_order_in_the_model_scoped_tab() {
         None,
     );
     let rendered = strip(&selector.render(120));
-    let ids = listed_ids(&rendered, "free");
+    let ids = listed_ids(&rendered, "faux");
     assert_eq!(ids[..3], [two.id, one.id, three.id]);
     assert!(rendered.contains("showing scoped"));
 }
@@ -201,7 +200,7 @@ fn typing_narrows_and_enter_selects_the_highlighted_model() {
         ModelSelectorComponent::new(Some(models[0].clone()), Ok(models), None, vec![], None);
     selector.handle_input("2");
     let rendered = strip(&selector.render(100));
-    assert_eq!(listed_ids(&rendered, "free"), ["faux-2"]);
+    assert_eq!(listed_ids(&rendered, "faux"), ["faux-2"]);
     selector.handle_input("\r");
     match selector.take_events().as_slice() {
         [ModelSelectorEvent::Select(m)] => assert_eq!(m.id, "faux-2"),
@@ -247,12 +246,12 @@ fn up_and_down_clamp_and_tab_switches_scope() {
     );
     // Scoped first: only faux-3.
     assert_eq!(
-        listed_ids(&strip(&selector.render(100)), "free"),
+        listed_ids(&strip(&selector.render(100)), "faux"),
         ["faux-3"]
     );
     selector.handle_input("\t");
     let rendered = strip(&selector.render(100));
-    assert_eq!(listed_ids(&rendered, "free").len(), 3);
+    assert_eq!(listed_ids(&rendered, "faux").len(), 3);
     // The current model (One) is first; up at the top stays put.
     selector.handle_input("\x1b[A");
     assert!(strip(&selector.render(100)).contains("One"));
