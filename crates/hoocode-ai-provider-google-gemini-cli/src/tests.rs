@@ -354,6 +354,24 @@ fn simple_options_map_effort_to_levels_and_budgets() {
 }
 
 #[test]
+fn simple_options_use_levels_for_gemini4() {
+    let level = |id: &str, effort| {
+        let m = Model {
+            id: id.into(),
+            ..model()
+        };
+        let o = simple(&m, Some(effort));
+        assert_eq!(o.thinking.as_ref().unwrap().budget_tokens, None);
+        o.thinking.unwrap().level.unwrap()
+    };
+    assert_eq!(level("gemini-4-argon", ThinkingLevel::Minimal), "LOW");
+    assert_eq!(level("gemini-4-carbon", ThinkingLevel::Low), "LOW");
+    assert_eq!(level("gemini-4-argon", ThinkingLevel::Medium), "MEDIUM");
+    assert_eq!(level("google/gemini-4-carbon", ThinkingLevel::High), "HIGH");
+    assert_eq!(level("gemini-4-argon", ThinkingLevel::XHigh), "HIGH");
+}
+
+#[test]
 fn endpoint_order_for_both_providers() {
     assert_eq!(endpoints(&model()), ["https://cloudcode-pa.googleapis.com"]);
     let blank = Model {

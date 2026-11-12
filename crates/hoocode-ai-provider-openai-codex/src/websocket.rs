@@ -234,10 +234,22 @@ async fn connect(
         let value = HeaderValue::from_str(value).map_err(|e| CodexError::other(e.to_string()))?;
         request.headers_mut().insert(name, value);
     }
+    install_crypto_provider();
     let (socket, _) = abortable(signal, tokio_tungstenite::connect_async(request))
         .await?
         .map_err(websocket_error)?;
     Ok(socket)
+}
+
+/// Pick rustls's process-wide crypto provider before the first `wss://` connect.
+///
+/// The workspace enables both the `ring` and `aws-lc-rs` rustls backends, so
+/// rustls cannot choose one itself and tokio-tungstenite's connector panics
+/// ("Could not automatically determine the process-level CryptoProvider").
+/// reqwest already uses `ring`, so the WebSocket uses it too. Installing is
+/// idempotent: when a provider is already set, the error is ignored.
+pub(crate) fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
 /// `extractWebSocketError` / `extractWebSocketCloseError` for a failed read.
@@ -628,5 +640,27 @@ async fn exchange(
         if terminal {
             return Ok(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
+
+    use super::connect;
+
+    /// A `wss://` connect must fail with an error, not panic in rustls's
+    /// provider lookup (released 0.2.41 panicked on every ChatGPT request).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wss_connect_to_a_non_tls_server_errors_without_panicking() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                drop(stream);
+            }
+        });
+        let result = connect(&format!("wss://127.0.0.1:{port}/"), &[], None).await;
+        assert!(result.is_err());
     }
 }

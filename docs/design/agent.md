@@ -168,7 +168,7 @@ Logins for Claude (`anthropic`), ChatGPT (`openai-codex`) and Gemini (`google-ge
 
 | Constant or header | File | Value | Sent as |
 |---|---|---|---|
-| `CLAUDE_CODE_VERSION` | `crates/hoocode-ai-provider-anthropic/src/request.rs:20` | `2.1.280` | `user-agent: claude-cli/<version>` on OAuth requests |
+| `CLAUDE_CODE_VERSION` | `crates/hoocode-ai-provider-anthropic/src/request.rs:20` | `2.1.322` | `user-agent: claude-cli/<version>` on OAuth requests |
 | `DEFAULT_ANTIGRAVITY_VERSION` | `crates/hoocode-ai-provider-google-gemini-cli/src/lib.rs:41` | `1.18.4` | Antigravity `User-Agent`. Env `HOOCODE_ANTIGRAVITY_VERSION` overrides it (existing, not added) |
 | Gemini CLI headers | `crates/hoocode-ai-provider-google-gemini-cli/src/lib.rs` (`provider_headers`) | `google-cloud-sdk vscode_cloudshelleditor/0.1`, `gl-node/22.17.0` | `User-Agent`, `X-Goog-Api-Client` |
 | Google OAuth `User-Agent` | `crates/hoocode-ai-oauth-google/src/gemini_cli.rs:104`, `antigravity.rs:145` | `google-api-nodejs-client/9.15.1` | token and login requests |

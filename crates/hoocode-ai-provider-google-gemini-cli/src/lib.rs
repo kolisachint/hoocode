@@ -124,7 +124,7 @@ pub fn simple_options(
         Some(ThinkingLevel::XHigh) => ThinkingLevel::High,
         Some(level) => level,
     };
-    if is_gemini3_model(&model.id) {
+    if is_gemini3_model(&model.id) || is_gemini4_model(&model.id) {
         return GeminiCliOptions {
             thinking: Some(GoogleThinking {
                 enabled: true,
@@ -193,11 +193,24 @@ fn is_gemini3_model(model_id: &str) -> bool {
     is_gemini3_pro_model(model_id) || is_gemini3_flash_model(model_id)
 }
 
+/// `gemini-4-*` models take thinking levels only (no budget); MINIMAL is rejected.
+fn is_gemini4_model(model_id: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    regex(&RE, r"gemini-4-").is_match(&model_id.to_lowercase())
+}
+
 /// `getGeminiCliThinkingLevel` (effort already clamped).
 fn thinking_level(effort: ThinkingLevel, model_id: &str) -> &'static str {
     if is_gemini3_pro_model(model_id) {
         return match effort {
             ThinkingLevel::Minimal | ThinkingLevel::Low => "LOW",
+            _ => "HIGH",
+        };
+    }
+    if is_gemini4_model(model_id) {
+        return match effort {
+            ThinkingLevel::Minimal | ThinkingLevel::Low => "LOW",
+            ThinkingLevel::Medium => "MEDIUM",
             _ => "HIGH",
         };
     }

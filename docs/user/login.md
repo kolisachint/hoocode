@@ -11,7 +11,7 @@ Sign out with **`/logout`**, which removes the saved login for one provider.
 | Shown in `/login` as | Id | Models it unlocks |
 |---|---|---|
 | Anthropic (Claude Pro/Max) | `anthropic` | `claude-*` models |
-| ChatGPT Plus/Pro (Codex Subscription) | `openai-codex` | `gpt-5.*` models |
+| ChatGPT Plus/Pro (Codex Subscription) | `openai-codex` | `gpt-5.*` and `gpt-6*` models your plan allows (the Go plan: `gpt-6-luna`, `gpt-5.6-luna`, `gpt-5.6-terra`) |
 | Google Cloud Code Assist (Gemini CLI) | `google-gemini-cli` | `gemini-*` models |
 | Google Antigravity (Gemini, Claude, GPT-OSS) | `google-antigravity` | Gemini, Claude and GPT-OSS models |
 | GitHub Copilot | `github-copilot` | Models from the Copilot catalog, such as Claude and Gemini |
@@ -29,7 +29,8 @@ stops before the browser opens, with a message that names the variables to set.
 | Antigravity | `HOOCODE_ANTIGRAVITY_CLIENT_ID` and `HOOCODE_ANTIGRAVITY_CLIENT_SECRET` |
 
 Use the installed-app client ID and secret of the client you sign in as. Then run `/login`
-again.
+again. Keep both variables set every time you start hoocode: refreshing the token needs them
+too, so without them the login stops working about an hour after you sign in.
 
 **Paid and Workspace accounts** also need the Google Cloud project. Set `GOOGLE_CLOUD_PROJECT`,
 or `GOOGLE_CLOUD_PROJECT_ID`. If both are set, `GOOGLE_CLOUD_PROJECT` is used. Free-tier

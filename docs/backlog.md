@@ -35,7 +35,7 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 1 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
+| 1 | Google logins | Live login for Gemini CLI and Antigravity: needs the user's OAuth client (step 3 under "Subscription logins"). Claude and ChatGPT passed live on 2026-11-12. | — |
 | 2 | Non-tool blocks toggle | Check on the real binary in tmux, with mouse sequences, that thinking, notice and other non-tool blocks open and close. Only tool rows were checked (UI-25, UI-31). | S |
 | 3 | Token `mcp` | No reader. The theme registry fills it, the schema lists it, and `color-semantics.json` marks it `legacy`, but nothing draws it. Decide: keep it or delete it. | S |
 | 4 | Open TUI rows | UI-7, UI-12, UI-13, UI-14, UI-17 and UI-19 are still open in [design/tui.md](design/tui.md), each with its trigger or gate. | — |
@@ -65,7 +65,7 @@ Known behaviour kept on purpose:
 
 ## Subscription logins: what was checked
 
-No real account, token or browser exists in the cloud container. No live login and no live model call was made in either session. Nothing here is an end-to-end pass.
+2026-11-12, on the user's laptop: Claude and ChatGPT passed live (saved logins, a prompt each, and the two `--ignored` live tests). Google was not run: it needs the user's OAuth client. The live run found two bugs, both fixed: every ChatGPT request crashed in 0.2.41 (rustls had no crypto provider for the WebSocket), and Anthropic rejected Claude Fable 5.2 for Claude Code 2.1.280 (pin raised to 2.1.322). The user's ChatGPT account is on the Go plan, which allows only `gpt-6-luna`, `gpt-5.6-luna` and `gpt-5.6-terra`; run the ChatGPT live test with `HOOCODE_CODEX_LIVE_MODEL=gpt-6-luna`. `gpt-6.1-sol` for `openai-codex` is in the catalog but not checked live.
 
 | Stage | Claude (`anthropic`) | ChatGPT (`openai-codex`) | Gemini (`google-gemini-cli`) |
 |---|---|---|---|
@@ -74,16 +74,16 @@ No real account, token or browser exists in the cloud container. No live login a
 | Request headers and body for a subscription token, on the wire | Mock server | Mock server | Mock server |
 | 401 and 403 | Mock server: fails at once with status and body | Mock server: one SSE attempt, `ChatGPT API error (401): …` | Mock server: one request, `Cloud Code Assist API error (401): …` |
 | Callback port taken | Fails with the bind error | Warns, then paste | Fails with the bind error |
-| Live login, live model call | Not run | Not run | Not run |
+| Live login, live model call | Passed 2026-11-12 | Passed 2026-11-12 (Go plan) | Not run |
 
 To finish on a machine with a browser and the accounts:
 
 1. Claude: `/login` → Anthropic. Send one prompt with a Claude model. Then `ANTHROPIC_OAUTH_TOKEN=<token> cargo test -p hoocode-ai-provider-anthropic --test it -- --ignored oauth_tool_names_round_trip`.
-2. ChatGPT: `/login` → ChatGPT (port 1455 free). Send one prompt with a `gpt-5.x-codex` model. Then `OPENAI_CODEX_OAUTH_TOKEN=<token> cargo test -p hoocode-ai-provider-openai-codex -- --ignored live_handles_sse`.
+2. ChatGPT: `/login` → ChatGPT (port 1455 free). Send one prompt with a model your plan allows. Then `HOOCODE_CODEX_LIVE_MODEL=<that model> OPENAI_CODEX_OAUTH_TOKEN=<token> cargo test -p hoocode-ai-provider-openai-codex -- --ignored live_handles_sse`.
 3. Gemini: set `HOOCODE_GEMINI_CLI_CLIENT_ID` and `HOOCODE_GEMINI_CLI_CLIENT_SECRET`, `/login` → Google, send one prompt with a `gemini-*` model. Paid tiers also need `GOOGLE_CLOUD_PROJECT`.
 4. For each: restart hoocode and send a prompt again. After the token's expiry, send again.
 
-Open auth notes: the pinned Claude Code version is `2.1.280` and the published one was `2.1.322` on 2026-11-11 (refresh rule in `agent.md`). `docs/user/login.md` is not in the site's sidebar until the site repo adds it. The ChatGPT retry loop still retries other 4xx errors such as 400.
+Open auth notes: the pinned Claude Code version is `2.1.322`, the one published on 2026-11-11 (refresh rule in `agent.md`). Anthropic gates new models on it: Fable 5.2 needs 2.1.290 or newer. `docs/user/login.md` is not in the site's sidebar until the site repo adds it. The ChatGPT retry loop still retries other 4xx errors such as 400.
 
 ## Branches the user can delete
 
