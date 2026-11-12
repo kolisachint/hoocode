@@ -577,6 +577,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-16: the pinned page scroll step is the view height minus 2 (two rows of overlap), as built. Not minus 12. Written in the `scroll_by_pages` comment in `crates/hoocode-tui-render/src/tui.rs`. |
 | 2026-11-12 | UI-18: the replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json` stays. `crates/hoocode-code-main/tests/it/replay.rs` reads it: one scenario per entry, checked against insta snapshots. |
 | 2026-11-12 | UI-20: the 30 `*_ts*.rs` test files lost the `ts`, a leftover of TypeScript parity. Names changed with `git mv`; `mod` lines and doc comments follow. No test code changed. |
+| 2026-11-12 | Settings sub-panes (each category, and Warnings, Platform, Tools, Tool output, Flags) draw on the `/settings` pane grammar, not as a bare list. Chip is the category (`Interface`), dim `/settings`, count `8 settings`. Rows at indent 3, selected label bold. Detail column from 100 columns (`current`, `price`, description), stacked below. Filter row, then the hint from the keymap: `↑↓ move · space toggle · enter change · esc back`, or `enter open` on a row that opens a submenu. Keys and behaviour unchanged. Test: `tests/it/settings_category_pane.rs`. Goldens `settings_interface_80/100/light_100`. |
 
 ## Open
 

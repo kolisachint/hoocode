@@ -5,8 +5,11 @@
 //! selected setting's detail beside them (what every turn carries, its
 //! description), the filter row and the hint row. The theme submenu draws
 //! as the Theme pane (`SelectSubmenu` with [`SubmenuConsole`]): live
-//! preview, `enter` keeps, `esc` reverts. Shared pane chrome in
-//! `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
+//! preview, `enter` keeps, `esc` reverts. The other settings lists (the
+//! categories, Warnings, Platform, Tools, Tool output, Flags) draw as
+//! sub-panes on the same console (`Interface  /settings  8 settings`).
+//! Shared pane chrome in `code-tui-widgets/src/console.rs`; keys, filtering
+//! and events unchanged.
 //!
 //! One [`SettingsList`] in the prompt's frame. The top level is short: the
 //! tool rows, then categories whose submenus hold the leaf settings. Every
@@ -447,18 +450,23 @@ fn new_list(
 /// A submenu that is one settings list: the warnings, platform, tools,
 /// tool-output, flag and category submenus. Public so a
 /// caller can reach the list a factory built (`submenu(...).settingsList`).
+/// It draws as a sub-pane of the Settings pane, titled `Label · /settings`
+/// (the chip `Label`, the dim `/settings`).
 pub struct ListSubmenu {
     list: Rc<RefCell<SettingsList>>,
     /// Values to force back after the list handles a key: a change callback
     /// runs while the list is borrowed, so it cannot write to it directly.
     reverts: Rc<RefCell<Vec<(String, String)>>>,
+    /// The sub-pane's title, `Label · /settings`.
+    name: String,
 }
 
 impl ListSubmenu {
-    fn new(list: Rc<RefCell<SettingsList>>) -> Self {
+    fn new(list: Rc<RefCell<SettingsList>>, label: &str) -> Self {
         Self {
             list,
             reverts: Rc::default(),
+            name: format!("{label} · /settings"),
         }
     }
 
@@ -473,8 +481,36 @@ impl ListSubmenu {
 }
 
 impl Component for ListSubmenu {
+    /// The sub-pane: the same pane grammar as the Settings pane (see
+    /// [`settings_console`]), with the hints for the selected row. A submenu
+    /// open inside the list (Theme, in Interface) draws through itself.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.list.borrow_mut().render(width)
+        if self.list.borrow().has_submenu() {
+            return self.list.borrow_mut().render(width);
+        }
+        let width = width as usize;
+        let list = self.list.borrow();
+        let mut console =
+            settings_console(&list, &self.name, settings_count(list.items().len()), width);
+        let opens = list
+            .filtered_items()
+            .get(list.selected())
+            .is_some_and(|item| item.submenu.is_some());
+        let movement = key_pair_hint("tui.select.up", "tui.select.down");
+        let confirm = key_hint_text("tui.select.confirm");
+        let cancel = key_hint_text("tui.select.cancel");
+        let hints: Vec<(&str, &str)> = if opens {
+            vec![(&movement, "move"), (&confirm, "open"), (&cancel, "back")]
+        } else {
+            vec![
+                (&movement, "move"),
+                (SPACE_KEY, "toggle"),
+                (&confirm, "change"),
+                (&cancel, "back"),
+            ]
+        };
+        console.set_hints(&hints, false);
+        console.render(width)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -542,7 +578,7 @@ fn warning_settings_submenu(
         },
         move || done(&slot, None),
     );
-    ListSubmenu::new(list).handle()
+    ListSubmenu::new(list, "Warnings").handle()
 }
 
 /// `PLATFORM_ROWS`, in pane order.
@@ -634,7 +670,7 @@ fn platform_submenu(
         },
         move || done(&slot, Some(platform_summary(&ordered()))),
     );
-    ListSubmenu::new(list).handle()
+    ListSubmenu::new(list, "Platform").handle()
 }
 
 const CORE_TOOLS: &[&str] = &["Read", "Shell", "Edit", "Write"];
@@ -745,7 +781,7 @@ fn tools_submenu(
         },
         move || done(&slot, None),
     );
-    let mut submenu = ListSubmenu::new(list);
+    let mut submenu = ListSubmenu::new(list, "Tools");
     submenu.reverts = reverts;
     submenu.handle()
 }
@@ -851,7 +887,7 @@ fn tool_settings_submenu(
         },
         move || done(&slot, None),
     );
-    ListSubmenu::new(list).handle()
+    ListSubmenu::new(list, "Tool output").handle()
 }
 
 /// `FlagStringEditSubmenu`: a one-line editor for a string flag.
@@ -979,7 +1015,7 @@ fn flags_submenu(
         },
         move || done(&slot, None),
     );
-    ListSubmenu::new(list).handle()
+    ListSubmenu::new(list, "Flags").handle()
 }
 
 /// `SelectSubmenu`: a titled select list (thinking level, theme). With
@@ -1870,6 +1906,7 @@ impl SettingsSelectorComponent {
                 .join(" ");
             let leaves = leaves.clone();
             let apply_change = apply_change.clone();
+            let name = label.to_string();
             Leaf::opens(
                 id,
                 label,
@@ -1900,7 +1937,7 @@ impl SettingsSelectorComponent {
                         },
                         move || done(&slot, None),
                     );
-                    ListSubmenu::new(list).handle()
+                    ListSubmenu::new(list, &name).handle()
                 }),
             )
             .keywords(keywords)
@@ -2010,96 +2047,23 @@ impl Component for SettingsSelectorComponent {
     /// The Settings pane: one row per setting with ` › ` on the selection
     /// band, the selected setting's detail beside them (below at narrow
     /// widths), the filter row and the hint row. An open submenu renders
-    /// through itself: the Theme pane for themes, the framed list for the
-    /// rest. Keys, filtering and events are unchanged.
+    /// through itself: the Theme pane for themes, a sub-pane for the rest.
+    /// Keys, filtering and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         if self.list.borrow().has_submenu() {
             return self.list.borrow_mut().render(width);
         }
         let width = width as usize;
-        let inner = width.saturating_sub(2);
         let list = self.list.borrow();
         // `  Settings  /settings  ` before the count.
         let count = self.surface.count_for_width(23, width);
-        let mut console = Console::new("Settings · /settings", count);
-        let query = list.query_text().to_string();
-        console.query = Some(query_row(&query, false));
-        let max_label = list
-            .items()
-            .iter()
-            .map(|item| visible_width(&item.label))
-            .max()
-            .unwrap_or(0)
-            .min(30);
-        let selected = list.selected();
-        let window = list.window();
-        let items: Vec<(String, String, Option<String>, Option<String>)> = list
-            .filtered_items()
-            .iter()
-            .map(|item| {
-                (
-                    item.label.clone(),
-                    item.current_value.clone(),
-                    item.value_suffix.clone(),
-                    item.description.clone(),
-                )
-            })
-            .collect();
-        let footer = list.scroll_footer();
+        let mut console = settings_console(&list, "Settings · /settings", count, width);
         drop(list);
-        console.rows = window
-            .clone()
-            .filter_map(|i| {
-                let (label, value, _, _) = items.get(i)?;
-                Some(setting_row(label, value, max_label, i == selected))
-            })
-            .collect();
-        console.selected = window.clone().position(|i| i == selected);
-        let pal = Palette::current();
-        let mut bottom = Vec::new();
-        if items.is_empty() {
-            bottom.push(Line::from(vec![Span::styled(
-                if query.is_empty() {
-                    "No settings available".to_string()
-                } else {
-                    "No matching settings".to_string()
-                },
-                pal.dim(),
-            )]));
-        } else if let Some(footer) = footer {
-            bottom.push(Line::from(vec![Span::styled(
-                format!("  {footer}"),
-                pal.dim(),
-            )]));
-        }
-        console.bottom = bottom;
-        if let Some((label, value, suffix, description)) = items.get(selected) {
-            // The detail column is about two thirds of the pane when split.
-            let wrap_at = (inner * 64 / 100).saturating_sub(3).max(20);
-            let mut detail = vec![
-                Line::from(vec![Span::raw(label.clone())]),
-                Line::from(vec![
-                    Span::styled(format!("{:<10}", "current"), pal.dim()),
-                    Span::raw(value.clone()),
-                ]),
-            ];
-            if let Some(suffix) = suffix.as_deref().filter(|suffix| !suffix.is_empty()) {
-                detail.push(Line::from(vec![
-                    Span::styled(format!("{:<10}", "price"), pal.dim()),
-                    Span::raw(suffix.to_string()),
-                ]));
-            }
-            if let Some(description) = description {
-                detail.push(Line::raw(""));
-                for line in wrap_text_with_ansi(description, wrap_at) {
-                    detail.push(Line::from(vec![Span::styled(line, pal.dim())]));
-                }
-            }
+        if !console.detail.is_empty() {
             if let Some(surface) = self.surface.last.borrow().as_ref() {
-                detail.push(Line::raw(""));
-                detail.extend(launch_weight_detail(surface));
+                console.detail.push(Line::raw(""));
+                console.detail.extend(launch_weight_detail(surface));
             }
-            console.detail = detail;
         }
         console.set_hints(
             &[
@@ -2125,11 +2089,110 @@ impl Component for SettingsSelectorComponent {
     }
 }
 
+/// The settings console every settings pane draws: the Settings pane and its
+/// sub-panes share it. The chip and count come from `name` and `count`; one
+/// row per visible setting (`setting_row`, the selected row's ` › ` comes from
+/// the pane); the selected setting's detail beside the rows from 100 columns
+/// (`setting_detail`), under them below; the filter row and the scroll footer.
+/// Hints are the caller's. Keys, filtering and events stay with the list.
+fn settings_console(list: &SettingsList, name: &str, count: String, width: usize) -> Console {
+    let inner = width.saturating_sub(2);
+    let mut console = Console::new(name, count);
+    let query = list.query_text().to_string();
+    console.query = Some(query_row(&query, false));
+    let max_label = list
+        .items()
+        .iter()
+        .map(|item| visible_width(&item.label))
+        .max()
+        .unwrap_or(0)
+        .min(30);
+    let selected = list.selected();
+    let window = list.window();
+    let items = list.filtered_items();
+    console.rows = window
+        .clone()
+        .filter_map(|i| {
+            let item = items.get(i)?;
+            Some(setting_row(
+                &item.label,
+                &item.current_value,
+                max_label,
+                i == selected,
+            ))
+        })
+        .collect();
+    console.selected = window.clone().position(|i| i == selected);
+    let pal = Palette::current();
+    let mut bottom = Vec::new();
+    if items.is_empty() {
+        bottom.push(Line::from(vec![Span::styled(
+            if query.is_empty() {
+                "No settings available".to_string()
+            } else {
+                "No matching settings".to_string()
+            },
+            pal.dim(),
+        )]));
+    } else if let Some(footer) = list.scroll_footer() {
+        bottom.push(Line::from(vec![Span::styled(
+            format!("  {footer}"),
+            pal.dim(),
+        )]));
+    }
+    console.bottom = bottom;
+    if let Some(item) = items.get(selected) {
+        console.detail = setting_detail(item, inner);
+    }
+    console
+}
+
+/// The count of a settings pane: `1 setting`, `N settings`.
+fn settings_count(n: usize) -> String {
+    if n == 1 {
+        "1 setting".to_string()
+    } else {
+        format!("{n} settings")
+    }
+}
+
+/// The selected setting's detail column: its name, the `current` value, the
+/// `price` when it has one, then the description wrapped at the detail's
+/// width. The Settings pane adds the per-turn surface after it.
+fn setting_detail(item: &SettingItem, inner: usize) -> Vec<Line<'static>> {
+    let pal = Palette::current();
+    // The detail column is about two thirds of the pane when split.
+    let wrap_at = (inner * 64 / 100).saturating_sub(3).max(20);
+    let mut detail = vec![
+        Line::from(vec![Span::raw(item.label.clone())]),
+        Line::from(vec![
+            Span::styled(format!("{:<10}", "current"), pal.dim()),
+            Span::raw(item.current_value.clone()),
+        ]),
+    ];
+    if let Some(suffix) = item
+        .value_suffix
+        .as_deref()
+        .filter(|suffix| !suffix.is_empty())
+    {
+        detail.push(Line::from(vec![
+            Span::styled(format!("{:<10}", "price"), pal.dim()),
+            Span::raw(suffix.to_string()),
+        ]));
+    }
+    if let Some(description) = &item.description {
+        detail.push(Line::raw(""));
+        for line in wrap_text_with_ansi(description, wrap_at) {
+            detail.push(Line::from(vec![Span::styled(line, pal.dim())]));
+        }
+    }
+    detail
+}
+
 /// One setting row (content only; the pane adds the ` › ` marker or
 /// gutter and the selection band): the label padded to the pane's column,
-/// then the value, dim.
-/// One setting's row: the label (bold on the selected row, as the other
-/// panes' selected names are), padded to the label column, then the dim value.
+/// then the value, dim. A price (`value_suffix`) shows in the detail only.
+/// The label is bold on the selected row, as the other panes' selected names are.
 fn setting_row(label: &str, value: &str, label_width: usize, selected: bool) -> Line<'static> {
     let pal = Palette::current();
     let padding = " ".repeat(label_width.saturating_sub(visible_width(label)));
