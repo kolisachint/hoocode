@@ -890,35 +890,16 @@ fn tool_settings_submenu(
     ListSubmenu::new(list, "Tool output").handle()
 }
 
-/// `FlagStringEditSubmenu`: a one-line editor for a string flag.
+/// `FlagStringEditSubmenu`: a one-line editor for a string flag, drawn as a
+/// sub-pane: the chip `--name · /settings`, the input as the pane's input row
+/// (its caret at the real cursor), and the hint row.
 struct FlagStringEditSubmenu {
-    container: Container,
+    name: String,
     input: Rc<RefCell<Input>>,
 }
 
 impl FlagStringEditSubmenu {
     fn new(flag_name: &str, current: &str, slot: DoneSlot) -> Self {
-        let t = theme();
-        let mut container = Container::default();
-        container.add_child(Rc::new(RefCell::new(Text::new(
-            t.bold(&t.fg("accent", &format!("Flag: --{flag_name}"))),
-            0,
-            0,
-        ))));
-        container.add_child(Rc::new(RefCell::new(Text::new(
-            t.fg(
-                "muted",
-                &format!(
-                    "{} a value · {} to save · {} to cancel",
-                    key_display_text("tui.input.submit"),
-                    key_display_text("tui.input.submit"),
-                    key_hint_text("tui.select.cancel")
-                ),
-            ),
-            0,
-            0,
-        ))));
-        container.add_child(Rc::new(RefCell::new(Spacer::new(1))));
         let mut input = Input::new();
         style_input(&mut input);
         input.set_value(current);
@@ -927,24 +908,46 @@ impl FlagStringEditSubmenu {
             done(&submit_slot, Some(value.to_string()))
         }));
         input.on_escape = Some(Box::new(move || done(&slot, None)));
-        let input = Rc::new(RefCell::new(input));
-        container.add_child(input.clone());
-        Self { container, input }
+        Self {
+            name: format!("--{flag_name} · /settings"),
+            input: Rc::new(RefCell::new(input)),
+        }
     }
+}
+
+/// The input's text with the caret at its cursor: a `▏` between the text
+/// before and after the cursor.
+fn input_with_caret(input: &Input) -> Line<'static> {
+    let value = input.get_value();
+    let cursor = input.get_cursor();
+    Line::from(vec![
+        Span::raw(hoocode_tui_util::text_slice::prefix(value, cursor).to_string()),
+        Span::raw("▏".to_string()),
+        Span::raw(hoocode_tui_util::text_slice::suffix_from(value, cursor).to_string()),
+    ])
 }
 
 impl Component for FlagStringEditSubmenu {
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.container.render(width)
+        let input = self.input.borrow();
+        let mut console = Console::new(self.name.clone(), String::new());
+        console.query = Some(input_with_caret(&input));
+        drop(input);
+        console.set_hints(
+            &[
+                (key_hint_text("tui.input.submit").as_str(), "save"),
+                (key_hint_text("tui.select.cancel").as_str(), "back"),
+            ],
+            false,
+        );
+        console.render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
         self.input.borrow_mut().handle_input(data);
     }
 
-    fn invalidate(&mut self) {
-        self.container.invalidate();
-    }
+    fn invalidate(&mut self) {}
 }
 
 /// `FlagsSubmenu`: boolean flags toggle, string flags open an editor.
@@ -1024,6 +1027,9 @@ pub struct SelectSubmenu {
     container: Container,
     list: Rc<RefCell<SelectList>>,
     console: Option<SubmenuConsole>,
+    /// The value in use when the pane opened (the `in use` row of a pane that
+    /// does not preview).
+    current: String,
 }
 
 /// Pane chrome for a select submenu: the title, the count, an optional
@@ -1037,6 +1043,10 @@ pub struct SubmenuConsole {
     pub hint: Vec<(String, String)>,
     /// The detail beside the list for the selected item.
     pub detail: Option<crate::framed_list::DetailFn>,
+    /// Moving the cursor applies the item (the Theme pane): the selected row
+    /// is the one in use. When false, the row whose value is the current
+    /// setting is in use, and the cursor only moves.
+    pub previews: bool,
 }
 
 /// `1 theme`, `N themes`.
@@ -1046,6 +1056,32 @@ fn themes_count(count: usize) -> String {
     } else {
         format!("{count} themes")
     }
+}
+
+/// `1 level`, `N levels`.
+fn levels_count(count: usize) -> String {
+    if count == 1 {
+        "1 level".to_string()
+    } else {
+        format!("{count} levels")
+    }
+}
+
+/// The thinking level's detail: the level and its full description (the row
+/// shows the description's target and token fact).
+fn thinking_detail(item: &SelectItem) -> Vec<Line<'static>> {
+    let pal = Palette::current();
+    let mut rows = vec![Line::from(vec![Span::styled(
+        item.value.clone(),
+        pal.ink(),
+    )])];
+    if let Some(description) = item.description.as_deref() {
+        rows.push(Line::from(vec![Span::styled(
+            description.to_string(),
+            pal.dim(),
+        )]));
+    }
+    rows
 }
 
 impl SelectSubmenu {
@@ -1104,6 +1140,7 @@ impl SelectSubmenu {
             container,
             list,
             console: None,
+            current: current.to_string(),
         }
     }
 
@@ -1162,17 +1199,32 @@ impl SelectSubmenu {
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                let selected_row = Some(i) == selected;
-                let facts = if selected_row {
+                // The in-use row: the cursor's when the pane previews, else
+                // the value the setting holds.
+                let in_use = if console.previews {
+                    Some(i) == selected
+                } else {
+                    item.value == self.current
+                };
+                // The description's target and token fact, as the framed
+                // pickers split it (`Moderate reasoning` and `~8k tokens`).
+                let (target, fact_texts) =
+                    crate::framed_list::split_description(item.description.as_deref());
+                // `in use` is primary: it never drops on a narrow row.
+                let primary = if in_use {
                     vec![("in use".to_string(), pal.dim())]
                 } else {
                     Vec::new()
                 };
+                let facts = fact_texts
+                    .into_iter()
+                    .map(|fact| (fact, pal.dim()))
+                    .collect();
                 crate::framed_list::picker_row(
-                    selected_row,
+                    in_use,
                     &item.label,
-                    "",
-                    Vec::new(),
+                    &target,
+                    primary,
                     facts,
                     row_width,
                     &pal,
@@ -1626,7 +1678,7 @@ impl SettingsSelectorComponent {
                 "Reasoning depth for thinking-capable models",
                 config.thinking_level.clone(),
                 Rc::new(move |current: &str, slot: DoneSlot| {
-                    let options = config
+                    let options: Vec<SelectItem> = config
                         .available_thinking_levels
                         .iter()
                         .map(|level| SelectItem {
@@ -1637,20 +1689,42 @@ impl SettingsSelectorComponent {
                         .collect();
                     let callback = callback.clone();
                     let select_slot = slot.clone();
-                    Rc::new(RefCell::new(SelectSubmenu::new(
-                        "Thinking Level",
-                        "Select reasoning depth for thinking-capable models",
-                        options,
-                        current,
-                        move |value| {
-                            if ThinkingLevelSetting::parse(value).is_some() {
-                                emit(&callback, SettingsChange::ThinkingLevel(value.to_string()));
-                            }
-                            done(&select_slot, Some(value.to_string()));
-                        },
-                        move || done(&slot, None),
-                        None,
-                    ))) as ComponentHandle
+                    let count = levels_count(options.len());
+                    let console = SubmenuConsole {
+                        title: "Thinking level · /settings".to_string(),
+                        count,
+                        top: String::new(),
+                        hint: vec![
+                            (
+                                key_pair_hint("tui.select.up", "tui.select.down"),
+                                "move".to_string(),
+                            ),
+                            (key_hint_text("tui.select.confirm"), "set".to_string()),
+                            (key_hint_text("tui.select.cancel"), "back".to_string()),
+                        ],
+                        detail: Some(thinking_detail),
+                        previews: false,
+                    };
+                    Rc::new(RefCell::new(
+                        SelectSubmenu::new(
+                            "Thinking Level",
+                            "Select reasoning depth for thinking-capable models",
+                            options,
+                            current,
+                            move |value| {
+                                if ThinkingLevelSetting::parse(value).is_some() {
+                                    emit(
+                                        &callback,
+                                        SettingsChange::ThinkingLevel(value.to_string()),
+                                    );
+                                }
+                                done(&select_slot, Some(value.to_string()));
+                            },
+                            move || done(&slot, None),
+                            None,
+                        )
+                        .with_console(console),
+                    )) as ComponentHandle
                 }),
             ));
         }
@@ -1698,6 +1772,7 @@ impl SettingsSelectorComponent {
                             (key_hint_text("tui.select.cancel"), "back".to_string()),
                         ],
                         detail: Some(crate::framed_list::theme_detail),
+                        previews: true,
                     };
                     Rc::new(RefCell::new(
                         SelectSubmenu::new(

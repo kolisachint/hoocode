@@ -155,7 +155,7 @@ fn select_row(item: &SelectItem, selected: bool, width: usize, pal: &Palette) ->
 /// A description as an ink target plus dim facts: `in use` is a fact; a
 /// trailing `(…)` parenthetical splits off as its own fact; anything else
 /// stays the target.
-fn split_description(description: Option<&str>) -> (String, Vec<String>) {
+pub(crate) fn split_description(description: Option<&str>) -> (String, Vec<String>) {
     let single = description
         .map(|text| {
             text.split(['\r', '\n'])

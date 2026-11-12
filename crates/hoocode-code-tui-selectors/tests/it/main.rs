@@ -21,6 +21,7 @@ mod session_selector;
 mod session_selector_search;
 mod session_subagent_delete;
 mod settings_category_pane;
+mod settings_subpanes;
 mod settings_token_surface;
 mod support;
 mod systems_console;
