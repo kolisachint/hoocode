@@ -26,9 +26,8 @@ use hoocode_code_tui_keybindings::key_hint_text;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
-use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui};
+use hoocode_tui_render::{Component, ComponentHandle, Container, Fold, ScrollStatus, Tui};
 
 use crate::status_line::{status_line_ansi, KeyHint, ScrollInfo, SearchInfo, StatusLineData};
 
@@ -124,17 +123,6 @@ pub fn jump_to_user_message(
     }
 }
 
-/// A header click waiting for the mode to act: the chain and block the
-/// header toggles, and where the header sat when clicked. The mode drains
-/// these after the TUI takes the event, while the layout still matches the
-/// painted frame the click mapped to.
-pub struct BlockToggle {
-    pub chain: ComponentHandle,
-    pub block: usize,
-    pub buffer_row: i64,
-    pub context: i64,
-}
-
 /// The base buffer row of `child` in `parent`'s last render at `width`.
 /// `None` before the first render, at another width, or when the child is
 /// gone.
@@ -150,32 +138,198 @@ pub fn child_base(parent: &Container, child: &ComponentHandle, width: u16) -> Op
         .map(|i| offsets[i])
 }
 
-/// Hit-test a transcript buffer row against the chat: the chain and block
-/// whose header holds it. Body rows and rows outside every chain are `None`
-/// (a click there does nothing).
-pub fn hit_chain(
+/// A block that opens in place, as the chat's last render drew it: the
+/// chat child that holds it, where that child starts in the chat, and the
+/// block's rows and state (rows count from the child's first row).
+#[derive(Clone)]
+pub struct FoldRef {
+    /// The chat child holding the block.
+    pub host: ComponentHandle,
+    /// The child's first row in the chat, when the chat is laid out at the
+    /// asked width.
+    pub base: Option<usize>,
+    /// The block in the child's last render.
+    pub fold: Fold,
+}
+
+impl FoldRef {
+    /// The header's first row in the chat.
+    pub fn header_row(&self) -> Option<usize> {
+        Some(self.base? + *self.fold.header.first()?)
+    }
+}
+
+/// What a click on a transcript row hit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FoldHit {
+    /// A header row: the click toggles the block.
+    Header,
+    /// The fold line under a partly shown body: the click opens the block.
+    FoldLine,
+}
+
+/// Every block of the chat that opens in place, in transcript order: the
+/// one list a click, the focus walk, `enter`, copy and open-all read. A
+/// chat child offers its blocks through `Component::fold_host`.
+pub fn chat_folds(chat: &Rc<RefCell<Container>>, width: u16) -> Vec<FoldRef> {
+    let chat_ref = chat.borrow();
+    let offsets = chat_ref.child_row_offsets(width);
+    let mut out = Vec::new();
+    for (index, child) in chat_ref.children().iter().enumerate() {
+        let Ok(component) = child.try_borrow() else {
+            continue;
+        };
+        let Some(host) = component.fold_host() else {
+            continue;
+        };
+        let base = offsets.as_ref().and_then(|o| o.get(index).copied());
+        out.extend(host.folds().into_iter().map(|fold| FoldRef {
+            host: child.clone(),
+            base,
+            fold,
+        }));
+    }
+    out
+}
+
+/// The block with this id, if the chat still holds it.
+pub fn find_fold(chat: &Rc<RefCell<Container>>, width: u16, id: &str) -> Option<FoldRef> {
+    chat_folds(chat, width)
+        .into_iter()
+        .find(|found| found.fold.id == id)
+}
+
+/// Hit-test a chat row (`rel` counts from the chat's first row) against the
+/// last render: the block whose header holds it, or whose fold line it is.
+/// Any other body row, and a row outside every block, is `None` (a click
+/// there does nothing).
+pub fn fold_at(
     chat: &Rc<RefCell<Container>>,
     width: u16,
     rel: usize,
-) -> Option<(ComponentHandle, usize)> {
-    let chat_ref = chat.borrow();
-    let offsets = chat_ref.child_row_offsets(width)?;
-    let children = chat_ref.children();
-    if children.len() != offsets.len() {
-        return None;
+) -> Option<(FoldRef, FoldHit)> {
+    let (child, base) = {
+        let chat_ref = chat.borrow();
+        let offsets = chat_ref.child_row_offsets(width)?;
+        let children = chat_ref.children();
+        let i = offsets.iter().rposition(|o| *o <= rel)?;
+        (children[i].clone(), offsets[i])
+    };
+    let row = rel - base;
+    let folds = child.try_borrow().ok()?.fold_host()?.folds();
+    folds.into_iter().find_map(|fold| {
+        let hit = if fold.header.contains(&row) {
+            FoldHit::Header
+        } else if fold.fold_line == Some(row) && !fold.expanded {
+            FoldHit::FoldLine
+        } else {
+            return None;
+        };
+        Some((
+            FoldRef {
+                host: child.clone(),
+                base: Some(base),
+                fold,
+            },
+            hit,
+        ))
+    })
+}
+
+/// The chat's first row in the transcript buffer, from the last layout at
+/// `width`: the full-screen body holds the chat.
+fn chat_base(
+    chat: &Rc<RefCell<Container>>,
+    body: &Rc<RefCell<Container>>,
+    width: u16,
+) -> Option<usize> {
+    let chat_handle: ComponentHandle = chat.clone();
+    child_base(&body.borrow(), &chat_handle, width)
+}
+
+/// The transcript buffer row of a block's header, from the last layout.
+pub fn fold_buffer_row(
+    ui: &Tui,
+    chat: &Rc<RefCell<Container>>,
+    body: Option<&Rc<RefCell<Container>>>,
+    id: &str,
+) -> Option<i64> {
+    let width = ui.transcript_width();
+    let base = chat_base(chat, body?, width)?;
+    let header = find_fold(chat, width, id)?.header_row()?;
+    Some((base + header) as i64)
+}
+
+/// Opens or closes the block `id` of `host` and keeps the view still.
+///
+/// With `screen` (the header's screen row, counted from the transcript's
+/// first screen row) the header stays on that row: a click, and `enter` on
+/// a header in view. The view pins when it has to: a live view that still
+/// shows the header on its row at the tail stays live, and a transcript
+/// that fits the screen whole cannot hold a row, so it stays live too.
+/// Without `screen` the pinned top row stays where it is (the header is
+/// off screen), and a live view stays live.
+///
+/// The layout is taken fresh after the change, so the row is placed in the
+/// frame that will be painted, not the one before it. False when the host
+/// has no such block.
+pub fn set_fold_held(
+    ui: &mut Tui,
+    chat: &Rc<RefCell<Container>>,
+    body: Option<&Rc<RefCell<Container>>>,
+    host: &ComponentHandle,
+    id: &str,
+    expanded: bool,
+    screen: Option<i64>,
+) -> bool {
+    let top = capture_top(ui, chat, body);
+    let changed = host
+        .borrow_mut()
+        .fold_host_mut()
+        .is_some_and(|folds| folds.set_fold_expanded(id, expanded));
+    if !changed {
+        return false;
     }
-    let i = offsets.iter().rposition(|o| *o <= rel)?;
-    if offsets.get(i + 1).is_some_and(|next| rel >= *next) {
-        return None;
+    match (screen, body) {
+        (Some(screen), Some(body)) => hold_header(ui, chat, body, id, screen),
+        _ => reanchor_top(ui, chat, body, top),
     }
-    let chain = children[i].clone();
-    let row = rel - offsets[i];
-    let block = chain
-        .borrow()
-        .as_any()?
-        .downcast_ref::<ToolChainComponent>()?
-        .header_hit(row)?;
-    Some((chain, block))
+    true
+}
+
+/// After a block changed, puts its header back on screen row `screen`.
+fn hold_header(
+    ui: &mut Tui,
+    chat: &Rc<RefCell<Container>>,
+    body: &Rc<RefCell<Container>>,
+    id: &str,
+    screen: i64,
+) {
+    let width = ui.transcript_width();
+    // A fresh layout: the offsets and the header rows of the next frame.
+    let total = body.borrow_mut().render(width).len() as i64;
+    let header = chat_base(chat, body, width).and_then(|base| {
+        find_fold(chat, width, id)
+            .and_then(|found| found.header_row())
+            .map(|row| (base + row) as i64)
+    });
+    let Some(header) = header else {
+        return;
+    };
+    // Rows that moved in place are not new output.
+    ui.reset_new_lines_count();
+    let max_top = total - ui.transcript_view_rows();
+    if max_top <= 0 {
+        // Everything fits: there is nothing to scroll, so the view is live.
+        ui.scroll_to_live();
+        return;
+    }
+    let top = (header - screen).clamp(0, max_top);
+    if !ui.scroll_pinned() && top >= max_top {
+        // Live, and the tail still shows the header on its row.
+        return;
+    }
+    ui.restore_scroll_top(Some(top));
 }
 
 /// Plain typed text rather than a chord (control bytes and escapes are keys).
@@ -264,61 +418,36 @@ impl TranscriptFocus {
     }
 }
 
-/// What `ctrl+x o` does to the tool blocks: open every live block, or close
-/// every live block when one is open. Frozen blocks released their output, so
-/// they are skipped and counted.
+/// What `ctrl+x o` does to the blocks that open in place: open every one,
+/// or close the open ones when any is open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToggleAll {
-    /// The state every live block is set to.
+    /// The state every block that can open is set to.
     pub expanded: bool,
-    /// Positions (in the input order) of the live blocks whose state changes.
+    /// Positions (in the input order) of the blocks whose state changes.
     pub changed: Vec<usize>,
-    /// Frozen blocks, left as they are.
-    pub skipped: usize,
 }
 
-impl ToggleAll {
-    /// The status-slot notice for an open that skipped frozen blocks. A close
-    /// and an open that skipped nothing say nothing.
-    pub fn notice(&self) -> Option<String> {
-        if !self.expanded || self.skipped == 0 {
-            return None;
-        }
-        let opened = self.changed.len();
-        let rows = if opened == 1 { "row" } else { "rows" };
-        let (older, have) = if self.skipped == 1 {
-            ("row", "has")
-        } else {
-            ("rows", "have")
-        };
-        Some(format!(
-            "Opened {opened} {rows}. {skipped} older {older} {have} no output to show.",
-            skipped = self.skipped
-        ))
-    }
-}
-
-/// The plan for `ctrl+x o`, from each block's `(expanded, frozen)` state in
-/// transcript order. Opens every live block unless one is already open, in
-/// which case it closes the open ones. Frozen blocks never count as open.
+/// The plan for `ctrl+x o`, from each block's `(expanded, can_open)` state
+/// in transcript order. Opens every block that can open unless one is
+/// already open, in which case it closes the open ones. A block that cannot
+/// open (no output, a stopped call) is left alone and never counts as open.
+/// An older tool row keeps its output, so it opens and closes like any
+/// other.
 pub fn toggle_all_plan(blocks: &[(bool, bool)]) -> ToggleAll {
-    let live: Vec<(usize, bool)> = blocks
+    let openable: Vec<(usize, bool)> = blocks
         .iter()
         .enumerate()
-        .filter(|(_, (_, frozen))| !frozen)
+        .filter(|(_, (_, can_open))| *can_open)
         .map(|(index, (expanded, _))| (index, *expanded))
         .collect();
-    let expanded = !live.iter().any(|(_, open)| *open);
-    let changed = live
+    let expanded = !openable.iter().any(|(_, open)| *open);
+    let changed = openable
         .iter()
         .filter(|(_, open)| *open != expanded)
         .map(|(index, _)| *index)
         .collect();
-    ToggleAll {
-        expanded,
-        changed,
-        skipped: blocks.len() - live.len(),
-    }
+    ToggleAll { expanded, changed }
 }
 
 /// A pinned-view transcript key the mode runs after the pass: the scroll
@@ -743,6 +872,40 @@ impl ScrollView {
 pub struct TopAnchor {
     child: Option<ComponentHandle>,
     rows_in: i64,
+    /// The block of that child the top row sits in (its header at or above
+    /// the row), and how far under the header. A child's rows move when a
+    /// block above the top row opens or closes inside it (a chain holds
+    /// many tool rows), so the row is found again from its own block.
+    fold: Option<(String, i64)>,
+}
+
+/// The block of `child` whose header sits at or above row `rows_in`, and
+/// the distance from that header.
+fn fold_above(child: &ComponentHandle, rows_in: i64) -> Option<(String, i64)> {
+    let component = child.try_borrow().ok()?;
+    let folds = component.fold_host()?.folds();
+    folds
+        .iter()
+        .filter_map(|fold| Some((fold, *fold.header.first()? as i64)))
+        .filter(|(_, header)| *header <= rows_in)
+        .max_by_key(|(_, header)| *header)
+        .map(|(fold, header)| (fold.id.clone(), rows_in - header))
+}
+
+/// Where the anchored row sits in `child` now: under its block's header,
+/// no further down than the block reaches. `None` when the block is gone.
+fn fold_rows_in(child: &ComponentHandle, id: &str, under: i64) -> Option<i64> {
+    let component = child.try_borrow().ok()?;
+    let folds = component.fold_host()?.folds();
+    let at = folds.iter().position(|fold| fold.id == id)?;
+    let header = *folds[at].header.first()? as i64;
+    // The rows of a closed block are gone: stay on its header.
+    let reach = match folds.get(at + 1).and_then(|next| next.header.first()) {
+        Some(next) => (*next as i64 - header - 1).max(0),
+        None => i64::MAX,
+    };
+    let under = under.min(reach);
+    Some(header + under)
 }
 
 /// The anchor of the pinned top row, from the last frame's layout. `None` when
@@ -768,13 +931,17 @@ pub fn capture_top(
         return Some(TopAnchor {
             child: None,
             rows_in: rel,
+            fold: None,
         });
     }
     let offsets = chat.child_row_offsets(width)?;
     let i = offsets.iter().rposition(|o| (*o as i64) <= rel)?;
+    let child = chat.children()[i].clone();
+    let rows_in = rel - offsets[i] as i64;
     Some(TopAnchor {
-        child: Some(chat.children()[i].clone()),
-        rows_in: rel - offsets[i] as i64,
+        fold: fold_above(&child, rows_in),
+        child: Some(child),
+        rows_in,
     })
 }
 
@@ -828,10 +995,15 @@ fn place_top(
             let i = chat.children().iter().position(|c| Rc::ptr_eq(c, child))?;
             let offsets = chat.child_row_offsets(width)?;
             let start = offsets[i] as i64;
+            let rows_in = anchor
+                .fold
+                .as_ref()
+                .and_then(|(id, under)| fold_rows_in(child, id, *under))
+                .unwrap_or(anchor.rows_in);
             // Stay inside the message: a fold can make it shorter than it was.
             let within = match offsets.get(i + 1) {
-                Some(next) => anchor.rows_in.min(*next as i64 - start - 1),
-                None => anchor.rows_in,
+                Some(next) => rows_in.min(*next as i64 - start - 1),
+                None => rows_in,
             };
             start + within.max(0)
         }
@@ -918,10 +1090,10 @@ mod tests {
     }
 
     /// Two stacked chains: a header row of the second chain's second block
-    /// hits `(chain, 1)`, while an expanded body row hits nothing. Rows are
+    /// hits that block, while an expanded body row hits nothing. Rows are
     /// chat-relative, the same mapping the mode's click drain uses.
     #[test]
-    fn hit_chain_places_header_and_body_rows() {
+    fn fold_at_places_header_and_body_rows() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let width: u16 = 80;
         let chain0 = Rc::new(RefCell::new(ToolChainComponent::new()));
@@ -952,15 +1124,24 @@ mod tests {
             .header_start_row(1)
             .expect("second block header");
         let header_rel = chat_offsets[1] + header;
-        let hit = hit_chain(&chat, width, header_rel).expect("header row hits");
-        assert!(Rc::ptr_eq(&hit.0, &chain1_handle));
-        assert_eq!(hit.1, 1);
+        let (found, hit) = fold_at(&chat, width, header_rel).expect("header row hits");
+        assert!(Rc::ptr_eq(&found.host, &chain1_handle));
+        assert_eq!(found.fold.id, "chain-1-b");
+        assert_eq!(hit, FoldHit::Header);
+        assert_eq!(found.header_row(), Some(header_rel));
 
         // The row just above the second header is the expanded first
         // block's body (no blank opens a run that shows a body), so it
         // hits nothing.
         assert!(header > 0, "second header leaves a body row above it");
         assert_eq!(chain1.borrow().header_hit(header - 1), None);
-        assert!(hit_chain(&chat, width, header_rel - 1).is_none());
+        assert!(fold_at(&chat, width, header_rel - 1).is_none());
+
+        // The one list every path reads holds all three blocks, in order.
+        let ids: Vec<String> = chat_folds(&chat, width)
+            .into_iter()
+            .map(|found| found.fold.id)
+            .collect();
+        assert_eq!(ids, ["chain-0", "chain-1-a", "chain-1-b"]);
     }
 }

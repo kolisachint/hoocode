@@ -13,10 +13,10 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Loader;
 use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, row, Palette};
-use hoocode_tui_render::Component;
+use hoocode_tui_render::{Component, Fold, FoldHost};
 use hoocode_tui_util::{truncate_to_width, wrap_text_with_ansi};
 
-use crate::fold::earlier_lines_text;
+use crate::fold::{decorate_header, earlier_lines_text, is_fold_line, FoldState, INDICATOR_CELLS};
 use crate::tool_row::{dim_fact, fold_row, is_blank_row, tool_rows, Mark, BODY_INDENT};
 
 /// Output lines a passed `!` command shows at peek (its last), a failed one,
@@ -108,6 +108,11 @@ pub struct BashExecutionComponent {
     full_output_path: Option<String>,
     expanded: bool,
     tail: OutputTail,
+    fold: FoldState,
+    /// The rows of the last render that the block's header and fold line
+    /// took, for the fold host.
+    last_header: Vec<usize>,
+    last_fold_line: Option<usize>,
 }
 
 impl BashExecutionComponent {
@@ -135,7 +140,15 @@ impl BashExecutionComponent {
             truncation: None,
             full_output_path: None,
             expanded: false,
+            fold: FoldState::new("shell"),
+            last_header: Vec::new(),
+            last_fold_line: None,
         }
+    }
+
+    /// Whether opening shows anything: the command has printed output.
+    fn can_open(&self) -> bool {
+        !self.tail.text().trim().is_empty()
     }
 
     /// Whether the output shows whole: the block's own toggle. Collapsed,
@@ -349,16 +362,73 @@ impl Component for BashExecutionComponent {
         let width = (width as usize).max(1);
         // One blank row opens the run, as it does a chain of tool rows.
         let mut lines = vec![String::new()];
-        lines.extend(self.header_rows(width, &palette));
+        // A command that can open ends its header in the indicator, whose
+        // two cells come off the header's room first.
+        let can_open = self.can_open();
+        let reserve = if can_open { INDICATOR_CELLS } else { 0 };
+        let header = self.header_rows(width.saturating_sub(reserve).max(1), &palette);
+        let header_at: Vec<usize> = (1..=header.len()).collect();
+        lines.extend(header);
         let body = self.body_rows(width, &palette);
+        self.last_fold_line = (!self.expanded)
+            .then(|| body.iter().position(|row| is_fold_line(row)))
+            .flatten()
+            .map(|at| lines.len() + at);
         if !body.is_empty() {
             lines.extend(body);
         }
+        decorate_header(
+            &mut lines,
+            &header_at,
+            can_open,
+            self.expanded,
+            self.fold.focused(),
+            width,
+            &palette,
+        );
+        self.last_header = header_at;
         lines
+    }
+
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        Some(self)
     }
 
     fn invalidate(&mut self) {
         self.loader.borrow_mut().invalidate();
+    }
+}
+
+impl FoldHost for BashExecutionComponent {
+    fn folds(&self) -> Vec<Fold> {
+        vec![Fold {
+            id: self.fold.id().to_string(),
+            label: "Shell".to_string(),
+            header: self.last_header.clone(),
+            fold_line: self.last_fold_line,
+            expanded: self.expanded,
+            can_open: self.can_open(),
+        }]
+    }
+
+    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool {
+        if !self.fold.is(id) {
+            return false;
+        }
+        self.set_expanded(expanded);
+        true
+    }
+
+    fn set_fold_focus(&mut self, id: Option<&str>) {
+        self.fold.set_focus(id);
+    }
+
+    fn fold_text(&self, id: &str) -> Option<String> {
+        self.fold.is(id).then(|| self.output())
     }
 }
 

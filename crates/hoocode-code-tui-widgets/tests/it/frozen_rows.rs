@@ -164,8 +164,8 @@ fn frozen_rows_keep_their_marks_and_facts() {
     let _g = lock();
     let mut chain = frozen_chain();
     // Twice: the second render draws from the capture, not the payloads.
-    let first = text(&mut chain, 80);
-    let second = text(&mut chain, 80);
+    let first = text(&mut chain, 100);
+    let second = text(&mut chain, 100);
     for out in [&first, &second] {
         assert!(
             out.lines()
@@ -221,10 +221,10 @@ fn frozen_rows_keep_their_marks_and_facts() {
 fn frozen_rows_survive_a_theme_change() {
     let _g = lock();
     let mut chain = frozen_chain();
-    let dark = text(&mut chain, 80);
+    let dark = text(&mut chain, 100);
     hoocode_code_tui_theme::init_theme(Some("light"), false);
     chain.invalidate();
-    let light = text(&mut chain, 80);
+    let light = text(&mut chain, 100);
     assert_eq!(dark, light, "same rows under a new theme");
     assert!(
         light.contains("exit 1")

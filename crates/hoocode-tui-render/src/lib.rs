@@ -11,7 +11,7 @@ mod tui;
 
 pub use component::{
     bump_render_epoch, change_counter, fresh_stamp, mix_stamps, note_change, render_epoch,
-    Component, ComponentHandle, Container, FlexSpacer, Piece, Rendered, Slot,
+    Component, ComponentHandle, Container, FlexSpacer, Fold, FoldHost, Piece, Rendered, Slot,
 };
 pub use scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB, SCROLLBAR_TRACK};
 pub use tui::{

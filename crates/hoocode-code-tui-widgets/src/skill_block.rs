@@ -5,15 +5,17 @@
 
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Text;
-use hoocode_tui_render::Component;
+use hoocode_tui_ratatui::Palette;
+use hoocode_tui_render::{Component, Fold, FoldHost};
 
-use crate::fold::{line_budget, more_lines_hint};
+use crate::fold::{decorate_header, line_budget, more_lines_hint, FoldState};
 
 pub struct SkillBlockComponent {
     name: String,
     body: String,
     expanded: bool,
     text: Text,
+    fold: FoldState,
 }
 
 impl SkillBlockComponent {
@@ -24,6 +26,7 @@ impl SkillBlockComponent {
             body: body.to_string(),
             expanded: true,
             text: Text::new("", 0, 0),
+            fold: FoldState::new("skill"),
         };
         this.rebuild();
         this
@@ -39,6 +42,11 @@ impl SkillBlockComponent {
     /// Whether the block's own toggle is open.
     pub fn is_expanded(&self) -> bool {
         self.expanded
+    }
+
+    /// Whether opening shows anything: the block has a body.
+    fn can_open(&self) -> bool {
+        !self.body.trim().is_empty()
     }
 
     fn rebuild(&mut self) {
@@ -73,14 +81,62 @@ impl SkillBlockComponent {
 
 impl Component for SkillBlockComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.text.render(width)
+        let width = usize::from(width);
+        let mut rows = self.text.render(width as u16);
+        decorate_header(
+            &mut rows,
+            &[0],
+            self.can_open(),
+            self.expanded,
+            self.fold.focused(),
+            width,
+            &Palette::current(),
+        );
+        rows
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
 
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        Some(self)
+    }
+
     fn invalidate(&mut self) {
         self.text.invalidate();
+    }
+}
+
+impl FoldHost for SkillBlockComponent {
+    fn folds(&self) -> Vec<Fold> {
+        vec![Fold {
+            id: self.fold.id().to_string(),
+            label: "Skill".to_string(),
+            header: vec![0],
+            fold_line: None,
+            expanded: self.expanded,
+            can_open: self.can_open(),
+        }]
+    }
+
+    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool {
+        if !self.fold.is(id) {
+            return false;
+        }
+        self.set_expanded(expanded);
+        true
+    }
+
+    fn set_fold_focus(&mut self, id: Option<&str>) {
+        self.fold.set_focus(id);
+    }
+
+    fn fold_text(&self, id: &str) -> Option<String> {
+        self.fold.is(id).then(|| self.body.clone())
     }
 }

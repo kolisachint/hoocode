@@ -1,6 +1,7 @@
 // Test code slices literal fixtures; the string_slice lint guards production code.
 #![allow(clippy::string_slice)]
 
+mod body_click;
 mod cell_size_input;
 mod container_cache;
 mod cursor_parking;

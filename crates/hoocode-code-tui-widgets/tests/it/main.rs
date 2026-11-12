@@ -11,6 +11,7 @@ mod controls_layers;
 mod custom_message_outline;
 mod edit_agent_output_peek;
 mod every_block;
+mod fold_indicator;
 mod frozen_rows;
 mod golden;
 mod jettison_row;

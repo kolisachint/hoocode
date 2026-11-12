@@ -1,8 +1,8 @@
  › The parser test fails on the escaped-quote case. Find the cause, fix it, and
    check the screenshot of the failing output too.
 
- ⊗ Shell cargo test -p hoocode-parser…  exit 1 · error[E0308]: mismatched types
- ● Read docs/screens/parser-failure.png  2 lines
+ ⊗ Shell cargo test -p…  exit 1 · error[E0308]: mismatched types ▸
+ ● Read docs/screens/parser-failure.png  2 lines ▸
 
  The escaped-quote case still fails. The lexer builds the token from a &str
  slice, but the parser expects an owned String, so the fix has to change the
@@ -22,13 +22,13 @@ r1 c3-49 fg=#e5e5e7 bg=#2a2a36
 r1 c50-79 bg=#2a2a36
 r3 c1 fg=#d58181
 r3 c3-7 fg=#e5e5e7 bold
-r3 c9-37 fg=#e5e5e7
-r3 c40-45 fg=#d58181
-r3 c46-78 fg=#989898
+r3 c9-22 fg=#e5e5e7
+r3 c25-30 fg=#d58181
+r3 c31-65 fg=#989898
 r4 c1 fg=#b5bd68
 r4 c3-6 fg=#e5e5e7 bold
 r4 c8-38 fg=#e5e5e7
-r4 c41-47 fg=#989898
+r4 c41-49 fg=#989898
 r6 c71-74 fg=#5cc8bb
 r7 c40-45 fg=#5cc8bb
 r8 c15-20 fg=#5cc8bb

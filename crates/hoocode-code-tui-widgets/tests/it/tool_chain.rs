@@ -368,7 +368,7 @@ fn a_single_call_is_still_its_own_block() {
     let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
     assert!(
         rows.windows(2)
-            .any(|w| w == [" ● Shell npm run check  exit 0 · 1 line", "    l1"]),
+            .any(|w| w == [" ● Shell npm run check  exit 0 · 1 line ▾", "    l1"]),
         "{out}"
     );
 }
@@ -640,7 +640,7 @@ fn a_failed_row_at_eighty_columns_keeps_its_reason() {
     let rows = mission(&mut chain, 80);
     assert!(rows.iter().all(|r| r.chars().count() <= 80), "{rows:?}");
     assert!(
-        rows.iter().any(|r| r.trim_end().ends_with("boom")),
+        rows.iter().any(|r| r.trim_end().ends_with("boom ▸")),
         "{rows:?}"
     );
 }

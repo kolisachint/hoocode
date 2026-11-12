@@ -1,6 +1,6 @@
 # TUI
 
-Status (2026-11-11): built and consolidated. The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). This is not the last TUI session: UI-25, UI-28 and UI-31 are started and not finished. The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
+Status (2026-11-11): built and consolidated. The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). This is not the last TUI session: UI-28 is started and not finished. The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
 
 ## Principles
 
@@ -69,7 +69,7 @@ Built 2026-11-07 (UI-21 and UI-22, phases P0–P6 on branch `feat/u21-u22`). Dec
 - Click and Enter read and write the same flag (`set_block_expanded`, `crates/hoocode-code-tui-app/src/mode/transcript/focus.rs`).
 - Focusing a block does not expand it. `{` and `}` change no expansion state.
 - Live: a click pins the view first, with the header on the same screen row, then toggles. `↓ N new` counts rows that arrive below.
-- `ctrl+x o` (`app.scroll.toggleAll`) opens every tool row, or closes them all when any is open. It writes the same `expanded` flag. Frozen rows are skipped, and the status slot says how many (`Opened 12 rows. 30 older rows have no output to show.`). Closing is silent.
+- `ctrl+x o` (`app.scroll.toggleAll`) opens every tool row, or closes them all when any is open. It writes the same `expanded` flag. It reaches every block that can open: tool rows (frozen ones too, which keep their open body), thinking, summaries, `!` blocks, the skill block, the background notice and the startup listing. A block that cannot open is left alone. It is silent.
 
 #### Keys
 
@@ -94,7 +94,7 @@ The rule: at the prompt a bare printable key always types. Transcript letters ac
 
 - Any other typed character clears the focus, goes live and types.
 - While a transcript search is open it keeps its own keys: `enter` next, `n` and `p`, `esc` close.
-- Mouse: a press and release on the same header cell toggles it. Body cells do nothing. A link opens. The scrollbar column pages. Capture stays `?1000h ?1006h`.
+- Mouse: a press and release on the same header row toggles it, anywhere on the line up to the scrollbar column. A press on one row and a release on another does nothing. Body rows do nothing, except the fold line (`… N more lines`), which opens the block. A link opens. The scrollbar column pages. Capture stays `?1000h ?1006h`.
 - The mouse never takes the keyboard from the prompt. With no block focused, a click creates no focus. With a block focused, a click also moves the focus to the clicked block.
 
 ### Default expansion
@@ -110,7 +110,7 @@ The rule: at the prompt a bare printable key always types. Transcript letters ac
 - Column 0 is the gutter: a space, or `›` in accent when focused. Column 1 is the mark. The tool name is at column 3.
 - The tool name is bold ink. The target is ink. Facts are dim, joined with ` · `. Red only on the failed mark and `exit N`. Green on the done mark and `+n`.
 - Focus: the `paneSel` fill across the row, plus `›`. Monochrome: `›` and reverse video.
-- An expanded header looks the same as a collapsed one. Only the body under it differs.
+- Open or closed: a dim `▸` (closed) or `▾` (open) after the header's last fact, one space after it. No extra row, and the mark and the name keep columns 1 and 3. A row that cannot open (no output, TodoWrite, stopped) shows none. See the 2026-11-12 decision.
 
 | State | Mark | Colour (dark / light) | Facts |
 |---|---|---|---|
@@ -172,10 +172,12 @@ Compaction's label is `Compacted turns 1–3`, its primary fact is `saved N`, an
 
 - Thinking (collapsed: one dim italic line, the first sentence then `…`; expanded: the whole trace), compaction and other summaries, skill block, background-run notice, `!` shell blocks and startup details. `ctrl+x b` still hides all thinking.
 - Not toggles: user messages, assistant prose, TodoWrite, the turn-end line and notices.
+- Built 2026-11-12: every block above goes through `hoocode_tui_render::FoldHost` (`Component::fold_host`): its header rows, its open flag, its fold line and its raw text. A click, `enter`, `y`, `ctrl+x o` and the `ctrl+x u` / `{` / `}` walk read one list (`chat_folds` in `scroll_view.rs`). Hidden thinking (`ctrl+x b`, or the outline view) is no block and the walk skips it. The startup listing gets a dim `Resources` header row, its click target, since it drew nothing while closed.
 
 ### Frozen rows
 
 - Blocks older than the newest 50 are frozen (`LIVE_TOOL_WINDOW`). A frozen block keeps an unstyled row snapshot: mark, target, primary and secondary facts, failure (`capture_frozen`, `crates/hoocode-code-tui-widgets/src/tool_chain.rs`). A done row keeps its green `●`. A failed row keeps its red `⊗`, `exit N` and failure state. Its body is released.
+- A click or `enter` on a block that cannot open (a frozen row with no output, TodoWrite) says so in the status slot (`Shell: no output to show.`) and changes nothing.
 - Known limitation: a frozen block skips `invalidate`. After a theme change its rows keep the old palette until they scroll out.
 
 ### As built
@@ -550,6 +552,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-11 | UI-6 closed: every dialog and notice has a component golden in dark, light and monochrome. UI-30 closed: the write-only override map in `TranscriptFocus` is removed. |
 | 2026-11-11 | User requests, not built yet (Open UI-31, UI-32): a tool row shows whether it is open, and a click anywhere on its line toggles it; the selected row in every pane is bold; deeper panes match the settings pane. When built, these supersede "an expanded header looks the same as a collapsed one", "a press and release on the same header cell" and "selected row: normal text (not bold)". |
 | 2026-11-11 | UI-4 and UI-9 were closed on 2026-11-08 and UI-21 and UI-22 on 2026-11-07. The Open table no longer lists them. |
+| 2026-11-12 | UI-25 and UI-31 closed: one toggle mechanism for every block. A block that can open ends its header in a dim `▸` (closed) or `▾` (open) after its last fact; the mark stays at column 1 and the name at column 3, and no row is added. A block that cannot open shows no indicator: no output, TodoWrite, a stopped call, a trace of one line, a thinking trace under hidden thinking. The shape carries the state, so colour and monochrome read alike (`status::CLOSED`, `status::OPEN`; ASCII `+` and `-`). A press and release on the same row toggles anywhere on the line up to the scrollbar column; another row is a drag. A click on a row that cannot open says so in the status slot (`Shell: no output to show.`). Supersedes "an expanded header looks the same as a collapsed one" and "a press and release on the same header cell". `ctrl+x o` no longer skips frozen rows: they keep their open body, and a row with none is left alone. |
 
 ## Open
 
@@ -565,12 +568,10 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
-| UI-25 | Only tool rows toggle. Thinking, summaries, `!` blocks, the skill block, the background notice and the startup listing have an `expanded` setter that no production code calls: no click, no key, no focus gutter. "Blocks that toggle besides tool calls" above describes the intent, not the build. | M | Next | Build one mechanism (header rows for hit-testing, get and set of `expanded`, raw text for copy, focused look) and make the tool chain its first user. Started: `docs/wip/2026-11-11-block-toggle.patch`. |
 | UI-26 | `/hotkeys` shows one meaning per bare key and omits non-letter keys (`controls.rs` `layer_cap`, `layer_actions`). | S | None | |
 | UI-27 | Settings search: Space toggles the row before the query sees it (`config_selector.rs`). | S | None | |
 | UI-28 | Hard-coded keys not in the keymap: `e`, `1`–`3` (permission card), `v`, `r` (session picker), Space (settings). The scoped models picker should take its category key from the keymap and show it in the hint row (user, 2026-11-11). | S | Next | Started: `docs/wip/2026-11-11-ui-28-keys.patch`. |
 | UI-29 | Remaining non-blocking uses of the warning colour. | S | None | The list is in [docs/backlog.md](../backlog.md) (UI-29). The warning colour is for blocking only. |
-| UI-31 | Tool rows: open and close must be reliable, the row shows whether it is open, and a click anywhere on the row's line toggles it (user, 2026-11-11). | M | Next, with UI-25 | Stay inside the glyph set if it reads well. Rows that cannot open show no indicator. Started in the same patch as UI-25. |
 | UI-32 | Deeper panes (the screens reached from settings) have stray blank rows and whitespace. Match the settings pane. Make the selected row's name bold in every pane, as Models, Tree, Theme and Scoped models already do (user, 2026-11-11). | S | Next | Sessions, Settings and Fork are not bold today. |
 | UI-33 | Screen goldens are stale: 9 of 10 scenarios differ. They predate the single view (2026-11-07). | M | Before the next release check | Review each diff, fix the timing waits in `subagent-attach` and `scroll-view`, then `update`. List in [docs/backlog.md](../backlog.md). |
 | UI-34 | 21 places where a dialog or notice golden differs from this page. | M | After UI-32 | List in [docs/backlog.md](../backlog.md). Fix the screen or fix this page, one by one. |

@@ -1,12 +1,12 @@
 
- ● Read crates/hoocode-code-tui-widgets/src/tool_chain.rs  1451 lines
- ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 40 lines · 8.2s
+ ● Read crates/hoocode-code-tui-widgets/src/tool_chain.rs  1451 lines ▸
+ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 40 lines · 8.2s ▸
 --- styles ---
 r1 c1 fg=#b5bd68
 r1 c3-6 fg=#e5e5e7 bold
 r1 c8-56 fg=#e5e5e7
-r1 c59-68 fg=#989898
+r1 c59-70 fg=#989898
 r2 c1 fg=#b5bd68
 r2 c3-7 fg=#e5e5e7 bold
 r2 c9-52 fg=#e5e5e7
-r2 c55-78 fg=#989898
+r2 c55-80 fg=#989898

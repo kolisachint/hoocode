@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::fold::{decorate_header, first_shown_row, FoldState};
 use hoocode_agent_types::{BranchSummaryMessage, CompactionSummaryMessage, CustomMessage};
 use hoocode_ai_types::{Content, UserContent};
 use hoocode_code_agent_session::format::group_digits;
@@ -17,7 +18,7 @@ use hoocode_tui_ratatui::core::buffer::Buffer;
 use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::text::{Line, Span};
 use hoocode_tui_ratatui::{Palette, RatatuiComponent};
-use hoocode_tui_render::{Component, Container};
+use hoocode_tui_render::{Component, Container, Fold, FoldHost};
 use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 
 fn custom_text_markdown(text: &str, markdown_theme: MarkdownTheme) -> Markdown {
@@ -51,11 +52,13 @@ struct OneRow {
     label: String,
     summary: String,
     hint: String,
+    /// Cells kept free at the end for the open or closed indicator.
+    reserve: usize,
 }
 
 impl Component for OneRow {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let width = width as usize;
+        let width = (width as usize).saturating_sub(self.reserve).max(1);
         let label_width = visible_width(&self.label);
         let mut hint = self.hint.as_str();
         let mut room = width.saturating_sub(label_width + 1 + visible_width(hint));
@@ -76,6 +79,64 @@ impl Component for OneRow {
     fn invalidate(&mut self) {}
 }
 
+/// Draws a summary block's rows with the header decorations and records
+/// the header row for the fold host.
+fn decorated(
+    mut rows: Vec<String>,
+    width: u16,
+    expanded: bool,
+    focused: bool,
+    last_header: &mut Vec<usize>,
+) -> Vec<String> {
+    *last_header = first_shown_row(&rows).into_iter().collect();
+    decorate_header(
+        &mut rows,
+        last_header,
+        true,
+        expanded,
+        focused,
+        usize::from(width),
+        &Palette::current(),
+    );
+    rows
+}
+
+/// The fold host of a block of this file: one block, its header the first
+/// row that shows something.
+macro_rules! summary_fold_host {
+    ($ty:ty, $label:expr, $text:expr) => {
+        impl FoldHost for $ty {
+            fn folds(&self) -> Vec<Fold> {
+                vec![Fold {
+                    id: self.fold.id().to_string(),
+                    label: $label.to_string(),
+                    header: self.last_header.clone(),
+                    fold_line: None,
+                    expanded: self.expanded,
+                    can_open: true,
+                }]
+            }
+
+            fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool {
+                if !self.fold.is(id) {
+                    return false;
+                }
+                self.set_expanded(expanded);
+                true
+            }
+
+            fn set_fold_focus(&mut self, id: Option<&str>) {
+                self.fold.set_focus(id);
+            }
+
+            fn fold_text(&self, id: &str) -> Option<String> {
+                #[allow(clippy::redundant_closure_call)]
+                self.fold.is(id).then(|| ($text)(self))
+            }
+        }
+    };
+}
+
 /// `CustomMessageComponent`: a displayed custom message, as its label over
 /// its markdown. Outline folds it to its label and first line; peek (the
 /// default) shows all of it. (Extension message renderers arrive with 12.3.)
@@ -84,6 +145,8 @@ pub struct CustomMessageComponent {
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
     expanded: bool,
     container: Container,
+    fold: FoldState,
+    last_header: Vec<usize>,
 }
 
 impl CustomMessageComponent {
@@ -93,6 +156,8 @@ impl CustomMessageComponent {
             markdown_theme,
             expanded: true,
             container: Container::new(),
+            fold: FoldState::new("message"),
+            last_header: Vec::new(),
         };
         this.rebuild();
         this
@@ -108,10 +173,9 @@ impl CustomMessageComponent {
         self.expanded
     }
 
-    fn rebuild(&mut self) {
-        let mut sheet = BoxComponent::new(1, 1, None);
-        apply_block_fill(&mut sheet, BlockFill::CustomMessageBg);
-        let text = match &self.message.content {
+    /// The message's text, as the markdown shows it.
+    fn message_text(&self) -> String {
+        match &self.message.content {
             UserContent::Text(text) => text.clone(),
             UserContent::Blocks(blocks) => blocks
                 .iter()
@@ -121,7 +185,13 @@ impl CustomMessageComponent {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-        };
+        }
+    }
+
+    fn rebuild(&mut self) {
+        let mut sheet = BoxComponent::new(1, 1, None);
+        apply_block_fill(&mut sheet, BlockFill::CustomMessageBg);
+        let text = self.message_text();
         if self.expanded {
             sheet.add_child(Rc::new(RefCell::new(Text::new(
                 message_label(&self.message.custom_type),
@@ -139,6 +209,7 @@ impl CustomMessageComponent {
                 label: message_label(&self.message.custom_type),
                 summary: first.unwrap_or("").to_string(),
                 hint: peek_hint(),
+                reserve: crate::fold::INDICATOR_CELLS,
             })));
         }
         self.container.clear();
@@ -150,13 +221,31 @@ impl CustomMessageComponent {
 
 impl Component for CustomMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.container.render(width)
+        let rows = self.container.render(width);
+        decorated(
+            rows,
+            width,
+            self.expanded,
+            self.fold.focused(),
+            &mut self.last_header,
+        )
+    }
+
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        Some(self)
     }
 
     fn invalidate(&mut self) {
         self.rebuild();
     }
 }
+
+summary_fold_host!(CustomMessageComponent, "Message", |this: &Self| this
+    .message_text());
 
 /// A summary message's sheet: its label, then either the folded line (the
 /// caller's text in the folded style, with the peek hint) or the markdown body.
@@ -193,6 +282,8 @@ pub struct BranchSummaryMessageComponent {
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
     expanded: bool,
     sheet: BoxComponent,
+    fold: FoldState,
+    last_header: Vec<usize>,
 }
 
 impl BranchSummaryMessageComponent {
@@ -205,6 +296,8 @@ impl BranchSummaryMessageComponent {
             markdown_theme,
             expanded: false,
             sheet: BoxComponent::new(1, 1, None),
+            fold: FoldState::new("branch"),
+            last_header: Vec::new(),
         };
         this.update_display();
         this
@@ -234,13 +327,34 @@ impl BranchSummaryMessageComponent {
 
 impl Component for BranchSummaryMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.sheet.render(width)
+        let rows = self.sheet.render(width);
+        decorated(
+            rows,
+            width,
+            self.expanded,
+            self.fold.focused(),
+            &mut self.last_header,
+        )
+    }
+
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        Some(self)
     }
 
     fn invalidate(&mut self) {
         self.update_display();
     }
 }
+
+summary_fold_host!(
+    BranchSummaryMessageComponent,
+    "Branch summary",
+    |this: &Self| this.message.summary.clone()
+);
 
 /// The compaction row's parts (UI-21 P4 cut order): the label, the primary
 /// fact (never dropped: `saved N`, `grew N`, or `from N tokens` when the
@@ -361,6 +475,8 @@ pub struct CompactionSummaryMessageComponent {
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
     expanded: bool,
     sheet: BoxComponent,
+    fold: FoldState,
+    last_header: Vec<usize>,
 }
 
 impl CompactionSummaryMessageComponent {
@@ -373,6 +489,8 @@ impl CompactionSummaryMessageComponent {
             markdown_theme,
             expanded: false,
             sheet: BoxComponent::new(1, 1, None),
+            fold: FoldState::new("compaction"),
+            last_header: Vec::new(),
         };
         this.update_display();
         this
@@ -405,13 +523,40 @@ impl CompactionSummaryMessageComponent {
 
 impl Component for CompactionSummaryMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        if self.expanded {
-            return self.sheet.render(width);
-        }
-        jettison_cut_row(&self.message, peek_hint_text(), width as usize)
+        let rows = if self.expanded {
+            self.sheet.render(width)
+        } else {
+            // The row is cut two cells short, for the indicator.
+            let room = usize::from(width).saturating_sub(crate::fold::INDICATOR_CELLS);
+            jettison_cut_row(&self.message, peek_hint_text(), room)
+                .into_iter()
+                .map(|row| format!("{row}{}", theme().fg("dim", "  ")))
+                .collect()
+        };
+        decorated(
+            rows,
+            width,
+            self.expanded,
+            self.fold.focused(),
+            &mut self.last_header,
+        )
+    }
+
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        Some(self)
     }
 
     fn invalidate(&mut self) {
         self.update_display();
     }
 }
+
+summary_fold_host!(
+    CompactionSummaryMessageComponent,
+    "Compaction",
+    |this: &Self| this.message.summary.clone()
+);

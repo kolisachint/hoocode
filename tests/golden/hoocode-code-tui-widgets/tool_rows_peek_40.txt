@@ -1,6 +1,6 @@
 
- ● Read src/config.rs  12 lines
- ● Edit src/config.rs  +2 −2
+ ● Read src/config.rs  12 lines ▸
+ ● Edit src/config.rs  +2 −2 ▸
      12     let mut cfg =
     Config::default();
     -14     let raw = read_file(path)?;
@@ -9,16 +9,16 @@
     +15     let raw = read_file(path)?;
     … 2 more lines
 
- ● Shell cargo test -p…  exit 0
+ ● Shell cargo test -p…  exit 0 ▸
 --- styles ---
 r1 c1 fg=#b5bd68
 r1 c3-6 fg=#e5e5e7 bold
 r1 c8-20 fg=#e5e5e7
-r1 c23-30 fg=#989898
+r1 c23-32 fg=#989898
 r2 c1 fg=#b5bd68
 r2 c3-6 fg=#e5e5e7 bold
 r2 c8-20 fg=#e5e5e7
-r2 c23-27 fg=#989898
+r2 c23-29 fg=#989898
 r3 c4-39 fg=#989898
 r4 c0-21 fg=#989898
 r5 c4 fg=#d58181
@@ -33,4 +33,4 @@ r9 c4-17 fg=#989898
 r11 c1 fg=#b5bd68
 r11 c3-7 fg=#e5e5e7 bold
 r11 c9-22 fg=#e5e5e7
-r11 c25-30 fg=#989898
+r11 c25-32 fg=#989898

@@ -120,8 +120,11 @@ How each kind is delivered follows its mode in `/settings` (`steering-mode`,
 
 ## Pinned transcript blocks
 
-Each tool call is one row. PgUp (or the mouse wheel) pins the view, and a click on
-a header toggles it open. At the prompt a letter types, even when the view is pinned.
+Each tool call is one row, and so is each thinking trace, summary, `!` command, skill
+block, background-run notice and the startup resource listing: a block that can open
+ends its header in a dim `▸` (closed) or `▾` (open). PgUp (or the mouse wheel) pins
+the view, and a click anywhere on a header row toggles it open. At the prompt a
+letter types, even when the view is pinned.
 **Ctrl+X u** focuses the newest block and pins the view. Only with a block focused
 and the prompt empty do letters act as transcript keys:
 
@@ -135,18 +138,19 @@ and the prompt empty do letters act as transcript keys:
 - **Home** jumps to the start of the transcript; **End** goes back to live and
   clears the focus.
 
-Any other letter clears the focus, goes back to live and types. A click toggles a
-block. If a block is already focused, the click also moves the focus to it, so
+Any other letter clears the focus, goes back to live and types. A click on a header
+row toggles its block (press and release on the same row; a press on one row and a
+release on another does nothing, and neither does a click on a body row). A click on
+a row that cannot open says so in the status line. If a block is already focused, the click also moves the focus to it, so
 **Enter** and **y** act on it next. With no block focused, a click leaves the
 keyboard alone.
 
 Keys can be rebound in `keybindings.json`.
 
-**Ctrl+X o** (`app.scroll.toggleAll`) opens every tool block, or closes them all
-when one is open. It works from the prompt and does not move the focus. A block
-older than the newest 50 has released its output, so it is skipped, and the
-status line says how many rows opened and how many were skipped. The focus is
-not saved, so a resumed session opens collapsed.
+**Ctrl+X o** (`app.scroll.toggleAll`) opens every block that can open, or closes
+them all when one is open. It works from the prompt and does not move the focus.
+A block with nothing to open is left alone. The focus is not saved, so a resumed
+session opens collapsed.
 
 ## The approval card
 

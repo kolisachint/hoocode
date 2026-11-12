@@ -138,7 +138,7 @@ fn outline_shows_the_target_and_facts() {
     let lines = render(&described_done_text(SUMMARY, ""), false);
     assert_eq!(
         lines,
-        vec!["● explore#4  audit the db layer · 1m27s · haiku-5-5"]
+        vec!["● explore#4  audit the db layer · 1m27s · haiku-5-5 ▸"]
     );
     assert!(!lines.join("").contains('▏'));
     assert!(!lines.join("").contains("Read the full result"));
@@ -149,14 +149,14 @@ fn outline_shows_the_target_and_facts() {
 fn outline_drops_the_running_count() {
     // The task panel owns live counts: the head never names them.
     let lines = render(&done_text(SUMMARY, " 4 still running."), false);
-    assert_eq!(lines, vec!["● explore#4 · 1m27s"]);
+    assert_eq!(lines, vec!["● explore#4 · 1m27s ▸"]);
     assert!(!lines.join("").contains("still running"));
 }
 
 #[test]
 fn narrow_rows_shorten_the_target_and_keep_the_facts() {
     let lines = render_at(&described_done_text(SUMMARY, ""), false, 41);
-    assert_eq!(lines, vec!["● explore#4  audit… · 1m27s · haiku-5-5"]);
+    assert_eq!(lines, vec!["● explore#4  audit… · 1m27s · haiku-5-5 ▸"]);
     for line in &lines {
         assert!(visible_width(line) <= 41, "{line:?}");
     }
@@ -168,7 +168,7 @@ fn peek_adds_a_summary_line_with_the_gutter() {
     assert_eq!(
         lines,
         vec![
-            "● explore#4 · 1m27s",
+            "● explore#4 · 1m27s ▾",
             "  │ Mapped the module and its three callers",
         ]
     );
@@ -183,7 +183,7 @@ fn peek_adds_the_model_line_when_the_text_has_one() {
     assert_eq!(
         lines,
         vec![
-            "● explore#4  audit the db layer · 1m27s · haiku-5-5",
+            "● explore#4  audit the db layer · 1m27s · haiku-5-5 ▾",
             "  │ Mapped the module and its three callers",
             "  model haiku-5-5 · effort high",
         ]
@@ -199,7 +199,7 @@ fn a_failed_notice_renders_its_reason_at_peek() {
     assert_eq!(
         lines,
         vec![
-            "⊗ explore#1 · failed · 1m27s",
+            "⊗ explore#1 · failed · 1m27s ▾",
             "  │ provider timed out after 95s",
         ]
     );
@@ -211,7 +211,7 @@ fn a_cancelled_notice_reads_all_dim_with_its_word() {
     assert_eq!(
         lines,
         vec![
-            "⊗ explore#3  trace it · cancelled · 1m27s",
+            "⊗ explore#3  trace it · cancelled · 1m27s ▾",
             "  │ cancelled before it started",
         ]
     );
@@ -228,7 +228,7 @@ fn a_partial_notice_marks_the_head() {
     assert!(notice.partial);
     assert_eq!(
         render(&text, false),
-        vec!["● explore#4  audit the db layer (partial) · 1m27s · haiku-5-5"]
+        vec!["● explore#4  audit the db layer (partial) · 1m27s · haiku-5-5 ▸"]
     );
 }
 
@@ -298,7 +298,7 @@ fn parses_the_old_tool_and_call_id_header() {
         .iter()
         .map(|l| strip(l).trim_end().to_string())
         .collect();
-    assert_eq!(lines, vec!["● explore#4 · 1m27s"]);
+    assert_eq!(lines, vec!["● explore#4 · 1m27s ▸"]);
 }
 
 /// The previous look's label-first header (`Background agent explore#4
@@ -324,5 +324,5 @@ fn parses_the_label_first_paren_id_header() {
         .iter()
         .map(|l| strip(l).trim_end().to_string())
         .collect();
-    assert_eq!(lines, vec!["● explore#4 · 1m27s"]);
+    assert_eq!(lines, vec!["● explore#4 · 1m27s ▸"]);
 }

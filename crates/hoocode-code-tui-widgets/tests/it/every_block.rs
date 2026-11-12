@@ -56,7 +56,7 @@ fn thinking_toggle_opens_the_whole_trace() {
         .map(|l| strip(l).trim_end().to_string())
         .filter(|l| !l.is_empty())
         .collect();
-    assert_eq!(rows, vec![" Weighing the options…"], "{rows:?}");
+    assert_eq!(rows, vec![" Weighing the options… ▸"], "{rows:?}");
 
     c.set_expanded(true);
     assert!(c.is_expanded());
@@ -73,7 +73,7 @@ fn thinking_toggle_opens_the_whole_trace() {
         .map(|l| strip(l).trim_end().to_string())
         .filter(|l| !l.is_empty())
         .collect();
-    assert_eq!(rows, vec![" Weighing the options…"], "{rows:?}");
+    assert_eq!(rows, vec![" Weighing the options… ▸"], "{rows:?}");
 }
 
 /// `ctrl+x b` still hides thinking whole, even with the toggle open.
@@ -103,7 +103,7 @@ fn skill_row_has_no_mark_and_toggles_to_the_whole_body() {
         .map(|l| strip(l).trim_end().to_string())
         .filter(|l| !l.is_empty())
         .collect();
-    assert_eq!(rows, vec!["write-tests"], "{rows:?}");
+    assert_eq!(rows, vec!["write-tests ▸"], "{rows:?}");
     assert!(!rows.join("").contains('◆'));
 
     block.set_expanded(true);
@@ -277,7 +277,7 @@ fn compaction_cut_order_drops_the_range_first() {
     let plain = strip(&compaction(12_400, Some(3_100)).render(40)[0])
         .trim_end()
         .to_string();
-    assert_eq!(plain, "Compacted turns 1–3 · saved 9,300", "{plain:?}");
+    assert_eq!(plain, "Compacted turns 1–3 · saved 9,300 ▸", "{plain:?}");
 }
 
 /// At 80 the full row and the hint both fit.

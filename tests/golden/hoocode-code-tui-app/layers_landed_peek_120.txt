@@ -3,10 +3,10 @@
    Update the configuration section of the README so the order of resolution matches the code.
    Run the config tests afterwards and report anything that fails.
 
- The loader parses the file first and reads the environment after, so an override arrives too late…
+ The loader parses the file first and reads the environment after, so an override arrives too late… ▸
 
- ● Read src/config.rs  30 lines
- ● Edit src/config.rs  +2 −2
+ ● Read src/config.rs  30 lines ▸
+ ● Edit src/config.rs  +2 −2 ▸
        12     let mut cfg = Config::default();
     -  14     let raw = read_file(path)?;
     -  15     apply_env(&mut cfg);
@@ -14,7 +14,7 @@
     +  15     let raw = read_file(path)?;
     … 2 more lines
 
- ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 40 lines · 8.2s
+ ● Shell cargo test -p hoocode-config 2>&1 | tail -40  exit 0 · 40 lines · 8.2s ▸
 
  The overrides now apply before the file is parsed, so an override can set the parser's own options.
 
@@ -36,14 +36,15 @@ r3 c0-2 bg=#2a2a36
 r3 c3-65 fg=#e5e5e7 bg=#2a2a36
 r3 c66-119 bg=#2a2a36
 r5 c1-98 fg=#989898 italic
+r5 c100 fg=#989898
 r7 c1 fg=#b5bd68
 r7 c3-6 fg=#e5e5e7 bold
 r7 c8-20 fg=#e5e5e7
-r7 c23-30 fg=#989898
+r7 c23-32 fg=#989898
 r8 c1 fg=#b5bd68
 r8 c3-6 fg=#e5e5e7 bold
 r8 c8-20 fg=#e5e5e7
-r8 c23-27 fg=#989898
+r8 c23-29 fg=#989898
 r9 c4-45 fg=#989898
 r10 c4 fg=#d58181
 r10 c5-40 fg=#989898
@@ -57,6 +58,6 @@ r14 c4-17 fg=#989898
 r16 c1 fg=#b5bd68
 r16 c3-7 fg=#e5e5e7 bold
 r16 c9-52 fg=#e5e5e7
-r16 c55-78 fg=#989898
+r16 c55-80 fg=#989898
 r20 c30-41 fg=#5cc8bb
 r20 c87-97 fg=#5cc8bb

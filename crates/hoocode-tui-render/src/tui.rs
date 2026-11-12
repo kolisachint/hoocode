@@ -188,10 +188,11 @@ pub type ScrollStatusFormatter = Box<dyn Fn(&ScrollStatus) -> String>;
 /// Opens a clicked URL (`onHyperlink`).
 pub type HyperlinkHandler = Box<dyn FnMut(&str)>;
 
-/// A click on a transcript body cell (press and release on the same cell
-/// that holds no link and is not the scrollbar column). The rows are
-/// transcript buffer rows: `buffer_row` names the clicked row and `context`
-/// how many buffer rows sit above it on screen, so pinning keeps the row
+/// A click on a transcript body row: a press and a release on the same
+/// row, anywhere on it but the scrollbar column, that did not open a link.
+/// `buffer_row` names the clicked row in the transcript buffer (the body's
+/// rows full-screen, the whole frame's otherwise) and `context` how many
+/// screen rows of the transcript sit above it, so pinning keeps the row
 /// where the click found it. `width` is the transcript width the rows were
 /// laid out at.
 #[derive(Debug, Clone, Copy)]
@@ -497,6 +498,10 @@ pub struct Tui {
     /// Body rows on screen in the last full-screen frame: the first screen
     /// row and the lines, for link clicks.
     fullscreen_body_window: Option<(i64, Vec<String>)>,
+    /// Where that window sits in the body: the buffer row of its first
+    /// line, and how many blank rows pad the top of a live transcript
+    /// shorter than the body. A click maps a screen row back through both.
+    fullscreen_body_origin: (i64, i64),
     /// Body rows the last full-screen frame showed (the view height).
     fullscreen_view: i64,
     /// Between `start` and `stop`: a full-screen mode change would desync the frame.
@@ -569,6 +574,7 @@ impl Tui {
             previous_screen: Vec::new(),
             previous_screen_size: None,
             fullscreen_body_window: None,
+            fullscreen_body_origin: (0, 0),
             fullscreen_view: 0,
             started: false,
             fullscreen_seen_total: 0,
@@ -753,6 +759,25 @@ impl Tui {
         }
         let pane_len = self.scroll_pane_lines(self.terminal.columns()).len() as i64;
         self.pinned_split(pane_len).0
+    }
+
+    /// The screen rows the transcript takes: the pinned window's height, or
+    /// the body's while live and full-screen.
+    pub fn transcript_view_rows(&self) -> i64 {
+        self.scroll_view_height()
+    }
+
+    /// The screen row, counted from the transcript's first screen row, that
+    /// showed transcript buffer row `row` in the last full-screen frame.
+    /// `None` when the row was off screen, or the screen is not full-screen.
+    pub fn transcript_screen_row(&self, row: i64) -> Option<i64> {
+        if !self.fullscreen {
+            return None;
+        }
+        let (_, lines) = self.fullscreen_body_window.as_ref()?;
+        let (start, pad) = self.fullscreen_body_origin;
+        let index = row - start + pad;
+        (row >= start && index < lines.len() as i64).then_some(index)
     }
 
     /// The body's `(lines, rows shown)` as the next frame would lay them out.
@@ -1441,8 +1466,9 @@ impl Tui {
         (!out.is_empty()).then_some(out)
     }
 
-    /// The wheel scrolls; a click (press and release on the same cell) opens
-    /// the link under it, else reports the body cell to `on_body_click`.
+    /// The wheel scrolls. A press and release on the same cell opens the link
+    /// under it. Otherwise a press and release on the same row, anywhere but
+    /// the scrollbar column, reports the body row to `on_body_click`.
     /// Anything else is swallowed.
     fn handle_mouse_event(&mut self, event: MouseEvent) {
         match event.kind {
@@ -1459,19 +1485,27 @@ impl Tui {
                 self.pressed_cell = (event.button == 0).then_some((event.row, event.column));
             }
             MouseEventKind::Release => {
-                let pressed = self.pressed_cell.take();
-                if pressed != Some((event.row, event.column)) {
+                let Some((pressed_row, pressed_column)) = self.pressed_cell.take() else {
+                    return;
+                };
+                // The whole row is one target: the release may land on
+                // another cell of it. Another row is a drag, not a click.
+                if pressed_row != event.row {
                     return;
                 }
-                // A link wins over the body; the scrollbar column pages on
-                // press, so a release there reports nothing.
-                if let Some(url) = self.hyperlink_at_screen_cell(event.row, event.column) {
-                    if let Some(cb) = &mut self.on_hyperlink {
-                        cb(&url);
+                // A link wins over the body, on its own cells only.
+                if pressed_column == event.column {
+                    if let Some(url) = self.hyperlink_at_screen_cell(event.row, event.column) {
+                        if let Some(cb) = &mut self.on_hyperlink {
+                            cb(&url);
+                        }
+                        return;
                     }
-                    return;
                 }
-                if event.column == self.terminal.columns() as i64 {
+                // The scrollbar column pages on press, so a click that
+                // touches it reports nothing.
+                let scrollbar = self.terminal.columns() as i64;
+                if event.column >= scrollbar || pressed_column >= scrollbar {
                     return;
                 }
                 if let Some(click) = self.buffer_click_at(event.row) {
@@ -1533,14 +1567,15 @@ impl Tui {
         if self.fullscreen {
             // Only body rows carry the transcript's clicks; `row` is 1-based.
             let (first_row, lines) = self.fullscreen_body_window.as_ref()?;
-            let buffer = row - 1 - first_row;
-            let len = lines.len() as i64;
-            if buffer < 0 || buffer >= len {
+            let index = row - 1 - first_row;
+            let (start, pad) = self.fullscreen_body_origin;
+            // The blank rows above a short live transcript are no row of it.
+            if index < pad || index >= lines.len() as i64 {
                 return None;
             }
             return Some(BodyClick {
-                buffer_row: buffer,
-                context: buffer.min(self.scroll_view_height() - 1).max(0),
+                buffer_row: start + index - pad,
+                context: index,
                 width,
             });
         }
@@ -2428,7 +2463,9 @@ impl Tui {
         // bottom chrome, padding the blank rows above it (M1 top-alignment
         // revisited for this case only). Pinned keeps the top-held window, and
         // a transcript that fills the body is already tail-aligned.
+        let mut window_pad = 0;
         if !pinned && window_lines.len() < rows.body {
+            window_pad = rows.body - window_lines.len();
             let mut padded = vec![String::new(); rows.body - window_lines.len()];
             padded.append(&mut window_lines);
             window_lines = padded;
@@ -2490,6 +2527,7 @@ impl Tui {
         // Screens under four rows show the bottom alone, which may leave rows blank.
         out.resize(height, String::new());
         self.fullscreen_body_window = Some((rows.top as i64, window_lines));
+        self.fullscreen_body_origin = (start as i64, window_pad as i64);
         Screen {
             rows: out,
             cursor: cursor_at,

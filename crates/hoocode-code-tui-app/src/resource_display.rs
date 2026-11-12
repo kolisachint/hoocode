@@ -675,14 +675,17 @@ pub fn show_loaded_resources_with_details(
         }
         if !detail_sections.is_empty() {
             let details = detail_sections.join("\n\n");
-            let block = Rc::new(RefCell::new(ExpandableText::new(
-                String::new,
-                move || details.clone(),
-                // `getStartupExpansionState`: verbose, or asked open.
-                listing.verbose || listing.expanded,
-                0,
-                0,
-            )));
+            let block = Rc::new(RefCell::new(
+                ExpandableText::new(
+                    String::new,
+                    move || details.clone(),
+                    // `getStartupExpansionState`: verbose, or asked open.
+                    listing.verbose || listing.expanded,
+                    0,
+                    0,
+                )
+                .with_header(t.fg("dim", " Resources")),
+            ));
             let component: ComponentHandle = block.clone();
             out.push(component);
             details_handle = Some(block);

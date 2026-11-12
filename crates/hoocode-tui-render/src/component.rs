@@ -208,6 +208,63 @@ pub trait Component {
     fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
         None
     }
+
+    /// The blocks of this component that open and close in place, for
+    /// components that have any (see [`FoldHost`]).
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        None
+    }
+
+    /// [`Self::fold_host`], mutably: a click or a key sets a block's state.
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
+        None
+    }
+}
+
+/// One block that opens and closes in place (a tool call, a thinking trace,
+/// a summary), as its component's last render drew it. Rows count from the
+/// component's first row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fold {
+    /// Names the block inside its component and across the transcript: it
+    /// stays the same from frame to frame, so a focus can hold on to it.
+    pub id: String,
+    /// What the block is, for a notice (`Shell`, `thinking`).
+    pub label: String,
+    /// The header rows: a click on any of them toggles the block. The first
+    /// one is the row that keeps its place on screen when the block toggles.
+    pub header: Vec<usize>,
+    /// The fold line under a partly shown body (`… N more lines`): a click
+    /// on it opens the block.
+    pub fold_line: Option<usize>,
+    /// Whether the body is open.
+    pub expanded: bool,
+    /// Whether opening shows anything the closed block does not. A block
+    /// that cannot open draws no open or closed indicator.
+    pub can_open: bool,
+}
+
+/// A component whose blocks open and close in place. One interface for a
+/// click, the focus walk, `enter`, copy and open-all: the app reads the
+/// blocks of the last render here and sets their state through it.
+///
+/// A method that changes what the component draws takes a [`fresh_stamp`]
+/// (or calls [`note_change`]), as every other mutator does.
+pub trait FoldHost {
+    /// The blocks of the last render, in row order.
+    fn folds(&self) -> Vec<Fold>;
+
+    /// Opens or closes the block `id`. False when the component has no such
+    /// block.
+    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool;
+
+    /// Which block draws focused (the `›` gutter and the selection fill on
+    /// its header); `None`, or an id the component does not hold, clears it.
+    fn set_fold_focus(&mut self, id: Option<&str>);
+
+    /// The block's raw text, for copy. `None` when the component does not
+    /// keep it (the caller may know another source).
+    fn fold_text(&self, id: &str) -> Option<String>;
 }
 
 pub type ComponentHandle = Rc<RefCell<dyn Component>>;

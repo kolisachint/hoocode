@@ -29,13 +29,12 @@ How to spend less in the next session (the user asked for this):
 - Two usage limits were hit in this session. The cause was long agent briefs, three-commit agents, and agents that each re-read the design docs and ran the workspace clippy.
 - Give one agent one row. Name the files. Let it run `cargo clippy -p <crate>` and `cargo nextest run -p <crate>` only. Run the workspace checks once, at the end, in the main session.
 - Do not start a parallel lane for fewer than three rows.
-- Start from the two patches. They hold real work.
+- Start from the patch. It holds real work.
 
 ## Next session: in this order
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 1 | UI-25, UI-31 | One toggle mechanism for every block. Apply `docs/wip/2026-11-11-block-toggle.patch` (`git apply`; it applied clean on the commit that added it), read it, finish it. Scope and acceptance are under "Block toggle" below. | M |
 | 2 | UI-28 | Apply `docs/wip/2026-11-11-ui-28-keys.patch` and finish it. Scope under "Keys" below. | S |
 | 3 | UI-27 | Settings search: Space types into a non-empty query and toggles only when the query is empty (`code-tui-selectors/src/config_selector.rs`). | S |
 | 4 | UI-26 | `/hotkeys`: group by the five rows of "Where a key acts", show every meaning of a bare key, show non-letter keys (`code-tui-widgets/src/controls.rs`). | S |
@@ -46,26 +45,6 @@ How to spend less in the next session (the user asked for this):
 | 9 | UI-33 | Refresh the screen goldens. Notes below. | M |
 | 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
 | 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
-
-### Block toggle (UI-25 and UI-31)
-
-The user asked on 2026-11-11: tool collapse and expand must work reliably, the row must show its state, and a click anywhere on the row's line must toggle it.
-
-What is true in the code today:
-
-- Click and Enter toggle tool rows only. `drain_body_clicks` (`code-tui-app/src/mode/mod.rs`) calls `hit_chain`, which knows only `ToolChainComponent` and its `header_map`.
-- Thinking, the skill block, `!` shell blocks, the background notice, compaction and branch summaries and the startup listing have an `expanded` setter. No production code calls it. They have no focus gutter. `tui.md` "Blocks that toggle besides tool calls" describes the intent.
-- A click toggles only on a press and release on the same header cell.
-
-What the patch holds (unfinished; it may not compile, and it was not tested): a `FoldHost`-style trait in `hoocode-tui-render` (`component.rs`, `tui.rs`) so any body component can expose its header rows, its `expanded` flag and its focused look; changes to `fold.rs`, `tool_chain.rs`, `tool_execution.rs`, `scroll_view.rs`, `mode/transcript/focus.rs`, `mode/mod.rs`; a glyph module change; and a new test `crates/hoocode-tui-render/tests/it/body_click.rs`. It stopped while adding `can_open` to the tool block and making the chain a host.
-
-Done when:
-
-- A press and release on the same header row toggles, anywhere on the line up to the scrollbar column. Press on one row and release on another does nothing. Body rows do nothing. A link still opens.
-- The row shows whether it is open, in colour and in monochrome, with no extra row, the mark at column 1 and the name at column 3. Rows that cannot open (no output, TodoWrite, frozen, stopped) show no indicator. Write the rule as a dated decision in `tui.md`.
-- Thinking, summaries, `!` blocks, the skill block, the background notice and the startup listing toggle by click, by Enter on focus, and by `ctrl+x o`. `ctrl+x u`, `{` and `}` walk them. Hidden thinking is skipped.
-- A click on a frozen row says once in the status slot that it has no output.
-- Checked on the real binary in tmux with real mouse sequences (`ESC [ < 0 ; col ; row M` then `m`), in colour, with `NO_COLOR=1`, at 80 and 40 columns.
 
 ### Keys (UI-28)
 

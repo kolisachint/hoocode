@@ -1369,6 +1369,56 @@ impl ToolExecutionComponent {
         self.set_expanded(!self.expanded);
     }
 
+    /// Whether opening the block shows rows its closed row does not, so the
+    /// row draws the open or closed indicator and a click toggles it. A
+    /// stopped call has no body, TodoWrite is not a toggle (the plan is in
+    /// the task panel), and a call with no output has nothing to open.
+    /// `parts` are the rows the block just drew at `width`. A frozen block
+    /// reads the open body captured at freeze.
+    pub fn can_open(&mut self, width: u16, parts: &StepParts) -> bool {
+        let has_rows = |parts: &StepParts| {
+            let shown = |rows: &[String]| rows.iter().any(|row| !crate::is_blank(row));
+            shown(&parts.body) || shown(&parts.footer) || !parts.images.is_empty()
+        };
+        if self.tool_name == "TodoWrite" {
+            return false;
+        }
+        if self.frozen {
+            let interrupted = self.snapshot.as_ref().is_some_and(|s| s.interrupted);
+            return !interrupted
+                && self
+                    .frozen_lines
+                    .as_ref()
+                    .is_some_and(|frozen| has_rows(&frozen.parts));
+        }
+        if self.interrupted {
+            return false;
+        }
+        if self.is_agent() && !self.settled_sub_steps().is_empty() {
+            return true;
+        }
+        // Open, or closed with a peek or a running tail: the rows are there.
+        if has_rows(parts) || self.expanded {
+            return has_rows(parts);
+        }
+        if self.result.is_none() {
+            return false;
+        }
+        if !self.has_renderer_definition() {
+            return !self.text_output().trim().is_empty();
+        }
+        // Closed: the result renderer drew its trimmed rows and the block
+        // left them off. Any row there is a row opening shows.
+        match self.result_component.clone() {
+            Some(component) => component
+                .borrow_mut()
+                .render(width)
+                .iter()
+                .any(|row| !crate::is_blank(row)),
+            None => self.create_result_fallback().is_some(),
+        }
+    }
+
     /// Whether the block draws everything uncut: its own toggle, open in
     /// place (single view: every block starts as one row).
     fn expanded(&self) -> bool {

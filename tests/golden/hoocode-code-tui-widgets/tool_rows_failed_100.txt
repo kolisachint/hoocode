@@ -1,13 +1,13 @@
 
- ⊗ Shell cargo test -p hoocode-parser…  exit 1 · error: could not compile `hoocode-parser` (lib)
- ● Read docs/screens/parser-failure.png  2 lines
+ ⊗ Shell cargo test -p hoocode-parser…  exit 1 · error: could not compile `hoocode-parser` (lib) ▸
+ ● Read docs/screens/parser-failure.png  2 lines ▸
 --- styles ---
 r1 c1 fg=#d58181
 r1 c3-7 fg=#e5e5e7 bold
 r1 c9-37 fg=#e5e5e7
 r1 c40-45 fg=#d58181
-r1 c46-95 fg=#989898
+r1 c46-97 fg=#989898
 r2 c1 fg=#b5bd68
 r2 c3-6 fg=#e5e5e7 bold
 r2 c8-38 fg=#e5e5e7
-r2 c41-47 fg=#989898
+r2 c41-49 fg=#989898

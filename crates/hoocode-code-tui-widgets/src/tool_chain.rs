@@ -9,12 +9,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_ai_types::Content;
-use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
+use hoocode_tui_render::{fresh_stamp, mix_stamps, Component, Fold, FoldHost};
 
 use hoocode_tui_ratatui::core::text::Span;
-use hoocode_tui_ratatui::{Palette, Style};
+use hoocode_tui_ratatui::Palette;
 
 use crate::assistant_message::AssistantMessageComponent;
+use crate::fold::{self, gutter_span, paint_focused};
 use crate::tool_execution::ToolExecutionComponent;
 use crate::tool_row;
 use hoocode_tui_ratatui::row;
@@ -129,38 +130,6 @@ fn sub_step_rows(
     vec![row(spans, width)]
 }
 
-/// Whether rows paint in monochrome (no colour): the focused fill is
-/// reverse video instead of paneSel.
-fn mono() -> bool {
-    !hoocode_code_tui_theme::chalk::enabled()
-}
-
-/// The header's gutter cell: `›` in accent on the focused row (bold with
-/// no colour), else the blank that keeps column 0.
-fn gutter_span(focused: bool, palette: &Palette) -> Span<'static> {
-    if !focused {
-        return Span::raw(" ".to_string());
-    }
-    let mut style = palette.acc();
-    if mono() {
-        style = hoocode_tui_ratatui::bold(style);
-    }
-    Span::styled("›".to_string(), style)
-}
-
-/// The focused row's band across every span of the header: paneSel with
-/// colour, reverse video without.
-fn paint_focused(spans: &mut [Span<'static>], palette: &Palette) {
-    let fill = if mono() {
-        hoocode_tui_ratatui::reversed(Style::default())
-    } else {
-        palette.bg("paneSel")
-    };
-    for span in spans.iter_mut() {
-        span.style = span.style.patch(fill);
-    }
-}
-
 /// One header row in the chain's last render: its first row and how many
 /// rows the header spans, with the block it toggles.
 #[derive(Debug, Clone, Copy)]
@@ -178,6 +147,9 @@ pub struct ToolChainComponent {
     lead_ins: Vec<LeadIn>,
     /// The header rows of the last render, for click-to-toggle.
     header_map: Vec<HeaderHit>,
+    /// Every block of the last render that opens in place, in row order:
+    /// the tool rows, and the thinking traces drawn above them.
+    folds: Vec<Fold>,
     /// The focused tool call's id, if the transcript has one in this chain:
     /// its header draws the `›` gutter and the paneSel fill. Synced from
     /// the transcript focus after every key (see `mode/transcript/focus.rs`).
@@ -199,6 +171,7 @@ impl ToolChainComponent {
             blocks: Vec::new(),
             lead_ins: Vec::new(),
             header_map: Vec::new(),
+            folds: Vec::new(),
             focused_call: None,
             state: ChainState::Running,
             rev: fresh_stamp(),
@@ -326,10 +299,23 @@ impl ToolChainComponent {
         let w = width as usize;
         let mut out: Vec<String> = Vec::new();
         let mut header_map = Vec::new();
+        let mut folds = Vec::new();
         let mut spaced = true;
         for (i, block) in self.blocks.iter().enumerate() {
             for lead in self.lead_ins.iter().filter(|l| l.before == i) {
+                let at = out.len();
                 out.extend(lead.component.borrow_mut().render(width));
+                // A trace above the call opens in place too: its rows are
+                // the chain's rows from `at`.
+                if let Some(host) = lead.component.borrow().fold_host() {
+                    folds.extend(host.folds().into_iter().map(|mut fold| {
+                        for row in &mut fold.header {
+                            *row += at;
+                        }
+                        fold.fold_line = fold.fold_line.map(|row| row + at);
+                        fold
+                    }));
+                }
             }
             let parts = block.borrow_mut().step_parts(width);
             let Some(_) = parts.header else {
@@ -358,6 +344,11 @@ impl ToolChainComponent {
             // (reverse video with no colour). Expanded and focused compose:
             // the body still opens under a focused header.
             let focused = self.focused_call.as_deref() == Some(call_id.as_str());
+            // A row that can open ends in the indicator (`▸` closed, `▾`
+            // open). Its two cells come off the header's room first, so it
+            // never drops; a row that cannot open draws none.
+            let can_open = block.borrow_mut().can_open(width, &parts);
+            let reserve = if can_open { fold::INDICATOR_CELLS } else { 0 };
             // Single view: the header is one row, never wrapped. Its facts
             // cut through `header_spans` (secondary drops first, then the
             // target, then the reason); the gutter keeps column 0.
@@ -365,18 +356,34 @@ impl ToolChainComponent {
             {
                 let primaries: Vec<&str> = primary.iter().map(String::as_str).collect();
                 let secondaries: Vec<&str> = secondary.iter().map(String::as_str).collect();
+                let room = w.saturating_sub(1 + reserve).max(1);
                 let mut spans = vec![gutter_span(focused, palette)];
-                spans.extend(tool_row::header_spans(
-                    mark,
-                    &tool,
-                    &target,
-                    &primaries,
-                    &secondaries,
-                    reason.as_deref(),
-                    w.saturating_sub(1),
-                    palette,
+                // Facts that cannot cut any further are cut here, so the
+                // indicator never drops off the row's end.
+                spans.extend(hoocode_tui_ratatui::truncate_spans(
+                    tool_row::header_spans(
+                        mark,
+                        &tool,
+                        &target,
+                        &primaries,
+                        &secondaries,
+                        reason.as_deref(),
+                        room,
+                        palette,
+                    ),
+                    room,
+                    fold::ELLIPSIS,
                 ));
+                if can_open {
+                    spans.push(fold::indicator_span(open, palette));
+                }
                 if focused {
+                    // The fill runs to the row's end, as a pane's selected
+                    // row does.
+                    let used = hoocode_tui_ratatui::spans_width(&spans);
+                    if used < w {
+                        spans.push(Span::raw(" ".repeat(w - used)));
+                    }
                     paint_focused(&mut spans, palette);
                 }
                 out.push(row(spans, w));
@@ -405,12 +412,29 @@ impl ToolChainComponent {
             };
             let body = whole_body(captured, parts.footer);
             shown_body |= !body.is_empty();
+            // The fold line of a partly shown body opens the block too.
+            let fold_line = if open {
+                None
+            } else {
+                body.iter()
+                    .position(|row| fold::is_fold_line(row))
+                    .map(|at| out.len() + at)
+            };
+            folds.push(Fold {
+                id: call_id,
+                label: tool.clone(),
+                header: vec![start],
+                fold_line,
+                expanded: open,
+                can_open,
+            });
             out.extend(body);
             shown_body |= !parts.images.is_empty();
             out.extend(parts.images);
             spaced = !shown_body;
         }
         self.header_map = header_map;
+        self.folds = folds;
         out
     }
 
@@ -418,6 +442,7 @@ impl ToolChainComponent {
         // One palette per render pass, passed down to every row.
         let palette = Palette::current();
         self.header_map.clear();
+        self.folds.clear();
         self.body_rows(width, &palette)
     }
 }
@@ -428,6 +453,14 @@ impl Component for ToolChainComponent {
     }
 
     fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
+    fn fold_host(&self) -> Option<&dyn FoldHost> {
+        Some(self)
+    }
+
+    fn fold_host_mut(&mut self) -> Option<&mut dyn FoldHost> {
         Some(self)
     }
 
@@ -461,6 +494,56 @@ impl Component for ToolChainComponent {
         for lead in &self.lead_ins {
             lead.component.borrow_mut().invalidate();
         }
+    }
+}
+
+/// The chain's blocks that open in place: one per tool call, and the
+/// thinking traces it draws above them. A tool call's id is its call id.
+impl FoldHost for ToolChainComponent {
+    fn folds(&self) -> Vec<Fold> {
+        self.folds.clone()
+    }
+
+    fn set_fold_expanded(&mut self, id: &str, expanded: bool) -> bool {
+        if let Some(block) = self
+            .blocks
+            .iter()
+            .find(|block| block.borrow().tool_call_id() == id)
+        {
+            block.borrow_mut().set_expanded(expanded);
+            self.rev = fresh_stamp();
+            return true;
+        }
+        for lead in &self.lead_ins {
+            let mut component = lead.component.borrow_mut();
+            if let Some(host) = component.fold_host_mut() {
+                if host.set_fold_expanded(id, expanded) {
+                    self.rev = fresh_stamp();
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn set_fold_focus(&mut self, id: Option<&str>) {
+        self.set_focused_call(id);
+        for lead in &self.lead_ins {
+            if let Some(host) = lead.component.borrow_mut().fold_host_mut() {
+                host.set_fold_focus(id);
+            }
+        }
+    }
+
+    /// A tool call's raw output is the session's (a frozen call released
+    /// its copy), so only a trace answers here.
+    fn fold_text(&self, id: &str) -> Option<String> {
+        self.lead_ins.iter().find_map(|lead| {
+            lead.component
+                .borrow()
+                .fold_host()
+                .and_then(|host| host.fold_text(id))
+        })
     }
 }
 

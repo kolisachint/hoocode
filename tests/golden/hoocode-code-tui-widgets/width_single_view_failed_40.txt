@@ -1,7 +1,8 @@
 
- ⊗ Shell cargo test -p…  exit 1
+ ⊗ Shell cargo test -p…  exit 1 ▸
 --- styles ---
 r1 c1 fg=#d58181
 r1 c3-7 fg=#e5e5e7 bold
 r1 c9-22 fg=#e5e5e7
 r1 c25-30 fg=#d58181
+r1 c31-32 fg=#989898
