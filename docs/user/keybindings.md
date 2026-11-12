@@ -177,7 +177,7 @@ These can be rebound like any other key:
 - **v** and **r** on an interrupted subagent run in the session picker
   (`app.subagent.view`, `app.subagent.resume`, context `Subagent`). **r** is still
   rename everywhere else.
-- **Space** toggles the picked row in settings (`app.settings.toggle`).
+- **Space** toggles the picked row in settings (`app.settings.toggle`). With a non-empty search, Space types into the search instead.
 - **c** cycles the category of the selected model in the scoped models picker
   (`app.models.category`). The hint row shows its key.
 

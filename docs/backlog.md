@@ -35,7 +35,6 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 3 | UI-27 | Settings search: Space types into a non-empty query and toggles only when the query is empty (`code-tui-selectors/src/config_selector.rs`). | S |
 | 4 | UI-26 | `/hotkeys`: group by the five rows of "Where a key acts", show every meaning of a bare key, show non-letter keys (`code-tui-widgets/src/controls.rs`). | S |
 | 5 | UI-32 | Deeper panes match the settings pane: no stray blank rows. The selected row's name is bold in every pane. Sessions, Settings and Fork are not bold today. | S |
 | 6 | UI-29 | The warning-colour list below. | S |

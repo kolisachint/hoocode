@@ -214,6 +214,65 @@ fn rebound_settings_toggle_writes_the_pattern_and_the_hint_shows_it() {
     );
 }
 
+// ---- settings search: Space types into a non-empty query ----------------------
+
+/// One prompt resource in a project `prompts` array, as the settings pane
+/// shows it. Returns the pane and the settings it writes to.
+fn settings_pane(
+    dir: &tempfile::TempDir,
+) -> (ConfigSelectorComponent, Rc<RefCell<SettingsManager>>) {
+    let cwd = dir.path().to_string_lossy().into_owned();
+    let agent = dir.path().join("agent").to_string_lossy().into_owned();
+    let base = format!("{cwd}/{}", hoocode_code_paths::CONFIG_DIR_NAME);
+    let metadata = PathMetadata::new(
+        "auto",
+        SourceScope::Project,
+        SourceOrigin::TopLevel,
+        Some(&base),
+    );
+    let resolved = ResolvedPaths {
+        prompts: vec![resource(&format!("{base}/prompts/review.md"), &metadata)],
+        ..ResolvedPaths::default()
+    };
+    let settings = Rc::new(RefCell::new(SettingsManager::create(&cwd, &agent)));
+    let selector =
+        ConfigSelectorComponent::new(&resolved, settings.clone(), &cwd, &agent, || {}, || {});
+    (selector, settings)
+}
+
+#[test]
+fn space_with_an_empty_query_toggles_the_selected_setting() {
+    let _k = rebind("{}");
+    let dir = tempfile::tempdir().unwrap();
+    let (mut selector, settings) = settings_pane(&dir);
+
+    selector.handle_input(" ");
+    assert_eq!(
+        settings.borrow().project_settings()["prompts"],
+        json!(["-prompts/review.md"])
+    );
+}
+
+#[test]
+fn space_with_a_non_empty_query_types_a_space_and_does_not_toggle() {
+    let _k = rebind("{}");
+    let dir = tempfile::tempdir().unwrap();
+    let (mut selector, settings) = settings_pane(&dir);
+
+    selector.handle_input("r");
+    selector.handle_input(" ");
+    let shown = plain(selector.render(80));
+    assert!(shown.contains("r "), "query should read `r `:\n{shown}");
+    assert!(
+        settings
+            .borrow()
+            .project_settings()
+            .get("prompts")
+            .is_none(),
+        "Space must not toggle while the query is non-empty"
+    );
+}
+
 // ---- scoped models: the category key ------------------------------------------
 
 fn model(provider: &str, id: &str) -> Model {

@@ -44,12 +44,11 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 
 ### Then
 
-8. [UI-28](tui.md#open) Hard-coded keys into the keymap, and the scoped models category key (S). Started, see `docs/backlog.md`
+8. [UI-28](tui.md#open) Hard-coded keys into the keymap, and the scoped models category key (S). Done 2026-11-12 (a683043)
 9. [UI-32](tui.md#open) Deeper panes match the settings pane; selected row bold everywhere (S)
 10. [UI-33](tui.md#open) Refresh the stale screen goldens (M)
 11. [UI-34](tui.md#open) Work through the 21 golden-versus-design differences (M)
 12. [UI-26](tui.md#open) `/hotkeys` shows one meaning per bare key and omits non-letter keys (S)
-13. [UI-27](tui.md#open) Settings search: Space toggles the row before the query sees it (S)
 14. [UI-29](tui.md#open) Remaining non-blocking uses of the warning colour (S)
 15. [RT-6](runtime.md#open) CodeSearch: compile term regexes once (S)
 16. [RT-7](runtime.md#open) UserMessageComponent: render stamp at construction (S)
