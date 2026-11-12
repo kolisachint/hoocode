@@ -4,5 +4,5 @@
 r1 c1 fg=#b5bd68
 r1 c3-13 fg=#e5e5e7 bold
 r1 c15-23 fg=#56b6c2
-r1 c24-26 fg=#989898
+r1 c24-26 fg=#a7a7a7
 r1 c27-30 fg=#b5bd68

@@ -1,8 +1,8 @@
  scrolled 43–61 of 78 · ↓ 3 new  ctrl+x u focus · esc live           claude-haiku-5-5 · 42% context
 --- styles ---
-r0 c1-32 fg=#989898
+r0 c1-32 fg=#a7a7a7
 r0 c33-40 fg=#e5e5e7
-r0 c41-49 fg=#989898
+r0 c41-49 fg=#a7a7a7
 r0 c50-52 fg=#e5e5e7
-r0 c53-57 fg=#989898
-r0 c69-98 fg=#989898
+r0 c53-57 fg=#a7a7a7
+r0 c69-98 fg=#a7a7a7

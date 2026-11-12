@@ -6,11 +6,11 @@
     It draws the model
     → Read crates/hoocode-code-tui-widgets/src/chip.rs
 --- styles ---
-r1 c1 fg=#989898
+r1 c1 fg=#a7a7a7
 r1 c3-7 fg=#e5e5e7 bold
 r1 c9-38 fg=#e5e5e7
-r2 c4-19 fg=#989898
-r3 c4-55 fg=#989898
-r4 c4-36 fg=#989898
-r5 c4-21 fg=#989898
-r6 c4-53 fg=#989898
+r2 c4-19 fg=#a7a7a7
+r3 c4-55 fg=#a7a7a7
+r4 c4-36 fg=#a7a7a7
+r5 c4-21 fg=#a7a7a7
+r6 c4-53 fg=#a7a7a7

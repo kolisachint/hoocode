@@ -115,8 +115,8 @@ The rule: at the prompt a bare printable key always types. Transcript letters ac
 | State | Mark | Colour (dark / light) | Facts |
 |---|---|---|---|
 | Running | `◉` | accent `#5cc8bb` / `#00625c` | Elapsed only |
-| Done | `●` | ok `#b5bd68` / `#0a6b27` | Primary, then secondary |
-| Failed | `⊗` | err `#d58181` / `#b8111e` | `exit N` (red), reason (dim), secondary |
+| Done | `●` | ok `#b5bd68` / `#0a6625` | Primary, then secondary |
+| Failed | `⊗` | err `#dc9494` / `#b0101d` | `exit N` (red), reason (dim), secondary |
 | Stopped by the user | `⊗` | dim | `stopped` |
 
 ### Per-tool rows
@@ -214,7 +214,7 @@ Accepted verification deviations from the mockup (2026-11-07):
 - Clicks: a click selects a row, and `enter` opens it (Decision 2026-11-07). A second click does not pick.
 - Models, sessions, settings, theme (live preview), tree and keys split this way. Below 100 columns they stack.
 - Plain titles: Models, Settings, Sessions, Theme, Tree, Fork, Log in, Scoped models, Keys.
-- Each row shows one fact that compares rows (models: price; scoped models: `on` or `off`; sessions: age). Full details only on the selected row.
+- Each row shows the facts that tell rows apart (models: provider, then price; scoped models: provider and `on` or `off`; sessions: age). The provider is the first dim fact after the id, so the same id from two providers reads as two rows. The id is cut last: the secondary facts drop first, and the id cuts (`…`) only when nothing else is left to drop, never below 12 cells. Full details only on the selected row.
 - Completion menus (slash, `@file`, argument) are pmenu style: a pane-colour block directly above the prompt, as wide as its longest row, left edge under the typed token, selected row in selection colour with ` › ` and bold.
 
 ### Blocking dialogs
@@ -254,22 +254,22 @@ Setting `theme` takes a name, `auto`, or `auto:<light>:<dark>`. Choosing one in 
 | Role | dark | light |
 |---|---|---|
 | Base (transcript, status line) | `#14141c` | `#f8f8fb` |
-| Pane (dialogs, pickers, completion, task panel) | `#1e1e2a` | `#e8e8f0` |
-| Detail column (split panes) | `#292b40` | `#d3d7e9` |
-| Pane selection | `#233239` | `#c3dcdc` |
-| Surface (prompt, user message, pane input row) | `#2a2a36` | `#dadbe6` |
+| Pane (dialogs, pickers, completion, task panel) | `#303043` | `#dfdfea` |
+| Detail column (split panes) | `#363854` | `#cdd2e6` |
+| Pane selection | `#2c3f47` | `#b6d5d5` |
+| Surface (prompt, user message, pane input row) | `#393949` | `#cfd1df` |
 | Text | `#e5e5e7` | `#2b2f36` |
-| Dim | `#989898` | `#555864` |
+| Dim | `#a7a7a7` | `#555763` |
 | Accent (`›`, running `◉`, inline code, accent chip) | `#5cc8bb` | `#00625c` |
-| Green (done) | `#b5bd68` | `#0a6b27` |
-| Red (failed) | `#d58181` | `#b8111e` |
-| Yellow (blocking only) | `#f0c674` | `#7a5200` (dark amber, for text) |
+| Green (done) | `#b5bd68` | `#0a6625` |
+| Red (failed) | `#dc9494` | `#b0101d` |
+| Yellow (blocking only) | `#f0c674` | `#785000` (dark amber, for text) |
 | Accent chip (bg / text) | `#5cc8bb` / `#14141c` bold | `#00625c` / `#f8f8fb` bold |
 | Blocking chip (bg / text) | `#f0c674` / `#14141c` bold | `#f0c674` / `#2b2f36` bold |
 
 In light, panes are darker than the page. Dark panes are lighter than the base. Yellow is for blocking only. A guard test in `crates/hoocode-code-tui-theme/tests/it/color_semantics.rs` keeps the warning token to the blocking dialog files.
 
-Contrast: every text colour on every surface is at least 4.5:1 (WCAG). The tightest pairs, checked on 2026-11-07, are dim and red on the dark selection (4.59:1), and green on the light selection (4.64:1). Do not lighten dim or darken `paneSel`. Light has one grey, so facts are told apart by position: two spaces after the target, and the body at column 4.
+Contrast: every text colour on every surface is at least 4.5:1 (WCAG). The tightest pairs, checked on 2026-11-12, are red on the dark selection (4.56:1) and dim on the dark selection (4.57:1), and warning, green, red and dim on the light selection (4.57 to 4.60:1). Do not lighten dim or darken `paneSel`. Light has one grey, so facts are told apart by position: two spaces after the target, and the body at column 4.
 
 ### Colour semantics
 
@@ -558,6 +558,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-32 closed: the selected row's name is bold in every pane, in colour and in monochrome. Settings, Sessions and Fork now bold it (as Models, Tree, Theme and Scoped models did). Config already did. The deeper panes' goldens show no stray blank row to remove: the blank rows left are detail separators, which the settings pane has too. Pinned by `tests/it/selected_row_bold.rs`. Goldens `systems_*`, `mission_log_*` and `stage_separation_*` changed by the bold only. |
 | 2026-11-12 | UI-29 closed: yellow (the warning token) marks only blocking dialogs. Status words, `(cancelled)`, `expired`, the retry notice, context warnings and key-file problems are ink bold. Truncation notes and the `press x again` and task note cues are dim. `tool_signal.rs` keeps its shared result types; its unused outline signal renderer is deleted. The guard test fails on any warning-token use outside the blocking dialog files. |
 | 2026-11-12 | The thinking-level tokens `thinkingOff` to `thinkingXhigh` are removed. No production code read them: `Theme::thinking_border` had no caller, and the thinking block paints `thinkingText`. Removed from the schema, the built-in themes, `color-semantics.json` and the token lists, with `Theme::thinking_border` and `ThinkingBorderLevel`. A user theme that still sets them loads, because unknown keys are ignored. Test: `tests/it/token_list.rs`. |
+| 2026-11-12 | Model and scoped-models rows show the provider on every row: `● id  provider · price · ctx · thinking` and `● id  provider · on · alias · effort · category`. The provider and `on`/`off` are primary (never dropped). Secondary facts drop right-to-left before the id cuts: `/model` loses thinking, then context, then price; scoped rows lose their extras. The id cuts only when no secondary fact is left, never below 12 cells (`NAME_FLOOR`). So at width 100 with the detail column open, `/model` rows show `● id  provider` and no price. Not the target slot: the target is ink, and the provider is a dim fact. Test: `tests/it/provider_rows.rs`. |
 | 2026-11-12 | UI-34: the blocking dialogs are the permission and question cards and Quit with running jobs. Quit draws a yellow chip (`end_shift.rs` is on the guard's allow-list). Log in is opened by the user and blocks nothing: a plain bold title, and it leaves the blocking table. |
 | 2026-11-12 | UI-34: the question card's yellow chip holds the question text, then dim `1 of 2`. A question too long for the chip keeps its first line in the chip, cut with `…`, and the whole question wraps under the title. |
 | 2026-11-12 | UI-34: the permission hint is `1–3 pick · e edit first · or type a reply`. `y` and `n` still answer while the reply is empty (decision 2026-11-05); the hint does not list them. |
@@ -577,6 +578,8 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-16: the pinned page scroll step is the view height minus 2 (two rows of overlap), as built. Not minus 12. Written in the `scroll_by_pages` comment in `crates/hoocode-tui-render/src/tui.rs`. |
 | 2026-11-12 | UI-18: the replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json` stays. `crates/hoocode-code-main/tests/it/replay.rs` reads it: one scenario per entry, checked against insta snapshots. |
 | 2026-11-12 | UI-20: the 30 `*_ts*.rs` test files lost the `ts`, a leftover of TypeScript parity. Names changed with `git mv`; `mod` lines and doc comments follow. No test code changed. |
+| 2026-11-12 | Pane ramp lifted in default dark and light so panes stand out from the terminal background. Other built-in colours moved too: text and status tokens to hold 4.5:1 (dark `gray`, `dimGray`, `darkGray`, `red`, `blue`; light `mediumGray`, `dimGray`, `green`, `red`, `amber`); syntax (dark `syntaxComment`, `syntaxKeyword`, `syntaxString`; light `syntaxFunction`, `syntaxNumber`, `syntaxType`); agent colours (dark `agent2`, `agent3`, `agent6`; light `agent1` to `agent4`); dark `mcp`, `mdLink`, `customMessageLabel`, `you`, `vio`. |
+| 2026-11-12 | Settings sub-panes draw on the `/settings` pane grammar, not as a bare list. Three kinds: (1) list panes (each category, and Warnings, Platform, Tools, Tool output, Flags): chip is the category (`Interface`), dim `/settings`, count `8 settings`; rows at indent 3, selected label bold; detail column from 100 columns (`current`, `price`, description), stacked below; filter row on the searchable lists (every category, Tools, Flags; Warnings, Platform and Tool output take no typing, so have none), then the hint `↑↓ move · space toggle · enter change · esc back`, or `enter open` on a row that opens a submenu, or `↑↓ move · esc back` when the filter matches nothing. (2) the Thinking level select pane (Behavior → Thinking level): chip `Thinking level  /settings`, count `6 levels`, each row is the mark and the level name (the in-use row adds `in use`, no description), the level's description and token fact are the detail beside the list (stacked below 100 columns), hint `↑↓ move · enter set · esc back`; it does not preview. (3) the string-flag editor (Flags → a string flag): chip `--name  /settings`, the value as the input row with its caret (a value longer than the row is windowed around the caret, `…` at a cut edge), hint `enter save · esc back`. Keys and behaviour unchanged. Tests: `tests/it/settings_category_pane.rs`, `tests/it/settings_subpanes.rs` (chip row and gutter for list panes). Goldens `settings_interface_80/100/light_100`, `settings_thinking_100`, `settings_flag_100`. |
 
 ## Open
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: settings sub-panes, provider in model pickers, clearer panes (2026-11-12)
+- **Every `/settings` sub-pane looks like `/settings`.** The category lists, Tools, Tool output, Flags, Warnings, Thinking level and the flag editor now share its title chip, spacing, selection and hint row. Thinking level shows each level in the list and its description in the detail column. Keys are unchanged.
+- **`/model` and scoped-models rows show the provider after the model id,** so the same model from two providers reads as two rows.
+- **Panes stand out from the terminal in the default dark and light themes.** The task panel, pickers and dialogs are lighter in `dark` (`pane` `#1e1e2a` → `#303043`) and darker in `light` (`pane` `#e8e8f0` → `#dfdfea`). The selection and text tokens moved with them to keep contrast. The text and status tokens (`gray`, `dimGray`, `darkGray`, `red`, `blue` in `dark`; `mediumGray`, `dimGray`, `green`, `red`, `amber` in `light`), the syntax colours, the agent colours, and in `dark` `mcp`, `mdLink`, `customMessageLabel`, `you` and `vio` moved to hold 4.5:1 contrast. Custom themes are unchanged: a theme keeps its own pane colours, or its `selectedBg` where it sets none.
+
 ### Fixed: ChatGPT subscription requests no longer crash (2026-11-12)
 - **Every `openai-codex` request failed in 0.2.41** with "Could not automatically determine the process-level CryptoProvider". The binary carries two rustls crypto backends, so the WebSocket connect could not pick one. It now uses `ring`, as the HTTP client does.
 - **Claude subscription requests send Claude Code 2.1.322.** Anthropic rejected Claude Fable 5.2 for the old pin (2.1.280) with `claude_code_version_too_old`.

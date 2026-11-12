@@ -6,22 +6,22 @@
  Approve the subscription in the browser.
  esc cancel
 --- styles ---
-r0 c0 fg=#e5e5e7 bg=#1e1e2a
-r0 c1-7 fg=#e5e5e7 bg=#1e1e2a bold
-r0 c8 fg=#e5e5e7 bg=#1e1e2a
-r0 c9-14 fg=#989898 bg=#1e1e2a
-r0 c15-16 fg=#e5e5e7 bg=#1e1e2a
-r0 c17-25 fg=#989898 bg=#1e1e2a
-r0 c26-99 fg=#e5e5e7 bg=#1e1e2a
-r1 c0-99 fg=#e5e5e7 bg=#1e1e2a
-r2 c0 fg=#e5e5e7 bg=#1e1e2a
-r2 c1-34 fg=#989898 bg=#1e1e2a
-r2 c35-99 fg=#e5e5e7 bg=#1e1e2a
-r3 c0 fg=#e5e5e7 bg=#1e1e2a
-r3 c1-75 fg=#989898 bg=#1e1e2a
-r3 c76-99 fg=#e5e5e7 bg=#1e1e2a
-r4 c0-99 fg=#e5e5e7 bg=#1e1e2a
-r5 c0-99 fg=#e5e5e7 bg=#1e1e2a
-r6 c0-3 fg=#e5e5e7 bg=#1e1e2a
-r6 c4-10 fg=#989898 bg=#1e1e2a
-r6 c11-99 fg=#e5e5e7 bg=#1e1e2a
+r0 c0 fg=#e5e5e7 bg=#303043
+r0 c1-7 fg=#e5e5e7 bg=#303043 bold
+r0 c8 fg=#e5e5e7 bg=#303043
+r0 c9-14 fg=#a7a7a7 bg=#303043
+r0 c15-16 fg=#e5e5e7 bg=#303043
+r0 c17-25 fg=#a7a7a7 bg=#303043
+r0 c26-99 fg=#e5e5e7 bg=#303043
+r1 c0-99 fg=#e5e5e7 bg=#303043
+r2 c0 fg=#e5e5e7 bg=#303043
+r2 c1-34 fg=#a7a7a7 bg=#303043
+r2 c35-99 fg=#e5e5e7 bg=#303043
+r3 c0 fg=#e5e5e7 bg=#303043
+r3 c1-75 fg=#a7a7a7 bg=#303043
+r3 c76-99 fg=#e5e5e7 bg=#303043
+r4 c0-99 fg=#e5e5e7 bg=#303043
+r5 c0-99 fg=#e5e5e7 bg=#303043
+r6 c0-3 fg=#e5e5e7 bg=#303043
+r6 c4-10 fg=#a7a7a7 bg=#303043
+r6 c11-99 fg=#e5e5e7 bg=#303043

@@ -268,11 +268,13 @@ impl State {
         facts
     }
 
-    /// The pane rows: `● id  on · alias · effort · category`. The mark
-    /// carries the switch (`●` on, `○` off) so it never reads as colour
-    /// alone; `on`/`off` keeps its ink/dim colour. Full facts only on the
-    /// selected row; `on`/`off` is primary and never drops, the rest drop
-    /// right-to-left. Returns the rows and the selection in them.
+    /// The pane rows: `● id  provider · on · alias · effort · category`. The
+    /// mark carries the switch (`●` on, `○` off) so it never reads as colour
+    /// alone; `on`/`off` keeps its ink/dim colour. The provider and `on`/`off`
+    /// are primary and never drop. The extras (alias, effort, category) are
+    /// secondary and drop right-to-left before the id cuts, so the id stays
+    /// whole and the same id from two providers reads as two rows. Full facts
+    /// only on the selected row. Returns the rows and the selection in them.
     fn console_rows(&self, row_width: usize) -> (Vec<Line<'static>>, Option<usize>) {
         let pal = Palette::current();
         let window = self.cursor.window();
@@ -283,14 +285,17 @@ impl State {
             .map(|i| {
                 let item = &self.filtered[i];
                 let on = all_enabled || item.enabled;
-                let primary = vec![(
-                    if on {
-                        "on".to_string()
-                    } else {
-                        "off".to_string()
-                    },
-                    if on { pal.ink() } else { pal.dim() },
-                )];
+                let primary = vec![
+                    (item.model.provider.clone(), pal.dim()),
+                    (
+                        if on {
+                            "on".to_string()
+                        } else {
+                            "off".to_string()
+                        },
+                        if on { pal.ink() } else { pal.dim() },
+                    ),
+                ];
                 let secondary = if i == selected {
                     Self::row_facts(item, &pal)
                 } else {

@@ -134,17 +134,17 @@ fn pane_selection_stays_a_distinct_step_above_the_pane() {
 fn mock_section_3_locks_the_dark_and_light_token_values() {
     let dark = resolved("dark");
     let expected_dark = [
-        ("pane", "#1e1e2a", "pane"),
-        ("paneSel", "#233239", "paneSel"),
-        ("surface", "#2a2a36", "surface"),
-        ("detail", "#292b40", "paneDetail"),
+        ("pane", "#303043", "pane"),
+        ("paneSel", "#2c3f47", "paneSel"),
+        ("surface", "#393949", "surface"),
+        ("detail", "#363854", "paneDetail"),
         ("accent chip", "#5cc8bb", "chip"),
         ("blocking chip", "#f0c674", "chipWarn"),
         ("ink", "#e5e5e7", "text"),
-        ("dim", "#989898", "dim"),
+        ("dim", "#a7a7a7", "dim"),
         ("accent", "#5cc8bb", "accent"),
         ("ok", "#b5bd68", "success"),
-        ("err", "#d58181", "error"),
+        ("err", "#dc9494", "error"),
         ("yellow text", "#f0c674", "warning"),
     ];
     let page_bg = get_theme_export_colors(Some("dark"))
@@ -158,18 +158,18 @@ fn mock_section_3_locks_the_dark_and_light_token_values() {
     let light = resolved("light");
     let expected_light = [
         ("base", "#f8f8fb"),
-        ("pane", "#e8e8f0"),
-        ("paneSel", "#c3dcdc"),
-        ("surface", "#dadbe6"),
-        ("detail", "#d3d7e9"),
+        ("pane", "#dfdfea"),
+        ("paneSel", "#b6d5d5"),
+        ("surface", "#cfd1df"),
+        ("detail", "#cdd2e6"),
         ("accent chip", "#00625c"),
         ("blocking chip", "#f0c674"),
         ("ink", "#2b2f36"),
-        ("dim", "#555864"),
+        ("dim", "#555763"),
         ("accent", "#00625c"),
-        ("ok", "#0a6b27"),
-        ("err", "#b8111e"),
-        ("yellow text", "#7a5200"),
+        ("ok", "#0a6625"),
+        ("err", "#b0101d"),
+        ("yellow text", "#785000"),
     ];
     let tokens = [
         "pane",
@@ -195,8 +195,8 @@ fn mock_section_3_locks_the_dark_and_light_token_values() {
 }
 
 /// Mock §3: every text role on every pane surface is at least 4.5:1. The
-/// tightest are dim and red on dark `paneSel` (4.59) and green on light
-/// `paneSel` (4.64).
+/// tightest after the 2026-11-12 pane lift are red and dim on dark `paneSel`
+/// (4.56, 4.57) and warning and green on light `paneSel` (4.57, 4.58).
 #[test]
 fn mock_section_3_pairs_hold_on_base_pane_and_panesel() {
     for name in ["dark", "light"] {

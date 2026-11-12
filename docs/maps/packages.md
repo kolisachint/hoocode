@@ -171,15 +171,15 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 26855 / 8444 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 4 | 2026 / 2373 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9454 / 5705 | keep |
-| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2888 / 3269 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9657 / 6290 | keep |
+| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2888 / 3350 | keep |
 | `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14457 / 11399 | keep |
 
 ### TUI library (`tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10762 / 7798 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10768 / 7798 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 303 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 365 / 0 | keep |
 | `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 146 / 0 | keep |

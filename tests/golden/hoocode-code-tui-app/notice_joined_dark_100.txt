@@ -1,9 +1,9 @@
    Mode: build
    described in .hoo/modes/build.md
 --- styles ---
-r0 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r0 c3-13 fg=#989898 bg=#1e1e2a
-r0 c14-99 fg=#e5e5e7 bg=#1e1e2a
-r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r1 c3-34 fg=#989898 bg=#1e1e2a
-r1 c35-99 fg=#e5e5e7 bg=#1e1e2a
+r0 c0-2 fg=#e5e5e7 bg=#303043
+r0 c3-13 fg=#a7a7a7 bg=#303043
+r0 c14-99 fg=#e5e5e7 bg=#303043
+r1 c0-2 fg=#e5e5e7 bg=#303043
+r1 c3-34 fg=#a7a7a7 bg=#303043
+r1 c35-99 fg=#e5e5e7 bg=#303043

@@ -543,6 +543,49 @@ mod default_dark_theme {
         quantized_collisions("dark", groups);
     }
 
+    /// The dark terminal background the pane has to clear (`#000000` to `#1e1e1e`).
+    const TERMINAL_BG: &str = "#1e1e1e";
+
+    /// The pane is a clear surface over the terminal, and each step above it
+    /// is a clear step (2026-11-12 pane ramp). Dim stays weaker than ink.
+    #[test]
+    fn pane_ramp_reads_as_a_surface_over_the_terminal() {
+        let c = colors("dark");
+        let base = get_theme_export_colors(Some("dark"))
+            .page_bg
+            .expect("pageBg");
+        assert!(
+            contrast(&c["pane"], TERMINAL_BG) >= 1.20,
+            "pane over #1e1e1e"
+        );
+        assert!(contrast(&c["pane"], &base) >= 1.35, "pane over the base");
+        for (token, step) in [
+            ("paneInput", 1.12),
+            ("surface", 1.12),
+            ("paneSel", 1.15),
+            ("paneDetail", 1.10),
+        ] {
+            assert!(
+                contrast(&c[token], &c["pane"]) >= step,
+                "{token} steps {step} above the pane"
+            );
+            assert!(
+                luminance(&c[token]) > luminance(&c["pane"]),
+                "{token} above"
+            );
+        }
+        assert!((150.0..=210.0).contains(&hue(&c["paneSel"])), "teal tint");
+        assert!(
+            (220.0..=250.0).contains(&hue(&c["paneDetail"])),
+            "blue tint"
+        );
+        let ink_over_dim = (luminance(&c["text"]) + 0.05) / (luminance(&c["dim"]) + 0.05);
+        assert!(
+            ink_over_dim >= 1.8,
+            "dim stays weaker than ink: {ink_over_dim:.2}"
+        );
+    }
+
     #[test]
     fn marks_selection_visibly_against_the_page_without_lightening_it_into_paper() {
         let c = colors("dark");
@@ -600,6 +643,44 @@ mod default_light_theme {
     #[test]
     fn keeps_colors_that_mean_different_things_apart_after_the_256_color_downgrade() {
         quantized_collisions("light", quantized_groups());
+    }
+
+    /// The light terminal background the pane has to clear.
+    const TERMINAL_BG: &str = "#ffffff";
+
+    /// The pane is a clear surface over the page, and each step below it is a
+    /// clear step (2026-11-12 pane ramp).
+    #[test]
+    fn pane_ramp_reads_as_a_surface_over_the_terminal() {
+        let c = colors("light");
+        let base = get_theme_export_colors(Some("light"))
+            .page_bg
+            .expect("pageBg");
+        assert!(
+            contrast(&c["pane"], TERMINAL_BG) >= 1.30,
+            "pane over #ffffff"
+        );
+        assert!(contrast(&c["pane"], &base) >= 1.22, "pane over the base");
+        for (token, step) in [
+            ("paneInput", 1.12),
+            ("surface", 1.12),
+            ("paneSel", 1.15),
+            ("paneDetail", 1.10),
+        ] {
+            assert!(
+                contrast(&c[token], &c["pane"]) >= step,
+                "{token} steps {step} below the pane"
+            );
+            assert!(
+                luminance(&c[token]) < luminance(&c["pane"]),
+                "{token} below"
+            );
+        }
+        assert!((165.0..=195.0).contains(&hue(&c["paneSel"])), "teal tint");
+        assert!(
+            (215.0..=245.0).contains(&hue(&c["paneDetail"])),
+            "blue tint"
+        );
     }
 
     #[test]

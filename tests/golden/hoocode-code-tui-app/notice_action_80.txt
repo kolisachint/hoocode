@@ -3,4 +3,4 @@
  Attach to answer it.
 --- styles ---
 r1 c1-32 fg=#e5e5e7 bold
-r2 c1-20 fg=#989898
+r2 c1-20 fg=#a7a7a7

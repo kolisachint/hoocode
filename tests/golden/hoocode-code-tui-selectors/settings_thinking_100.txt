@@ -1,0 +1,64 @@
+  Thinking level  /settings  6 levels
+   ○ off                              medium
+   ○ minimal                          Moderate reasoning (~8k tokens)
+   ○ low
+ › ● medium  in use
+   ○ high
+   ○ xhigh
+ ↑↓ move · enter set · esc back
+--- styles ---
+r0 c0 fg=#e5e5e7 bg=#303043
+r0 c1-16 fg=#14141c bg=#5cc8bb bold
+r0 c17 fg=#e5e5e7 bg=#303043
+r0 c18-26 fg=#a7a7a7 bg=#303043
+r0 c27-28 fg=#e5e5e7 bg=#303043
+r0 c29-36 fg=#a7a7a7 bg=#303043
+r0 c37-99 fg=#e5e5e7 bg=#303043
+r1 c0-2 fg=#e5e5e7 bg=#303043
+r1 c3 fg=#a7a7a7 bg=#303043
+r1 c4 fg=#e5e5e7 bg=#303043
+r1 c5-7 fg=#e5e5e7 bg=#303043 bold
+r1 c8-36 fg=#e5e5e7 bg=#303043
+r1 c37-99 fg=#e5e5e7 bg=#363854
+r2 c0-2 fg=#e5e5e7 bg=#303043
+r2 c3 fg=#a7a7a7 bg=#303043
+r2 c4 fg=#e5e5e7 bg=#303043
+r2 c5-11 fg=#e5e5e7 bg=#303043 bold
+r2 c12-36 fg=#e5e5e7 bg=#303043
+r2 c37 fg=#e5e5e7 bg=#363854
+r2 c38-68 fg=#a7a7a7 bg=#363854
+r2 c69-99 fg=#e5e5e7 bg=#363854
+r3 c0-2 fg=#e5e5e7 bg=#303043
+r3 c3 fg=#a7a7a7 bg=#303043
+r3 c4 fg=#e5e5e7 bg=#303043
+r3 c5-7 fg=#e5e5e7 bg=#303043 bold
+r3 c8-36 fg=#e5e5e7 bg=#303043
+r3 c37-99 fg=#e5e5e7 bg=#363854
+r4 c0 fg=#e5e5e7 bg=#2c3f47
+r4 c1 fg=#5cc8bb bg=#2c3f47
+r4 c2-4 fg=#e5e5e7 bg=#2c3f47
+r4 c5-10 fg=#e5e5e7 bg=#2c3f47 bold
+r4 c11-12 fg=#e5e5e7 bg=#2c3f47
+r4 c13-18 fg=#a7a7a7 bg=#2c3f47
+r4 c19-35 fg=#e5e5e7 bg=#2c3f47
+r4 c36 fg=#e5e5e7 bg=#303043
+r4 c37-99 fg=#e5e5e7 bg=#363854
+r5 c0-2 fg=#e5e5e7 bg=#303043
+r5 c3 fg=#a7a7a7 bg=#303043
+r5 c4 fg=#e5e5e7 bg=#303043
+r5 c5-8 fg=#e5e5e7 bg=#303043 bold
+r5 c9-36 fg=#e5e5e7 bg=#303043
+r5 c37-99 fg=#e5e5e7 bg=#363854
+r6 c0-2 fg=#e5e5e7 bg=#303043
+r6 c3 fg=#a7a7a7 bg=#303043
+r6 c4 fg=#e5e5e7 bg=#303043
+r6 c5-9 fg=#e5e5e7 bg=#303043 bold
+r6 c10-36 fg=#e5e5e7 bg=#303043
+r6 c37-99 fg=#e5e5e7 bg=#363854
+r7 c0-2 fg=#e5e5e7 bg=#303043
+r7 c3-10 fg=#a7a7a7 bg=#303043
+r7 c11-15 fg=#e5e5e7 bg=#303043
+r7 c16-22 fg=#a7a7a7 bg=#303043
+r7 c23-25 fg=#e5e5e7 bg=#303043
+r7 c26-30 fg=#a7a7a7 bg=#303043
+r7 c31-99 fg=#e5e5e7 bg=#303043

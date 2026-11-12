@@ -121,17 +121,17 @@ impl PaneStyle {
     pub const fn dark() -> Self {
         Self {
             mono: false,
-            surface: rgb(0x2a2a36),
-            pane: rgb(0x1e1e2a),
-            pane_sel: rgb(0x233239),
-            pane_input: rgb(0x2a2a36),
-            pane_detail: rgb(0x292b40),
+            surface: rgb(0x393949),
+            pane: rgb(0x303043),
+            pane_sel: rgb(0x2c3f47),
+            pane_input: rgb(0x393949),
+            pane_detail: rgb(0x363854),
             chip: rgb(0x5cc8bb),
             chip_warn: rgb(0xf0c674),
             chip_fg: rgb(0x14141c),
             chip_warn_fg: rgb(0x14141c),
             text: rgb(0xe5e5e7),
-            dim: rgb(0x989898),
+            dim: rgb(0xa7a7a7),
             accent: rgb(0x5cc8bb),
         }
     }
@@ -140,17 +140,17 @@ impl PaneStyle {
     pub const fn light() -> Self {
         Self {
             mono: false,
-            surface: rgb(0xdadbe6),
-            pane: rgb(0xe8e8f0),
-            pane_sel: rgb(0xc3dcdc),
-            pane_input: rgb(0xdadbe6),
-            pane_detail: rgb(0xd3d7e9),
+            surface: rgb(0xcfd1df),
+            pane: rgb(0xdfdfea),
+            pane_sel: rgb(0xb6d5d5),
+            pane_input: rgb(0xcfd1df),
+            pane_detail: rgb(0xcdd2e6),
             chip: rgb(0x00625c),
             chip_warn: rgb(0xf0c674),
             chip_fg: rgb(0xf8f8fb),
             chip_warn_fg: rgb(0x2b2f36),
             text: rgb(0x2b2f36),
-            dim: rgb(0x555864),
+            dim: rgb(0x555763),
             accent: rgb(0x00625c),
         }
     }

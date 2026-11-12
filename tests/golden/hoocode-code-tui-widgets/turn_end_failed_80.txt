@@ -1,5 +1,5 @@
 
  ⊗ failed · 4.2s
 --- styles ---
-r1 c1 fg=#d58181
-r1 c3-15 fg=#989898
+r1 c1 fg=#dc9494
+r1 c3-15 fg=#a7a7a7

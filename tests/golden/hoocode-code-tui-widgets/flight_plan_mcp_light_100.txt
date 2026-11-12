@@ -2,24 +2,24 @@
  › ● web  Fetch the spec
  ↑↓ move · ←→ tab · esc back
 --- styles ---
-r0 c0 fg=#2b2f36 bg=#e8e8f0
+r0 c0 fg=#2b2f36 bg=#dfdfea
 r0 c1-7 fg=#f8f8fb bg=#00625c bold
-r0 c8 fg=#2b2f36 bg=#e8e8f0
-r0 c9-25 fg=#555864 bg=#e8e8f0
-r0 c26-27 fg=#2b2f36 bg=#e8e8f0
-r0 c28-51 fg=#555864 bg=#e8e8f0
-r0 c52-99 fg=#2b2f36 bg=#e8e8f0
-r1 c0 fg=#2b2f36 bg=#c3dcdc
-r1 c1 fg=#00625c bg=#c3dcdc
-r1 c2 fg=#2b2f36 bg=#c3dcdc
-r1 c3 fg=#555864 bg=#c3dcdc
-r1 c4-9 fg=#2b2f36 bg=#c3dcdc
-r1 c10-23 fg=#555864 bg=#c3dcdc
-r1 c24-99 fg=#2b2f36 bg=#c3dcdc
-r2 c0-2 fg=#2b2f36 bg=#e8e8f0
-r2 c3-10 fg=#555864 bg=#e8e8f0
-r2 c11-12 fg=#2b2f36 bg=#e8e8f0
-r2 c13-19 fg=#555864 bg=#e8e8f0
-r2 c20-22 fg=#2b2f36 bg=#e8e8f0
-r2 c23-27 fg=#555864 bg=#e8e8f0
-r2 c28-99 fg=#2b2f36 bg=#e8e8f0
+r0 c8 fg=#2b2f36 bg=#dfdfea
+r0 c9-25 fg=#555763 bg=#dfdfea
+r0 c26-27 fg=#2b2f36 bg=#dfdfea
+r0 c28-51 fg=#555763 bg=#dfdfea
+r0 c52-99 fg=#2b2f36 bg=#dfdfea
+r1 c0 fg=#2b2f36 bg=#b6d5d5
+r1 c1 fg=#00625c bg=#b6d5d5
+r1 c2 fg=#2b2f36 bg=#b6d5d5
+r1 c3 fg=#555763 bg=#b6d5d5
+r1 c4-9 fg=#2b2f36 bg=#b6d5d5
+r1 c10-23 fg=#555763 bg=#b6d5d5
+r1 c24-99 fg=#2b2f36 bg=#b6d5d5
+r2 c0-2 fg=#2b2f36 bg=#dfdfea
+r2 c3-10 fg=#555763 bg=#dfdfea
+r2 c11-12 fg=#2b2f36 bg=#dfdfea
+r2 c13-19 fg=#555763 bg=#dfdfea
+r2 c20-22 fg=#2b2f36 bg=#dfdfea
+r2 c23-27 fg=#555763 bg=#dfdfea
+r2 c28-99 fg=#2b2f36 bg=#dfdfea

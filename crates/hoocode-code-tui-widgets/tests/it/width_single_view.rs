@@ -309,7 +309,7 @@ fn failed_red_only_on_mark_and_exit() {
         .expect("failed header");
     let red: Vec<usize> = style_runs(&golden)
         .into_iter()
-        .filter(|(_, tokens)| tokens.contains("#d58181"))
+        .filter(|(_, tokens)| tokens.contains("#dc9494"))
         .map(|(row, _)| row)
         .collect();
     assert!(red.len() >= 2, "mark and exit share red: {golden}");
@@ -324,7 +324,7 @@ fn settled_rows_carry_no_red() {
     let _g = lock();
     let golden = render_golden(&mut settled_chain(), 80);
     assert!(
-        !golden.contains("#d58181"),
+        !golden.contains("#dc9494"),
         "settled rows carry no red: {golden}"
     );
     let text: Vec<&str> = golden
@@ -370,7 +370,7 @@ fn running_collapsed_keeps_one_dim_tail_line() {
     }
     let golden = render_golden(&mut running_chain(), 80);
     assert!(
-        !golden.contains("#d58181") && !golden.contains("#b5bd68"),
+        !golden.contains("#dc9494") && !golden.contains("#b5bd68"),
         "running carries no red or green: {golden}"
     );
     let text: Vec<&str> = golden
@@ -387,7 +387,7 @@ fn running_collapsed_keeps_one_dim_tail_line() {
         style_runs(&golden)
             .iter()
             .filter(|(row, _)| *row == tail)
-            .all(|(_, tokens)| tokens.contains("#989898")),
+            .all(|(_, tokens)| tokens.contains("#a7a7a7")),
         "tail line stays dim: {golden}"
     );
 }

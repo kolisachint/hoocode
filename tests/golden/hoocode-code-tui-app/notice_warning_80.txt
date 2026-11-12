@@ -3,4 +3,4 @@
  Regenerate it in the dashboard, then run /login again.
 --- styles ---
 r1 c1-25 fg=#e5e5e7 bold
-r2 c1-54 fg=#989898
+r2 c1-54 fg=#a7a7a7

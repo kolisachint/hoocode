@@ -1,6 +1,6 @@
  ● done · 11s · 23k tokens             plan · amber-harbor · claude-haiku-5-5 · 42% context · $1.23
 --- styles ---
 r0 c1 fg=#b5bd68
-r0 c2-25 fg=#989898
-r0 c39-42 fg=#989898 bold
-r0 c43-98 fg=#989898
+r0 c2-25 fg=#a7a7a7
+r0 c39-42 fg=#a7a7a7 bold
+r0 c43-98 fg=#a7a7a7
