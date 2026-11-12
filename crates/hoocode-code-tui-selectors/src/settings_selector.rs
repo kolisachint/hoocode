@@ -1067,15 +1067,15 @@ fn levels_count(count: usize) -> String {
     }
 }
 
-/// The thinking level's detail: the level and its full description (the row
-/// shows the description's target and token fact).
+/// The thinking level's detail: the level and its full description. The row
+/// is the mark, the level name and `in use`; the description lives here only.
 fn thinking_detail(item: &SelectItem) -> Vec<Line<'static>> {
     let pal = Palette::current();
     let mut rows = vec![Line::from(vec![Span::styled(
         item.value.clone(),
         pal.ink(),
     )])];
-    if let Some(description) = item.description.as_deref() {
+    if let Some(description) = thinking_level_description(&item.value) {
         rows.push(Line::from(vec![Span::styled(
             description.to_string(),
             pal.dim(),
@@ -1684,7 +1684,7 @@ impl SettingsSelectorComponent {
                         .map(|level| SelectItem {
                             value: level.clone(),
                             label: level.clone(),
-                            description: thinking_level_description(level).map(String::from),
+                            description: None,
                         })
                         .collect();
                     let callback = callback.clone();

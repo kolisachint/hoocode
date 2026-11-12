@@ -5,45 +5,45 @@
  ▏ filter
  enter on / off · c category · s save to settings · esc close · f1 more
 --- styles ---
-r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c0 fg=#e5e5e7 bg=#303043
 r0 c1-15 fg=#14141c bg=#5cc8bb bold
-r0 c16 fg=#e5e5e7 bg=#1e1e2a
-r0 c17-30 fg=#989898 bg=#1e1e2a
-r0 c31-32 fg=#e5e5e7 bg=#1e1e2a
-r0 c33-61 fg=#989898 bg=#1e1e2a
-r0 c62-99 fg=#e5e5e7 bg=#1e1e2a
-r1 c0 fg=#e5e5e7 bg=#233239
-r1 c1 fg=#5cc8bb bg=#233239
-r1 c2-4 fg=#e5e5e7 bg=#233239
-r1 c5-20 fg=#e5e5e7 bg=#233239 bold
-r1 c21-22 fg=#e5e5e7 bg=#233239
-r1 c23-34 fg=#989898 bg=#233239
-r1 c35-36 fg=#e5e5e7 bg=#233239
-r1 c37-71 fg=#989898 bg=#233239
-r1 c72-99 fg=#e5e5e7 bg=#233239
-r2 c0-4 fg=#e5e5e7 bg=#1e1e2a
-r2 c5-14 fg=#e5e5e7 bg=#1e1e2a bold
-r2 c15-16 fg=#e5e5e7 bg=#1e1e2a
-r2 c17-25 fg=#989898 bg=#1e1e2a
-r2 c26-99 fg=#e5e5e7 bg=#1e1e2a
-r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r3 c3 fg=#989898 bg=#1e1e2a
-r3 c4 fg=#e5e5e7 bg=#1e1e2a
-r3 c5-9 fg=#e5e5e7 bg=#1e1e2a bold
-r3 c10-11 fg=#e5e5e7 bg=#1e1e2a
-r3 c12-23 fg=#989898 bg=#1e1e2a
-r3 c24-99 fg=#e5e5e7 bg=#1e1e2a
-r4 c0-1 fg=#e5e5e7 bg=#2a2a36
-r4 c2-8 fg=#989898 bg=#2a2a36
-r4 c9-99 fg=#e5e5e7 bg=#2a2a36
-r5 c0-5 fg=#e5e5e7 bg=#1e1e2a
-r5 c6-17 fg=#989898 bg=#1e1e2a
-r5 c18 fg=#e5e5e7 bg=#1e1e2a
-r5 c19-30 fg=#989898 bg=#1e1e2a
-r5 c31 fg=#e5e5e7 bg=#1e1e2a
-r5 c32-51 fg=#989898 bg=#1e1e2a
-r5 c52-54 fg=#e5e5e7 bg=#1e1e2a
-r5 c55-63 fg=#989898 bg=#1e1e2a
-r5 c64-65 fg=#e5e5e7 bg=#1e1e2a
-r5 c66-70 fg=#989898 bg=#1e1e2a
-r5 c71-99 fg=#e5e5e7 bg=#1e1e2a
+r0 c16 fg=#e5e5e7 bg=#303043
+r0 c17-30 fg=#a7a7a7 bg=#303043
+r0 c31-32 fg=#e5e5e7 bg=#303043
+r0 c33-61 fg=#a7a7a7 bg=#303043
+r0 c62-99 fg=#e5e5e7 bg=#303043
+r1 c0 fg=#e5e5e7 bg=#2c3f47
+r1 c1 fg=#5cc8bb bg=#2c3f47
+r1 c2-4 fg=#e5e5e7 bg=#2c3f47
+r1 c5-20 fg=#e5e5e7 bg=#2c3f47 bold
+r1 c21-22 fg=#e5e5e7 bg=#2c3f47
+r1 c23-34 fg=#a7a7a7 bg=#2c3f47
+r1 c35-36 fg=#e5e5e7 bg=#2c3f47
+r1 c37-71 fg=#a7a7a7 bg=#2c3f47
+r1 c72-99 fg=#e5e5e7 bg=#2c3f47
+r2 c0-4 fg=#e5e5e7 bg=#303043
+r2 c5-14 fg=#e5e5e7 bg=#303043 bold
+r2 c15-16 fg=#e5e5e7 bg=#303043
+r2 c17-25 fg=#a7a7a7 bg=#303043
+r2 c26-99 fg=#e5e5e7 bg=#303043
+r3 c0-2 fg=#e5e5e7 bg=#303043
+r3 c3 fg=#a7a7a7 bg=#303043
+r3 c4 fg=#e5e5e7 bg=#303043
+r3 c5-9 fg=#e5e5e7 bg=#303043 bold
+r3 c10-11 fg=#e5e5e7 bg=#303043
+r3 c12-23 fg=#a7a7a7 bg=#303043
+r3 c24-99 fg=#e5e5e7 bg=#303043
+r4 c0-1 fg=#e5e5e7 bg=#393949
+r4 c2-8 fg=#a7a7a7 bg=#393949
+r4 c9-99 fg=#e5e5e7 bg=#393949
+r5 c0-5 fg=#e5e5e7 bg=#303043
+r5 c6-17 fg=#a7a7a7 bg=#303043
+r5 c18 fg=#e5e5e7 bg=#303043
+r5 c19-30 fg=#a7a7a7 bg=#303043
+r5 c31 fg=#e5e5e7 bg=#303043
+r5 c32-51 fg=#a7a7a7 bg=#303043
+r5 c52-54 fg=#e5e5e7 bg=#303043
+r5 c55-63 fg=#a7a7a7 bg=#303043
+r5 c64-65 fg=#e5e5e7 bg=#303043
+r5 c66-70 fg=#a7a7a7 bg=#303043
+r5 c71-99 fg=#e5e5e7 bg=#303043

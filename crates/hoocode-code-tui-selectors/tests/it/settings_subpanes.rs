@@ -101,6 +101,15 @@ fn settings_thinking_100() {
         "missing hint row in\n{text}"
     );
     assert!(!text.contains("Enter to select"), "prose hint in\n{text}");
+    // The rows carry the level only; the description is the detail's.
+    assert!(
+        !text.contains("Very brief reasoning"),
+        "description crammed into a row in\n{text}"
+    );
+    assert!(
+        text.contains("Moderate reasoning (~8k tokens)"),
+        "missing the selected level's detail in\n{text}"
+    );
     assert_golden!("settings_thinking_100", rendered);
 }
 

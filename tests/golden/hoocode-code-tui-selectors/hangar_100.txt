@@ -1,6 +1,6 @@
   Models  /model  showing scoped · 2 models
- › ● mock-large  free · 128k          mock-large  in use
-   ○ mock-fast  free · 128k           name      Mock Large
+ › ● mock-large  mock · free · 128k   mock-large  in use
+   ○ mock-fast  mock · free · 128k    name      Mock Large
                                       provider  mock
                                       context   128k
                                       price     free
@@ -20,8 +20,8 @@ r1 c1 fg=#5cc8bb bg=#2c3f47
 r1 c2-4 fg=#e5e5e7 bg=#2c3f47
 r1 c5-14 fg=#e5e5e7 bg=#2c3f47 bold
 r1 c15-16 fg=#e5e5e7 bg=#2c3f47
-r1 c17-27 fg=#a7a7a7 bg=#2c3f47
-r1 c28-35 fg=#e5e5e7 bg=#2c3f47
+r1 c17-34 fg=#a7a7a7 bg=#2c3f47
+r1 c35 fg=#e5e5e7 bg=#2c3f47
 r1 c36 fg=#e5e5e7 bg=#303043
 r1 c37-47 fg=#e5e5e7 bg=#363854
 r1 c48-55 fg=#a7a7a7 bg=#363854
@@ -31,8 +31,8 @@ r2 c3 fg=#a7a7a7 bg=#303043
 r2 c4 fg=#e5e5e7 bg=#303043
 r2 c5-13 fg=#e5e5e7 bg=#303043 bold
 r2 c14-15 fg=#e5e5e7 bg=#303043
-r2 c16-26 fg=#a7a7a7 bg=#303043
-r2 c27-36 fg=#e5e5e7 bg=#303043
+r2 c16-33 fg=#a7a7a7 bg=#303043
+r2 c34-36 fg=#e5e5e7 bg=#303043
 r2 c37 fg=#e5e5e7 bg=#363854
 r2 c38-47 fg=#a7a7a7 bg=#363854
 r2 c48-99 fg=#e5e5e7 bg=#363854
