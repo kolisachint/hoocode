@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: the TUI follows the design (2026-11-12)
+- **Every block opens and closes the same way.** A click, `enter` or `ctrl+x o` toggles any block, not only tool rows, and each block shows an open or closed indicator. The startup listing has a `Resources` header.
+- **The permission card, the interrupted-run row, settings and scoped models take rebound keys** from `keybindings.json`. The action ids are `app.permission.edit`, `app.permission.pick1` to `app.permission.pick3`, `app.dialog.yes`, `app.dialog.no` and `app.dialog.always` (permission card); `app.subagent.view` and `app.subagent.resume` (interrupted run); `app.settings.toggle` (settings); and `app.models.category` (scoped models).
+- **Space types into a non-empty settings search.**
+- **`/hotkeys` groups keys by where they act.**
+- **The selected row is bold in every pane,** with no stray blank rows.
+- **Yellow is only for what blocks you.** Other status uses the accent or ink.
+- **Dialogs and notices follow the design.**
+- **The `thinkingOff` to `thinkingXhigh` theme tokens are removed.** Old themes that set them still load.
+
+### Fixed: failed tool rows show their reason (2026-11-12)
+- **A failed tool row names its reason for every tool,** not only Shell: the first error line, or for a validation error the first problem as `path: message`.
+
 ### Added: open or close all tool rows (2026-11-11)
 - **`ctrl+x o` opens every tool row, or closes them all when any is open.** Old rows that have released their output are skipped, and the status line says how many.
 - **A user page for subscription logins** (`docs/user/login.md`): the providers, the Google client variables, `ANTHROPIC_OAUTH_TOKEN`, the callback ports and what to do when one is taken.

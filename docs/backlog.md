@@ -1,6 +1,6 @@
 # Backlog and handover
 
-Status (2026-11-11, evening): handover from the second TUI session of the day. It closed part of the list and was wound up early at the user's request. This is not the last TUI session. The plan stays in [design/roadmap.md](design/roadmap.md); the rules stay in [design/tui.md](design/tui.md). When this page and those disagree, they win and this page is stale.
+Status (2026-11-12): handover from the TUI session that worked the UI-25 to UI-34 rows and closed the roadmap TUI rows UI-15, UI-16, UI-18 and UI-20. `docs/wip/` is empty (the folder is absent). This is not the last TUI session. The plan stays in [design/roadmap.md](design/roadmap.md); the rules stay in [design/tui.md](design/tui.md). When this page and those disagree, they win and this page is stale.
 
 How to use it: read "Start here", then do "Next session" top to bottom. Delete rows as they land.
 
@@ -26,7 +26,7 @@ Environment notes:
 
 How to spend less in the next session (the user asked for this):
 
-- Two usage limits were hit in this session. The cause was long agent briefs, three-commit agents, and agents that each re-read the design docs and ran the workspace clippy.
+- Two usage limits were hit in the 2026-11-11 session. The cause was long agent briefs, three-commit agents, and agents that each re-read the design docs and ran the workspace clippy.
 - Give one agent one row. Name the files. Let it run `cargo clippy -p <crate>` and `cargo nextest run -p <crate>` only. Run the workspace checks once, at the end, in the main session.
 - Do not start a parallel lane for fewer than three rows.
 - Start from the patch. It holds real work.
@@ -35,26 +35,27 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
+| 1 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
+| 2 | Non-tool blocks toggle | Check on the real binary in tmux, with mouse sequences, that thinking, notice and other non-tool blocks open and close. Only tool rows were checked (UI-25, UI-31). | S |
+| 3 | Token `mcp` | No reader. The theme registry fills it, the schema lists it, and `color-semantics.json` marks it `legacy`, but nothing draws it. Decide: keep it or delete it. | S |
+| 4 | Open TUI rows | UI-7, UI-12, UI-13, UI-14, UI-17 and UI-19 are still open in [design/tui.md](design/tui.md), each with its trigger or gate. | — |
 
-## Done in this session (2026-11-11, second session)
+## Done in this session (2026-11-12)
 
-All on `main` through one PR, label `rust:patch`.
+On branch `claude/great-maxwell-n95s34`. Not pushed, and no PR yet.
 
 | Item | What changed |
 |---|---|
-| UI-6 | 78 component goldens: every dialog and notice in dark, light and monochrome at 100 columns. |
-| UI-30 | The write-only override map in `TranscriptFocus` is gone. |
-| UI-24 | `ctrl+x o` (`app.scroll.toggleAll`) opens or closes all tool rows. Frozen rows are skipped with a notice. |
-| Screen check | Harness fixes, then the goldens refreshed on 2026-11-12 (UI-33, closed). |
-| AU-1 | New user page `docs/user/login.md`. |
-| AU-2 | Live tests fail when run with `--ignored` and no credential, in the provider crates, `hoocode-ai-registry` and `hoocode-agent-compaction`. |
-| AU-3, AU-4 | Mock tests: 401 and 403 on the three stream paths; refresh on expiry through `AuthStorage::get_api_key` with the real provider ids; an Anthropic OAuth stream test. |
-| AU-5 | The ChatGPT login says when port 1455 is taken. Claude and Google already fail with the bind error. |
-| AU-6, AU-7 | Decisions in `design/agent.md`: pinned client versions are refreshed by hand; the OAuth `state` stays as built. |
-| Found by AU-3 | A rejected token (401, 403) is no longer retried for 7 s on the ChatGPT and Gemini paths. The ChatGPT error names the status. |
-| Issues | #107, #153, #154, #157, #106, #155 fixed. #152 (the `migrate` command is gone) and #156 (the HUD is gone) are obsolete. |
-| Dependencies | #180 (minor and patch group), #167 (model catalog), #164 (sha2 0.11), #162 (jsonwebtoken 11), #161 (jsonschema 0.60) folded in. #163 (windows-sys 0.61) not taken: no Windows target to compile it. |
+| UI-25, UI-31 | One toggle for every block: a click, `enter` or `ctrl+x o` opens and closes it. Each block shows an open or closed indicator. The startup listing has a `Resources` header. (7a5905e) |
+| UI-28 | The permission card, the interrupted-run row, settings and scoped models read their keys from the keymap. (a683043) |
+| UI-27 | Space types into a non-empty settings search. (bd99349) |
+| UI-26 | `/hotkeys` groups keys by where they act. (21a3f8a) |
+| UI-32 | The selected row is bold in every pane, with no stray blank rows. (1484fe7) |
+| UI-29 | Yellow only on what blocks the user. (1d105c1) |
+| Schema drift | The theme schema lists every colour token once. `thinkingOff` to `thinkingXhigh` are removed; old themes still load. (613240f) |
+| UI-34 | The golden-versus-design differences are worked through and the dialogs and notices follow the design. Decisions are dated rows in `tui.md`. (c17e401, 3024e3c) |
+| UI-33 | A failed tool row names its reason for every tool. The screen goldens are refreshed. (37a1cca, 8c8cd38) |
+| Roadmap rows | UI-15 (no exit summary), UI-16 (minus 2), UI-18 (the replay fixture stays: `crates/hoocode-code-main/tests/it/replay.rs` reads it), UI-20 (the 30 `*_ts*.rs` test files lost the `ts`). Recorded in `tui.md`. |
 
 Known behaviour kept on purpose:
 
@@ -88,7 +89,7 @@ Open auth notes: the pinned Claude Code version is `2.1.280` and the published o
 
 Agents cannot delete remote branches in the cloud session. Checked against `main` on 2026-11-11.
 
-- Merged, nothing unmerged: `claude/design-docs-unified`, `claude/ecstatic-archimedes-ej8zwn`, `claude/haiku-agents-concurrency-72r3pt`, `claude/themes-keybindings-design-nwqgis`, `claude/upbeat-pasteur-n4rk4m`, `tui-visual-overhaul`, `dependabot/cargo/rand-0.10.3`, and `claude/festive-gauss-q4m0lg` after this PR merges.
+- Merged, nothing unmerged: `claude/design-docs-unified`, `claude/ecstatic-archimedes-ej8zwn`, `claude/haiku-agents-concurrency-72r3pt`, `claude/themes-keybindings-design-nwqgis`, `claude/upbeat-pasteur-n4rk4m`, `tui-visual-overhaul`, `dependabot/cargo/rand-0.10.3`, and, after this PR merges, `claude/festive-gauss-q4m0lg` and `claude/great-maxwell-n95s34`.
 - Superseded by this PR or by `main`: `agent/responses-parallel-args` (#171, fixed on `main` in 888eccac), `agent/shell-exit-chip` (#172, the single view replaced it), `fix/tui-goldens-version-mask` (#170, harness fix taken by hand), `bot/models-sync` (#167), `dependabot/cargo/cargo-minor-patch-1575fb4005` (#180), `dependabot/cargo/sha2-0.11.1`, `dependabot/cargo/jsonwebtoken-11.1.0`, `dependabot/cargo/jsonschema-0.60.2`.
 - From before the history restart (no common base with `main`, last commit 2026-10-09 to 2026-10-29): `agent/muse-integrate`, `agent/ui-prompt-fixes`, `ci/models-sync-use-gh-token`, `claude/all-next-2026-10-14`, `claude/core-step1-reliability`, `claude/design-system-extraction-6t4r9r`, `claude/fix-agent-loop-registry-flake`, `claude/fix-bash-idle-tick-flake`, `claude/friendly-wozniak-ek34vd`, `claude/tui-next-2026-10-14`, `claude/website-who-code-updates-t75o9t`, `dependabot/cargo/cargo-minor-patch-5854e3a6c1`, `dependabot/cargo/crossterm-0.29.0`, `dependabot/cargo/fancy-regex-0.19.2`, `dependabot/github_actions/actions/setup-python-7`, `docs/readme-landscape-demo`, `docs/v2-trailer`, `feat/footer-toolcalls-cleanup`, `fix/app-server-scoped-models`, `fix/fuzz-build-target`, `fix/ui-row-reclaim`. Look once before deleting the two `docs/` branches: they hold README media.
 - Keep: `main`, `dependabot/cargo/windows-sys-0.61.2` (#163, open).
@@ -98,7 +99,7 @@ Agents cannot delete remote branches in the cloud session. Checked against `main
 ```text
 Continue the TUI work. Read CLAUDE.md, then docs/backlog.md. Do the table
 "Next session: in this order", top to bottom, as far as the budget allows.
-Rows 1 and 2 start from the patches in docs/wip/.
+docs/wip/ is empty, so no row starts from a patch.
 
 How to work:
 - Spend little. One Haiku agent per row, a short brief that names the files,
