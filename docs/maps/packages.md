@@ -169,11 +169,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 26259 / 8330 | keep |
-| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 4 | 1989 / 2339 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9408 / 5178 | keep |
-| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2931 / 3123 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13643 / 11102 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 26855 / 8444 | keep |
+| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 4 | 2026 / 2373 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9454 / 5705 | keep |
+| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2888 / 3269 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14457 / 11399 | keep |
 
 ### TUI library (`tui-*`)
 
@@ -182,12 +182,12 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-components` | UI components for the hoocode TUI | 4 | 10762 / 7798 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 303 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 365 / 0 | keep |
-| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 120 / 0 | keep |
+| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 146 / 0 | keep |
 | `tui-highlight` | Syntax highlighting for the hoocode TUI, using the highlight.js 10.7.3 engine and grammars | 1 | 2327 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 8 | 2456 / 936 | keep |
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (line helpers, palette, RatatuiComponent) | 3 | 1381 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 7 | 4982 / 2951 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 7 | 5078 / 3101 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 3 | 3340 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 
