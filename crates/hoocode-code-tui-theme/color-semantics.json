@@ -29,7 +29,7 @@
       "use_for": ["the done mark `●`", "the `+n` fact on Edit and Write rows", "the finished-subagent notice head"],
       "never_for": ["running or queued marks", "warnings", "the selected row"],
       "dark": "#b5bd68",
-      "light": "#0a6b27"
+      "light": "#0a6625"
     },
     {
       "role": "failed",
@@ -37,8 +37,8 @@
       "tokens": ["error", "err"],
       "use_for": ["the failed mark `⊗`", "the `exit N` fact on a failed Shell row", "the failure notice head"],
       "never_for": ["the failure reason (dim)", "stopped or denied rows (dim `⊗`)", "the selected row"],
-      "dark": "#d58181",
-      "light": "#b8111e"
+      "dark": "#dc9494",
+      "light": "#b0101d"
     },
     {
       "role": "blocking",
@@ -47,7 +47,7 @@
       "use_for": ["the permission or question title chip (chipWarn)", "the bold title of a blocking dialog"],
       "never_for": ["running jobs", "non-blocking warnings and notices", "markdown headings", "the selected row"],
       "dark": "#f0c674",
-      "light": "#7a5200"
+      "light": "#785000"
     },
     {
       "role": "ink",
@@ -64,8 +64,8 @@
       "tokens": ["dim", "muted", "faint", "toolOutput", "thinkingText", "halftone"],
       "use_for": ["facts after a target, such as `exit 0 · 8.2s`", "the action words in hints", "tool bodies at column 4", "the fold line `… N more lines`", "the `$` before a permission command", "the collapsed thinking line"],
       "never_for": ["key names in hints", "tool names and targets", "the blocking title"],
-      "dark": "#989898",
-      "light": "#555864"
+      "dark": "#a7a7a7",
+      "light": "#555763"
     },
     {
       "role": "surface",
@@ -73,8 +73,8 @@
       "tokens": ["surface", "pane", "paneSel", "paneInput", "paneDetail", "selectedBg", "userMessageBg"],
       "use_for": ["panes, pickers and the completion menu (pane)", "the selected row in a pane (paneSel)", "the filter row (paneInput)", "the detail column of a split pane (paneDetail)", "the prompt row and user message (surface)"],
       "never_for": ["borders (monochrome only)", "text colour (a background token is not a foreground)"],
-      "dark": "#2a2a36",
-      "light": "#dadbe6"
+      "dark": "#393949",
+      "light": "#cfd1df"
     }
   ],
   "states": [
@@ -87,11 +87,11 @@
   ],
   "surfaces": [
     {"surface": "base", "token": null, "export": "pageBg", "meaning": "Transcript and status line: the terminal/page background.", "dark": "#14141c", "light": "#f8f8fb"},
-    {"surface": "pane", "token": "pane", "meaning": "Dialogs, pickers, completion menu, task panel, and notices joined to the task panel.", "dark": "#1e1e2a", "light": "#e8e8f0"},
-    {"surface": "paneSel", "token": "paneSel", "meaning": "Selected row inside a pane.", "dark": "#233239", "light": "#c3dcdc"},
-    {"surface": "paneInput", "token": "paneInput", "meaning": "Filter input row inside a pane.", "dark": "#2a2a36", "light": "#dadbe6"},
-    {"surface": "paneDetail", "token": "paneDetail", "meaning": "Detail column of a split pane.", "dark": "#292b40", "light": "#d3d7e9"},
-    {"surface": "surface", "token": "surface", "meaning": "Prompt row and user message surface.", "dark": "#2a2a36", "light": "#dadbe6"}
+    {"surface": "pane", "token": "pane", "meaning": "Dialogs, pickers, completion menu, task panel, and notices joined to the task panel.", "dark": "#303043", "light": "#dfdfea"},
+    {"surface": "paneSel", "token": "paneSel", "meaning": "Selected row inside a pane.", "dark": "#2c3f47", "light": "#b6d5d5"},
+    {"surface": "paneInput", "token": "paneInput", "meaning": "Filter input row inside a pane.", "dark": "#393949", "light": "#cfd1df"},
+    {"surface": "paneDetail", "token": "paneDetail", "meaning": "Detail column of a split pane.", "dark": "#363854", "light": "#cdd2e6"},
+    {"surface": "surface", "token": "surface", "meaning": "Prompt row and user message surface.", "dark": "#393949", "light": "#cfd1df"}
   ],
   "tokens": {
     "accent": {"role": "accent", "meaning": "Primary accent: the `›` marker, the running `◉` mark, the title chip and inline code.", "required": true},
@@ -179,7 +179,7 @@
     "minimum": 4.5,
     "standard": "WCAG AA",
     "test": "crates/hoocode-code-tui-theme/tests/it/theme_contrast.rs",
-    "tightest": ["dim on paneSel (dark) 4.59:1", "error on paneSel (dark) 4.59:1", "dim on surface (dark) 4.91:1", "success on paneSel (light) 4.64:1", "error on paneSel (light) 4.65:1"]
+    "tightest": ["error on paneSel (dark) 4.56:1", "dim on paneSel (dark) 4.57:1", "warning on paneSel (light) 4.57:1", "success on paneSel (light) 4.58:1", "error on paneSel (light) 4.58:1"]
   },
   "monochrome": "Colour is off under NO_COLOR, TERM=dumb, no tty or fewer than 256 colours. Glyphs, bold and dim stay. Panes get light borders with the title in the top border, the selected row keeps ` › ` and bold, and title chips become bold text. See docs/design/tui.md, Accessibility."
 }

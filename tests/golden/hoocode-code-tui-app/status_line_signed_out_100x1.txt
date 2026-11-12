@@ -1,6 +1,6 @@
  ⊗ not signed in  /login                                                               amber-harbor
 --- styles ---
-r0 c1 fg=#d58181
-r0 c2-15 fg=#989898
+r0 c1 fg=#dc9494
+r0 c2-15 fg=#a7a7a7
 r0 c16-23 fg=#e5e5e7
-r0 c87-98 fg=#989898
+r0 c87-98 fg=#a7a7a7

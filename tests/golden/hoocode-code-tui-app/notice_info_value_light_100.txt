@@ -2,7 +2,7 @@
  Context at 82%: 164,203 of 200,000 tokens  ctrl+x n new session
  Summarize the thread or start a fresh session.
 --- styles ---
-r1 c1-41 fg=#555864
+r1 c1-41 fg=#555763
 r1 c44-51 fg=#2b2f36
-r1 c53-63 fg=#555864
-r2 c1-46 fg=#555864
+r1 c53-63 fg=#555763
+r2 c1-46 fg=#555763

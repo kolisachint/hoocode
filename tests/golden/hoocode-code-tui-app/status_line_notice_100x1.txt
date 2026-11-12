@@ -1,7 +1,7 @@
  switched to claude-sonnet-5-5  shift+alt+m back      amber-harbor · claude-haiku-5-5 · 42% context
 --- styles ---
 r0 c1-29 fg=#e5e5e7
-r0 c30-31 fg=#989898
+r0 c30-31 fg=#a7a7a7
 r0 c32-42 fg=#e5e5e7
-r0 c43-47 fg=#989898
-r0 c54-98 fg=#989898
+r0 c43-47 fg=#a7a7a7
+r0 c54-98 fg=#a7a7a7

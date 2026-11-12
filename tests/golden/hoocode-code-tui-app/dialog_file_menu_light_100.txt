@@ -2,10 +2,10 @@
              wrap_tests.rs                   tests/wrap_tests.rs
  ›look at @wr
 --- styles ---
-r0 c10-64 fg=#2b2f36 bg=#c3dcdc bold
-r1 c10-25 fg=#2b2f36 bg=#e8e8f0
-r1 c26-64 fg=#555864 bg=#e8e8f0
-r2 c0-1 fg=#2b2f36 bg=#dadbe6
-r2 c2-12 bg=#dadbe6
-r2 c13 bg=#dadbe6 inverse
-r2 c14-99 fg=#2b2f36 bg=#dadbe6
+r0 c10-64 fg=#2b2f36 bg=#b6d5d5 bold
+r1 c10-25 fg=#2b2f36 bg=#dfdfea
+r1 c26-64 fg=#555763 bg=#dfdfea
+r2 c0-1 fg=#2b2f36 bg=#cfd1df
+r2 c2-12 bg=#cfd1df
+r2 c13 bg=#cfd1df inverse
+r2 c14-99 fg=#2b2f36 bg=#cfd1df

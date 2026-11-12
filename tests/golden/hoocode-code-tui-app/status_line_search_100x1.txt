@@ -1,10 +1,10 @@
  search  escaped_quote  1 match  enter next · esc close              claude-haiku-5-5 · 42% context
 --- styles ---
-r0 c1-8 fg=#989898
+r0 c1-8 fg=#a7a7a7
 r0 c9-21 fg=#e5e5e7
-r0 c22-32 fg=#989898
+r0 c22-32 fg=#a7a7a7
 r0 c33-37 fg=#e5e5e7
-r0 c38-45 fg=#989898
+r0 c38-45 fg=#a7a7a7
 r0 c46-48 fg=#e5e5e7
-r0 c49-54 fg=#989898
-r0 c69-98 fg=#989898
+r0 c49-54 fg=#a7a7a7
+r0 c69-98 fg=#a7a7a7

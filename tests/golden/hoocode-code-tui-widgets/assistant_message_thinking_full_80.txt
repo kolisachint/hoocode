@@ -3,4 +3,4 @@
 
  Narrow footers drop the session name first.
 --- styles ---
-r1 c1-49 fg=#989898 italic
+r1 c1-49 fg=#a7a7a7 italic

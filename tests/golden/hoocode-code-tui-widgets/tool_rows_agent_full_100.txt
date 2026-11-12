@@ -4,4 +4,4 @@
 r1 c1 fg=#b5bd68
 r1 c3-7 fg=#e5e5e7 bold
 r1 c9-38 fg=#e5e5e7
-r1 c41-60 fg=#989898
+r1 c41-60 fg=#a7a7a7

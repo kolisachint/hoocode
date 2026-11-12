@@ -5,29 +5,29 @@
    lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod temp…
  ↑↓ move · enter fork · esc close
 --- styles ---
-r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c0 fg=#e5e5e7 bg=#303043
 r0 c1-6 fg=#14141c bg=#5cc8bb bold
-r0 c7 fg=#e5e5e7 bg=#1e1e2a
-r0 c8-12 fg=#989898 bg=#1e1e2a
-r0 c13-14 fg=#e5e5e7 bg=#1e1e2a
-r0 c15-28 fg=#989898 bg=#1e1e2a
-r0 c29-79 fg=#e5e5e7 bg=#1e1e2a
-r1 c0 fg=#e5e5e7 bg=#1e1e2a
-r1 c1-78 fg=#989898 bg=#1e1e2a
-r1 c79 fg=#e5e5e7 bg=#1e1e2a
-r2 c0-79 fg=#e5e5e7 bg=#1e1e2a
-r3 c0 fg=#e5e5e7 bg=#233239
-r3 c1 fg=#5cc8bb bg=#233239
-r3 c2 fg=#e5e5e7 bg=#233239
-r3 c3-47 fg=#e5e5e7 bg=#233239 bold
-r3 c48-49 fg=#e5e5e7 bg=#233239
-r3 c50-67 fg=#989898 bg=#233239
-r3 c68-79 fg=#e5e5e7 bg=#233239
-r4 c0-79 fg=#e5e5e7 bg=#1e1e2a
-r5 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r5 c3-10 fg=#989898 bg=#1e1e2a
-r5 c11-15 fg=#e5e5e7 bg=#1e1e2a
-r5 c16-23 fg=#989898 bg=#1e1e2a
-r5 c24-26 fg=#e5e5e7 bg=#1e1e2a
-r5 c27-32 fg=#989898 bg=#1e1e2a
-r5 c33-79 fg=#e5e5e7 bg=#1e1e2a
+r0 c7 fg=#e5e5e7 bg=#303043
+r0 c8-12 fg=#a7a7a7 bg=#303043
+r0 c13-14 fg=#e5e5e7 bg=#303043
+r0 c15-28 fg=#a7a7a7 bg=#303043
+r0 c29-79 fg=#e5e5e7 bg=#303043
+r1 c0 fg=#e5e5e7 bg=#303043
+r1 c1-78 fg=#a7a7a7 bg=#303043
+r1 c79 fg=#e5e5e7 bg=#303043
+r2 c0-79 fg=#e5e5e7 bg=#303043
+r3 c0 fg=#e5e5e7 bg=#2c3f47
+r3 c1 fg=#5cc8bb bg=#2c3f47
+r3 c2 fg=#e5e5e7 bg=#2c3f47
+r3 c3-47 fg=#e5e5e7 bg=#2c3f47 bold
+r3 c48-49 fg=#e5e5e7 bg=#2c3f47
+r3 c50-67 fg=#a7a7a7 bg=#2c3f47
+r3 c68-79 fg=#e5e5e7 bg=#2c3f47
+r4 c0-79 fg=#e5e5e7 bg=#303043
+r5 c0-2 fg=#e5e5e7 bg=#303043
+r5 c3-10 fg=#a7a7a7 bg=#303043
+r5 c11-15 fg=#e5e5e7 bg=#303043
+r5 c16-23 fg=#a7a7a7 bg=#303043
+r5 c24-26 fg=#e5e5e7 bg=#303043
+r5 c27-32 fg=#a7a7a7 bg=#303043
+r5 c33-79 fg=#e5e5e7 bg=#303043

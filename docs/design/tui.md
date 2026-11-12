@@ -115,8 +115,8 @@ The rule: at the prompt a bare printable key always types. Transcript letters ac
 | State | Mark | Colour (dark / light) | Facts |
 |---|---|---|---|
 | Running | `◉` | accent `#5cc8bb` / `#00625c` | Elapsed only |
-| Done | `●` | ok `#b5bd68` / `#0a6b27` | Primary, then secondary |
-| Failed | `⊗` | err `#d58181` / `#b8111e` | `exit N` (red), reason (dim), secondary |
+| Done | `●` | ok `#b5bd68` / `#0a6625` | Primary, then secondary |
+| Failed | `⊗` | err `#dc9494` / `#b0101d` | `exit N` (red), reason (dim), secondary |
 | Stopped by the user | `⊗` | dim | `stopped` |
 
 ### Per-tool rows
@@ -254,22 +254,22 @@ Setting `theme` takes a name, `auto`, or `auto:<light>:<dark>`. Choosing one in 
 | Role | dark | light |
 |---|---|---|
 | Base (transcript, status line) | `#14141c` | `#f8f8fb` |
-| Pane (dialogs, pickers, completion, task panel) | `#1e1e2a` | `#e8e8f0` |
-| Detail column (split panes) | `#292b40` | `#d3d7e9` |
-| Pane selection | `#233239` | `#c3dcdc` |
-| Surface (prompt, user message, pane input row) | `#2a2a36` | `#dadbe6` |
+| Pane (dialogs, pickers, completion, task panel) | `#303043` | `#dfdfea` |
+| Detail column (split panes) | `#363854` | `#cdd2e6` |
+| Pane selection | `#2c3f47` | `#b6d5d5` |
+| Surface (prompt, user message, pane input row) | `#393949` | `#cfd1df` |
 | Text | `#e5e5e7` | `#2b2f36` |
-| Dim | `#989898` | `#555864` |
+| Dim | `#a7a7a7` | `#555763` |
 | Accent (`›`, running `◉`, inline code, accent chip) | `#5cc8bb` | `#00625c` |
-| Green (done) | `#b5bd68` | `#0a6b27` |
-| Red (failed) | `#d58181` | `#b8111e` |
-| Yellow (blocking only) | `#f0c674` | `#7a5200` (dark amber, for text) |
+| Green (done) | `#b5bd68` | `#0a6625` |
+| Red (failed) | `#dc9494` | `#b0101d` |
+| Yellow (blocking only) | `#f0c674` | `#785000` (dark amber, for text) |
 | Accent chip (bg / text) | `#5cc8bb` / `#14141c` bold | `#00625c` / `#f8f8fb` bold |
 | Blocking chip (bg / text) | `#f0c674` / `#14141c` bold | `#f0c674` / `#2b2f36` bold |
 
 In light, panes are darker than the page. Dark panes are lighter than the base. Yellow is for blocking only. A guard test in `crates/hoocode-code-tui-theme/tests/it/color_semantics.rs` keeps the warning token to the blocking dialog files.
 
-Contrast: every text colour on every surface is at least 4.5:1 (WCAG). The tightest pairs, checked on 2026-11-07, are dim and red on the dark selection (4.59:1), and green on the light selection (4.64:1). Do not lighten dim or darken `paneSel`. Light has one grey, so facts are told apart by position: two spaces after the target, and the body at column 4.
+Contrast: every text colour on every surface is at least 4.5:1 (WCAG). The tightest pairs, checked on 2026-11-12, are red on the dark selection (4.56:1) and dim on the dark selection (4.57:1), and warning, green, red and dim on the light selection (4.57 to 4.60:1). Do not lighten dim or darken `paneSel`. Light has one grey, so facts are told apart by position: two spaces after the target, and the body at column 4.
 
 ### Colour semantics
 
@@ -577,6 +577,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-16: the pinned page scroll step is the view height minus 2 (two rows of overlap), as built. Not minus 12. Written in the `scroll_by_pages` comment in `crates/hoocode-tui-render/src/tui.rs`. |
 | 2026-11-12 | UI-18: the replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json` stays. `crates/hoocode-code-main/tests/it/replay.rs` reads it: one scenario per entry, checked against insta snapshots. |
 | 2026-11-12 | UI-20: the 30 `*_ts*.rs` test files lost the `ts`, a leftover of TypeScript parity. Names changed with `git mv`; `mod` lines and doc comments follow. No test code changed. |
+| 2026-11-12 | Pane ramp lifted in default dark and light so panes stand out from the terminal background; text tokens nudged to hold 4.5:1. |
 
 ## Open
 

@@ -50,15 +50,15 @@
    },
    "lines": [
     "",
-    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;152;152;152mskills\u001b[39m  \u001b[38;2;155;140;255m◈\u001b[39m \u001b[38;2;229;229;231m5\u001b[39m \u001b[38;2;152;152;152magents\u001b[39m                                                                             ",
-    "\u001b[0;38;2;152;152;152m Resources\u001b[0m \u001b[0;38;2;152;152;152m▸\u001b[0m"
+    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;167;167;167mskills\u001b[39m  \u001b[38;2;167;154;255m◈\u001b[39m \u001b[38;2;229;229;231m5\u001b[39m \u001b[38;2;167;167;167magents\u001b[39m                                                                             ",
+    "\u001b[0;38;2;167;167;167m Resources\u001b[0m \u001b[0;38;2;167;167;167m▸\u001b[0m"
    ]
   },
   "empty": {
    "case": {},
    "lines": [
     "",
-    "\u001b[38;2;152;152;152mno project resources loaded\u001b[39m                                                                         "
+    "\u001b[38;2;167;167;167mno project resources loaded\u001b[39m                                                                         "
    ]
   },
   "rich_expanded": {
@@ -180,38 +180,38 @@
    },
    "lines": [
     "",
-    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[38;2;229;229;231m3\u001b[39m \u001b[38;2;152;152;152mskills\u001b[39m  \u001b[38;2;155;140;255m◈\u001b[39m \u001b[38;2;229;229;231m1\u001b[39m \u001b[38;2;152;152;152magent\u001b[39m  \u001b[38;2;92;200;187m⌘\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;152;152;152mcommands\u001b[39m  \u001b[38;2;92;200;187m⧉\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;152;152;152mmcp servers\u001b[39m   \u001b[38;2;152;152;152m· AGENTS.md, CLAUDE.md 31k tok/turn\u001b[39m         ",
-    "  \u001b[38;2;152;152;152m3 conflicts, first wins\u001b[39m  \u001b[38;2;229;229;231m/reload\u001b[39m                                                                  ",
-    "\u001b[0;38;2;152;152;152m Resources\u001b[0m \u001b[0;38;2;152;152;152m▾\u001b[0m",
+    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[38;2;229;229;231m3\u001b[39m \u001b[38;2;167;167;167mskills\u001b[39m  \u001b[38;2;167;154;255m◈\u001b[39m \u001b[38;2;229;229;231m1\u001b[39m \u001b[38;2;167;167;167magent\u001b[39m  \u001b[38;2;92;200;187m⌘\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;167;167;167mcommands\u001b[39m  \u001b[38;2;92;200;187m⧉\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;167;167;167mmcp servers\u001b[39m   \u001b[38;2;167;167;167m· AGENTS.md, CLAUDE.md 31k tok/turn\u001b[39m         ",
+    "  \u001b[38;2;167;167;167m3 conflicts, first wins\u001b[39m  \u001b[38;2;229;229;231m/reload\u001b[39m                                                                  ",
+    "\u001b[0;38;2;167;167;167m Resources\u001b[0m \u001b[0;38;2;167;167;167m▾\u001b[0m",
     "\u001b[1m\u001b[38;2;229;229;231m[Skills]\u001b[39m\u001b[22m                                                                                            ",
-    "\u001b[38;2;152;152;152m  alpha, pkg-skill, zeta\u001b[39m                                                                            ",
+    "\u001b[38;2;167;167;167m  alpha, pkg-skill, zeta\u001b[39m                                                                            ",
     "  \u001b[38;2;92;200;187mproject\u001b[39m                                                                                           ",
-    "    \u001b[38;2;229;229;231m/skill:zeta\u001b[39m \u001b[38;2;152;152;152m/w/.agents/skills/zeta/SKILL.md\u001b[39m                                                     ",
+    "    \u001b[38;2;229;229;231m/skill:zeta\u001b[39m \u001b[38;2;167;167;167m/w/.agents/skills/zeta/SKILL.md\u001b[39m                                                     ",
     "  \u001b[38;2;92;200;187muser\u001b[39m                                                                                              ",
-    "    \u001b[38;2;229;229;231m/skill:alpha\u001b[39m \u001b[38;2;152;152;152m~/.hoo/skills/alpha/SKILL.md\u001b[39m                                                       ",
-    "    \u001b[38;2;129;162;190mnpm:@acme/tools\u001b[39m                                                                                 ",
-    "      \u001b[38;2;229;229;231m/skill:pkg-skill\u001b[39m \u001b[38;2;152;152;152mskills/x/SKILL.md\u001b[39m                                                            ",
+    "    \u001b[38;2;229;229;231m/skill:alpha\u001b[39m \u001b[38;2;167;167;167m~/.hoo/skills/alpha/SKILL.md\u001b[39m                                                       ",
+    "    \u001b[38;2;141;171;196mnpm:@acme/tools\u001b[39m                                                                                 ",
+    "      \u001b[38;2;229;229;231m/skill:pkg-skill\u001b[39m \u001b[38;2;167;167;167mskills/x/SKILL.md\u001b[39m                                                            ",
     "                                                                                                    ",
     "\u001b[1m\u001b[38;2;229;229;231m[Commands]\u001b[39m\u001b[22m                                                                                          ",
-    "\u001b[38;2;152;152;152m  /fix, /review\u001b[39m                                                                                     ",
+    "\u001b[38;2;167;167;167m  /fix, /review\u001b[39m                                                                                     ",
     "  \u001b[38;2;92;200;187mproject\u001b[39m                                                                                           ",
-    "\u001b[38;2;152;152;152m    /fix\u001b[39m                                                                                            ",
-    "\u001b[38;2;152;152;152m    /review\u001b[39m                                                                                         ",
+    "\u001b[38;2;167;167;167m    /fix\u001b[39m                                                                                            ",
+    "\u001b[38;2;167;167;167m    /review\u001b[39m                                                                                         ",
     "                                                                                                    ",
     "\u001b[1m\u001b[38;2;229;229;231m[Agents]\u001b[39m\u001b[22m                                                                                            ",
-    "  \u001b[38;2;152;152;152mexplore\u001b[39m  \u001b[38;2;152;152;152mExplores the codebase quickly and reports back w…\u001b[39m                                        ",
+    "  \u001b[38;2;167;167;167mexplore\u001b[39m  \u001b[38;2;167;167;167mExplores the codebase quickly and reports back w…\u001b[39m                                        ",
     "                                                                                                    ",
     "\u001b[1m\u001b[38;2;229;229;231m[MCP]\u001b[39m\u001b[22m                                                                                               ",
-    "\u001b[38;2;152;152;152m  github 12 tools · foreground · schemas deferred\u001b[39m                                                   ",
-    "\u001b[38;2;152;152;152m  auth awaiting authorization\u001b[39m                                                                       ",
+    "\u001b[38;2;167;167;167m  github 12 tools · foreground · schemas deferred\u001b[39m                                                   ",
+    "\u001b[38;2;167;167;167m  auth awaiting authorization\u001b[39m                                                                       ",
     "                                                                                                    ",
-    "\u001b[38;2;152;152;152mConflicts (skills):\u001b[39m                                                                                 ",
-    "\u001b[38;2;152;152;152m  \"dup\" collision:\u001b[39m                                                                                  ",
-    "\u001b[38;2;152;152;152m    \u001b[38;2;181;189;104m●\u001b[39m project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                       ",
-    "\u001b[38;2;152;152;152m    \u001b[38;2;152;152;152m⊗\u001b[39m ~/.hoo/skills/dup/SKILL.md (skipped)\u001b[39m                                                          ",
-    "\u001b[38;2;152;152;152m  project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                           ",
-    "\u001b[38;2;152;152;152m    bad frontmatter\u001b[39m                                                                                 ",
-    "\u001b[38;2;213;129;129m  no path error\u001b[39m                                                                                     ",
+    "\u001b[38;2;167;167;167mConflicts (skills):\u001b[39m                                                                                 ",
+    "\u001b[38;2;167;167;167m  \"dup\" collision:\u001b[39m                                                                                  ",
+    "\u001b[38;2;167;167;167m    \u001b[38;2;181;189;104m●\u001b[39m project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                       ",
+    "\u001b[38;2;167;167;167m    \u001b[38;2;167;167;167m⊗\u001b[39m ~/.hoo/skills/dup/SKILL.md (skipped)\u001b[39m                                                          ",
+    "\u001b[38;2;167;167;167m  project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                           ",
+    "\u001b[38;2;167;167;167m    bad frontmatter\u001b[39m                                                                                 ",
+    "\u001b[38;2;220;148;148m  no path error\u001b[39m                                                                                     ",
     "\u001b[38;2;229;229;231m\u001b[1mCould not read /w/BROKEN.md\u001b[22m\u001b[39m                                                                         "
    ]
   },
@@ -239,7 +239,7 @@
     ]
    },
    "lines": [
-    "  \u001b[38;2;152;152;152m1 conflict, first wins\u001b[39m  \u001b[38;2;229;229;231m/reload\u001b[39m                                                                   "
+    "  \u001b[38;2;167;167;167m1 conflict, first wins\u001b[39m  \u001b[38;2;229;229;231m/reload\u001b[39m                                                                   "
    ]
   }
  }
