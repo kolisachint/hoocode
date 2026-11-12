@@ -19,8 +19,7 @@ use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::text_slice::{prefix, range, suffix_from};
 use hoocode_tui_util::{apply_background_to_line, truncate_to_width, visible_width};
 
-/// Columns before the input: a blank and the marker. The editor's own left
-/// padding (one column by default) follows.
+/// Columns before the input: a blank and the marker.
 pub const GUTTER: usize = 2;
 
 /// Reads the queued `(steering, follow-up)` messages.
@@ -186,9 +185,9 @@ impl Component for PromptRow {
         let mono = !hoocode_code_tui_theme::chalk::enabled();
         let border = if mono { 2 } else { 0 };
         if let Some((rows, menu_width, anchor)) = (self.read_menu)(width.saturating_sub(border)) {
-            // The menu's text sits under the token: the marker's three columns
-            // before it, the prompt's three columns before the text.
-            let left = anchor.min(width.saturating_sub(menu_width + border));
+            // The menu's left edge sits under the typed token: the gutter
+            // (marker and blank) comes before the text.
+            let left = (anchor + GUTTER).min(width.saturating_sub(menu_width + border));
             out.extend(menu_block(&rows, menu_width, left, mono));
         }
         if lines.is_empty() {

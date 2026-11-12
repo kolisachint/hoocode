@@ -368,9 +368,12 @@ pub fn get_select_list_theme() -> SelectListTheme {
 /// dim descriptions. Text on a pane colour also sets its foreground.
 pub fn get_completion_list_theme() -> SelectListTheme {
     let dim = |text: &str| theme().fg("dim", text);
+    // The selected row is bold in monochrome too, so bold is written
+    // directly: chalk drops every style when colour is off.
+    let bold = |text: &str| format!("\x1b[1m{text}\x1b[22m");
     SelectListTheme {
-        selected_prefix: Box::new(|text: &str| theme().bold(text)),
-        selected_text: Box::new(|text: &str| theme().bold(text)),
+        selected_prefix: Box::new(bold),
+        selected_text: Box::new(bold),
         description: Box::new(dim),
         scroll_info: Box::new(dim),
         no_match: Box::new(dim),

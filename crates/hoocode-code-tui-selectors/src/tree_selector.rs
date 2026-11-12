@@ -785,13 +785,13 @@ impl TreeList {
                 let message = &entry["message"];
                 match str_field(message, "role").unwrap_or("") {
                     "user" => vec![
-                        Span::styled(format!("{:<11}", "user"), pal.acc()),
+                        Span::styled(format!("{:<11}", "user"), pal.ink()),
                         Span::raw(normalize(&extract_content(message.get("content")))),
                     ],
                     "assistant" => {
                         let text = normalize(&extract_content(message.get("content")));
                         let mut spans =
-                            vec![Span::styled(format!("{:<11}", "assistant"), pal.ok())];
+                            vec![Span::styled(format!("{:<11}", "assistant"), pal.ink())];
                         if !text.is_empty() {
                             spans.push(Span::raw(text));
                         } else if str_field(message, "stopReason") == Some("aborted") {

@@ -21,7 +21,9 @@ r0 c12-20 fg=#989898 bg=#1e1e2a
 r0 c21-22 fg=#e5e5e7 bg=#1e1e2a
 r0 c23-72 fg=#989898 bg=#1e1e2a
 r0 c73-99 fg=#e5e5e7 bg=#1e1e2a
-r1 c0-2 fg=#5cc8bb bg=#233239
+r1 c0 fg=#e5e5e7 bg=#233239
+r1 c1 fg=#5cc8bb bg=#233239
+r1 c2 fg=#e5e5e7 bg=#233239
 r1 c3-7 fg=#e5e5e7 bg=#233239 bold
 r1 c8-15 fg=#e5e5e7 bg=#233239
 r1 c16-19 fg=#989898 bg=#233239

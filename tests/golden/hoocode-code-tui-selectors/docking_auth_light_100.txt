@@ -1,4 +1,4 @@
-  Log in  /login  Anthropic
+ Log in  /login  Anthropic
  1 https://example.test/oauth/authorize?code=WXYZ-1234
  scan, or enter to open the browser
  No QR code in this terminal build — the link above docks the same provider.
@@ -7,15 +7,13 @@
  esc cancel
 --- styles ---
 r0 c0 fg=#2b2f36 bg=#e8e8f0
-r0 c1-8 fg=#f8f8fb bg=#00625c bold
-r0 c9 fg=#2b2f36 bg=#e8e8f0
-r0 c10-15 fg=#555864 bg=#e8e8f0
-r0 c16-17 fg=#2b2f36 bg=#e8e8f0
-r0 c18-26 fg=#555864 bg=#e8e8f0
-r0 c27-99 fg=#2b2f36 bg=#e8e8f0
-r1 c0 fg=#2b2f36 bg=#e8e8f0
-r1 c1-53 fg=#00625c bg=#e8e8f0
-r1 c54-99 fg=#2b2f36 bg=#e8e8f0
+r0 c1-7 fg=#2b2f36 bg=#e8e8f0 bold
+r0 c8 fg=#2b2f36 bg=#e8e8f0
+r0 c9-14 fg=#555864 bg=#e8e8f0
+r0 c15-16 fg=#2b2f36 bg=#e8e8f0
+r0 c17-25 fg=#555864 bg=#e8e8f0
+r0 c26-99 fg=#2b2f36 bg=#e8e8f0
+r1 c0-99 fg=#2b2f36 bg=#e8e8f0
 r2 c0 fg=#2b2f36 bg=#e8e8f0
 r2 c1-34 fg=#555864 bg=#e8e8f0
 r2 c35-99 fg=#2b2f36 bg=#e8e8f0

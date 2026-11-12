@@ -1,4 +1,3 @@
-
- Mode: build
- described in .hoo/modes/build.md
+   Mode: build
+   described in .hoo/modes/build.md
 --- styles ---

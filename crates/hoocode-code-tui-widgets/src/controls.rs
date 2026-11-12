@@ -239,7 +239,8 @@ fn grid(items: &[&Action], cols: usize, inner: usize) -> Vec<Line<'static>> {
         .collect();
     (0..rows)
         .map(|r| {
-            let mut spans: Vec<Span<'static>> = Vec::new();
+            // Rows indent 3: the pane's one column and two more here.
+            let mut spans: Vec<Span<'static>> = vec![Span::raw("  ")];
             for (c, col_width) in col_widths.iter().enumerate() {
                 let Some(action) = items.get(c * rows + r) else {
                     continue;
@@ -251,7 +252,7 @@ fn grid(items: &[&Action], cols: usize, inner: usize) -> Vec<Line<'static>> {
                     spans.push(Span::raw(" ".repeat(col_width - used + 4)));
                 }
             }
-            Line::from(truncate_spans(spans, inner))
+            Line::from(truncate_spans(spans, inner.saturating_sub(2)))
         })
         .collect()
 }

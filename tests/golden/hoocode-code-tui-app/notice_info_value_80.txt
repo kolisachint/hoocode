@@ -3,6 +3,6 @@
  Summarize the thread or start a fresh session.
 --- styles ---
 r1 c1-41 fg=#989898
-r1 c44-49 fg=#e5e5e7
-r1 c51-63 fg=#989898
+r1 c44-51 fg=#e5e5e7
+r1 c53-63 fg=#989898
 r2 c1-46 fg=#989898

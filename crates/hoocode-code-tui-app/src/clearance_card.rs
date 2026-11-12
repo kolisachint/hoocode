@@ -3,10 +3,10 @@
 //! row, an `access:` row only when the call writes, uses the network or
 //! pipes, then numbered options (`1 yes`, `2 yes, always for <program> this
 //! session`, `3 no, tell it why`), the reply row and the hint row (`1–3 pick ·
-//! y yes · n no · e edit`: `a` still highlights the always row). `1`/`2`/`3`
-//! pick, `e` edits the command first (`edit`), and every other letter types a reply
+//! e edit first · or type a reply`: `a` still highlights the always row). `1`/`2`/`3`
+//! pick, `e` edits the command first, and every other letter types a reply
 //! that `enter` sends as the denial's reason. While the reply is empty, `y`
-//! answers yes and `n` no at once; `a` only moves the highlight to the always
+//! answers yes and `n` no at once (the hint does not list them); `a` only moves the highlight to the always
 //! row, and `enter` confirms it. With no always row, `a` types like any letter.
 //!
 //! `e edit first` cannot run inside the gate (the call's arguments are
@@ -221,21 +221,21 @@ impl ClearanceCard {
                 key_hint_text(PICK_IDS[0]),
                 key_hint_text(PICK_IDS[count.min(PICK_IDS.len()) - 1])
             );
-            let yes = key_hint_text("app.dialog.yes");
-            let no = key_hint_text("app.dialog.no");
             let edit = key_hint_text("app.permission.edit");
-            // `a` still highlights the always row; the hint keeps four
-            // items at every width (mock §S4).
-            pane.hint = fit_hint_line(
-                &[
-                    (pick.as_str(), "pick"),
-                    (yes.as_str(), "yes"),
-                    (no.as_str(), "no"),
-                    (edit.as_str(), "edit"),
-                ],
+            // The hint names the design's items only. `y` and `n` still
+            // answer while the reply is empty (decision 2026-11-05); the
+            // hint does not list them.
+            let mut hint = fit_hint_line(
+                &[(pick.as_str(), "pick"), (edit.as_str(), "edit first")],
                 false,
                 width,
             );
+            let tail = "or type a reply";
+            if hint.width() + " · ".len() + tail.len() <= width.saturating_sub(2) {
+                hint.spans.push(Span::styled(" · ", st.dim_style()));
+                hint.spans.push(Span::styled(tail, st.dim_style()));
+            }
+            pane.hint = hint;
         }
         pane.style = Some(st);
         pane

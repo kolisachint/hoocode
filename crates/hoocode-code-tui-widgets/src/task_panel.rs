@@ -758,7 +758,8 @@ fn flight_row(
     let tag = if is_mcp {
         Some((
             task.subagent_mode.as_deref().unwrap_or("mcp").to_string(),
-            pal.style("mcp"),
+            // The server label is ink: MCP has no colour role of its own.
+            pal.ink(),
         ))
     } else {
         task.subagent_mode

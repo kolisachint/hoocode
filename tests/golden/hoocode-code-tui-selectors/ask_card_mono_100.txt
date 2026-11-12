@@ -1,4 +1,4 @@
-┌─ Question ─ where should retry logic live?  1 of 2 ──────────────────────────────────────────────┐
+┌─ where should retry logic live? ─ 1 of 2 ────────────────────────────────────────────────────────┐
 │   the http client is shared by every provider adapter                                            │
 │ › 1  hoocode-ai  unified provider client                                                         │
 │   2  agent-core  runtime wrap each tool call                                                     │

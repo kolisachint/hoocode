@@ -321,8 +321,8 @@ impl NotificationPanel {
             .map(str::trim)
             .filter(|n| !n.is_empty())
         {
-            let (key, action) = note.split_once(' ').unwrap_or((note, ""));
-            notice.keys.push(KeyHint::new(key, action.trim()));
+            let (key, action) = split_note(note);
+            notice.keys.push(KeyHint::new(key, action));
         }
         Some(notice)
     }
@@ -334,6 +334,19 @@ impl NotificationPanel {
             .filter(|current| !current.action)
             .map(|current| from + self.ttl(current));
     }
+}
+
+/// Splits a note into its key and its action. The key is the first word,
+/// or the chord `ctrl+x n` (a modifier word and the single key after it),
+/// so the whole key reads as ink. The rest is the action.
+fn split_note(note: &str) -> (String, String) {
+    let words: Vec<&str> = note.splitn(3, ' ').collect();
+    let chord = words.len() == 3 && words[0].contains("ctrl+") && words[1].len() == 1;
+    let take = if chord { 2 } else { 1 };
+    let mut parts = note.splitn(take + 1, ' ');
+    let key: Vec<&str> = (0..take).filter_map(|_| parts.next()).collect();
+    let action = parts.next().unwrap_or("").trim();
+    (key.join(" "), action.to_string())
 }
 
 impl Component for NotificationPanel {
@@ -350,10 +363,8 @@ impl Component for NotificationPanel {
             return Vec::new();
         }
         if self.joined_to_pane {
-            let st = PaneStyle::current();
-            if !st.mono {
-                return self.render_joined(current, width, st);
-            }
+            // Monochrome keeps the same rows: only the fill is dropped.
+            return self.render_joined(current, width, PaneStyle::current());
         }
         let rows = self.budget();
         if let Some((w, r, lines)) = &self.cache {
@@ -389,10 +400,7 @@ impl Component for NotificationPanel {
             .as_deref()
             .map(str::trim)
             .filter(|n| !n.is_empty())
-            .map(|note| {
-                let (key, action) = note.split_once(' ').unwrap_or((note, ""));
-                (key.to_string(), action.trim().to_string())
-            });
+            .map(split_note);
         let hint_text = |(key, action): &(String, String)| {
             let mut out = theme().fg("text", key);
             if !action.is_empty() {
@@ -457,10 +465,7 @@ impl NotificationPanel {
             .as_deref()
             .map(str::trim)
             .filter(|n| !n.is_empty())
-            .map(|note| {
-                let (key, action) = note.split_once(' ').unwrap_or((note, ""));
-                (key.to_string(), action.trim().to_string())
-            });
+            .map(split_note);
         let hint_spans = |(key, action): &(String, String)| {
             let mut spans = vec![Span::styled(key.clone(), st.text_style())];
             if !action.is_empty() {
@@ -490,8 +495,7 @@ impl NotificationPanel {
             let text = truncate_to_width(line, inner, "…", false);
             rows.push(vec![Span::styled(text, st.dim_style())]);
         }
-        let mut pane = Pane::new("");
-        pane.top = rows
+        let lines: Vec<Line<'static>> = rows
             .into_iter()
             .map(|spans| {
                 let mut line = vec![Span::raw("  ")];
@@ -499,6 +503,16 @@ impl NotificationPanel {
                 Line::from(line)
             })
             .collect();
+        if st.mono {
+            // A monochrome pane would draw a border; the band keeps its
+            // rows and drops only the fill, so it stays borderless.
+            return lines
+                .iter()
+                .map(|line| format!(" {}", hoocode_tui_ratatui::flatten(line)))
+                .collect();
+        }
+        let mut pane = Pane::new("");
+        pane.top = lines;
         pane.style = Some(st);
         pane.render(width)
     }

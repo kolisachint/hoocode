@@ -433,7 +433,8 @@ pub fn show_loaded_resources_with_details(
         };
     }
     let t = theme();
-    let section_header = |name: &str| t.fg("mdHeading", &format!("[{name}]"));
+    // Section headers are ink bold: yellow marks only what blocks the user.
+    let section_header = |name: &str| t.bold(&t.fg("text", &format!("[{name}]")));
     let format_compact_list = |items: Vec<String>| {
         let mut labels: Vec<String> = items
             .into_iter()

@@ -38,7 +38,7 @@ pub type DetailFn = fn(&SelectItem) -> Vec<Line<'static>>;
 /// "Row format"): `mark + bold name + ink target + dim facts joined with ·`.
 ///
 /// The mark carries the state so a row never reads as colour alone: `●`
-/// (ok) for the row holding the state, `○` (dim) for the rest. The name
+/// (ink) for the row holding the state, `○` (dim) for the rest. The name
 /// never cuts; secondary facts drop whole, right-to-left; the target
 /// shortens at a word (a first word longer than the budget is cut hard,
 /// so a single long token still fits); primary facts never drop. A final
@@ -56,8 +56,9 @@ pub(crate) fn picker_row(
     width: usize,
     pal: &Palette,
 ) -> Line<'static> {
+    // Green is the done mark only: a picker's `●` (on, current) is ink.
     let (mark, mark_style) = if active {
-        (status::DONE_STR, pal.ok())
+        (status::DONE_STR, pal.ink())
     } else {
         (status::TODO_STR, pal.dim())
     };
@@ -213,13 +214,16 @@ pub(crate) fn theme_detail(item: &SelectItem) -> Vec<Line<'static>> {
     ]));
     rows.push(Line::from(vec![
         Span::styled("● ".to_string(), pal.ok()),
-        Span::styled("Edit".to_string(), bold(pal.dim())),
+        Span::styled("Edit".to_string(), bold(pal.ink())),
         Span::styled(" src/wrap.rs  +4 −1".to_string(), pal.dim()),
     ]));
     rows.push(Line::from(vec![
         Span::styled("⊗ ".to_string(), pal.err()),
-        Span::styled("Shell".to_string(), bold(pal.dim())),
-        Span::styled(" cargo test -p wrap  exit 1 · 3.1s".to_string(), pal.dim()),
+        Span::styled("Shell".to_string(), bold(pal.ink())),
+        Span::styled(" cargo test -p wrap".to_string(), pal.ink()),
+        Span::styled("  ".to_string(), pal.dim()),
+        Span::styled("exit 1".to_string(), pal.err()),
+        Span::styled(" · 3.1s".to_string(), pal.dim()),
     ]));
     rows.push(Line::from(vec![Span::styled(
         "Width is checked now; the wrap tests pass.".to_string(),

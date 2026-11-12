@@ -23,7 +23,7 @@ use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::visible_width;
+use hoocode_tui_util::{truncate_to_width, visible_width};
 
 /// `AskOptionsOptions`: nothing to set yet (esc always skips).
 #[derive(Debug, Clone, Copy, Default)]
@@ -94,11 +94,12 @@ impl State {
         let pal = Palette::current();
         let cur = self.current();
         let last = self.step == self.questions.len() - 1;
-        let mut pane = Pane::new("Question");
+        // The yellow chip holds the question (the blocking title). The
+        // dim `1 of 2` follows it. A question too long for the chip keeps
+        // its first line in the chip, cut with `…`, and the whole question
+        // wraps under the title (mock §S3).
+        let mut pane = Pane::new(cur.question.clone());
         pane.chip = Chip::Warn;
-
-        // The title row: the question in ink, then dim `1 of 2`; a question
-        // too long for the row moves under the title, wrapped (mock §S3).
         let count = if self.questions.len() > 1 {
             format!("{} of {}", self.step + 1, self.questions.len())
         } else {
@@ -106,16 +107,29 @@ impl State {
         };
         let ink = st.text_style();
         let fits = visible_width(&cur.question) + visible_width(&count) + 14 <= width;
-        let mut facts = Vec::new();
+        let count_w = if count.is_empty() {
+            0
+        } else {
+            visible_width(&count) + 2
+        };
+        let mut question_rows: Vec<String> = Vec::new();
         if fits {
-            facts.push(Span::styled(cur.question.clone(), ink));
             if !count.is_empty() {
-                facts.push(Span::styled(format!("  {count}"), st.dim_style()));
+                pane.facts = Line::from(vec![Span::styled(count.clone(), st.dim_style())]);
             }
-        } else if !count.is_empty() {
-            facts.push(Span::styled(count.clone(), st.dim_style()));
+        } else {
+            let wrapped = wrap_text(&cur.question, width.saturating_sub(4));
+            let chip_budget = width.saturating_sub(count_w + 14);
+            let first = wrapped.first().cloned().unwrap_or_default();
+            let head = truncate_to_width(&first, chip_budget, "…", false);
+            // The first line already sits in the chip when it fits whole.
+            let skip = usize::from(head == first);
+            pane.title = head;
+            question_rows = wrapped.into_iter().skip(skip).collect();
+            if !count.is_empty() {
+                pane.facts = Line::from(vec![Span::styled(count.clone(), st.dim_style())]);
+            }
         }
-        pane.facts = Line::from(facts);
         // A narrow pane wraps the question and the detail instead of
         // cutting them: two cells of caller indent under the row's pad.
         let wrap = width.saturating_sub(4);
@@ -136,11 +150,9 @@ impl State {
                 ),
             ]));
         }
-        if !fits {
-            for part in wrap_text(&cur.question, wrap) {
-                pane.top
-                    .push(Line::from(vec![Span::raw("  "), Span::styled(part, ink)]));
-            }
+        for part in question_rows {
+            pane.top
+                .push(Line::from(vec![Span::raw("  "), Span::styled(part, ink)]));
         }
         if let Some(detail) = &cur.detail {
             for part in wrap_text(detail, wrap) {

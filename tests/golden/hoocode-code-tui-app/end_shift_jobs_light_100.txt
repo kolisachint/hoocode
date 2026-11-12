@@ -4,7 +4,7 @@
  k stop jobs and quit · l leave them running · esc stay
 --- styles ---
 r0 c0 fg=#2b2f36 bg=#e8e8f0
-r0 c1-7 fg=#f8f8fb bg=#00625c bold
+r0 c1-7 fg=#2b2f36 bg=#f0c674 bold
 r0 c8-9 fg=#2b2f36 bg=#e8e8f0
 r0 c10-34 fg=#555864 bg=#e8e8f0
 r0 c35-99 fg=#2b2f36 bg=#e8e8f0

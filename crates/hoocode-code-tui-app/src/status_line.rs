@@ -361,7 +361,8 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
         }
         LeftSlot::ExtraUsage => {
             out.push(span("extra usage", st.dim));
-            out.push(span(" · /settings", st.ink));
+            out.push(span("  ", st.dim));
+            out.push(span("/settings", st.ink));
         }
         LeftSlot::SkipPermissions => {
             out.push(span("skip perms · mode rules apply", st.dim));
@@ -372,7 +373,11 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
                 keys_spans(&notice.keys, st, &mut out);
             }
             NoticeLevel::Warning => {
-                out.push(span(notice.message.clone(), st.ink));
+                // A warning is not blocking: its first row is ink bold.
+                out.push(span(
+                    notice.message.clone(),
+                    st.ink.add_modifier(Modifier::BOLD),
+                ));
                 keys_spans(&notice.keys, st, &mut out);
             }
             NoticeLevel::Action => {
