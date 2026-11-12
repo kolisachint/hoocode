@@ -84,17 +84,6 @@ fn meaning_groups() -> Vec<(&'static str, Vec<&'static str>)> {
             ],
         ),
         (
-            "thinking levels",
-            vec![
-                "thinkingOff",
-                "thinkingMinimal",
-                "thinkingLow",
-                "thinkingMedium",
-                "thinkingHigh",
-                "thinkingXhigh",
-            ],
-        ),
-        (
             "diff",
             vec!["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
         ),
@@ -109,11 +98,11 @@ fn quantized_groups() -> Vec<(&'static str, Vec<&'static str>)> {
         .collect()
 }
 
-const DARK_DECORATIVE_TOKENS: [&str; 3] = ["borderMuted", "mdHr", "thinkingOff"];
+const DARK_DECORATIVE_TOKENS: [&str; 2] = ["borderMuted", "mdHr"];
 const DARK_NEUTRAL_TOKENS: [&str; 1] = ["mdQuoteBorder"];
-const LIGHT_DECORATIVE_TOKENS: [&str; 3] = ["borderMuted", "mdHr", "thinkingOff"];
+const LIGHT_DECORATIVE_TOKENS: [&str; 2] = ["borderMuted", "mdHr"];
 
-/// Every token a theme must carry: the 51 the schema requires, plus the
+/// Every token a theme must carry: the 45 the schema requires, plus the
 /// agent palette and `mcp`.
 fn all_tokens() -> Vec<String> {
     let schema: Value = serde_json::from_str(THEME_SCHEMA_JSON).unwrap();
@@ -339,7 +328,7 @@ fn fixed(x: f64, digits: usize) -> String {
     format!("{x:.digits$}")
 }
 
-const LIGHT_HUE_TOKENS: [&str; 33] = [
+const LIGHT_HUE_TOKENS: [&str; 29] = [
     "accent",
     "border",
     "borderAccent",
@@ -361,10 +350,6 @@ const LIGHT_HUE_TOKENS: [&str; 33] = [
     "syntaxString",
     "syntaxNumber",
     "syntaxType",
-    "thinkingLow",
-    "thinkingMedium",
-    "thinkingHigh",
-    "thinkingXhigh",
     "bashMode",
     "agent1",
     "agent2",
@@ -553,7 +538,7 @@ mod default_dark_theme {
     fn keeps_colors_that_mean_different_things_apart_after_the_256_color_downgrade() {
         let groups = meaning_groups()
             .into_iter()
-            .filter(|(label, _)| *label != "thinking levels" && *label != "diff")
+            .filter(|(label, _)| *label != "diff")
             .collect();
         quantized_collisions("dark", groups);
     }
@@ -933,7 +918,7 @@ mod high_contrast_theme {
     const MIN_TEXT_CONTRAST: f64 = 7.0;
     /// The quiet rules and borders still have to be seen.
     const MIN_DECORATIVE_CONTRAST: f64 = 3.0;
-    const DECORATIVE: [&str; 4] = ["borderMuted", "mdHr", "thinkingOff", "mdQuoteBorder"];
+    const DECORATIVE: [&str; 3] = ["borderMuted", "mdHr", "mdQuoteBorder"];
 
     #[test]
     fn keeps_every_text_token_at_aaa_contrast_on_every_surface_it_paints() {

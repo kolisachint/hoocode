@@ -34,8 +34,8 @@ pub use registry::{
 };
 pub use schema::{parse_theme_json, parse_theme_json_content, ThemeJson, REQUIRED_COLOR_TOKENS};
 pub use theme::{
-    agent_color_for, session_color_token, Theme, ThemeOptions, ThinkingBorderLevel,
-    AGENT_COLOR_TOKENS, PANE_BG_TOKENS, THEME_BGS, THEME_COLORS,
+    agent_color_for, session_color_token, Theme, ThemeOptions, AGENT_COLOR_TOKENS, PANE_BG_TOKENS,
+    THEME_BGS, THEME_COLORS,
 };
 pub use tui::{
     apply_block_fill, apply_paper_sheet, get_completion_list_theme, get_editor_theme,

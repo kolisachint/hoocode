@@ -35,8 +35,7 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 7 | Schema drift | `schema.rs` `COLOR_PROPERTIES` lists `dim` twice and leaves out `mcp`; the `toolBandBg` text says "peek view"; decide whether the uncalled `thinkingOff`…`thinkingXhigh` tokens stay. | S |
-| 8 | UI-34 | The 21 differences below. Fix the screen or fix `tui.md`, one by one. | M |
+| 8 | UI-34 | The 22 differences below. Fix the screen or fix `tui.md`, one by one. | M |
 | 9 | UI-33 | Refresh the screen goldens. Notes below. | M |
 | 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
 | 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
@@ -67,6 +66,7 @@ Found while pinning the dialogs (UI-6). The goldens pin the screen as built. Nam
 | 19 | All panes | `›` at column 0, chip and filter at column 1 | Minor |
 | 20 | `controls_100` | Rows at column 1 | Rows indent 3 |
 | 21 | `task_panel_tabs_unfocused_80` | `mcp 1/1`, strip at column 2 | `mcp 1`, glyphs at column 3. Minor |
+| 22 | Startup resource listing `[Skills]` and `[MCP]` headers | Token `mdHeading` (yellow) | Yellow marks only what blocks the user |
 
 ### UI-33: screen goldens
 

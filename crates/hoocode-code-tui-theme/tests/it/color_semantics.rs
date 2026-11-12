@@ -13,7 +13,7 @@ const SEMANTICS: &str = include_str!("../../color-semantics.json");
 const THEME_SCHEMA: &str = include_str!("../../themes/theme-schema.json");
 
 /// Role categories that are not entries of `roles`.
-const FIXED_ROLES: [&str; 5] = ["markdown", "syntax", "diff", "thinking-level", "legacy"];
+const FIXED_ROLES: [&str; 4] = ["markdown", "syntax", "diff", "legacy"];
 
 fn semantics() -> Value {
     serde_json::from_str(SEMANTICS).expect("color-semantics.json parses")

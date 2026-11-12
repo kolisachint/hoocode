@@ -76,12 +76,6 @@
 					"syntaxType",
 					"syntaxOperator",
 					"syntaxPunctuation",
-					"thinkingOff",
-					"thinkingMinimal",
-					"thinkingLow",
-					"thinkingMedium",
-					"thinkingHigh",
-					"thinkingXhigh",
 					"bashMode"
 				]
 			}
@@ -208,7 +202,7 @@
 				},
 				"toolBandBg": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Tint behind file-tool (Read/Write/Edit) output in the peek view (optional; falls back to toolPendingBg)"
+					"description": "Background behind markdown code blocks (optional; falls back to toolPendingBg)"
 				},
 				"toolTitle": {
 					"$ref": "#/$defs/colorValue",
@@ -305,30 +299,6 @@
 				"syntaxPunctuation": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Syntax highlighting: punctuation"
-				},
-				"thinkingOff": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: off"
-				},
-				"thinkingMinimal": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: minimal"
-				},
-				"thinkingLow": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: low"
-				},
-				"thinkingMedium": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: medium"
-				},
-				"thinkingHigh": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: high"
-				},
-				"thinkingXhigh": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: xhigh (OpenAI codex-max only)"
 				},
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",

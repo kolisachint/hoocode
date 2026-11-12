@@ -10,8 +10,8 @@ use crate::color::{
 
 /// Foreground tokens (`ThemeColor`). A theme may also carry tokens beyond
 /// these (theme JSON is open), so the API takes token names as strings.
-/// The trailing ten are the Mission Control chrome tokens (spec §2.3).
-pub const THEME_COLORS: [&str; 68] = [
+/// The Mission Control chrome tokens (spec §2.3) come last. Each name appears once.
+pub const THEME_COLORS: [&str; 61] = [
     "accent",
     "border",
     "borderAccent",
@@ -50,12 +50,6 @@ pub const THEME_COLORS: [&str; 68] = [
     "syntaxType",
     "syntaxOperator",
     "syntaxPunctuation",
-    "thinkingOff",
-    "thinkingMinimal",
-    "thinkingLow",
-    "thinkingMedium",
-    "thinkingHigh",
-    "thinkingXhigh",
     "bashMode",
     "chipFg",
     "agent1",
@@ -72,7 +66,6 @@ pub const THEME_COLORS: [&str; 68] = [
     "tapeText",
     // Mission Control chrome (spec §2.3).
     "ink",
-    "dim",
     "faint",
     "acc",
     "ok",
@@ -137,17 +130,6 @@ pub fn session_color_token(slot: i64) -> &'static str {
     let len = AGENT_COLOR_TOKENS.len() as i64;
     let index = slot - 1;
     AGENT_COLOR_TOKENS[index.rem_euclid(len) as usize]
-}
-
-/// Thinking levels with a border color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThinkingBorderLevel {
-    Off,
-    Minimal,
-    Low,
-    Medium,
-    High,
-    Xhigh,
 }
 
 /// Where a theme came from, for callers that report it.
@@ -328,23 +310,6 @@ impl Theme {
         self.bg_colors
             .get(color)
             .unwrap_or_else(|| panic!("Unknown theme background color: {color}"))
-    }
-
-    /// `getThinkingBorderColor`: the token a thinking level's border uses.
-    pub fn thinking_border_token(level: ThinkingBorderLevel) -> &'static str {
-        match level {
-            ThinkingBorderLevel::Off => "thinkingOff",
-            ThinkingBorderLevel::Minimal => "thinkingMinimal",
-            ThinkingBorderLevel::Low => "thinkingLow",
-            ThinkingBorderLevel::Medium => "thinkingMedium",
-            ThinkingBorderLevel::High => "thinkingHigh",
-            ThinkingBorderLevel::Xhigh => "thinkingXhigh",
-        }
-    }
-
-    /// `getThinkingBorderColor(level)(text)`.
-    pub fn thinking_border(&self, level: ThinkingBorderLevel, text: &str) -> String {
-        self.fg(Self::thinking_border_token(level), text)
     }
 
     /// `getBashModeBorderColor()(text)`.
