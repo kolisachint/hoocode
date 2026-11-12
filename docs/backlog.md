@@ -35,7 +35,6 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
 | 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
 
 ## Done in this session (2026-11-11, second session)

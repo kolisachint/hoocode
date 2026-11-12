@@ -5,5 +5,5 @@ mod fuzz_smoke;
 mod js_regex;
 mod pin_catchup;
 mod truncate_at_word;
-mod width_ts;
-mod wrap_ansi_ts;
+mod width;
+mod wrap_ansi;

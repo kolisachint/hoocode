@@ -1,7 +1,7 @@
 //! Port of the pin's `suite/regressions/79-stale-todo-settle.test.ts`, store
 //! half: `settleDanglingMainTasks` over rows the real TodoWrite tool wrote.
 //! The InteractiveMode half (outcome by stop reason, queued messages) is
-//! `plan_settle_outcome` in hoocode-code-tui-app's `tests/stale_todo_settle_ts.rs`.
+//! `plan_settle_outcome` in hoocode-code-tui-app's `tests/stale_todo_settle.rs`.
 
 use std::sync::Arc;
 

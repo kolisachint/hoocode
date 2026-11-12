@@ -863,7 +863,8 @@ impl Tui {
         true
     }
 
-    /// Move by pages, keeping two rows of overlap.
+    /// Move by pages, keeping two rows of overlap. The step is the view height
+    /// minus 2, as built (decided 2026-11-12, UI-16), not minus 12.
     pub fn scroll_by_pages(&mut self, delta: i64) -> bool {
         let page = (self.scroll_view_height() - 2).max(1);
         self.scroll_by_lines(delta * page)

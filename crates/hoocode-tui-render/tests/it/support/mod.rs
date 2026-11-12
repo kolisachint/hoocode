@@ -119,7 +119,7 @@ impl Handle {
     /// vt100 0.18.1's `Screen::set_size` does the same trim, push and pull
     /// (`grid.rs`), resets the scroll region and scrollback offset, and keeps
     /// cell styles. The rebuild below is no longer needed: every resize test
-    /// (`screen_fill`, `scroll_viewport`, `tui_render_ts`) also passes with a
+    /// (`screen_fill`, `scroll_viewport`, `tui_render`) also passes with a
     /// plain `set_size`. It can be replaced by that call in a follow-up.
     pub fn resize(&self, cols: u16, rows: u16) {
         let (old_cols, old_rows) = *self.size.lock().unwrap();

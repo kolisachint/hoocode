@@ -2,7 +2,7 @@
 //! `test/interactive-mode-anthropic-warning.test.ts`:
 //! `usesAnthropicSubscriptionAuth` (here `AgentSession::uses_anthropic_subscription_auth`).
 //! The latch and the notice text are tested in
-//! `hoocode-code-tui-app/tests/anthropic_warning_ts.rs`.
+//! `hoocode-code-tui-app/tests/anthropic_warning.rs`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

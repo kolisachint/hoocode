@@ -4,7 +4,7 @@
 //! concurrent same-type dispatches, per-run usage, and the panel's wall-clock
 //! elapsed, orphan roots, cycle guard, clearable notes and re-render after a
 //! mutation. The pool, lifeguard, JSONL and cancellation cases are in
-//! `hoocode-code-subagents/tests/subagent_spawn_audit_ts.rs`.
+//! `hoocode-code-subagents/tests/subagent_spawn_audit.rs`.
 //!
 //! The TS "deferred pool" is a real pool here over a shell child that waits
 //! for a release file before writing its result.

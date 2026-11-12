@@ -1,11 +1,11 @@
-mod anthropic_subscription_auth_ts;
+mod anthropic_subscription_auth;
 mod background_notices;
 mod bash_persistence;
 mod common;
 mod compaction;
 mod compaction_e2e;
 mod core_utils;
-mod disabled_tools_ts;
+mod disabled_tools;
 mod event_bus_errors;
 mod format;
 mod job_wake;

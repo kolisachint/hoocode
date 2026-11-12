@@ -573,6 +573,10 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-34: every task panel tab shows done over total: `plan 1/3 · agents 1/1 · mcp 1/1`. The strip sits at column 3, the same as the rows. (Decided to match the screen, as a Minor fix.) |
 | 2026-11-12 | UI-34: the resource listing's section headers (`[Skills]`, `[Commands]`, `[Agents]`, `[MCP]`) are ink bold. Yellow marks only what blocks the user. |
 | 2026-11-12 | UI-33: a failed row names its reason for every tool, not only Shell: the first error line, or for a validation error its first problem (`path: message`). Dim, after the header facts; the `⊗` mark is unchanged. Pinned by `tests/it/tool_rows.rs`. The screen goldens follow the keymap: follow-up is leader `f`, take back is leader `d` (one message each), the attach is leader `n`, `[` jumps to your previous message only with a block focused (K-P4), and the `/session` block has no header. |
+| 2026-11-12 | UI-15: no exit summary. Exit stays silent: nothing is printed after the alternate screen closes. The one-row summary idea is dropped. |
+| 2026-11-12 | UI-16: the pinned page scroll step is the view height minus 2 (two rows of overlap), as built. Not minus 12. Written in the `scroll_by_pages` comment in `crates/hoocode-tui-render/src/tui.rs`. |
+| 2026-11-12 | UI-18: the replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json` stays. `crates/hoocode-code-main/tests/it/replay.rs` reads it: one scenario per entry, checked against insta snapshots. |
+| 2026-11-12 | UI-20: the 30 `*_ts*.rs` test files lost the `ts`, a leftover of TypeScript parity. Names changed with `git mv`; `mod` lines and doc comments follow. No test code changed. |
 
 ## Open
 
@@ -582,12 +586,8 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | UI-12 | Verify the VS Code terminal does not take Ctrl+X before the default leader is final. | S | Manual check | If it does, keep the default and say so on the user page. |
 | UI-13 | Verify `⊗` and `◉` on common fonts (macOS Terminal, Windows Terminal, JetBrains Mono). | S | Manual check | `◉` ships in JetBrainsMono Nerd Font Mono. Record the result in the glyph module note. |
 | UI-14 | The inline screen (`HOOCODE_FULLSCREEN=0`) is still built. Mission Control planned to remove it after one release. | M | User decision, next release | Removing it deletes the inline tree, `screen_fill`, `scrollback_fold` tests, `terminal.clearOnShrink`, and the `into_lines` piece diff (dropped with it). |
-| UI-15 | Exit prints nothing. A short exit summary was an undecided follow-up. | S | User decision | One dim row after the alternate screen closes (session, time, tokens), only when leaving full-screen. |
-| UI-16 | Pinned page scroll step: built as view height minus 2. The spec said minus 12. | S | User or `/perf` | Pick one. Record it in the code comment and on this page. |
 | UI-17 | The chat component asks every body component for all its lines each frame (O(transcript)). | M | Only if `/perf` shows it | Add a windowed render API to the chat component. |
-| UI-18 | Replay fixture `crates/hoocode-code-main/tests/fixtures/replay.json`: keep or delete. | S | User decision (the one-week wait is past) | Decide. Delete if unused. |
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
-| UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
 
 ## Not doing
 

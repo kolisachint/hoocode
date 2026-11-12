@@ -71,7 +71,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 38. [AG-6](agent.md#open) Fix the TUI plugin tool list (S)
 39. [AG-17](agent.md#open) Remove the `/learn` tip. The decision says no (S)
 40. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
-41. [UI-20](tui.md#open) Rename the `*_ts*.rs` test files (S, optional)
 42. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
 43. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
 
@@ -93,9 +92,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [SA-6](subagents.md#open) | Remove the unused `known_issue` mechanism? | Yes, with its report branch |
 | [UI-7](tui.md#open) | OSC 11 auto theme: in scope, or drop? | In scope. Short timeout, then fall back to `COLORFGBG` |
 | [UI-14](tui.md#open) | Remove the inline screen in the next release? | Yes |
-| [UI-15](tui.md#open) | Add a one-row exit summary? | No. Keep exit silent |
-| [UI-16](tui.md#open) | Pinned page scroll step: view height minus 2, or minus 12? | Minus 2, as built. Write it in the code and on the page |
-| [UI-18](tui.md#open) | Keep the replay fixture? | Delete it if no test reads it |
 | [UI-19](tui.md#open) | Take the held behaviour changes? | Not now. One commit each, when asked |
 
 ## Deferred (trigger)

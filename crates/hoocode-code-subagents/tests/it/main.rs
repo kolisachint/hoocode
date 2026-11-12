@@ -1,4 +1,4 @@
-mod agent_log_ts;
+mod agent_log;
 mod clearance;
 mod depth;
 mod dispatch_evaluator;
@@ -20,7 +20,7 @@ mod result;
 mod runner;
 mod shipped_prose;
 mod subagent_skills;
-mod subagent_spawn_audit_ts;
+mod subagent_spawn_audit;
 mod token_budget;
 mod tools;
 mod tree_kill;

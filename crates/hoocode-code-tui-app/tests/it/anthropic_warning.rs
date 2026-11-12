@@ -4,7 +4,7 @@
 //! `StatusLineData::extra_usage`), fed by the same trigger on the session
 //! (`AgentSession::uses_anthropic_subscription_auth`, off switch
 //! `warnings.anthropicExtraUsage`). Which auth counts is tested on the session
-//! (`hoocode-code-agent-session/tests/anthropic_subscription_auth_ts.rs`).
+//! (`hoocode-code-agent-session/tests/anthropic_subscription_auth.rs`).
 
 use std::cell::Cell;
 
