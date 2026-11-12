@@ -157,6 +157,7 @@ fn edit_card_names_the_real_path() {
 #[test]
 fn wrapper_omits_always_and_two_is_no() {
     let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     let (mut card, answered) = card(shell_info("$ sudo rm -rf /tmp/x"));
     let rows = rows(&mut card, 100);
     assert!(
@@ -206,6 +207,7 @@ fn the_title_stays_bare_when_the_host_knows_the_step() {
 #[test]
 fn number_keys_enter_and_esc_answer() {
     let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     for (key, expected) in [
         ("1", ClearanceChoice::Once),
         ("2", ClearanceChoice::Always),
@@ -338,6 +340,7 @@ fn esc_clears_typed_text_before_denying() {
 #[test]
 fn e_edits_and_enter_revises() {
     let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     let (mut card, answered) = card(shell_info("$ echo hi"));
     card.handle_input("e");
     let rows = rows(&mut card, 100);

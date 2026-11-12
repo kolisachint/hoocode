@@ -45,6 +45,9 @@ pub enum Context {
     Leader,
     Scroll,
     Picker,
+    /// The interrupted-run choice on a session row (`v` view, `r` resume). It
+    /// has its own group, because `r` is the rename key in `Picker`.
+    Subagent,
     Panel,
     Dialog,
     Tree,
@@ -53,12 +56,13 @@ pub enum Context {
 
 impl Context {
     /// Every context, in the order the docs list them.
-    pub const ALL: [Context; 9] = [
+    pub const ALL: [Context; 10] = [
         Context::Global,
         Context::Prompt,
         Context::Leader,
         Context::Scroll,
         Context::Picker,
+        Context::Subagent,
         Context::Panel,
         Context::Dialog,
         Context::Tree,
@@ -73,6 +77,7 @@ impl Context {
             Context::Leader => "Leader",
             Context::Scroll => "Scroll",
             Context::Picker => "Picker",
+            Context::Subagent => "Subagent",
             Context::Panel => "Panel",
             Context::Dialog => "Dialog",
             Context::Tree => "Tree",

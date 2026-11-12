@@ -209,18 +209,15 @@ impl SessionSelectorHeader {
             return Some(Line::from(spans));
         }
         if self.choosing_subagent {
+            let view = key_hint_text("app.subagent.view");
+            let back = key_hint_text("tui.select.cancel");
             let text = if self.can_resume {
-                &format!(
-                    "Interrupted run · v view · r resume · {} back",
-                    key_hint_text("tui.select.cancel")
-                )
+                let resume = key_hint_text("app.subagent.resume");
+                format!("Interrupted run · {view} view · {resume} resume · {back} back")
             } else {
-                &format!(
-                    "Interrupted run · v view · {} back",
-                    key_hint_text("tui.select.cancel")
-                )
+                format!("Interrupted run · {view} view · {back} back")
             };
-            return Some(Line::from(vec![Span::styled(text.to_string(), pal.acc())]));
+            return Some(Line::from(vec![Span::styled(text, pal.acc())]));
         }
         if let Some((kind, message)) = &self.status {
             let style = if *kind == StatusKind::Error {
@@ -682,10 +679,10 @@ impl SessionList {
             let close = ListEvent::SubagentChoiceChange(false);
             if kb.matches(data, "tui.select.cancel") {
                 events.push(close);
-            } else if data == "v" {
+            } else if kb.matches(data, "app.subagent.view") {
                 events.push(close);
                 events.push(ListEvent::Select(run.child));
-            } else if data == "r" && self.can_resume {
+            } else if kb.matches(data, "app.subagent.resume") && self.can_resume {
                 events.push(close);
                 events.push(ListEvent::ResumeSubagent(run));
             } else {

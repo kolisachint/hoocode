@@ -666,6 +666,20 @@
    "Back from an attached subagent run to the session"
   ],
   [
+   "app.subagent.view",
+   [
+    "v"
+   ],
+   "Interrupted run: view the transcript"
+  ],
+  [
+   "app.subagent.resume",
+   [
+    "r"
+   ],
+   "Interrupted run: resume it"
+  ],
+  [
    "app.options.next",
    [
     "right"
@@ -848,6 +862,13 @@
    "Tree filter: cycle backward"
   ],
   [
+   "app.settings.toggle",
+   [
+    "space"
+   ],
+   "Settings: toggle the picked row"
+  ],
+  [
    "app.list.up",
    [
     "k"
@@ -902,6 +923,34 @@
     "a"
    ],
    "Dialog: always"
+  ],
+  [
+   "app.permission.edit",
+   [
+    "e"
+   ],
+   "Permission: edit the command first"
+  ],
+  [
+   "app.permission.pick1",
+   [
+    "1"
+   ],
+   "Permission: pick option 1"
+  ],
+  [
+   "app.permission.pick2",
+   [
+    "2"
+   ],
+   "Permission: pick option 2"
+  ],
+  [
+   "app.permission.pick3",
+   [
+    "3"
+   ],
+   "Permission: pick option 3"
   ]
  ],
  "format": {

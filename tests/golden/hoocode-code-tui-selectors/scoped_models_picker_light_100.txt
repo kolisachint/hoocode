@@ -3,7 +3,7 @@
    ● gpt-5-mini  on
    ○ gpt-5  off
  ▏ filter
- enter on / off · / search · s save to settings · esc close · f1 more
+ enter on / off · c category · s save to settings · esc close · f1 more
 --- styles ---
 r0 c0 fg=#2b2f36 bg=#e8e8f0
 r0 c1-15 fg=#f8f8fb bg=#00625c bold
@@ -37,11 +37,11 @@ r4 c9-99 fg=#2b2f36 bg=#dadbe6
 r5 c0-5 fg=#2b2f36 bg=#e8e8f0
 r5 c6-17 fg=#555864 bg=#e8e8f0
 r5 c18 fg=#2b2f36 bg=#e8e8f0
-r5 c19-28 fg=#555864 bg=#e8e8f0
-r5 c29 fg=#2b2f36 bg=#e8e8f0
-r5 c30-49 fg=#555864 bg=#e8e8f0
-r5 c50-52 fg=#2b2f36 bg=#e8e8f0
-r5 c53-61 fg=#555864 bg=#e8e8f0
-r5 c62-63 fg=#2b2f36 bg=#e8e8f0
-r5 c64-68 fg=#555864 bg=#e8e8f0
-r5 c69-99 fg=#2b2f36 bg=#e8e8f0
+r5 c19-30 fg=#555864 bg=#e8e8f0
+r5 c31 fg=#2b2f36 bg=#e8e8f0
+r5 c32-51 fg=#555864 bg=#e8e8f0
+r5 c52-54 fg=#2b2f36 bg=#e8e8f0
+r5 c55-63 fg=#555864 bg=#e8e8f0
+r5 c64-65 fg=#2b2f36 bg=#e8e8f0
+r5 c66-70 fg=#555864 bg=#e8e8f0
+r5 c71-99 fg=#2b2f36 bg=#e8e8f0

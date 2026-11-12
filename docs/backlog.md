@@ -35,7 +35,6 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 2 | UI-28 | Apply `docs/wip/2026-11-11-ui-28-keys.patch` and finish it. Scope under "Keys" below. | S |
 | 3 | UI-27 | Settings search: Space types into a non-empty query and toggles only when the query is empty (`code-tui-selectors/src/config_selector.rs`). | S |
 | 4 | UI-26 | `/hotkeys`: group by the five rows of "Where a key acts", show every meaning of a bare key, show non-letter keys (`code-tui-widgets/src/controls.rs`). | S |
 | 5 | UI-32 | Deeper panes match the settings pane: no stray blank rows. The selected row's name is bold in every pane. Sessions, Settings and Fork are not bold today. | S |
@@ -45,10 +44,6 @@ How to spend less in the next session (the user asked for this):
 | 9 | UI-33 | Refresh the screen goldens. Notes below. | M |
 | 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
 | 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
-
-### Keys (UI-28)
-
-Move into the keymap, following the Quit family (`app.quit.stop-jobs`): `e` and `1`–`3` on the permission card, `v` and `r` on the session picker's interrupted-run row, Space in settings. In the scoped models picker and the model picker, the category and provider keys come from the keymap, and the scoped models hint row shows the category key (user, 2026-11-11). Keep the hint row at four items, then `f1 more`. The patch touches `clearance_card.rs`, `keybindings/src/defaults.rs` and `keybindings.rs`, the gold fixture, the layout test, `config_selector.rs`, `scoped_models_selector.rs` and `session_selector.rs`. It stopped at the scoped models hint row. No tests yet: add one per moved key that a rebound key acts and shows its new name. Then fix the "Built deviations" line in `tui.md`.
 
 ### UI-29: warning colour outside blocking dialogs
 

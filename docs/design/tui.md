@@ -1,6 +1,6 @@
 # TUI
 
-Status (2026-11-11): built and consolidated. The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). This is not the last TUI session: UI-28 is started and not finished. The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
+Status (2026-11-11): built and consolidated. The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
 
 ## Principles
 
@@ -427,7 +427,7 @@ Commands: `hoocode keybindings --defaults` prints the defaults. `hoocode keybind
 - The leader works only at the prompt.
 - `q` closes lists, not dialogs. Dialog answers are `y`, `n`, `a` and digits.
 - Picker help is `f1` first. In typing mode, `?` types into the filter.
-- Some hint keys are fixed text, not keymap ids: Space (settings toggle), `k` and `l` (quit card), `v` and `r` (interrupted-run row), `e` (permission card).
+- Some hint keys are fixed text, not keymap ids: `k` and `l` (quit card).
 - Scroll indicators use the keymap names: `pageUp/pageDown`.
 
 ## Accessibility
@@ -553,6 +553,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-11 | User requests, not built yet (Open UI-31, UI-32): a tool row shows whether it is open, and a click anywhere on its line toggles it; the selected row in every pane is bold; deeper panes match the settings pane. When built, these supersede "an expanded header looks the same as a collapsed one", "a press and release on the same header cell" and "selected row: normal text (not bold)". |
 | 2026-11-11 | UI-4 and UI-9 were closed on 2026-11-08 and UI-21 and UI-22 on 2026-11-07. The Open table no longer lists them. |
 | 2026-11-12 | UI-25 and UI-31 closed: one toggle mechanism for every block. A block that can open ends its header in a dim `▸` (closed) or `▾` (open) after its last fact; the mark stays at column 1 and the name at column 3, and no row is added. A block that cannot open shows no indicator: no output, TodoWrite, a stopped call, a trace of one line, a thinking trace under hidden thinking. The shape carries the state, so colour and monochrome read alike (`status::CLOSED`, `status::OPEN`; ASCII `+` and `-`). A press and release on the same row toggles anywhere on the line up to the scrollbar column; another row is a drag. A click on a row that cannot open says so in the status slot (`Shell: no output to show.`). Supersedes "an expanded header looks the same as a collapsed one" and "a press and release on the same header cell". `ctrl+x o` no longer skips frozen rows: they keep their open body, and a row with none is left alone. |
+| 2026-11-12 | UI-28 closed: the permission card's keys (`app.permission.edit`, `pick1`–`pick3`), the interrupted-run row's keys (`app.subagent.view`, `app.subagent.resume`), Space in settings (`app.settings.toggle`) and the scoped models category key (`app.models.category`) come from the keymap, with a test per key that a rebound key acts and its hint shows the new name. The interrupted-run keys have their own `Subagent` context, since `r` is rename in `Picker`. The scoped models hint row shows four items (on/off, category, save, close) then `f1 more`; search leaves the row and stays under `f1 more`. |
 
 ## Open
 
@@ -570,7 +571,6 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
 | UI-26 | `/hotkeys` shows one meaning per bare key and omits non-letter keys (`controls.rs` `layer_cap`, `layer_actions`). | S | None | |
 | UI-27 | Settings search: Space toggles the row before the query sees it (`config_selector.rs`). | S | None | |
-| UI-28 | Hard-coded keys not in the keymap: `e`, `1`–`3` (permission card), `v`, `r` (session picker), Space (settings). The scoped models picker should take its category key from the keymap and show it in the hint row (user, 2026-11-11). | S | Next | Started: `docs/wip/2026-11-11-ui-28-keys.patch`. |
 | UI-29 | Remaining non-blocking uses of the warning colour. | S | None | The list is in [docs/backlog.md](../backlog.md) (UI-29). The warning colour is for blocking only. |
 | UI-32 | Deeper panes (the screens reached from settings) have stray blank rows and whitespace. Match the settings pane. Make the selected row's name bold in every pane, as Models, Tree, Theme and Scoped models already do (user, 2026-11-11). | S | Next | Sessions, Settings and Fork are not bold today. |
 | UI-33 | Screen goldens are stale: 9 of 10 scenarios differ. They predate the single view (2026-11-07). | M | Before the next release check | Review each diff, fix the timing waits in `subagent-attach` and `scroll-view`, then `update`. List in [docs/backlog.md](../backlog.md). |

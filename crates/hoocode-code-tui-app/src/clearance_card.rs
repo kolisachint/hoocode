@@ -192,7 +192,8 @@ impl ClearanceCard {
             let count = options.len();
             let item_budget = width.saturating_sub(4);
             for (i, (label, scope)) in options.into_iter().enumerate() {
-                let number = format!("{}  ", i + 1);
+                // The row's number is the key that picks it (K-P5).
+                let number = format!("{}  ", key_hint_text(PICK_IDS[i.min(2)]));
                 let inline = match &scope {
                     Some(scope) => format!("{label} {scope}"),
                     None => label.clone(),
@@ -215,9 +216,14 @@ impl ClearanceCard {
             }
             pane.selected = Some(self.selected.min(count - 1));
             pane.input = Some(input_line(&self.reply, "or type a reply", self.focused));
-            let pick = format!("1–{count}");
+            let pick = format!(
+                "{}–{}",
+                key_hint_text(PICK_IDS[0]),
+                key_hint_text(PICK_IDS[count.min(PICK_IDS.len()) - 1])
+            );
             let yes = key_hint_text("app.dialog.yes");
             let no = key_hint_text("app.dialog.no");
+            let edit = key_hint_text("app.permission.edit");
             // `a` still highlights the always row; the hint keeps four
             // items at every width (mock §S4).
             pane.hint = fit_hint_line(
@@ -225,7 +231,7 @@ impl ClearanceCard {
                     (pick.as_str(), "pick"),
                     (yes.as_str(), "yes"),
                     (no.as_str(), "no"),
-                    ("e", "edit"),
+                    (edit.as_str(), "edit"),
                 ],
                 false,
                 width,
@@ -247,6 +253,13 @@ impl ClearanceCard {
         }
     }
 }
+
+/// The option keys, in order: `pick1` answers option 1, and so on.
+const PICK_IDS: [&str; 3] = [
+    "app.permission.pick1",
+    "app.permission.pick2",
+    "app.permission.pick3",
+];
 
 impl Component for ClearanceCard {
     fn render(&mut self, width: u16) -> Vec<String> {
@@ -296,16 +309,16 @@ impl Component for ClearanceCard {
             // Esc alone is no (spec §6.2).
             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),
             "\r" | "\n" => self.choose(self.selected),
-            "e" => {
+            _ if kb.matches(data, "app.permission.edit") => {
                 self.editing = true;
                 self.edit.set_value(self.editable());
                 // Editing starts at the end of the command (ctrl+e).
                 self.edit.handle_input("\x05");
                 self.edit.set_focused(self.focused);
             }
-            "1" => self.choose(0),
-            "2" if count >= 2 => self.choose(1),
-            "3" if count >= 3 => self.choose(2),
+            _ if kb.matches(data, "app.permission.pick1") => self.choose(0),
+            _ if kb.matches(data, "app.permission.pick2") && count >= 2 => self.choose(1),
+            _ if kb.matches(data, "app.permission.pick3") && count >= 3 => self.choose(2),
             // The dialog letters (K-P4), only here with no reply typed: y and n
             // answer at once. a moves the highlight to the always row; enter confirms it.
             _ if kb.matches(data, "app.dialog.yes") => self.choose(0),

@@ -30,8 +30,9 @@ work in it. A `null` or `"none"` unbinds a key in that context:
 }
 ```
 
-Contexts are `Global`, `Prompt`, `Leader`, `Scroll`, `Picker`, `Panel`, `Dialog`,
-`Tree` and `Models`. A key is written as `"shift+enter"`, and a space means a
+Contexts are `Global`, `Prompt`, `Leader`, `Scroll`, `Picker`, `Subagent`, `Panel`,
+`Dialog`, `Tree` and `Models`. `Subagent` holds the keys of an interrupted run's
+choice in the session picker, so `r` can be rename in `Picker` and resume here. A key is written as `"shift+enter"`, and a space means a
 sequence, as in `"ctrl+x m"`. A single capital letter is Shift plus that letter:
 `"G"` is the same key as `"shift+g"`, the one that types a capital G.
 
@@ -161,12 +162,24 @@ while the reply field is empty:
 - **a** highlights the always row (where one is offered). **Enter** confirms it.
   Pressing `a` alone does not answer. Where no always row is offered, `a` types
   into the reply.
-- **1**, **2** and **3** pick a row. **Up** and **Down** move the highlight, and
-  **Enter** picks it. **Esc** refuses.
+- **1**, **2** and **3** pick a row (`app.permission.pick1` to `app.permission.pick3`),
+  and **e** edits the command first (`app.permission.edit`). **Up** and **Down**
+  move the highlight, and **Enter** picks it. **Esc** refuses.
 
 Once the reply has text, letters type into it, and Enter sends it as the reason
 for the refusal. `y`, `n` and `a` are the dialog keys `app.dialog.yes`,
 `app.dialog.no` and `app.dialog.always`.
+
+## Other picker keys
+
+These can be rebound like any other key:
+
+- **v** and **r** on an interrupted subagent run in the session picker
+  (`app.subagent.view`, `app.subagent.resume`, context `Subagent`). **r** is still
+  rename everywhere else.
+- **Space** toggles the picked row in settings (`app.settings.toggle`).
+- **c** cycles the category of the selected model in the scoped models picker
+  (`app.models.category`). The hint row shows its key.
 
 ## Terminals
 

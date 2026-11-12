@@ -17,6 +17,7 @@ mod input_frame;
 mod interactive_mode_status_ts;
 mod login_controller;
 mod notification_panel;
+mod permission_keymap;
 mod progress_bar;
 mod prompt_row_markers;
 mod resource_display;

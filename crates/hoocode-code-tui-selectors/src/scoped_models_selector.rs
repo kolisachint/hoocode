@@ -27,6 +27,9 @@ use crate::letter_gate::{is_printable, EscapeAction, LetterGate};
 
 const MAX_VISIBLE: usize = 8;
 
+/// The hint row's keys before `f1 more`: enter, the category key, save, esc.
+const ROW_HINTS: usize = 4;
+
 /// `None` = all enabled (no filter); `Some` = an explicit ordered list of
 /// `provider/id`s.
 pub type EnabledIds = Option<Vec<String>>;
@@ -224,17 +227,17 @@ impl State {
         }
     }
 
-    /// Every key the picker answers to, in hint order (the first four show;
-    /// `f1` lists the rest).
+    /// Every key the picker answers to, in hint order. The hint row shows the
+    /// first [`ROW_HINTS`] and `f1 more`; `f1` lists them all.
     fn all_hints() -> Vec<(String, String)> {
         let pair = |key: String, action: &str| (key, action.to_string());
         vec![
             pair(key_text("tui.select.confirm"), "on / off"),
-            pair(key_text("app.list.search"), "search"),
+            pair(key_text("app.models.category"), "category"),
             pair(key_text("app.models.save"), "save to settings"),
             pair(key_hint_text("tui.select.cancel"), "close"),
+            pair(key_text("app.list.search"), "search"),
             pair(key_hint_text("tui.input.tab"), "effort"),
-            pair(key_text("app.models.category"), "category"),
             pair(key_text("app.models.enableAll"), "all on"),
             pair(key_text("app.models.clearAll"), "all off"),
             pair(key_text("app.models.toggleProvider"), "provider"),
@@ -520,7 +523,7 @@ impl Component for ScopedModelsSelectorComponent {
         if self.help {
             console.bottom.extend(help_rows(&pairs));
         }
-        console.set_hints(&pairs, true);
+        console.set_hints(pairs.get(..ROW_HINTS).unwrap_or(&pairs), true);
         console.render(width as usize)
     }
 

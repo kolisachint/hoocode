@@ -4,7 +4,7 @@
 //! `+pattern` / `-pattern` entry to the settings file it belongs to. Themes
 //! are not listed: they are picked with `/theme`, not switched off here.
 
-use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, SPACE_KEY};
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -572,7 +572,7 @@ impl ResourceList {
                 key_pair_hint("tui.select.up", "tui.select.down").as_str(),
                 "move",
             ),
-            (SPACE_KEY, "toggle"),
+            (key_hint_text("app.settings.toggle").as_str(), "toggle"),
             (key_hint_text("tui.select.cancel").as_str(), "close"),
         ]);
         console
@@ -712,7 +712,8 @@ impl Component for ResourceList {
             if let Some(cb) = &mut self.on_exit {
                 cb();
             }
-        } else if data == " " || kb.matches(data, "tui.select.confirm") {
+        } else if kb.matches(data, "app.settings.toggle") || kb.matches(data, "tui.select.confirm")
+        {
             self.toggle_selected();
         } else {
             self.search.handle_input_with(data, &kb);
