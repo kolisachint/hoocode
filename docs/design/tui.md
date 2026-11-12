@@ -224,7 +224,6 @@ Accepted verification deviations from the mockup (2026-11-07):
 | Permission | yellow chip `Allow Shell?`. Row ` $ command` (`$` dim). Row `access: pipes 2 programs` only when it writes, uses the network or runs more than one program. Rows `1 yes`, `2 yes, always for <program> this session`, `3 no, tell it why`. | `y` yes and `n` no answer at once while the reply is empty. `a` highlights "always" and Enter confirms it. `e` edits the command first. `1`–`3` pick. Letters type a reply. Hint: `1–3 pick · e edit first · or type a reply`. |
 | Question | yellow chip with the question text. Numbered options, each with a dim description. | Digits answer. Letters type into the custom answer when the row allows it. `esc` skips, and the agent states the default it uses. Hint: `1–3 pick · tab next question · esc skip`. |
 | Quit with jobs | `Quit? 2 background jobs running`. Job rows; running jobs `◉` accent. | Hint: `k stop jobs and quit · l leave them running · esc stay`. |
-| Log in (first run) | Opens by itself when no provider works. | Esc closes it and the status line shows `⊗ not signed in  /login`. Submitting while signed out keeps the text and reopens Log in. |
 
 Bare letters act only when no text field has text (see Keybindings).
 
@@ -482,7 +481,7 @@ Other rules: every state has a shape. Every key is reachable from the keyboard. 
 | Key lint | `scripts/ci/no_literal_keys.py` (CI `guards` job) | Every change | runs in CI |
 | Plain words | `scripts/ci/plain_words.sh` (CI `guards` job) | Every change | runs in CI |
 
-Dialogs and notices are pinned by component goldens in dark, light and monochrome at 100 columns (UI-6, 2026-11-11): `tests/golden/hoocode-code-tui-selectors/`, `hoocode-code-tui-app/` and `hoocode-code-tui-widgets/`. The goldens pin the screen as built. Where it differs from this page, the list is in [docs/backlog.md](../backlog.md) (UI-34).
+Dialogs and notices are pinned by component goldens in dark, light and monochrome at 100 columns (UI-6, 2026-11-11): `tests/golden/hoocode-code-tui-selectors/`, `hoocode-code-tui-app/` and `hoocode-code-tui-widgets/`. The goldens pin the screen as built.
 
 ## How TUI work is done
 
@@ -559,6 +558,20 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-32 closed: the selected row's name is bold in every pane, in colour and in monochrome. Settings, Sessions and Fork now bold it (as Models, Tree, Theme and Scoped models did). Config already did. The deeper panes' goldens show no stray blank row to remove: the blank rows left are detail separators, which the settings pane has too. Pinned by `tests/it/selected_row_bold.rs`. Goldens `systems_*`, `mission_log_*` and `stage_separation_*` changed by the bold only. |
 | 2026-11-12 | UI-29 closed: yellow (the warning token) marks only blocking dialogs. Status words, `(cancelled)`, `expired`, the retry notice, context warnings and key-file problems are ink bold. Truncation notes and the `press x again` and task note cues are dim. `tool_signal.rs` keeps its shared result types; its unused outline signal renderer is deleted. The guard test fails on any warning-token use outside the blocking dialog files. |
 | 2026-11-12 | The thinking-level tokens `thinkingOff` to `thinkingXhigh` are removed. No production code read them: `Theme::thinking_border` had no caller, and the thinking block paints `thinkingText`. Removed from the schema, the built-in themes, `color-semantics.json` and the token lists, with `Theme::thinking_border` and `ThinkingBorderLevel`. A user theme that still sets them loads, because unknown keys are ignored. Test: `tests/it/token_list.rs`. |
+| 2026-11-12 | UI-34: the blocking dialogs are the permission and question cards and Quit with running jobs. Quit draws a yellow chip (`end_shift.rs` is on the guard's allow-list). Log in is opened by the user and blocks nothing: a plain bold title, and it leaves the blocking table. |
+| 2026-11-12 | UI-34: the question card's yellow chip holds the question text, then dim `1 of 2`. A question too long for the chip keeps its first line in the chip, cut with `…`, and the whole question wraps under the title. |
+| 2026-11-12 | UI-34: the permission hint is `1–3 pick · e edit first · or type a reply`. `y` and `n` still answer while the reply is empty (decision 2026-11-05); the hint does not list them. |
+| 2026-11-12 | UI-34: in a pane, only the `›` of the selected row is accent. The spaces around it and the row's text are ink. In monochrome the `›` and the row are bold. Completion menus keep their selected row bold in monochrome too. |
+| 2026-11-12 | UI-34: `f1 more` is not one of the four hint items. The mission log, flight path and scoped models hints show four items, then `f1 more`. |
+| 2026-11-12 | UI-34: green is the done mark only. A picker's `●` (on, current) is ink. The `user` and `assistant` role labels in the tree are ink. Tool names are bold ink, the target ink, `exit N` red and the rest dim. |
+| 2026-11-12 | UI-34: the MCP server label in the task panel is ink. Nothing reads the `mcp` colour token now. It stays in the theme schema, unread, until a later cleanup. |
+| 2026-11-12 | UI-34: a chord key in a notice is one key. `ctrl+x n` is ink as a whole; the action after it is dim. The warning's first row is ink bold. The extra usage hint is `extra usage  /settings`, the key after two spaces. |
+| 2026-11-12 | UI-34: a notice joined to the task panel keeps its rows in monochrome (indent 3, no blank row). Monochrome drops only the fill, so the band has no border. |
+| 2026-11-12 | UI-34: a completion menu's left edge sits under the typed token. The gutter (two columns) comes before the prompt text. |
+| 2026-11-12 | UI-34: the `›` of a pane sits at column 1, under the chip and the filter. Column 0 is blank. (Decided to match the screen, as a Minor fix.) |
+| 2026-11-12 | UI-34: the rows of `/hotkeys` (controls) indent 3, like every pane row. Group names keep indent 1. |
+| 2026-11-12 | UI-34: every task panel tab shows done over total: `plan 1/3 · agents 1/1 · mcp 1/1`. The strip sits at column 3, the same as the rows. (Decided to match the screen, as a Minor fix.) |
+| 2026-11-12 | UI-34: the resource listing's section headers (`[Skills]`, `[Commands]`, `[Agents]`, `[MCP]`) are ink bold. Yellow marks only what blocks the user. |
 
 ## Open
 
@@ -575,7 +588,6 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | UI-19 | Held behaviour changes: `@file` ranking through `tui-fuzzy`, editor cursor in bytes, `PickerView` wrapper, tips trimming, `get_conflicts` in `/hotkeys`. | M | User asks for each one | One commit per item. |
 | UI-20 | 30 files are named `*_ts*.rs` (a leftover of the retired TypeScript parity). | S | Optional | Rename with `git mv` in one commit. No code change. |
 | UI-33 | Screen goldens are stale: 9 of 10 scenarios differ. They predate the single view (2026-11-07). | M | Before the next release check | Review each diff, fix the timing waits in `subagent-attach` and `scroll-view`, then `update`. List in [docs/backlog.md](../backlog.md). |
-| UI-34 | 21 places where a dialog or notice golden differs from this page. | M | After UI-32 | List in [docs/backlog.md](../backlog.md). Fix the screen or fix this page, one by one. |
 
 ## Not doing
 

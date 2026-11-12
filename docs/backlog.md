@@ -35,38 +35,9 @@ How to spend less in the next session (the user asked for this):
 
 | Order | ID | Do | Size |
 |---|---|---|---|
-| 8 | UI-34 | The 22 differences below. Fix the screen or fix `tui.md`, one by one. | M |
 | 9 | UI-33 | Refresh the screen goldens. Notes below. | M |
 | 10 | Roadmap TUI rows | UI-16 (record "minus 2"), UI-18 (delete the replay fixture if no test reads it), UI-20 (rename the `*_ts*.rs` files), UI-15 (no exit summary: record it). | S |
 | 11 | Live logins | Only with the accounts and a browser: the steps under "Subscription logins". | — |
-
-### UI-34: golden versus design
-
-Found while pinning the dialogs (UI-6). The goldens pin the screen as built. Names are golden files under `tests/golden/<crate>/`.
-
-| # | Where | Drawn | Design |
-|---|---|---|---|
-| 1 | `clearance_shell_100` hint | `1–3 pick · y yes · n no · e edit` | `1–3 pick · e edit first · or type a reply` |
-| 2 | `clearance_shell_100`, `ask_card_100` selected row | The digit after `›` is accent | Only `›` is coloured |
-| 3 | `end_shift_jobs_100` | Accent chip | Quit is listed under blocking dialogs (yellow chip). Decide |
-| 4 | `docking_auth_100` | Accent chip | `tui.md` lists Log in under both blocking dialogs and plain titles. Decide |
-| 5 | `docking_auth_100` URL row | Accent | Accent is for `›`, `◉`, code and the chip |
-| 6 | `ask_card_100` | Chip holds the word `Question`; the question is ink | "Yellow chip with the question text" |
-| 7 | `mission_log_100`, `flight_path_100`, `scoped_models_picker_100` hints | Five items | At most four, then `f1 more` |
-| 9 | `flight_path_100` role labels | `user` accent, `assistant` green | Accent and green are reserved |
-| 10 | `scoped_models_picker_100`, `hull_100` | Green `●` for "on" and "current" | Green is the done mark and `+n` |
-| 11 | `hull_100` preview | `Shell` dim bold, `exit 1` dim | Tool name ink bold, `exit N` red |
-| 12 | `flight_plan_mcp_100` | Server label uses token `mcp` (role "legacy") | No design role |
-| 13 | `notice_info_value_dark_100` | Key hint `ctrl+x n` splits at the first space, so only `ctrl+x` is ink (`notification_panel.rs`, `split_once`) | The whole key is ink |
-| 14 | `status_line_warning_100x1` | Ink, same as info | A warning's first row is ink bold |
-| 15 | `status_line_extra_usage_100x1` | ` · /settings` | Key hint after two spaces |
-| 16 | `notice_joined_mono_100` | Blank row above, indent 1 | Indent 3, no blank row; monochrome only drops the fill |
-| 17 | `dialog_slash_menu_mono_100`, `dialog_file_menu_mono_100` | Selected row not bold | Monochrome selected row keeps ` › ` and bold |
-| 18 | `dialog_slash_menu_dark_100` | Menu at column 0 | Left edge under the typed token |
-| 19 | All panes | `›` at column 0, chip and filter at column 1 | Minor |
-| 20 | `controls_100` | Rows at column 1 | Rows indent 3 |
-| 21 | `task_panel_tabs_unfocused_80` | `mcp 1/1`, strip at column 2 | `mcp 1`, glyphs at column 3. Minor |
-| 22 | Startup resource listing `[Skills]` and `[MCP]` headers | Token `mdHeading` (yellow) | Yellow marks only what blocks the user |
 
 ### UI-33: screen goldens
 
@@ -75,7 +46,7 @@ Found while pinning the dialogs (UI-6). The goldens pin the screen as built. Nam
 | Scenario | Difference | Likely action |
 |---|---|---|
 | `chat-basic`, `session-resume` | Status line lost the view word; picker rows and hints changed | Accept after a read |
-| `permission-prompt` | Option rows and hint changed | Accept after UI-34 row 1 |
+| `permission-prompt` | Option rows and hint changed | Accept in UI-33 (the hint change is done in UI-34) |
 | `tool-bash`, `tool-edit` | Tool rows are the single-view rows now (`exit 0 · 3 lines`) | Fix the waits, accept |
 | `slash-commands` | `/session` has no "Session Info" header | Accept after a read |
 | `subagent-attach` | The run finishes before the `running` wait looks | Fix the scenario timing |
