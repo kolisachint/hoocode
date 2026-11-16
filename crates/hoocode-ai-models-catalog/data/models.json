@@ -898,9 +898,9 @@
    "image"
   ],
   "cost": {
-   "input": 3,
-   "output": 15,
-   "cacheRead": 0.3,
+   "input": 2,
+   "output": 10,
+   "cacheRead": 0.2,
    "cacheWrite": 0
   },
   "contextWindow": 1048576,
@@ -2127,6 +2127,37 @@
   "maxTokens": 65536
  },
  {
+  "id": "gemini-4-hydrogen",
+  "name": "Gemini 4 Hydrogen",
+  "api": "openai-completions",
+  "provider": "github-copilot",
+  "baseUrl": "https://api.individual.githubcopilot.com",
+  "headers": {
+   "User-Agent": "GitHubCopilotChat/0.35.0",
+   "Editor-Version": "vscode/1.107.0",
+   "Editor-Plugin-Version": "copilot-chat/0.35.0",
+   "Copilot-Integration-Id": "vscode-chat"
+  },
+  "compat": {
+   "supportsStore": false,
+   "supportsDeveloperRole": false,
+   "supportsReasoningEffort": false
+  },
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 7.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 65536
+ },
+ {
   "id": "deep-research-max-preview-04-2026",
   "name": "Deep Research Max Preview (Apr-21-2026)",
   "api": "google-generative-ai",
@@ -2308,7 +2339,7 @@
   ],
   "cost": {
    "input": 0.25,
-   "output": 30,
+   "output": 1.5,
    "cacheRead": 0,
    "cacheWrite": 0
   },
@@ -2689,6 +2720,26 @@
   },
   "contextWindow": 1048576,
   "maxTokens": 32768
+ },
+ {
+  "id": "gemini-4-hydrogen",
+  "name": "Gemini 4 Hydrogen",
+  "api": "google-generative-ai",
+  "provider": "google",
+  "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 7.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 65536
  },
  {
   "id": "claude-opus-4-6-thinking",
@@ -3457,6 +3508,26 @@
    "input": 2,
    "output": 10,
    "cacheRead": 0.1,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 65536
+ },
+ {
+  "id": "gemini-4-hydrogen",
+  "name": "Gemini 4 Hydrogen",
+  "api": "google-vertex",
+  "provider": "google-vertex",
+  "baseUrl": "https://{location}-aiplatform.googleapis.com",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 7.5,
+   "cacheRead": 0.075,
    "cacheWrite": 0
   },
   "contextWindow": 1048576,
@@ -5421,6 +5492,52 @@
   },
   "contextWindow": 1000000,
   "maxTokens": 512000
+ },
+ {
+  "id": "moonshotai/Kimi-K3.1-Pro",
+  "name": "Kimi K3.1 Pro",
+  "api": "openai-completions",
+  "provider": "huggingface",
+  "baseUrl": "https://router.huggingface.co/v1",
+  "compat": {
+   "supportsDeveloperRole": false
+  },
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 2,
+   "output": 10,
+   "cacheRead": 0,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 1048576
+ },
+ {
+  "id": "thinkingmachines/Inkling-2-Small",
+  "name": "Inkling 2 Small",
+  "api": "openai-completions",
+  "provider": "huggingface",
+  "baseUrl": "https://router.huggingface.co/v1",
+  "compat": {
+   "supportsDeveloperRole": false
+  },
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1,
+   "cacheRead": 0,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 131072
  },
  {
   "id": "k3",
@@ -10932,6 +11049,46 @@
   "maxTokens": 270000
  },
  {
+  "id": "gemini-4-hydrogen",
+  "name": "Gemini 4 Hydrogen",
+  "api": "google-generative-ai",
+  "provider": "opencode",
+  "baseUrl": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 7.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 65536
+ },
+ {
+  "id": "hy4-flash-free",
+  "name": "Hy4 flash Free",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "baseUrl": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0,
+   "output": 0,
+   "cacheRead": 0,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 65536
+ },
+ {
   "id": "deepseek-v4-flash",
   "name": "DeepSeek V4 Flash",
   "api": "openai-completions",
@@ -11803,6 +11960,46 @@
   },
   "contextWindow": 1048576,
   "maxTokens": 65536
+ },
+ {
+  "id": "hy4-flash-free",
+  "name": "Hy4 flash Free",
+  "api": "openai-completions",
+  "provider": "opencode-go",
+  "baseUrl": "https://opencode.ai/zen/go/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0,
+   "output": 0,
+   "cacheRead": 0,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 65536
+ },
+ {
+  "id": "qwen4-max",
+  "name": "Qwen4 Max",
+  "api": "anthropic-messages",
+  "provider": "opencode-go",
+  "baseUrl": "https://opencode.ai/zen/go",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 4.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 1.875
+  },
+  "contextWindow": 1000000,
+  "maxTokens": 262144
  },
  {
   "id": "aion-labs/aion-2.0",
@@ -20725,6 +20922,144 @@
   "maxTokens": 131072
  },
  {
+  "id": "google/gemini-4-hydrogen",
+  "name": "Gemini 4 Hydrogen",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 7.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 0.083333
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 943718
+ },
+ {
+  "id": "inclusionai/ling-3.2-flash:free",
+  "name": "Ling 3.2 Flash (free)",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0,
+   "output": 0,
+   "cacheRead": 0,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 262144
+ },
+ {
+  "id": "kt/midm-k-3.0-pro",
+  "name": "Mi:dm K 3.0 Pro",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "reasoning": true,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.2,
+   "output": 0.8,
+   "cacheRead": 0.04,
+   "cacheWrite": 0
+  },
+  "contextWindow": 261795,
+  "maxTokens": 235615
+ },
+ {
+  "id": "motif-technologies/motif-3",
+  "name": "Motif 3",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "reasoning": true,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1.2,
+   "cacheRead": 0.06,
+   "cacheWrite": 0
+  },
+  "contextWindow": 262144,
+  "maxTokens": 235929
+ },
+ {
+  "id": "particle-ai/particle-1:free",
+  "name": "Particle-1 (free)",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0,
+   "output": 0,
+   "cacheRead": 0,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 131072
+ },
+ {
+  "id": "qwen/qwen4-max",
+  "name": "Qwen4 Max",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 4.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 1.875
+  },
+  "contextWindow": 1000000,
+  "maxTokens": 131072
+ },
+ {
+  "id": "thinkingmachines/inkling-2-small",
+  "name": "Inkling 2 Small",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1,
+   "cacheRead": 0.03,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 943718
+ },
+ {
   "id": "MiniMaxAI/MiniMax-M2.7",
   "name": "MiniMax-M2.7",
   "api": "openai-completions",
@@ -27230,6 +27565,106 @@
   },
   "contextWindow": 1048576,
   "maxTokens": 1048576
+ },
+ {
+  "id": "alibaba/qwen4-max",
+  "name": "Qwen 4 Max",
+  "api": "anthropic-messages",
+  "provider": "vercel-ai-gateway",
+  "baseUrl": "https://ai-gateway.vercel.sh",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 4.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 1.875
+  },
+  "contextWindow": 1000000,
+  "maxTokens": 384000
+ },
+ {
+  "id": "google/gemini-4-hydrogen",
+  "name": "Gemini 4 Hydrogen",
+  "api": "anthropic-messages",
+  "provider": "vercel-ai-gateway",
+  "baseUrl": "https://ai-gateway.vercel.sh",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.5,
+   "output": 7.5,
+   "cacheRead": 0.075,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1000000,
+  "maxTokens": 1000000
+ },
+ {
+  "id": "paperinstruments/ultramarine-1-flash",
+  "name": "Ultramarine 1 Flash",
+  "api": "anthropic-messages",
+  "provider": "vercel-ai-gateway",
+  "baseUrl": "https://ai-gateway.vercel.sh",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.15,
+   "output": 0.5,
+   "cacheRead": 0.03,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 131000
+ },
+ {
+  "id": "tencent/hy4-flash",
+  "name": "Tencent Hy4 Flash",
+  "api": "anthropic-messages",
+  "provider": "vercel-ai-gateway",
+  "baseUrl": "https://ai-gateway.vercel.sh",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.035,
+   "output": 0.1405,
+   "cacheRead": 0.0015,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1024000,
+  "maxTokens": 64000
+ },
+ {
+  "id": "thinkingmachines/inkling-2-small",
+  "name": "Inkling 2 Small",
+  "api": "anthropic-messages",
+  "provider": "vercel-ai-gateway",
+  "baseUrl": "https://ai-gateway.vercel.sh",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1,
+   "cacheRead": 0.03,
+   "cacheWrite": 0
+  },
+  "contextWindow": 1048576,
+  "maxTokens": 262144
  },
  {
   "id": "grok-4.20-0309-non-reasoning",
