@@ -63,7 +63,7 @@ The same commands work from the shell, without a session: `hoocode install`,
 `hoocode remove`, `hoocode list` and `hoocode plugin ...`. See
 [Commands](commands.md).
 
-`hoocode config` opens a list for turning extensions, skills and prompts on or
+`hoocode config` opens a list for turning skills, prompts and other resources on or
 off. Themes are not in it: pick one with `/theme`.
 
 ## Herdr
