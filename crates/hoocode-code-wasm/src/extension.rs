@@ -4,14 +4,18 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use wasmtime::Store;
 
 use crate::error::WasmError;
 use crate::guest::{self, GuestToolInfo, State, ToolError};
+use crate::http::PauseClock;
 use crate::{AbortSignal, CallEnv, Inner};
+
+/// How often the wall-clock timer re-reads the paused time.
+const WALL_TICK: Duration = Duration::from_millis(50);
 
 /// One tool a plugin offers, as listed at load.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +52,17 @@ impl Extension {
     }
 
     /// Run one tool with `args` (a JSON value matching its input schema).
+    ///
+    /// Three things end the call early, whichever comes first:
+    /// - the guest trapping at an epoch deadline (pure CPU work that never
+    ///   yields), which gives `Timeout` or `Cancelled` through `classify`;
+    /// - the wall-clock timer, which also covers a guest blocked in a host
+    ///   await such as a stalled response body;
+    /// - the abort signal, which covers the same host awaits.
+    ///
+    /// Time spent waiting on the network gate is not counted by either timer.
+    /// Dropping the call future drops the store, which is fine: every call has
+    /// its own store.
     pub async fn call(&self, tool: &str, args: Value, env: CallEnv) -> Result<Value, WasmError> {
         if !self.tools.iter().any(|t| t.name == tool) {
             return Err(WasmError::UnknownTool(tool.to_owned()));
@@ -58,26 +73,33 @@ impl Extension {
         let args_json =
             serde_json::to_string(&args).map_err(|e| WasmError::InvalidArgs(e.to_string()))?;
         let reason = Arc::new(AtomicU8::new(guest::REASON_NONE));
+        let clock = Arc::new(PauseClock::default());
         let mut store = guest::new_store(
             &self.host.engine,
             &self.plugin,
             &self.data_dir,
             env.clone(),
             self.allow_loopback,
+            clock.clone(),
         )?;
         guest::set_deadline(
             &mut store,
             self.call_timeout,
             env.abort.clone(),
             reason.clone(),
+            clock.clone(),
         );
 
-        match self.run_call(&mut store, tool, &args_json).await {
-            Err(err) => Err(classify(err, &reason)),
-            Ok(Err(tool_error)) => Err(map_tool_error(tool_error)),
-            Ok(Ok(text)) => {
-                serde_json::from_str(&text).map_err(|e| WasmError::BadResult(e.to_string()))
-            }
+        tokio::select! {
+            result = self.run_call(&mut store, tool, &args_json) => match result {
+                Err(err) => Err(classify(err, &reason)),
+                Ok(Err(tool_error)) => Err(map_tool_error(tool_error)),
+                Ok(Ok(text)) => {
+                    serde_json::from_str(&text).map_err(|e| WasmError::BadResult(e.to_string()))
+                }
+            },
+            () = wall_clock(self.call_timeout, &clock) => Err(WasmError::Timeout),
+            () = aborted(env.abort.as_ref()) => Err(WasmError::Cancelled),
         }
     }
 
@@ -103,8 +125,15 @@ impl Extension {
             &self.data_dir,
             CallEnv::for_discovery(),
             self.allow_loopback,
+            Arc::new(PauseClock::default()),
         )?;
-        guest::set_deadline(&mut store, self.call_timeout, None, reason.clone());
+        guest::set_deadline(
+            &mut store,
+            self.call_timeout,
+            None,
+            reason.clone(),
+            Arc::new(PauseClock::default()),
+        );
         let raw = async {
             let bindings = self.pre.instantiate_async(&mut store).await?;
             bindings
@@ -115,6 +144,28 @@ impl Extension {
         .await
         .map_err(|err| classify(err, &reason))?;
         validate_tools(raw)
+    }
+}
+
+/// Completes once `timeout` of call time has passed, not counting gate waits.
+/// Re-checks every `WALL_TICK`, so a gate wait that is still going on is
+/// subtracted too.
+async fn wall_clock(timeout: Duration, clock: &PauseClock) {
+    let started = Instant::now();
+    loop {
+        let active = started.elapsed().saturating_sub(clock.paused());
+        if active >= timeout {
+            return;
+        }
+        tokio::time::sleep((timeout - active).min(WALL_TICK)).await;
+    }
+}
+
+/// Completes when `abort` is set. Without a signal it never completes.
+async fn aborted(abort: Option<&AbortSignal>) {
+    match abort {
+        Some(signal) => signal.cancelled().await,
+        None => std::future::pending().await,
     }
 }
 

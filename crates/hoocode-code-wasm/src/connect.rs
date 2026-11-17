@@ -14,18 +14,22 @@
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use http::header::HOST;
 use http::uri::PathAndQuery;
 use http::{HeaderValue, Request, Response, Uri, Version};
 use http_body_util::BodyExt;
+use hyper::body::{Body, Bytes, Frame, SizeHint};
 use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
+use tokio::time::{Instant, Sleep};
 use tokio_rustls::TlsConnector;
 use wasmtime_wasi_http::{Error, RequestOptions, WasiBody};
 
@@ -35,6 +39,9 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The wait for the first response byte when the guest sets none.
 const DEFAULT_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The longest gap between two response body frames when the guest sets none.
+const DEFAULT_BETWEEN_BYTES_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The driver of an in-flight request. It reports a connection error that
 /// happened after the response head arrived, such as a broken body.
@@ -54,14 +61,21 @@ pub(crate) async fn send_checked(
     let first_byte_timeout = options
         .and_then(|o| o.first_byte_timeout)
         .unwrap_or(DEFAULT_FIRST_BYTE_TIMEOUT);
+    let between_bytes_timeout = options
+        .and_then(|o| o.between_bytes_timeout)
+        .unwrap_or(DEFAULT_BETWEEN_BYTES_TIMEOUT);
 
     let tcp = connect_checked(addrs, connect_timeout).await?;
+    let timeouts = Timeouts {
+        first_byte: first_byte_timeout,
+        between_bytes: between_bytes_timeout,
+    };
     if request.uri().scheme_str() == Some("https") {
         let name = server_name(request.uri())?;
         let tls = tls_handshake(tcp, name, connect_timeout).await?;
-        exchange(tls, request, first_byte_timeout).await
+        exchange(tls, request, timeouts).await
     } else {
-        exchange(tcp, request, first_byte_timeout).await
+        exchange(tcp, request, timeouts).await
     }
 }
 
@@ -144,12 +158,72 @@ fn tls_config() -> Result<Arc<ClientConfig>, Error> {
     Ok(CONFIG.get_or_init(|| Arc::new(config)).clone())
 }
 
+/// The wait limits of one exchange.
+#[derive(Clone, Copy)]
+struct Timeouts {
+    /// From sending the request to the response head.
+    first_byte: Duration,
+    /// Between two body frames, and from the head to the first frame.
+    between_bytes: Duration,
+}
+
+/// A response body that fails when no frame arrives within `timeout` of the
+/// previous one. The timer is re-armed on every frame.
+struct BetweenBytes<B> {
+    body: B,
+    timeout: Duration,
+    timer: Pin<Box<Sleep>>,
+}
+
+impl<B> BetweenBytes<B> {
+    fn new(body: B, timeout: Duration) -> Self {
+        Self {
+            body,
+            timeout,
+            timer: Box::pin(tokio::time::sleep(timeout)),
+        }
+    }
+}
+
+impl<B> Body for BetweenBytes<B>
+where
+    B: Body<Data = Bytes, Error = Error> + Unpin,
+{
+    type Data = Bytes;
+    type Error = Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Error>>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.body).poll_frame(cx) {
+            Poll::Ready(item) => {
+                this.timer.as_mut().reset(Instant::now() + this.timeout);
+                Poll::Ready(item)
+            }
+            Poll::Pending => match this.timer.as_mut().poll(cx) {
+                Poll::Ready(()) => Poll::Ready(Some(Err(Error::ConnectionReadTimeout))),
+                Poll::Pending => Poll::Pending,
+            },
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.body.size_hint()
+    }
+}
+
 /// Run one HTTP/1.1 exchange over `io`. The request goes out in origin form,
 /// with the authority kept as the `Host` header unless the guest set one.
 async fn exchange<T>(
     io: T,
     request: Request<WasiBody>,
-    first_byte_timeout: Duration,
+    timeouts: Timeouts,
 ) -> Result<(Response<WasiBody>, Outgoing), Error>
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -159,7 +233,7 @@ where
     let driver = tokio::spawn(conn);
 
     let response =
-        match tokio::time::timeout(first_byte_timeout, sender.send_request(request)).await {
+        match tokio::time::timeout(timeouts.first_byte, sender.send_request(request)).await {
             Ok(Ok(response)) => response,
             Ok(Err(err)) => {
                 driver.abort();
@@ -170,7 +244,11 @@ where
                 return Err(Error::HttpResponseTimeout);
             }
         };
-    let response = response.map(|body| body.map_err(Error::from).boxed_unsync());
+    let between = timeouts.between_bytes;
+    let response = response.map(|body| {
+        let body = body.map_err(Error::from).boxed_unsync();
+        BetweenBytes::new(body, between).boxed_unsync()
+    });
     let outgoing: Outgoing = Box::new(async move {
         match driver.await {
             Ok(Ok(())) => Ok(()),

@@ -12,7 +12,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 use crate::error::WasmError;
-use crate::http::GatedHooks;
+use crate::http::{GatedHooks, PauseClock};
 use crate::{AbortSignal, CallEnv};
 
 wasmtime::component::bindgen!({
@@ -86,12 +86,14 @@ pub(crate) fn link_host(linker: &mut Linker<State>) -> wasmtime::Result<()> {
 }
 
 /// A fresh store for one call, with the memory limit and the call's env.
+/// `clock` counts the time the call spends waiting on the network gate.
 pub(crate) fn new_store(
     engine: &Engine,
     plugin: &str,
     data_dir: &Path,
     env: CallEnv,
     allow_loopback: bool,
+    clock: Arc<PauseClock>,
 ) -> Result<Store<State>, WasmError> {
     let state = State {
         plugin: plugin.to_owned(),
@@ -101,6 +103,7 @@ pub(crate) fn new_store(
         hooks: GatedHooks {
             net: env.net.clone(),
             allow_loopback,
+            clock,
         },
         limits: StoreLimitsBuilder::new().memory_size(MEMORY_LIMIT).build(),
         env,
@@ -110,13 +113,17 @@ pub(crate) fn new_store(
     Ok(store)
 }
 
-/// Trap at the first epoch deadline after `timeout` or once `abort` is set.
+/// Trap at the first epoch deadline after `timeout` of call time, or once
+/// `abort` is set. Time spent waiting on the network gate is not call time.
 /// The epoch thread ticks every 100 ms, so a check runs about that often.
+/// This only fires while guest code runs; a host await is bounded by the
+/// wall-clock timer in `Extension::call`.
 pub(crate) fn set_deadline(
     store: &mut Store<State>,
     timeout: Duration,
     abort: Option<AbortSignal>,
     reason: Arc<AtomicU8>,
+    clock: Arc<PauseClock>,
 ) {
     let started = std::time::Instant::now();
     store.set_epoch_deadline(1);
@@ -125,7 +132,7 @@ pub(crate) fn set_deadline(
             reason.store(REASON_CANCELLED, std::sync::atomic::Ordering::Relaxed);
             return Ok(UpdateDeadline::Interrupt);
         }
-        if started.elapsed() > timeout {
+        if started.elapsed().saturating_sub(clock.paused()) > timeout {
             reason.store(REASON_TIMEOUT, std::sync::atomic::Ordering::Relaxed);
             return Ok(UpdateDeadline::Interrupt);
         }

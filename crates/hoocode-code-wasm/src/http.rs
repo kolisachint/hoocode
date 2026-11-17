@@ -17,19 +17,77 @@
 //! `WasiHttpView::http()`, not of `WasiHttpView` itself.
 
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
 use http::{Request, Response};
 use wasmtime_wasi_http::{Error, RequestOptions, WasiBody, WasiHttpHooks};
 
 use crate::connect::{self, Outgoing};
-use crate::{ssrf, NetGate};
+use crate::ssrf::{self, CheckError};
+use crate::NetGate;
 
 /// The per-call hooks: the SSRF block and the gate in front of the default send path.
 pub(crate) struct GatedHooks {
     pub(crate) net: Arc<dyn NetGate>,
     /// Test-only: let loopback addresses through the SSRF block.
     pub(crate) allow_loopback: bool,
+    /// Time spent waiting on the gate, which the call timeout does not count.
+    pub(crate) clock: Arc<PauseClock>,
+}
+
+/// The time one call spent waiting on the network gate (which may prompt the
+/// user). The call's timeouts subtract it, so a slow answer from the user does
+/// not use up the 30 s. Waits that overlap count once.
+#[derive(Default)]
+pub(crate) struct PauseClock {
+    state: Mutex<PauseState>,
+}
+
+#[derive(Default)]
+struct PauseState {
+    /// Gate waits that have ended.
+    done: Duration,
+    /// Gate waits in progress, and when the first of them began.
+    open: usize,
+    since: Option<Instant>,
+}
+
+impl PauseClock {
+    fn lock(&self) -> MutexGuard<'_, PauseState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Total time spent paused so far, including a wait still in progress.
+    pub(crate) fn paused(&self) -> Duration {
+        let state = self.lock();
+        state.done + state.since.map_or(Duration::ZERO, |t| t.elapsed())
+    }
+
+    /// Start a pause. It ends when the guard is dropped.
+    pub(crate) fn pause(&self) -> PauseGuard<'_> {
+        let mut state = self.lock();
+        if state.open == 0 {
+            state.since = Some(Instant::now());
+        }
+        state.open += 1;
+        PauseGuard(self)
+    }
+}
+
+/// Ends a pause on drop, so a cancelled gate wait still stops the clock.
+pub(crate) struct PauseGuard<'a>(&'a PauseClock);
+
+impl Drop for PauseGuard<'_> {
+    fn drop(&mut self) {
+        let mut state = self.0.lock();
+        state.open -= 1;
+        if state.open == 0 {
+            if let Some(since) = state.since.take() {
+                state.done += since.elapsed();
+            }
+        }
+    }
 }
 
 /// Log a refusal and fail the request with `http-request-denied`.
@@ -47,6 +105,7 @@ impl WasiHttpHooks for GatedHooks {
     ) -> Box<dyn Future<Output = Result<(Response<WasiBody>, Outgoing), Error>> + Send> {
         let net = self.net.clone();
         let allow_loopback = self.allow_loopback;
+        let clock = self.clock.clone();
         Box::new(async move {
             let url = request.uri().to_string();
 
@@ -63,11 +122,24 @@ impl WasiHttpHooks for GatedHooks {
             .await;
             let addrs = match checked {
                 Ok(Ok(addrs)) => addrs,
-                Ok(Err(reason)) => return refuse(&format!("{url}: {reason}")),
+                Ok(Err(CheckError::Blocked(reason))) => {
+                    return refuse(&format!("{url}: {reason}"));
+                }
+                Ok(Err(CheckError::Dns(reason))) => {
+                    crate::write_host_log(&format!("wasm http request failed: {url}: {reason}\n"));
+                    return Err(Error::DnsError {
+                        rcode: None,
+                        info_code: None,
+                    });
+                }
                 Err(e) => return Err(Error::InternalError(Some(format!("ssrf check: {e}")))),
             };
 
+            // The gate may wait for the user; that wait does not count against
+            // the call timeout (see PauseClock).
+            let pause = clock.pause();
             let verdict = hoocode_runtime::run_blocking(move || net.check(&url)).await;
+            drop(pause);
             match verdict {
                 Ok(Ok(())) => {}
                 Ok(Err(reason)) => {

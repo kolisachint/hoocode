@@ -24,7 +24,7 @@ sha2 = "0.11"
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-http = { workspace = true }
-tokio = { version = "1", features = ["io-util", "net", "rt", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "time"] }
 # The connect-to-checked-address send path (src/connect.rs): hyper http1 client
 # over a TCP or tokio-rustls stream, with the Host header kept as the original.
 hyper = { version = "1", features = ["client", "http1"] }

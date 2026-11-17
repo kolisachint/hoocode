@@ -37,6 +37,16 @@ pub(crate) fn parse_target(uri: &Uri) -> Result<Target, String> {
     Ok(Target { host, port })
 }
 
+/// Why [`resolve_and_check`] refused a target.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CheckError {
+    /// The host did not resolve (or resolved to nothing). Reported to the
+    /// plugin as a DNS error, not as a policy refusal.
+    Dns(String),
+    /// The host resolved to an address the block refuses.
+    Blocked(String),
+}
+
 /// Resolve `target` and check every address. `Ok` returns the checked
 /// addresses. Blocks on DNS, so call it on a blocking thread.
 ///
@@ -44,21 +54,24 @@ pub(crate) fn parse_target(uri: &Uri) -> Result<Target, String> {
 pub(crate) fn resolve_and_check(
     target: &Target,
     allow_loopback: bool,
-) -> Result<Vec<SocketAddr>, String> {
+) -> Result<Vec<SocketAddr>, CheckError> {
     let addrs: Vec<SocketAddr> = (target.host.as_str(), target.port)
         .to_socket_addrs()
-        .map_err(|e| format!("cannot resolve {}: {e}", target.host))?
+        .map_err(|e| CheckError::Dns(format!("cannot resolve {}: {e}", target.host)))?
         .collect();
     if addrs.is_empty() {
-        return Err(format!("{} resolves to no address", target.host));
+        return Err(CheckError::Dns(format!(
+            "{} resolves to no address",
+            target.host
+        )));
     }
     for addr in &addrs {
         if let Some(reason) = blocked_reason(addr.ip(), allow_loopback) {
-            return Err(format!(
+            return Err(CheckError::Blocked(format!(
                 "{} resolves to {} ({reason})",
                 target.host,
                 addr.ip()
-            ));
+            )));
         }
     }
     Ok(addrs)

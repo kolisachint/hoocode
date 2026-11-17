@@ -6,7 +6,9 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
+use hoocode_ai_types::AbortSignal;
 use hoocode_code_wasm::{CallEnv, Extension, ExtensionSpec, NetGate, WasmError, WasmHost};
 use hoocode_runtime::{block_on_entry, spawn_thread};
 use serde_json::json;
@@ -46,11 +48,25 @@ impl NetGate for CountingGate {
 }
 
 fn env(gate: &Arc<CountingGate>) -> CallEnv {
+    env_abort(gate, None)
+}
+
+fn env_abort(gate: &Arc<CountingGate>, abort: Option<AbortSignal>) -> CallEnv {
     let net: Arc<dyn NetGate> = gate.clone();
     CallEnv {
         config: Arc::new(|_| None),
         net,
-        abort: None,
+        abort,
+    }
+}
+
+/// A gate that takes `wait` before it allows the request, as a user prompt would.
+struct SlowGate(Duration);
+
+impl NetGate for SlowGate {
+    fn check(&self, _url: &str) -> Result<(), String> {
+        std::thread::sleep(self.0);
+        Ok(())
     }
 }
 
@@ -195,6 +211,144 @@ fn non_http_schemes_are_refused_without_asking_the_gate() {
                 .await
                 .unwrap_err();
             assert!(matches!(err, WasmError::Failed(_)), "{url}: {err:?}");
+        }
+        assert!(
+            gate.asked().is_empty(),
+            "gate was asked: {:?}",
+            gate.asked()
+        );
+    });
+}
+
+/// A local server that sends a head promising 100 body bytes, sends two of
+/// them, and then holds the connection open without sending more.
+fn serve_stalled() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let _server = spawn_thread("http-stall-server", move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => head.extend_from_slice(&buf[..n]),
+                }
+            }
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\nhe",
+            );
+            let _ = stream.flush();
+            std::thread::sleep(Duration::from_secs(30));
+        }
+    });
+    port
+}
+
+#[test]
+fn stalled_body_hits_the_call_timeout() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host(dir.path())
+            .with_loopback_allowed()
+            .with_call_timeout(Duration::from_secs(1));
+        let ext = load(dir.path(), host);
+        let port = serve_stalled();
+        let gate = CountingGate::new(true);
+        let url = format!("http://127.0.0.1:{port}/");
+        let started = Instant::now();
+        let err = ext
+            .call("fetch", json!({ "url": url }), env(&gate))
+            .await
+            .unwrap_err();
+        // The guest is blocked in a host read, so only the wall-clock timer can stop it.
+        assert!(matches!(err, WasmError::Timeout), "{err:?}");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    });
+}
+
+#[test]
+fn abort_during_a_stalled_body_cancels_quickly() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()).with_loopback_allowed());
+        let port = serve_stalled();
+        let gate = CountingGate::new(true);
+        let signal = AbortSignal::new();
+        let trigger = signal.clone();
+        spawn_thread("stall-abort-trigger", move || {
+            std::thread::sleep(Duration::from_millis(300));
+            trigger.abort();
+        });
+        let url = format!("http://127.0.0.1:{port}/");
+        let started = Instant::now();
+        let err = ext
+            .call(
+                "fetch",
+                json!({ "url": url }),
+                env_abort(&gate, Some(signal)),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, WasmError::Cancelled), "{err:?}");
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "{:?}",
+            started.elapsed()
+        );
+    });
+}
+
+#[test]
+fn gate_wait_does_not_count_toward_the_call_timeout() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host(dir.path())
+            .with_loopback_allowed()
+            .with_call_timeout(Duration::from_secs(1));
+        let ext = load(dir.path(), host);
+        let server = serve_hello();
+        let net: Arc<dyn NetGate> = Arc::new(SlowGate(Duration::from_millis(1500)));
+        let env = CallEnv {
+            config: Arc::new(|_| None),
+            net,
+            abort: None,
+        };
+        let url = format!("http://127.0.0.1:{}/", server.port);
+        let out = ext
+            .call("fetch", json!({ "url": url }), env)
+            .await
+            .expect("the 1.5 s gate wait is not call time");
+        assert_eq!(out, json!({ "status": 200, "body": "hello" }));
+        assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    });
+}
+
+#[test]
+fn dns_failure_is_not_a_policy_refusal_and_skips_the_gate() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()));
+        let gate = CountingGate::new(true);
+        let err = ext
+            .call(
+                "fetch",
+                json!({ "url": "http://nonexistent.invalid/" }),
+                env(&gate),
+            )
+            .await
+            .unwrap_err();
+        match &err {
+            WasmError::Failed(msg) => {
+                assert!(msg.contains("DnsError"), "{msg}");
+                assert!(!msg.contains("HttpRequestDenied"), "{msg}");
+            }
+            other => panic!("expected Failed, got {other:?}"),
         }
         assert!(
             gate.asked().is_empty(),
