@@ -174,6 +174,14 @@ pub fn normalize_tools(
     }
     let mut resolved: Vec<String> = Vec::new();
     for raw in split_tools_value(value) {
+        // A plugin's WASM tool (`ext_<plugin>_<tool>`) has no alias: it is kept as written, so a
+        // subagent can be given it. Whether it exists is decided when the session starts.
+        if raw.starts_with("ext_") {
+            if !resolved.contains(&raw) {
+                resolved.push(raw);
+            }
+            continue;
+        }
         let lower = raw.to_lowercase();
         let Some((_, mapped)) = CLAUDE_TOOL_ALIASES.iter().find(|(k, _)| *k == lower) else {
             diagnostics.push(ResourceDiagnostic::warning(

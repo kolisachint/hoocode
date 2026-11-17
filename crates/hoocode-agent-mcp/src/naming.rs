@@ -1,4 +1,5 @@
-//! Names for MCP tools as the model sees them: `mcp_<server>_<tool>`.
+//! Names for tools as the model sees them: `mcp_<server>_<tool>` for MCP tools and
+//! `ext_<plugin>_<tool>` for the tools of a plugin's WASM component.
 
 /// Longest tool name a model API accepts from us.
 pub const MAX_TOOL_NAME_LEN: usize = 64;
@@ -8,14 +9,25 @@ const HASH_SUFFIX_LEN: usize = 9;
 
 /// The model-facing name of `tool` on `server`.
 ///
-/// The result is `mcp_<server>_<tool>` with every character outside
-/// `[A-Za-z0-9_-]` replaced by `_`. A name longer than
-/// [`MAX_TOOL_NAME_LEN`] is cut to 55 characters and given `_` and an 8-digit
-/// hex hash of the full (sanitized) name, so it stays 64 characters and two
-/// long names with the same prefix still differ. The hash is FNV-1a, so the
-/// result does not change between Rust versions.
+/// The result is `mcp_<server>_<tool>`, shaped by [`prefixed_name`].
 pub fn tool_name(server: &str, tool: &str) -> String {
-    let full: String = format!("mcp_{server}_{tool}")
+    prefixed_name("mcp", server, tool)
+}
+
+/// The model-facing name of `tool` from the WASM component of `plugin`.
+///
+/// The result is `ext_<plugin>_<tool>`, shaped by [`prefixed_name`].
+pub fn ext_tool_name(plugin: &str, tool: &str) -> String {
+    prefixed_name("ext", plugin, tool)
+}
+
+/// `<prefix>_<owner>_<tool>` with every character outside `[A-Za-z0-9_-]` replaced by `_`.
+/// A name longer than [`MAX_TOOL_NAME_LEN`] is cut to 55 characters and given `_` and an
+/// 8-digit hex hash of the full (sanitized) name, so it stays 64 characters and two long
+/// names with the same prefix still differ. The hash is FNV-1a, so the result does not change
+/// between Rust versions.
+fn prefixed_name(prefix: &str, owner: &str, tool: &str) -> String {
+    let full: String = format!("{prefix}_{owner}_{tool}")
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
@@ -89,6 +101,26 @@ mod tests {
         let name = tool_name("s", &tool);
         assert_eq!(name.len(), 64);
         assert_eq!(name, format!("mcp_s_{tool}"));
+    }
+
+    #[test]
+    fn extension_names_use_the_ext_prefix() {
+        assert_eq!(ext_tool_name("webtools", "fetch"), "ext_webtools_fetch");
+        assert_eq!(ext_tool_name("my-plugin", "get-x"), "ext_my-plugin_get-x");
+        // A plugin name may hold dots; they are sanitized like any other character.
+        assert_eq!(ext_tool_name("a.b", "c"), "ext_a_b_c");
+        assert_ne!(ext_tool_name("a", "b"), tool_name("a", "b"));
+    }
+
+    #[test]
+    fn long_extension_names_are_capped_with_a_hash() {
+        let tool = "t".repeat(100);
+        let name = ext_tool_name("plugin", &tool);
+        assert_eq!(name.len(), MAX_TOOL_NAME_LEN);
+        assert!(name.starts_with("ext_plugin_ttt"));
+        let suffix = &name[name.len() - 8..];
+        assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(name, ext_tool_name("plugin", &"t".repeat(99)));
     }
 
     #[test]

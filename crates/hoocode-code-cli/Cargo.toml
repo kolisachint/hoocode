@@ -30,6 +30,8 @@ hoocode-code-models = { workspace = true }
 hoocode-code-auth = { workspace = true }
 hoocode-code-resources = { workspace = true }
 hoocode-code-plugins = { workspace = true }
+hoocode-code-wasm = { workspace = true }
+hoocode-agent-mcp = { workspace = true }
 hoocode-code-modes = { workspace = true }
 hoocode-code-permissions = { workspace = true }
 hoocode-tui-fuzzy = { workspace = true }
@@ -69,5 +71,6 @@ url = "2"
 
 [dev-dependencies]
 hoocode-tui-util = { workspace = true }
+hoocode-code-mcp = { workspace = true }
 tempfile = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

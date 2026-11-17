@@ -6,6 +6,7 @@
 //! actual LLM-backed sessions.
 
 use crate::args::Mode;
+use crate::ext_tools;
 use crate::{Args, DiagnosticKind};
 use hoocode_agent_types::{AgentEvent, PermissionGate};
 use hoocode_ai_types::{Model, ThinkingLevel};
@@ -843,6 +844,7 @@ fn create_runtime(
         interactive,
         gate,
         &plugins,
+        &mut diagnostics,
     );
     (session, services, diagnostics)
 }
@@ -876,8 +878,12 @@ fn assemble_session(
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
     plugins: &hoocode_code_plugins::PluginSet,
+    diagnostics: &mut Diagnostics,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
+    // The gate is built here, not at `create_agent_session`, so the plugin tools' network
+    // calls can ask the same one (see `ext_tools`).
+    let gate = gate.unwrap_or_else(|| build_permission_gate(args, interactive, &cwd));
     // Background shell jobs (`enableBackgroundShell`, on by default) in the
     // interactive TUI only, which shows them and asks about them on quit.
     // Print, json, rpc and app-server runs, the light preset and subagents
@@ -905,11 +911,18 @@ fn assemble_session(
             ),
         )
     } else {
-        (
-            None,
-            custom_tools(args, &settings, &cwd, interactive, jobs.as_ref()),
-            None,
-        )
+        let mut custom = custom_tools(args, &settings, &cwd, interactive, jobs.as_ref());
+        if ext_tools_wanted(args, light) {
+            let taken: Vec<String> = custom.iter().map(|t| t.name.clone()).collect();
+            custom.extend(ext_tools::build(
+                plugins,
+                &settings,
+                gate.clone(),
+                &taken,
+                diagnostics,
+            ));
+        }
+        (None, custom, None)
     };
     // main.ts: explicit tool flags win over the light preset's allowlist.
     let explicit =
@@ -995,9 +1008,7 @@ fn assemble_session(
             custom_tools: custom,
             base_tools,
             background_jobs: jobs,
-            permission_gate: Some(
-                gate.unwrap_or_else(|| build_permission_gate(args, interactive, &services.cwd)),
-            ),
+            permission_gate: Some(gate),
             disallowed_tools,
             extensions: Some(modes),
             session_start_event,
@@ -1030,6 +1041,18 @@ fn mcp_wanted(args: &Args, light: bool) -> bool {
     args.tools
         .as_ref()
         .is_none_or(|tools| tools.iter().any(|t| t.starts_with("mcp_")))
+}
+
+/// Plugin WASM components are loaded only when the session's tool list can use their tools: as
+/// for MCP, no `--tools` list or a list that names an `ext_` tool. Light mode and `--no-tools`
+/// load none. Subagents follow the same rule, from their own `--tools` list.
+fn ext_tools_wanted(args: &Args, light: bool) -> bool {
+    if light || args.no_tools == Some(true) {
+        return false;
+    }
+    args.tools
+        .as_ref()
+        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("ext_")))
 }
 
 /// Load the session's MCP servers and start the trusted ones in the background. Untrusted
@@ -2161,6 +2184,7 @@ mod tests {
             interactive,
             None,
             &hoocode_code_plugins::PluginSet::default(),
+            &mut Diagnostics::new(),
         );
         (session.system_prompt(), session.get_active_tool_names())
     }
@@ -2229,6 +2253,7 @@ mod tests {
             true,
             None,
             &hoocode_code_plugins::PluginSet::default(),
+            &mut Diagnostics::new(),
         );
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
@@ -2665,6 +2690,7 @@ mod tests {
                 true,
                 None,
                 &hoocode_code_plugins::PluginSet::default(),
+                &mut Diagnostics::new(),
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {

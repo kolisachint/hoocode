@@ -905,3 +905,31 @@ fn thinking_display_reads_both_spellings_and_reports_a_bad_value() {
         "{errors:?}"
     );
 }
+
+#[test]
+fn plugin_config_reads_only_the_plugins_own_string_settings() {
+    let manager = SettingsManager::in_memory(
+        json!({
+            "pluginConfig": {
+                "webtools": {"braveApiKey": "k1", "retries": 3, "empty": null},
+                "other": {"braveApiKey": "k2"}
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
+    assert_eq!(
+        manager.plugin_config("webtools", "braveApiKey").as_deref(),
+        Some("k1")
+    );
+    // Non-string and null values read as unset.
+    assert_eq!(manager.plugin_config("webtools", "retries"), None);
+    assert_eq!(manager.plugin_config("webtools", "empty"), None);
+    // A missing plugin or key reads as unset; another plugin's key is not visible.
+    assert_eq!(manager.plugin_config("missing", "braveApiKey"), None);
+    assert_eq!(manager.plugin_config("webtools", "absent"), None);
+    let values = manager.plugin_config_values("webtools");
+    assert_eq!(values.len(), 1);
+    assert_eq!(values["braveApiKey"], "k1");
+}

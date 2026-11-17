@@ -63,6 +63,24 @@ The same commands work from the shell, without a session: `hoocode install`,
 `hoocode remove`, `hoocode list` and `hoocode plugin ...`. See
 [Commands](commands.md).
 
+A plugin may also ship a WASM component at `dev.hoocode/extension.wasm`. Its tools
+appear to the model as `ext_<plugin>_<tool>`, and they need `/reload` after an install.
+
+- A component runs only when its plugin is trusted, the same trust that lets the
+  plugin's MCP servers start without a `/mcp` grant. An untrusted plugin's component
+  is skipped, and the session says so under diagnostics.
+- A call that reaches the network asks you like `WebFetch`. Later requests in the same
+  call (for example redirects) do not ask again.
+- A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in
+  `settings.json`. Only string values are read:
+
+```json
+{ "pluginConfig": { "webtools": { "braveApiKey": "..." } } }
+```
+
+- hoocode compiles each component once into `~/.hoocode/cache/wasm`. The folder is
+  safe to delete; the next start compiles again.
+
 `hoocode config` opens a list for turning skills, prompts and other resources on or
 off. Themes are not in it: pick one with `/theme`.
 

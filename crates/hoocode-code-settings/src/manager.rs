@@ -720,6 +720,25 @@ impl SettingsManager {
         self.set_nested("webtools", "timeoutSecs", secs.clamp(1, 120).into());
     }
 
+    /// `pluginConfig.<plugin>.<key>`: one string setting of one plugin, from the merged
+    /// settings. `None` when unset or not a string. A plugin reads only its own subtree.
+    pub fn plugin_config(&self, plugin: &str, key: &str) -> Option<String> {
+        self.plugin_config_values(plugin).remove(key)
+    }
+
+    /// Every string setting under `pluginConfig.<plugin>`, for a plugin's config lookup.
+    pub fn plugin_config_values(&self, plugin: &str) -> std::collections::BTreeMap<String, String> {
+        let subtree = defined(self.settings.get("pluginConfig"))
+            .and_then(Value::as_object)
+            .and_then(|plugins| defined(plugins.get(plugin)))
+            .and_then(Value::as_object);
+        subtree
+            .into_iter()
+            .flatten()
+            .filter_map(|(key, value)| Some((key.clone(), value.as_str()?.to_owned())))
+            .collect()
+    }
+
     pub fn disabled_tools(&self) -> Vec<String> {
         self.path_list("disabledTools")
     }

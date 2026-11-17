@@ -21,6 +21,13 @@ fn maps_claude_tool_names_case_insensitive() {
 }
 
 #[test]
+fn keeps_plugin_extension_tools_as_written() {
+    let (t, d) = tools(json!("Read, ext_webtools_fetch, ext_webtools_fetch, Grep"));
+    assert_eq!(t, ["Read", "ext_webtools_fetch", "CodeSearch"]);
+    assert!(d.is_empty());
+}
+
+#[test]
 fn accepts_a_yaml_list_but_emits_a_format_warning() {
     let (value, diagnostics) = normalize_tools(&json!(["Read", "CodeSearch"]), None);
     assert_eq!(value, ["Read", "CodeSearch"]);

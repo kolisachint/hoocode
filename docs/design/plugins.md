@@ -233,6 +233,9 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | A test-only setting may allow loopback through the SSRF block. It is never readable from plugin config. |
 | 2026-11-17 | PL-7: toolchain pinned to 1.100.0, `rust-version` 1.95. Trimmed wasmtime 48.0.9 halves the added clean build time (release +36% instead of +75%) but not the binary (+14.2 MiB) or peak build memory (x2.0). Stop rule: build cost is noticeably cut, size is not; the user decides before host code (PL-9). |
 | 2026-11-17 | `wit/` defines `hoocode:extension@0.1.0` with only `types`, `tool` and `host`; the host provides WASI 0.2 (`wasi:cli/imports`, `wasi:http/outgoing-handler`) and plugins include it in their own world. WASI WIT is not vendored (MIT only). |
+| 2026-11-17 | Plugin settings live under `pluginConfig.<plugin>.<key>` (`extensions` is an existing settings key). |
+| 2026-11-17 | A WASM component loads under the same trust as the plugin's MCP servers (`marketplace_trusted`); untrusted plugins' components are skipped with a diagnostic. |
+| 2026-11-17 | Network calls from a WASM tool ask once per tool call, as WebFetch. Later requests in the same call (redirect hops) do not ask again, but each passes the SSRF block. |
 
 ## Open
 

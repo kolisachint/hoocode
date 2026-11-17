@@ -44,7 +44,7 @@ pub use client::{
 pub use config::McpServerConfig;
 pub use elicitation::{DeclineAll, ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use error::McpError;
-pub use naming::{tool_name, MAX_TOOL_NAME_LEN};
+pub use naming::{ext_tool_name, tool_name, MAX_TOOL_NAME_LEN};
 pub use oauth::{begin_login, LoginHandle};
 pub use result::{ToolContent, ToolOutput};
 pub use stdio::MAX_STDIO_LINE_BYTES;
