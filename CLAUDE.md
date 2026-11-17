@@ -13,9 +13,9 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
 
 - **MIT only.** Never copy code, schemas or generated types from non-MIT projects (e.g.
   `../codex`, Apache-2.0) into this repo. Running such tools in tests is fine.
-- **Design docs (2026-11-06):** six flat files in `docs/design/`: `README.md` (how we work,
+- **Design docs (2026-11-06; `plugins.md` added 2026-11-17):** seven flat files in `docs/design/`: `README.md` (how we work,
   standards, engineering), `roadmap.md` (the one plan), `runtime.md`, `agent.md`,
-  `subagents.md`, `tui.md`. No sub-folders and no dated decision pages: record a decision as
+  `plugins.md`, `subagents.md`, `tui.md`. No sub-folders and no dated decision pages: record a decision as
   a dated row in the area doc's Decisions table. A design session changes docs only.
 - **TUI colours (2026-11-11):** what each colour token means is in
   `crates/hoocode-code-tui-theme/color-semantics.json` (machine-readable, checked by

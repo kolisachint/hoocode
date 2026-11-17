@@ -1,6 +1,6 @@
 # Design docs
 
-Status (2026-11-06): Start here. Six area docs, one plan. Engineering rules below are in force. Open items: EN-1 to EN-15.
+Status (2026-11-17): Start here. Seven area docs, one plan. Engineering rules below are in force. Open items: EN-1 to EN-15.
 
 ## What hoocode is and how these docs work
 
@@ -11,7 +11,8 @@ hoocode is a coding agent for the terminal: a Rust CLI with a full-screen TUI, p
 | `README.md` (this file) | How we work, design philosophy, standards, engineering: build, CI, tests, release, naming, licence | The rules and the build |
 | [roadmap.md](roadmap.md) | The one plan: built summary per area, next steps in order, deferred items with triggers, not doing | What to build next |
 | [runtime.md](runtime.md) | Concurrency, lanes, caps, memory limits, reliability, performance | Threads, limits, speed |
-| [agent.md](agent.md) | Agent loop and tools, models, scheduler and `/loop`, extras, web tools, DocSearch, MCP, plugins and skills, extensions, app server and rpc | The agent and its integrations |
+| [agent.md](agent.md) | Agent loop and tools, models, scheduler and `/loop`, extras, web tools, DocSearch, MCP, skills, extensions, app server and rpc | The agent and its integrations |
+| [plugins.md](plugins.md) | Plugins and extensions: package format, internal (WASM) and external (MCP) tiers, host contract, trust, distribution | Plugins and extensions |
 | [subagents.md](subagents.md) | Subagents, orchestration, evals | Child agents |
 | [tui.md](tui.md) | TUI: declutter (the current look), screen anatomy, themes, keybindings | The terminal UI |
 | [../maps/packages.md](../maps/packages.md) | Crate map | Where code lives |
@@ -58,7 +59,8 @@ Sizes: S is about a session, M a few, L many. Open IDs use the area prefix (EN- 
 | MCP (AAIF), spec 2026-07-28 | Stateless, `server/discover`, multi round-trip input, extensions. Deprecated: HTTP+SSE, Roots, Sampling, Logging, Dynamic Client Registration. The client is built on rmcp, the official SDK | agent.md |
 | MCP Apps and Tasks extensions (AAIF) | Official. Deferred, not used | roadmap.md (only if needed) |
 | MCP Skills extension (AAIF) | Dropped 2026-10-08 | not used |
-| Agent Plugins 1.0.0 (agent-plugins.org) | Published 2026-08-06: `plugin.json`, `skills/`, `mcp.json`. hoocode writes Agent Plugins only; it reads Claude plugin formats and `marketplace.json` too | agent.md |
+| Agent Plugins 1.0.0 (agent-plugins.org) | Published 2026-08-06: `plugin.json`, `skills/`, `mcp.json`. hoocode writes Agent Plugins only; it reads Claude plugin formats and `marketplace.json` too. 1.1 working draft adds portable hooks (PL-14) | plugins.md |
+| WASI 0.2 and the component model (Bytecode Alliance) | Pinned to 0.2 (p2); 0.3 adds async | plugins.md |
 | Agent Skills (agentskills.io) | `SKILL.md` frontmatter rules | agent.md |
 | AGENTS.md (AAIF) | Supported | agent.md |
 | A2A (AAIF) v1.0 | No local or stdio story | not used |
@@ -174,7 +176,7 @@ Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (
 | 2026-10-02 | One integration-test binary per crate, under `tests/it/`. The `test-layout` job enforces it |
 | 2026-10-08 | Scope rule: keep what standards cover and what is used; drop vendor-only extras and code nothing calls |
 | 2026-10-08 | crates.io publishing dropped. Users get archives, npm, PyPI and the curl installer |
-| 2026-10-08 | The WASM plugin host crate is deleted. wasmtime is in no build |
+| 2026-11-17 | wasmtime 48 LTS is allowed in one owner crate (dep-firewall owner), always on, no feature flag. The toolchain pin moves to current stable and `rust-version` to at least 1.95 with PL-7. Measured cost: plugins.md |
 | 2026-10-10 | `[profile.dev] debug = false`. Panic file and line still come from `Location::caller` |
 | 2026-10-10 | Prune `target/` at session start. Never `cargo clean` unless asked |
 | 2026-10-14 | Rename to hoocode is done: `HOOCODE_` env only, no aliases, `~/.hoocode` data, no pre-rename names |
@@ -198,13 +200,13 @@ Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (
 | EN-4 | Highlight opt-level experiment | S | Measure with EN-5 | `[profile.dev.package.hoocode-tui-highlight] opt-level = 1`. `highlight_gold` took 10.8 s in debug. Keep only if the test gain beats the slower rebuild of that crate. No blanket `"*"` override |
 | EN-5 | Re-measure the build and decide on mold | M | After EN-2 and EN-4 | Measure a clean `cargo check --workspace --all-targets --timings`, a clean `cargo nextest run --workspace --no-run`, and a base-crate edit followed by both. Adopt mold only if linking is over 30% of an incremental `nextest --no-run`. Linux only, never macOS |
 | EN-6 | Doctests: CI runs none | S | User picks: recommend adding a doctest step for the crates that have doctests | The earlier CI plan put `cargo test --doc` in CI; `ci.yml` `test` runs nextest only. Either add the step or drop the rule and keep `doctest = false` |
-| EN-7 | MSRV job | S | None | Build with Rust 1.88, `--locked`, the way the other jobs run. Nothing checks `rust-version` today |
+| EN-7 | MSRV job | S | None | Build with the `rust-version` MSRV (1.88 today; at least 1.95 with PL-7), `--locked`, the way the other jobs run. Nothing checks `rust-version` today |
 | EN-9 | Self-update prints the right command for the install method | S | User asks for `hoocode update` to be fixed | Under `~/.hoocode/bin`: the curl command. Under `node_modules`: the npm command. PyPI runs from the user cache dir: the pip command. Today `hoocode-code-update` does not detect the method |
 | EN-10 | Remove the dead `publish_crates` input from `release.yml` | S | Next edit to `release.yml` | The input does nothing; the job prints a notice. Or re-enable it with a paced publish script |
 | EN-11 | Windows build | M | User asks for Windows | Add `x86_64-pc-windows-msvc` to `binaries.yml`, a `.zip`, an `install.ps1` and a `win32-x64` npm package. The old Windows leg was the slowest part of a release |
 | EN-12 | macOS signing | M | Users hit the browser warning, and the user has an Apple Developer ID | `codesign` and `notarytool` in `binaries.yml`. Only browser downloads are quarantined; curl, npm and `gh` downloads run without it |
 | EN-13 | Subagent fast evals on PRs | S | User decides | Today they run nightly and by hand only. Run them on PRs that touch `hoocode-code-subagents` |
-| EN-14 | Point code comments and config at the six new design docs | S | None | 93 files under `crates/`, `scripts/` and `clippy.toml` still name removed docs (`concurrency.md`, `reliability.md`, `plugins.md`, `mcp.md`, `tui-*`, `themes-keybindings*`, `decisions-*`, `archive/`, `migration/tui-parity`). Find them with `grep -rnE "docs/design/[a-z0-9-]+\.md\|archive/\|migration/tui-parity" crates scripts clippy.toml`. Map: concurrency, reliability, performance, perf-short-sessions to `runtime.md`; mcp, plugins, extension-runtime, web-tools, semantic-search, scheduler-and-loop, extras, scoped-models, rpc-approvals, app-server to `agent.md`; subagent-* to `subagents.md`; tui-*, mission-control, themes-keybindings*, footer, radar to `tui.md`; build-speed, distribution, naming-and-paths to `README.md`. Comment text only, no behaviour change. Also fix the reversed comment at `code-tui-widgets/tests/it/tool_rows.rs:3` and the dead `TOOL_NAMES` comment at `code-tui-selectors/src/settings_selector.rs:650` |
+| EN-14 | Point code comments and config at the seven design docs | S | None | 93 files under `crates/`, `scripts/` and `clippy.toml` still name removed docs (`concurrency.md`, `reliability.md`, `plugins.md`, `mcp.md`, `tui-*`, `themes-keybindings*`, `decisions-*`, `archive/`, `migration/tui-parity`). Find them with `grep -rnE "docs/design/[a-z0-9-]+\.md\|archive/\|migration/tui-parity" crates scripts clippy.toml`. Map: concurrency, reliability, performance, perf-short-sessions to `runtime.md`; mcp, web-tools, semantic-search, scheduler-and-loop, extras, scoped-models, rpc-approvals, app-server to `agent.md`; plugins, extension-runtime to `plugins.md`; subagent-* to `subagents.md`; tui-*, mission-control, themes-keybindings*, footer, radar to `tui.md`; build-speed, distribution, naming-and-paths to `README.md`. Comment text only, no behaviour change. Also fix the reversed comment at `code-tui-widgets/tests/it/tool_rows.rs:3` and the dead `TOOL_NAMES` comment at `code-tui-selectors/src/settings_selector.rs:650` |
 | EN-15 | Drop dead `archive/` entries from `scripts/ci/no_cortex.sh` | S | None | Remove the four `:(exclude)archive/...` allowlist lines and the stale "staged (not yet applied)" header line. The guard passes without them |
 
 ### Not doing
@@ -213,7 +215,7 @@ Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (
 - `anyhow` or `thiserror`.
 - sccache, until there is a remote bucket and its credentials are set as environment secrets.
 - cargo-hakari (no measured thrash), bacon in the agent loop (it contends for the build lock), rust-analyzer in `rust-toolchain.toml`, the Cranelift backend, nightly `-Z threads`, a `CARGO_BUILD_JOBS` cap (until OOM during linking).
-- wasmtime or any `wasm` feature in default builds.
+- wasmtime outside its owner crate.
 - More crate splits for build speed.
 - A blanket `[profile.dev.package."*"]` override.
 - Per-merge or nightly binaries. npm postinstall scripts. Yarn Berry 2+ support.

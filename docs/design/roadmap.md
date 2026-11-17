@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-11): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 108 open rows: 43 next, 19 need a user decision, 46 deferred behind a trigger or gate.
+Status (2026-11-17): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 79 open rows in the area docs. This plan lists 43 next, 14 need a user decision, 49 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
@@ -17,7 +17,7 @@ Rule: when the user asks to implement, ask which item first. The top of Next is 
 | Scheduler and `/loop` | Cron store, `/loop` forms, `/loop auto`, late-fire rule. Milestone 7. 2026-10 | [agent.md](agent.md) |
 | Extras | Daily version check, `hoocode update`, turn chime. Milestone 8. 2026-10 | [agent.md](agent.md) |
 | MCP client | rmcp, stdio and Streamable HTTP, folder trust, OAuth with PKCE. Milestone 4. 2026-10 | [agent.md](agent.md) |
-| Plugins | Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools. Milestone 6. 2026-10 | [agent.md](agent.md) |
+| Plugins | Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools. Milestone 6. 2026-10 | [plugins.md](plugins.md) |
 | App server and rpc | Codex app-server wire format, approvals, scoped model and effort rules. 2026-10 | [agent.md](agent.md) |
 | Subagents | Child processes, background by default, writer worktrees, caps, tree kill, ledger, 22 eval scenarios. Milestone 9. 2026-10 | [subagents.md](subagents.md) |
 | TUI look | Declutter: plain words, status line, panes, outline, peek and full views, full screen by default. 2026-11 | [tui.md](tui.md) |
@@ -64,15 +64,22 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 31. [EN-1](README.md#open) Wire the Stop and PostToolUse hooks (S)
 32. [EN-2](README.md#open) `[workspace.lints]` (S)
 33. [EN-3](README.md#open) Hygiene job: `cargo machete` and `cargo deny` (S)
-34. [EN-7](README.md#open) MSRV job on Rust 1.88 (S)
+34. [EN-7](README.md#open) MSRV job on the `rust-version` MSRV (S)
 35. [AG-3](agent.md#open) Delete the dead `packages` setting (S)
-36. [AG-4](agent.md#open) Drop Copilot and `.agents-plugin` plugin markers (S)
-37. [AG-5](agent.md#open) Rewrite the plugin-authoring skill text (S)
-38. [AG-6](agent.md#open) Fix the TUI plugin tool list (S)
+36. [PL-1](plugins.md#open) Drop Copilot and `.agents-plugin` plugin markers (S)
+37. [PL-2](plugins.md#open) Rewrite the plugin-authoring skill text (S)
+38. [PL-3](plugins.md#open) Fix the TUI plugin tool list (S)
 39. [AG-17](agent.md#open) Remove the `/learn` tip. The decision says no (S)
 40. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
 42. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
 43. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
+44. [PL-6](plugins.md#open) Stop loading Claude plugin `agents/` (S)
+45. [PL-7](plugins.md#open) M0: measure trimmed wasmtime 48 and the toolchain bump. Gates PL-8 to PL-12 (S)
+46. [PL-8](plugins.md#open) M1: WIT world `hoocode:extension@0.1.0` in `wit/` (S)
+47. [PL-9](plugins.md#open) M2: WASM host, `.cwasm` cache, `wasi:http` with gate and SSRF block (L)
+48. [PL-10](plugins.md#open) M3: webtools `Transport` trait and WASM features, in the webtools repo (M)
+49. [PL-11](plugins.md#open) M4: `web-plugins` component and package (M)
+50. [PL-12](plugins.md#open) M5: end to end and cleanup. Web tools: replaced by the webtools plugin (M)
 
 ## Needs a user decision
 
@@ -83,8 +90,7 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [EN-11](README.md#open) | Build for Windows? | No. Wait until a user asks |
 | [EN-13](README.md#open) | Run subagent fast evals on PRs that touch `hoocode-code-subagents`? | Yes |
 | [RT-32](runtime.md#open) | Fix the frame-build tail from the bash block now? | No. Wait until the user asks |
-| [AG-1](agent.md#open) | Register `WebFetch` and `WebSearch`, or drop the names? | Register both. The helpers exist and the flag already promises them |
-| [AG-8](agent.md#open) | Enforce `allowed-tools`, or delete the approval record? | Delete the record. Keep the warning |
+| [PL-5](plugins.md#open) | Enforce `allowed-tools`, or delete the approval record? | Delete the record. Keep the warning |
 | [AG-12](agent.md#open) | Wire `/goal` to `/loop auto`? | Not yet. Do it when someone asks for `/goal` |
 | [AG-19](agent.md#open) | Remove `DocSearch` instead of indexing docs? | Decided 2026-11-07: yes, remove (with the single-view decision of 2026-11-07); code removal pending |
 | [AG-20](agent.md#open) | Build semantic code search? | No. Keep the "not available" message |
@@ -119,7 +125,7 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [RT-37](runtime.md#open) | macOS baseline and lane QoS | A macOS machine |
 | [RT-38](runtime.md#open) | Windows `Shell` priority | Windows ships (not planned) |
 | [AG-2](agent.md#open) | Decide MCP schema deferral | Measured token cost of MCP schemas |
-| [AG-7](agent.md#open) | Live reload of plugin tools | Users hit a stale tool list |
+| [PL-4](plugins.md#open) | Live reload of plugin tools | Users hit a stale tool list |
 | [AG-9](agent.md#open) | Publish the OAuth Client ID Metadata document | An OAuth MCP server needs CIMD |
 | [AG-10](agent.md#open) | MCP conformance run and manual runs | Before MCP counts as done |
 | [AG-13](agent.md#open) | `/grill` skips its questions in the loop | With AG-12 |
@@ -144,6 +150,9 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [UI-12](tui.md#open) | Check the VS Code terminal does not take Ctrl+X | Manual check |
 | [UI-13](tui.md#open) | Check `⊗` and `◉` on common fonts | Manual check |
 | [UI-17](tui.md#open) | Windowed render API for the chat component | `/perf` shows the cost |
+| [PL-13](plugins.md#open) | Notebook plugin | A user asks for notebooks |
+| [PL-14](plugins.md#open) | Revisit hooks | Agent Plugins 1.1 final |
+| [PL-15](plugins.md#open) | Second-consumer review | Two releases after PL-12 |
 
 ## Not doing
 
@@ -152,4 +161,4 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 - Agent: [agent.md#not-doing](agent.md#not-doing)
 - Subagents: [subagents.md#not-doing](subagents.md#not-doing)
 - TUI: [tui.md#not-doing](tui.md#not-doing)
-- Dropped: Copilot canvas, Skills over MCP, plugin update, package and publish tools, writing Claude plugin formats, `/mcp import`, rpc approval dialogs, semantic search part B, crates.io, the WASM crate, Azure, `fd` and `rg`, the external-tools pane, and the extras marked No.
+- Dropped: Copilot canvas, Skills over MCP, plugin update, package and publish tools, writing Claude plugin formats, `/mcp import`, rpc approval dialogs, semantic search part B, crates.io, Azure, `fd` and `rg`, the external-tools pane, and the extras marked No.

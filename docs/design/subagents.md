@@ -1,6 +1,6 @@
 # Subagents
 
-Status (2026-11-06): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Open items are SA-1 to SA-11.
+Status (2026-11-17): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Open items are SA-1 to SA-11.
 
 Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
 
@@ -227,6 +227,7 @@ The mock tests mechanics only. It does not show that a real model follows the br
 | 2026-10-30 | Every call is its own run. Handles are `type#N`, per session, continue after `--resume`. Descendants killed on cancel, deadline or dispose; re-parented jobs are not |
 | 2026-10-03 | Fallback retries region errors and `finish_reason: error`. Never retries a user cancel |
 | 2026-10-16 | Root 12, nested 6, queue 8 per slot, depth 4, wait 300 s, Shell default 1200 s |
+| 2026-11-17 | Subagents get WASM plugin tools (gated calls go through clearance). Never MCP plugin tools or plugin-management tools. See [plugins.md](plugins.md) |
 
 Dispatch dirs are pruned (newest 50, older than 24 h dropped), so they are not kept for the whole session. Recover is view or resume on request, never automatic (TUI rule, 2026-10-09).
 

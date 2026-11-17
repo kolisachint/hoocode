@@ -1,16 +1,15 @@
 # Agent
 
-Status (2026-11-06): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (load, install, opt-in model tools), app-server and rpc approvals. Partly built: web tools (flag and setting exist; no tool definitions are registered), semantic index (flag only), MCP schema deferral (setting read by nothing). Open items are at the end.
+Status (2026-11-17): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (see plugins.md), app-server and rpc approvals. Partly built: web tools (flag only; replaced by the webtools plugin, plugins.md PL-12), semantic index (flag only), MCP schema deferral (setting read by nothing). Open items are at the end.
 
 ## Principles
 
-- **Standards first.** MCP, Agent Skills, Agent Plugins 1.0, the Claude plugin and marketplace layouts (read only), and the Codex app-server wire format. A vendor format only where no standard covers it.
+- **Standards first.** MCP, Agent Skills, Agent Plugins 1.0, the Claude plugin and marketplace layouts (read only), and the Codex app-server wire format. A vendor format only where no standard covers it. Plugins: plugins.md.
 - **MIT only.** Copy nothing from `../codex` (Apache-2.0): no code, schemas or generated types. Running it in tests is fine.
 - **No always-on token cost.** Optional tools stay off until a flag or setting turns them on. Every tool schema is sent on every request.
 - **Fail closed.** A gated tool does not run without asking. In a headless run with nobody to answer, it is denied unless `auto_allow` lists it.
 - **Trust before start.** Only trusted MCP servers start. Trust binds to the approved command, args or URL. A change shows a diff and asks again. Trust records live outside the repo.
-- **User beats project.** A user plugin wins a name over a project plugin. An untrusted project plugin is not loaded.
-- **Subagents never get** plugin tools or Cron tools. Plugin tool names are passed in `--disallowed-tools` on both spawn paths. Cron tools are not registered outside an interactive run.
+- **Subagents never get** plugin-management tools or Cron tools. Their names are passed in `--disallowed-tools` on both spawn paths. Cron tools are not registered outside an interactive run. Plugin-provided tools: see plugins.md.
 - **Schedules fire only in an open interactive session.** No headless daemon: nobody is there to approve tools.
 - **Tool names are final.** No aliases and no old names. The Tools pane sort keys use old TS names, but only for sorting.
 - **Config and env names** are `hoocode` and `HOOCODE_` only. Writes go to a temp file, then rename.
@@ -26,9 +25,8 @@ Numbers a contributor needs:
 | Turn chime | turn over 10 s; repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` |
 | Version check | once a day | `hoocode-code-update` |
 | Web timeout setting | 1 to 120 s | `settings/manager.rs` `webtools_timeout_secs` |
-| Plugin marketplace cache | refreshed after 1 day | `plugin-marketplace-cache/<name>` |
 | `/loop auto` default | 10 turns | `auto_loop.rs` |
-| Fetched page cap | 100000 bytes | `hoocode-code-tools/src/lib.rs` (helper, see AG-1) |
+| Fetched page cap | 100000 bytes | `hoocode-code-tools/src/lib.rs` (helper, see plugins.md PL-12) |
 
 ## How it works
 
@@ -43,7 +41,7 @@ Numbers a contributor needs:
 | `Agent`, `AgentOutput` | `hoocode-code-subagents` | on | `Agent` starts a subagent. `AgentOutput` reads its result. |
 | `ShellOutput`, `ShellKill` | `hoocode-code-tool-bash` `job_tools.rs` | on when `enableBackgroundShell` (default true) and interactive | Background shell jobs. |
 | `TodoWrite` | `hoocode-code-tools-optin` `todo.rs` | on (`enableTodoWrite`, default true) | Main session only. |
-| `WebFetch`, `WebSearch` | names only | off (`enableWebTools` / `--enable-webtools`) | No tool definition is registered yet (AG-1). |
+| `WebFetch`, `WebSearch` | names only | off (`enableWebTools` / `--enable-webtools`) | No tool definition is registered yet (plugins.md PL-12). |
 | `SearchPlugins`, `ListPlugins`, `InstallPlugin`, `UninstallPlugin`, `ProposePlugin` | `hoocode-code-tools-optin` `plugins.rs` | off (`enablePluginTools`) | Main session only. Takes effect at the next session. |
 | `mcp_<server>_<tool>` | `hoocode-code-mcp` and `hoocode-agent-mcp` | per server | See MCP client. |
 
@@ -113,14 +111,14 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 ### Web tools
 
-Current state (see AG-1):
+Current state:
 
 - `--enable-webtools` (`args.rs`) and `enableWebTools` (default false) add the names `WebFetch` and `WebSearch` to the active list (`services.rs`).
 - No `ToolDefinition` is built for either name, so the names activate nothing.
 - Helpers exist in `hoocode-code-tools/src/lib.rs`: `webfetch(url)` (30 s timeout, 100000-byte cap) and `websearch(query)` (DuckDuckGo HTML, 15 s timeout). Only tests call them.
 - Permission reach (`hoocode-code-permissions/src/lib.rs`) and TUI widgets (`hoocode-code-tui-widgets/src/tools/web.rs`) exist.
 - `webtools.timeoutSecs` is read by the settings pane only. Its env fallback is `HOOCODE_WEBTOOLS_TIMEOUT`. `webtools.search` is read by no code.
-- Principle: no web tool unless asked for. Prefer an MCP server (the webtools MCP server) for fetch and search over bundling code.
+- Decided 2026-11-17: fetch and search move to the webtools plugin (internal tier). PL-12 deletes the flag, helpers and settings. See plugins.md.
 
 ### DocSearch and capability index
 
@@ -129,12 +127,11 @@ Current state (see AG-1):
 - Index: crate `hoocode-code-capabilities`. BM25 with camelCase and snake_case splitting. In-process, no dependencies.
 - Semantic index: `--enable-semantic-index` and `enableSemanticIndex` (default true, read only when set in a file). Today it prints "semantic indexing is not available in this build" when `embsearch` is found, and "embsearch binary not found" otherwise. No embsearch client exists. `CodeSearch` stays lexical.
 
-### Extensions: MCP, skills, subagents
+### Extensions
 
-- Extensions are MCP servers, Agent Skills and subagents. Plugins and MCP deliver them.
-- No code-extension runtime. No Node host, no WASM API, no hooks. Rust has no stable plugin ABI, and a second runtime is a second thing to keep in step.
+- Extensions are MCP servers, Agent Skills, subagents, and WASM components shipped in plugins. Plugins: plugins.md.
 - Skills: `SKILL.md` frontmatter follows the Agent Skills rules. Problems are warnings. Plugin skills are named `<plugin>:<skill>`.
-- `allowed-tools` in a plugin skill is kept only when the user approves that exact list. The approval is stored in `mcp-trust.json`, keyed by `<plugin>:<skill>`. Nothing reads the list at run time (AG-8).
+- `allowed-tools` in a plugin skill is kept only when the user approves that exact list. The approval is stored in `mcp-trust.json`, keyed by `<plugin>:<skill>`. Nothing reads the list at run time (PL-5).
 - Overloaded word: "extension" also names mode extensions and UI requests (`hoocode-code-modes/src/extension.rs`).
 
 ### MCP client
@@ -191,51 +188,7 @@ All three compare the returned `state` to the one they sent. A pasted bare code 
 
 ### Plugins
 
-Formats read:
-
-| Format | Layout | Notes |
-|---|---|---|
-| Agent Plugins 1.0 | root `plugin.json`, `skills/`, `mcp.json` | Schemas are hand-coded from the 1.0.0 spec and bundled, never fetched. Only the 1.0.0 `$schema` ids are accepted. |
-| Claude | `.claude-plugin/plugin.json`, `skills/`, `agents/`, `.mcp.json` or inline `mcpServers` | Read only. Claude variables such as `${CLAUDE_PLUGIN_ROOT}` are not expanded. |
-| Claude marketplace | `.claude-plugin/marketplace.json` | Read only. Never written. |
-
-Agent Plugins 1.0 rules:
-
-- `plugin.json` fields: `$schema`, `name`, `version`, `description`, `author`, `homepage`, `repository`, `license`, `keywords`, `extensions`. An unknown field is a warning. Any other violation rejects the plugin.
-- `name`: 1 to 64 characters of `[a-z0-9.-]`, alphanumeric at both ends, no `--` or `..`.
-- `skills/`: each direct subdirectory with a `SKILL.md`. Not recursive.
-- `mcp.json`: its `$schema` version must match `plugin.json`, or MCP is off for that plugin. `stdio` `command` is one token with no expansion. `args`, `env` and `cwd` expand only `${PLUGIN_ROOT}` and `${PLUGIN_DATA}`, and `env` may not set those names. `streamable-http` needs HTTPS unless the host is loopback. A bad server is skipped and reported.
-- Every declared path must resolve inside the plugin root. Unknown `extensions` namespaces are ignored.
-- Ignored contents: hooks, commands, themes and providers. The plugin still loads, and `/plugin list` reports what was skipped.
-
-Written: ProposePlugin writes one Agent Plugins package only. Never Claude or Copilot layouts, never `marketplace.json`.
-
-Locations and files:
-
-| Path | What |
-|---|---|
-| `~/.agents/plugins/` | User plugins. |
-| `<cwd>/.agents/plugins/` | Project plugins (folder grant). |
-| `~/.agents/plugin-data/<name>` | `PLUGIN_DATA`. Kept across updates. Created when the plugin has an Agent Plugins `mcp.json`. |
-| `plugin-installs.json` (hoocode data dir) | Install records: source, marketplace, trust. Kept out of the plugin folder so a change does not re-ask for trust. |
-| `plugin-marketplace-cache/<name>` (hoocode data dir) | Git checkout of a marketplace. |
-
-Install and trust:
-
-- Commands: `/plugin marketplace add|list|refresh`, `/plugin install|remove [--scope user|project]`, `/plugin list`, `/plugin update [name]`, `/plugin trust`.
-- Marketplaces are git repositories. Git runs with `GIT_TERMINAL_PROMPT=0`. Values never reach git as options. `ext::` and `fd::` are refused. A symlink that leaves the plugin folder refuses the install. `npm` sources are refused.
-- Only the official directory is pre-trusted. Its URL in code is an assumption, `https://github.com/anthropics/claude-plugins-official`, not stated in the docs.
-- `marketplace add <src> --trust` marks a marketplace trusted. Without it, an install still succeeds (the user typed it), but its MCP servers need a grant in `/mcp`.
-- Project plugins need one folder grant. The fingerprint covers every file (SHA-256 of path and bytes). Any change asks again.
-- If the install records cannot be read, no marketplace counts as trusted (fail closed).
-- A plugin's manifest must parse and name the plugin the marketplace lists, before it moves into place.
-
-Model tools (opt-in, see Tools): `enablePluginTools` (default false) or `--enable-plugintools`.
-
-- `InstallPlugin` installs without asking from a trusted marketplace only. Accepted risk: with the tools on, a prompt injection can trigger an install and run from a trusted marketplace.
-- `UninstallPlugin` and `ProposePlugin` ask. A proposal is untrusted. Its MCP servers wait for a `/mcp` grant. A project proposal waits for `/plugin trust`.
-- Adding a marketplace stays human-only.
-- Subagents never get these tools.
+Moved to [plugins.md](plugins.md): formats, locations, install and trust, model tools, the two extension tiers.
 
 ### App-server and rpc
 
@@ -301,23 +254,15 @@ rpc (`--mode rpc`):
 | Date | Decision |
 |---|---|
 | 2026-10-01 | `hoocode app-server` speaks the Codex app-server wire format, in both directions. MIT only. |
-| 2026-10-07 | Extensions are MCP servers, skills and subagents. No code-extension runtime, no hooks, no WASM API. |
 | 2026-10-07 | DocSearch searches live capabilities only, with an in-process BM25 index. `embsearch` is not linked. |
 | 2026-10-07 | Scheduled prompts run only in an open interactive session. A task fires only in the process that created it, until that process exits. |
 | 2026-10-07 | A prompt due while busy runs at the next idle tick within 10 minutes. After that it is skipped with a notice. |
 | 2026-10-08 | MCP is built on rmcp. Transports are stdio and Streamable HTTP. HTTP+SSE is dropped. |
 | 2026-10-08 | MCP folder trust, no per-tool prompts. Trust re-asks when a server's command, args or URL changes. |
-| 2026-10-08 | Plugin model tools are opt-in (`enablePluginTools`, default false). Subagents never get them. |
-| 2026-10-08 | Installs from a trusted marketplace do not ask. Accepted risk, recorded. |
-| 2026-10-08 | Plugins written by hoocode are Agent Plugins packages only. No Claude or Copilot layouts, no `marketplace.json`. |
-| 2026-10-08 | No `UpdatePlugin`, `PackagePlugin` or `PublishPlugin` tools. Updates use `/plugin update`. |
-| 2026-10-08 | The WASM extension crate is deleted. wasmtime added about 55 s to clean builds. |
 | 2026-10-09 | `scopedModels` is the one model-scope key. Categories and effort are per entry. Project list replaces global. |
 | 2026-10-09 | Subagents use only scoped models when a scope exists. Explicit asks beat the frontmatter pin. |
 | 2026-10-14 | Version check and turn chime are the only extras built. Thinking escalation, `/learn`, teams, voice, `/share` and telemetry are out. |
-| 2026-10-15 | Plugin model tools use a fixed permission class each: read-only, install (trusted only), or ask. |
 | 2026-11-02 | No migration from `enabledModels` or `modelCategories`. The old keys are ignored. |
-| 2026-11-06 | Web tools are opt-in (`enableWebTools`, `--enable-webtools`). The names are gated; the tool definitions are not yet registered (AG-1). |
 | 2026-11-06 | The category key is `c`, bare letter, in `/scoped-models`. |
 | 2026-11-06 | rpc fails closed: a gated tool is denied unless `auto_allow` lists it. Approval dialogs over rpc are not built. |
 | 2026-11-07 | `DocSearch` is removed (with single-view decision 7): discovery via the prompt skill/agent listing, `Read`, CLI help and user pages. AG-19 closed as No. Code removal with the robustness matrix is the next session. |
@@ -328,14 +273,8 @@ rpc (`--mode rpc`):
 
 | ID | Item | Size | Trigger or gate | Design notes |
 |---|---|---|---|---|
-| AG-1 | Web tools: register `WebFetch` and `WebSearch`, or drop the names | S | Decide with the user | Register two `ToolDefinition`s when `enable_web_tools()`. Reuse the `webfetch` and `websearch` helpers. Use `webtools_timeout_secs()` in place of the hard-coded 30 s and 15 s. Read `webtools.search` or delete its accessor. Add a test that each active name resolves to a definition. |
 | AG-2 | Decide MCP schema deferral | M | Measured token cost of MCP schemas | `deferMcpSchemas` (default true) has no consumer. Either map it to the provider `defer_loading` field (exists in `hoocode-ai-types`) or delete the key. Plain-content tool results (M2) come first, measured. |
 | AG-3 | Delete the dead `packages` setting | S | None | `settings/manager.rs` ~882-906 has accessors with no callers. Remove them and their tests. |
-| AG-4 | Drop Copilot and `.agents-plugin` plugin-root markers | S | None | `hoocode-code-resources/src/skills.rs` `is_plugin_root` still lists `.agents-plugin/plugin.json`, `.github/plugin/plugin.json` and `.github/copilot-plugin.json`. Keep the native and Claude markers. |
-| AG-5 | Rewrite the plugin-authoring skill text | S | None | `builtin_skills.rs:47` names `UpdatePlugin` and hooks. Its tests pin the text, so change both together. |
-| AG-6 | Fix the TUI plugin tool list | S | None | `hoocode-code-tui-widgets/src/tools/plugins.rs` names `SuggestPluginInstall` (not a tool) and omits `UninstallPlugin`. |
-| AG-7 | Live reload of plugin tools | M | Users hit a stale tool list | A tool change needs `/reload` today. Route the change through the same reload path as install. |
-| AG-8 | Enforce `allowed-tools` or delete the approval | S | Decision | Nothing reads the approved list. Either gate tools with it, or delete the record and keep the warning. |
 | AG-9 | Publish the OAuth Client ID Metadata document | S | An OAuth MCP server needs CIMD | `CLIENT_METADATA_URL` points at a file that is not in this repo. Publish `oauth-client.json` on the Pages site, or rely on dynamic registration and say so. |
 | AG-10 | MCP conformance run and manual runs | M | Before MCP counts as done | Run the conformance suite in CI. Do one manual run each against a real stdio server and a real OAuth server. Pin and state the spec version we claim. |
 | AG-11 | Verify the unchecked MCP, plugin and scope rules | S | None | Check: print and rpc wait 10 s for trusted servers; tool-list change at next turn; `Authorization` 401 text; git input hardening; npm refusal; elicitation decline in print and rpc; `hoo-config.json` mode rule (`auto_allow` is unioned); scoped-model alias, untagged and frontmatter-precedence rules. Add tests or mark not built. |
@@ -360,11 +299,9 @@ rpc (`--mode rpc`):
 
 - Legacy MCP HTTP+SSE servers; MCP sampling, roots and logging; MCP registry browsing (`server.json`); MCP Tasks and Skills extensions; `/mcp import` and reading other tools' MCP config files.
 - Being an MCP server (app-server is our server side).
-- A Node extension host, a WASM extension API, and hooks in extensions or plugins.
-- Plugin slash commands, themes and providers; `.agents-plugin/` and Copilot layouts; writing Claude or Copilot layouts; writing `marketplace.json`.
-- `UpdatePlugin`, `PackagePlugin` and `PublishPlugin` tools; npm plugin sources; the `packages` setting (AG-3 deletes it).
+- The `packages` setting (AG-3 deletes it).
 - `SearchSkills` (skills stay in the prompt); linking `embsearch` (ONNX, about 40 MB); indexing docs (AG-19 decided 2026-11-07: remove `DocSearch`).
-- Porting the hoocode web layer (`.webtoolsignore`, cache, notes); linking webtools crates; provider-native web search for now.
+- Porting the hoocode web layer (`.webtoolsignore`, cache, notes); linking webtools crates into the hoocode binary (they ship in the webtools plugin); provider-native web search for now.
 - Copilot canvas host; `/share` and HTML export; voice; teams client; `/learn`.
 - Install telemetry that sends anything; thinking escalation until AG-18 is decided.
 - Headless schedules in a daemon; cron syntax beyond the ported matcher (seconds, `L`, `#`, nicknames).
