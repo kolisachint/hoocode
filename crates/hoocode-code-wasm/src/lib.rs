@@ -8,13 +8,15 @@
 //! timeout (`CALL_TIMEOUT`) and the abort signal of the caller. The WASI context
 //! has no environment or arguments, stdout and stderr go to the host log, and
 //! the plugin's data folder is the only preopen (at `/data`). Sockets are denied.
-//! `wasi:http` requests go through the caller's [`NetGate`].
+//! `wasi:http` requests to private or special addresses are refused (the SSRF
+//! block, `ssrf.rs`), and the rest go through the caller's [`NetGate`].
 
 mod cache;
 mod error;
 mod extension;
 mod guest;
 mod http;
+mod ssrf;
 mod wasi;
 
 use std::future::Future;
@@ -99,6 +101,7 @@ pub(crate) struct Inner {
 pub struct WasmHost {
     inner: Arc<Inner>,
     call_timeout: Duration,
+    allow_loopback: bool,
 }
 
 impl WasmHost {
@@ -126,12 +129,19 @@ impl WasmHost {
         Ok(Self {
             inner,
             call_timeout: CALL_TIMEOUT,
+            allow_loopback: false,
         })
     }
 
     /// Use `timeout` instead of [`CALL_TIMEOUT`] for calls made from this host.
     pub fn with_call_timeout(mut self, timeout: Duration) -> Self {
         self.call_timeout = timeout;
+        self
+    }
+
+    /// test-only: lets loopback addresses through the SSRF block; never set from plugin config.
+    pub fn with_loopback_allowed(mut self) -> Self {
+        self.allow_loopback = true;
         self
     }
 
@@ -157,6 +167,7 @@ impl WasmHost {
             plugin: spec.plugin,
             data_dir: spec.data_dir,
             call_timeout: self.call_timeout,
+            allow_loopback: self.allow_loopback,
             tools: Vec::new(),
         };
         extension.tools = block_on(extension.discover_tools())?;

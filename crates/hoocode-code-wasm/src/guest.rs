@@ -91,6 +91,7 @@ pub(crate) fn new_store(
     plugin: &str,
     data_dir: &Path,
     env: CallEnv,
+    allow_loopback: bool,
 ) -> Result<Store<State>, WasmError> {
     let state = State {
         plugin: plugin.to_owned(),
@@ -99,6 +100,7 @@ pub(crate) fn new_store(
         http: WasiHttpCtx::new(),
         hooks: GatedHooks {
             net: env.net.clone(),
+            allow_loopback,
         },
         limits: StoreLimitsBuilder::new().memory_size(MEMORY_LIMIT).build(),
         env,

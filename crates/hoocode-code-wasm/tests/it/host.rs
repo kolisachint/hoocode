@@ -67,7 +67,15 @@ fn loads_and_lists_tools() {
     let names: Vec<&str> = ext.tools().iter().map(|t| t.name.as_str()).collect();
     assert_eq!(
         names,
-        ["echo", "config", "spin", "alloc", "fail", "write-data"]
+        [
+            "echo",
+            "config",
+            "spin",
+            "alloc",
+            "fail",
+            "write-data",
+            "fetch"
+        ]
     );
     let echo = &ext.tools()[0];
     assert!(echo.input_schema.is_object());

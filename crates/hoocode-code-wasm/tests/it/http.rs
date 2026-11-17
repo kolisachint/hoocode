@@ -1,0 +1,205 @@
+//! The gated `wasi:http` path: the SSRF block, the gate and the send, through
+//! the fetch tool of the echo fixture.
+
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+
+use hoocode_code_wasm::{CallEnv, Extension, ExtensionSpec, NetGate, WasmError, WasmHost};
+use hoocode_runtime::{block_on_entry, spawn_thread};
+use serde_json::json;
+
+fn fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/echo-ext.wasm")
+}
+
+/// A gate that records every URL it is asked about and allows or refuses all.
+struct CountingGate {
+    allow: bool,
+    urls: Mutex<Vec<String>>,
+}
+
+impl CountingGate {
+    fn new(allow: bool) -> Arc<Self> {
+        Arc::new(Self {
+            allow,
+            urls: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.urls.lock().unwrap().clone()
+    }
+}
+
+impl NetGate for CountingGate {
+    fn check(&self, url: &str) -> Result<(), String> {
+        self.urls.lock().unwrap().push(url.to_owned());
+        if self.allow {
+            Ok(())
+        } else {
+            Err("refused by the test gate".to_owned())
+        }
+    }
+}
+
+fn env(gate: &Arc<CountingGate>) -> CallEnv {
+    let net: Arc<dyn NetGate> = gate.clone();
+    CallEnv {
+        config: Arc::new(|_| None),
+        net,
+        abort: None,
+    }
+}
+
+/// A local server that answers every connection with `200 hello`. `hits`
+/// counts the connections it accepted.
+struct Server {
+    port: u16,
+    hits: Arc<AtomicUsize>,
+}
+
+fn serve_hello() -> Server {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counter = hits.clone();
+    let _server = spawn_thread("http-test-server", move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            counter.fetch_add(1, Ordering::SeqCst);
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => head.extend_from_slice(&buf[..n]),
+                }
+            }
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello",
+            );
+        }
+    });
+    Server { port, hits }
+}
+
+fn load(dir: &Path, host: WasmHost) -> Extension {
+    host.load(ExtensionSpec {
+        plugin: "echo".to_owned(),
+        wasm_path: fixture(),
+        data_dir: dir.join("data"),
+    })
+    .expect("load fixture")
+}
+
+fn host(dir: &Path) -> WasmHost {
+    WasmHost::new(dir.join("cache")).expect("host")
+}
+
+#[test]
+fn loopback_is_refused_before_the_gate_by_default() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()));
+        let server = serve_hello();
+        let gate = CountingGate::new(true);
+        let url = format!("http://127.0.0.1:{}/", server.port);
+        let err = ext
+            .call("fetch", json!({ "url": url }), env(&gate))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, WasmError::Failed(_)), "{err:?}");
+        assert!(
+            gate.asked().is_empty(),
+            "gate was asked: {:?}",
+            gate.asked()
+        );
+        assert_eq!(server.hits.load(Ordering::SeqCst), 0);
+    });
+}
+
+#[test]
+fn loopback_allowed_and_gate_allowing_fetches() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()).with_loopback_allowed());
+        let server = serve_hello();
+        let gate = CountingGate::new(true);
+        let url = format!("http://127.0.0.1:{}/", server.port);
+        let out = ext
+            .call("fetch", json!({ "url": url }), env(&gate))
+            .await
+            .unwrap();
+        assert_eq!(out, json!({ "status": 200, "body": "hello" }));
+        assert_eq!(gate.asked(), vec![url]);
+        assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    });
+}
+
+#[test]
+fn loopback_allowed_but_gate_refusing_sends_nothing() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()).with_loopback_allowed());
+        let server = serve_hello();
+        let gate = CountingGate::new(false);
+        let url = format!("http://127.0.0.1:{}/", server.port);
+        let err = ext
+            .call("fetch", json!({ "url": url }), env(&gate))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, WasmError::Failed(_)), "{err:?}");
+        assert_eq!(gate.asked(), vec![url]);
+        assert_eq!(server.hits.load(Ordering::SeqCst), 0);
+    });
+}
+
+#[test]
+fn private_and_mapped_addresses_are_refused_without_asking_the_gate() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()));
+        let server = serve_hello();
+        let gate = CountingGate::new(true);
+        for url in [
+            "http://10.0.0.1/".to_owned(),
+            format!("http://[::ffff:127.0.0.1]:{}/", server.port),
+        ] {
+            let err = ext
+                .call("fetch", json!({ "url": url }), env(&gate))
+                .await
+                .unwrap_err();
+            assert!(matches!(err, WasmError::Failed(_)), "{url}: {err:?}");
+        }
+        assert!(
+            gate.asked().is_empty(),
+            "gate was asked: {:?}",
+            gate.asked()
+        );
+        assert_eq!(server.hits.load(Ordering::SeqCst), 0);
+    });
+}
+
+#[test]
+fn non_http_schemes_are_refused_without_asking_the_gate() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()).with_loopback_allowed());
+        let gate = CountingGate::new(true);
+        for url in ["gopher://127.0.0.1:70/", "file://localhost/etc/passwd"] {
+            let err = ext
+                .call("fetch", json!({ "url": url }), env(&gate))
+                .await
+                .unwrap_err();
+            assert!(matches!(err, WasmError::Failed(_)), "{url}: {err:?}");
+        }
+        assert!(
+            gate.asked().is_empty(),
+            "gate was asked: {:?}",
+            gate.asked()
+        );
+    });
+}

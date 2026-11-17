@@ -32,6 +32,7 @@ pub struct Extension {
     pub(crate) plugin: String,
     pub(crate) data_dir: PathBuf,
     pub(crate) call_timeout: Duration,
+    pub(crate) allow_loopback: bool,
     pub(crate) tools: Vec<ToolInfo>,
 }
 
@@ -57,8 +58,13 @@ impl Extension {
         let args_json =
             serde_json::to_string(&args).map_err(|e| WasmError::InvalidArgs(e.to_string()))?;
         let reason = Arc::new(AtomicU8::new(guest::REASON_NONE));
-        let mut store =
-            guest::new_store(&self.host.engine, &self.plugin, &self.data_dir, env.clone())?;
+        let mut store = guest::new_store(
+            &self.host.engine,
+            &self.plugin,
+            &self.data_dir,
+            env.clone(),
+            self.allow_loopback,
+        )?;
         guest::set_deadline(
             &mut store,
             self.call_timeout,
@@ -96,6 +102,7 @@ impl Extension {
             &self.plugin,
             &self.data_dir,
             CallEnv::for_discovery(),
+            self.allow_loopback,
         )?;
         guest::set_deadline(&mut store, self.call_timeout, None, reason.clone());
         let raw = async {
