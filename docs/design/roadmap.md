@@ -73,7 +73,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 40. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
 42. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
 43. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
-47. [PL-9](plugins.md#open) M2: WASM host, `.cwasm` cache, `wasi:http` with gate and SSRF block (L)
 48. [PL-10](plugins.md#open) M3: webtools `Transport` trait and WASM features, in the webtools repo (M)
 49. [PL-11](plugins.md#open) M4: `web-plugins` component and package (M)
 50. [PL-12](plugins.md#open) M5: end to end and cleanup. Web tools: replaced by the webtools plugin (M)
