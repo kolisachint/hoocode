@@ -1,6 +1,6 @@
 # Plugins
 
-Status (2026-11-17): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools. Decided, not built: two extension tiers (internal WASM, external MCP) and the webtools plugin as v1 (PL-7 to PL-12).
+Status (2026-11-17): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`) and the WASM host (`hoocode-code-wasm`; plugin tools `ext_<plugin>_<tool>`). Not built yet: the webtools plugin as v1 (PL-10 to PL-12).
 
 ## Principles
 
@@ -236,6 +236,9 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | Plugin settings live under `pluginConfig.<plugin>.<key>` (`extensions` is an existing settings key). |
 | 2026-11-17 | A WASM component loads under the same trust as the plugin's MCP servers (`marketplace_trusted`); untrusted plugins' components are skipped with a diagnostic. |
 | 2026-11-17 | Network calls from a WASM tool ask once per tool call, as WebFetch. Later requests in the same call (redirect hops) do not ask again, but each passes the SSRF block. |
+| 2026-11-17 | The WASM host sends HTTP itself (hyper, rustls with webpki roots, HTTP/1.1 only) and connects only to the addresses the SSRF check resolved, so DNS rebinding cannot reach a private address. wasmtime-wasi-http's `default-send-request` feature is off. |
+| 2026-11-17 | The 30 s call limit and Esc are wall-clock, not only epoch ticks, so a call blocked in host I/O stops too. Time spent waiting on the permission prompt does not count. Response bodies have a 600 s between-bytes timeout. |
+| 2026-11-17 | Plugin WASM tools load in the main session and subagents, but not in light mode, with `--no-tools`, or when a `--tools` list names no `ext_` tool (same rule as MCP). |
 
 ## Open
 
@@ -249,7 +252,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-6 | Stop loading Claude plugin `agents/` | S | Done 2026-11-17 | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
 | PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Done 2026-11-17: toolchain bumped, numbers in PL-7 measurements. Waits for the user's go on the stop rule. |
 | PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | Done 2026-11-17 (tag `wit-v0.1.0` pending) | Interfaces as in Contract. Tag it so plugin repos can pin. |
-| PL-9 | M2: WASM host | L | PL-8 | Owner crate. Loader for `dev.hoocode/extension.wasm`, `.cwasm` cache, per-call instances, limits, `wasi:http` with gate and SSRF block, `config-get`, names, registry origin tag, subagent clearance. Check musl and ubuntu-24.04-arm builds. |
+| PL-9 | M2: WASM host | L | Done 2026-11-17 (musl and ubuntu-24.04-arm build checks pending) | Owner crate. Loader for `dev.hoocode/extension.wasm`, `.cwasm` cache, per-call instances, limits, `wasi:http` with gate and SSRF block, `config-get`, names, registry origin tag, subagent clearance. Check musl and ubuntu-24.04-arm builds. |
 | PL-10 | M3: webtools `Transport` trait and WASM features (webtools repo) | M | PL-8 | One GET without redirects per hop (fetch already loops by hand). Five search call sites. DNS guard moves to the host. Native CLI and MCP unchanged. Stop reading `~/.hoocode/settings.json`. |
 | PL-11 | M4: `web-plugins` component and package | M | PL-9, PL-10 | Builds `extension.wasm` in CI; skill on fetch and search; `plugin.json`. |
 | PL-12 | M5: end to end and cleanup | M | PL-11 | List in `hoocode-official-plugins` and pre-trust it. Tests: marketplace add, install, trust; `ext_webtools_fetch` and `ext_webtools_search` work through a mock LLM in the main session and a subagent (`subagent_evals`); a gated call prompts; the SSRF block refuses a private IP (loopback allowed only by the test setting). Delete hoocode `webfetch`/`websearch` helpers, `--enable-webtools`, `enableWebTools`, `webtools.*` settings. Update `docs/user/` and `docs/maps/` in the same commit. Replaces AG-1. |
