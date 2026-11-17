@@ -73,8 +73,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 40. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
 42. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
 43. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
-49. [PL-11](plugins.md#open) M4: plugin component and package in `hoo-web-plugin` (M)
-50. [PL-12](plugins.md#open) M5: end to end and cleanup. Web tools: replaced by the webtools plugin (M)
 
 ## Needs a user decision
 
