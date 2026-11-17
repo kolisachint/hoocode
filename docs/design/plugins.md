@@ -136,6 +136,7 @@ The `wit/` package holds only hoocode's interfaces; WASI 0.2 interfaces are prov
 - Precompile at install or trust into the `.cwasm` cache. Key: file SHA-256, wasmtime version, engine config. Loading a `.cwasm` is native code via an unsafe deserialize, so the folder is 0700 and owned by the user.
 - A fresh store and instance per call (`InstancePre`). No state between calls. Persistent state goes in plugin data.
 - Subagent processes load from the same cache.
+- `HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK=1` (internal, tests only, not in `--help`) lets loopback through the SSRF block. It is read from the environment only, never from plugin config.
 
 ### Naming
 

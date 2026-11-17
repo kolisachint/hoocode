@@ -77,7 +77,20 @@ NEEDLES = {
     # and the roster lists both runs with their descriptions while they run.
     "roster_names_run_1": '- explore#1 (\\"audit the auth module\\")  running',
     "roster_names_run_2": '- explore#2 (\\"audit the db layer\\")  running',
+    # The echo plugin tool's result, as pretty JSON, carried in a request (`echo_plugin`).
+    "echoed_marker": '\\"marker\\": \\"ext-echo-7\\"',
 }
+
+# The echo component (`hoocode-code-wasm`'s fixture) and the manifest of the plugin that holds it.
+ECHO_FIXTURE = REPO / "crates/hoocode-code-wasm/tests/fixtures/echo-ext.wasm"
+ECHO_PLUGIN_JSON = json.dumps(
+    {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "echo",
+        "version": "1.0.0",
+        "description": "Echo fixture",
+    }
+)
 
 # A global config that lets subagents run Shell without asking. A subagent whose
 # parent has no UI is denied what needs approval, so a scenario that has one run
@@ -185,6 +198,53 @@ class Scenario:
     # Files written under the run's ~/.hoocode (path relative to it), e.g. user
     # agent definitions in `agents/`.
     home_files: dict[str, str] = field(default_factory=dict)
+    # Put the echo plugin (`ext_echo_*` tools) in the run's ~/.agents/plugins, as a
+    # hand-placed plugin: no install record, so it is trusted.
+    echo_plugin: bool = False
+
+
+# A user agent with no `tools:` line, so its child gets every tool, plugin tools included.
+ECHOER_AGENT = (
+    "---\n"
+    "name: echoer\n"
+    "description: Calls the echo plugin tool with the marker it is given and reports the result.\n"
+    "---\n"
+    "Call the echo tool with the marker from the task, then report exactly what it returned.\n"
+)
+
+
+def _echo_routes(agent: str) -> dict[str, Route]:
+    """The parent dispatches `agent`; its child calls the echo tool and repeats the result."""
+    return {
+        "child": child_route(
+            [
+                {"tool_calls": [{"name": "ext_echo_echo", "arguments": {"marker": "ext-echo-7"}}]},
+                {"echo_tool_result": True},
+            ]
+        ),
+        "parent": parent_route(
+            [
+                task_call(
+                    background=False,
+                    subagent_type=agent,
+                    description="echo a marker",
+                    prompt="Call the echo tool with marker ext-echo-7 and report what it returned.",
+                ),
+                {"text": PARENT_SUMMARY},
+            ]
+        ),
+    }
+
+
+def _echo_expect() -> Expect:
+    return Expect(
+        ledger_statuses=["complete"],
+        ledger_ok=[True],
+        child_requests=2,
+        parent_requests=2,
+        route_tools_have={"child": ["ext_echo_echo"]},
+        route_sees={"parent": ["echoed_marker"]},
+    )
 
 
 # --------------------------------------------------------------------------
@@ -557,6 +617,38 @@ SCENARIOS: list[Scenario] = [
             child_requests=2,
             parent_requests=2,
             route_sees={"child": ["clearance_denied"]},
+        ),
+    ),
+    Scenario(
+        name="subagent_plugin_tool_reaches_parent",
+        kind="parent",
+        doc=(
+            "A subagent calls a WASM plugin tool (ext_echo_echo) from a plugin in the run's HOME. "
+            "The agent has no tools: list, so it gets every tool. The tool's result reaches the "
+            "child's model, which repeats it as its answer, so the parent's Agent result carries "
+            "the echoed value."
+        ),
+        routes=_echo_routes("echoer"),
+        prompt="Use a subagent to echo a marker.",
+        echo_plugin=True,
+        home_files={"agents/echoer.md": ECHOER_AGENT},
+        expect=_echo_expect(),
+    ),
+    Scenario(
+        name="subagent_plugin_tool_general_purpose",
+        kind="parent",
+        doc=(
+            "The same echo through general-purpose, whose definition lists its tools. The child's "
+            "--tools allowlist has no ext_ names, so the plugin tool is not offered. The design "
+            "(subagents.md, 2026-11-17) says subagents get WASM tools: this records the gap."
+        ),
+        routes=_echo_routes("general-purpose"),
+        prompt="Use a subagent to echo a marker.",
+        echo_plugin=True,
+        expect=_echo_expect(),
+        known_issue=(
+            "general-purpose has a tools: allowlist (Read, Shell, Edit, Write, CodeSearch) and the "
+            "child's --tools list drops ext_ tools, so the child is never offered the plugin tool."
         ),
     ),
     Scenario(
@@ -959,6 +1051,11 @@ def write_project(root: Path, port: int, scenario: Scenario) -> tuple[Path, Path
         path = home / CONFIG_DIR / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+    if scenario.echo_plugin:
+        plugin = home / ".agents" / "plugins" / "echo"
+        (plugin / "dev.hoocode").mkdir(parents=True, exist_ok=True)
+        (plugin / "plugin.json").write_text(ECHO_PLUGIN_JSON, encoding="utf-8")
+        shutil.copyfile(ECHO_FIXTURE, plugin / "dev.hoocode" / "extension.wasm")
     return home, work
 
 

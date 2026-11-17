@@ -6,6 +6,7 @@
 //! per tool call. The call itself is not gated.
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -17,7 +18,7 @@ use hoocode_code_plugins::PluginSet;
 use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use hoocode_code_wasm::{
-    CallEnv, ConfigLookup, Extension, ExtensionSpec, NetGate, ToolInfo, WasmHost,
+    CallEnv, ConfigLookup, Extension, ExtensionSpec, NetGate, ToolInfo, WasmError, WasmHost,
 };
 use hoocode_runtime::io_handle;
 use serde_json::Value;
@@ -28,6 +29,12 @@ use crate::runtime::Diagnostics;
 
 /// The built-in tool a component's network request is asked as.
 const NET_TOOL: &str = "WebFetch";
+
+/// Internal (not in `--help`, tests only): when set to exactly `1`, the WASM host lets loopback
+/// addresses through its SSRF block, so an integration test can serve a plugin's request from a
+/// local server. It is read from the process environment only, never from plugin config, so a
+/// plugin cannot switch it on. Never set it anywhere else.
+pub const INTERNAL_WASM_LOOPBACK_ENV: &str = "HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK";
 
 /// The model tools of every loaded plugin component, with the cache folder the default host
 /// uses (`<agent dir>/cache/wasm`).
@@ -72,7 +79,7 @@ fn build_with_cache(
             continue;
         }
         if host.is_none() {
-            match WasmHost::new(cache_dir.to_path_buf()) {
+            match new_host(cache_dir) {
                 Ok(new) => host = Some(new),
                 Err(error) => {
                     diagnostics.push((
@@ -126,6 +133,22 @@ fn build_with_cache(
         }
     }
     out
+}
+
+/// A host for `cache_dir`, with the test-only loopback switch applied when its variable is `1`.
+fn new_host(cache_dir: &Path) -> Result<WasmHost, WasmError> {
+    let host = WasmHost::new(cache_dir.to_path_buf())?;
+    let allow = loopback_switch_on(std::env::var_os(INTERNAL_WASM_LOOPBACK_ENV).as_deref());
+    Ok(if allow {
+        host.with_loopback_allowed()
+    } else {
+        host
+    })
+}
+
+/// Whether a value of [`INTERNAL_WASM_LOOPBACK_ENV`] turns the switch on: exactly `1`.
+fn loopback_switch_on(value: Option<&OsStr>) -> bool {
+    value.is_some_and(|v| v == "1")
 }
 
 /// One model tool for `info`, run through `extension`.
@@ -368,6 +391,15 @@ mod tests {
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         names.sort_unstable();
         names
+    }
+
+    #[test]
+    fn the_loopback_switch_is_on_only_for_exactly_one() {
+        assert!(!loopback_switch_on(None));
+        assert!(loopback_switch_on(Some(OsStr::new("1"))));
+        for off in ["", "0", "true", "yes", " 1"] {
+            assert!(!loopback_switch_on(Some(OsStr::new(off))), "{off:?}");
+        }
     }
 
     #[test]

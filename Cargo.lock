@@ -1869,6 +1869,7 @@ name = "hoocode-code-main"
 version = "0.2.44"
 dependencies = [
  "hoocode-code-cli",
+ "hoocode-code-plugins",
  "insta",
  "regex",
  "serde",

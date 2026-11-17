@@ -24,6 +24,8 @@ Turn keys (all optional):
     hang             never answer: the caller's own timeout/lifeguard must fire
     abort_after      send this many bytes of SSE, then close the connection
     corrupt_after    send this many bytes of SSE, then a half-written line
+    echo_tool_result answer with the content of the last tool result in the
+                     request (a model that repeats what its tool said)
     error            {"status": n, "message": "…"} instead of a stream, with an
                      optional "retry_after" header
     context_overflow answer 400 with the shape providers use when the context no
@@ -135,6 +137,8 @@ class MockProvider:
                 route_name = provider.pick_route(body)
                 route = provider.routes[route_name]
                 turn = route.next_turn()
+                if turn.get("echo_tool_result"):
+                    turn = {**turn, "text": last_tool_text(body)}
                 provider.record(route_name, turn, body)
                 provider.serve(self, turn)
 
@@ -355,6 +359,15 @@ class MockProvider:
         )
         out.append("data: [DONE]\n\n")
         return out
+
+
+def last_tool_text(body: dict[str, Any]) -> str:
+    """The content of the last tool result in a chat-completions request."""
+    for message in reversed(body.get("messages") or []):
+        if message.get("role") == "tool":
+            content = message.get("content")
+            return content if isinstance(content, str) else json.dumps(content)
+    return "mock: no tool result to echo"
 
 
 def last_user_text(body: dict[str, Any]) -> str:
