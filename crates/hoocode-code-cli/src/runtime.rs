@@ -296,22 +296,21 @@ fn resource_loader(
 ) -> DefaultResources {
     let no_skills = args.no_skills == Some(true) || light;
     let agent_dir_str = agent_dir.to_string_lossy().into_owned();
-    // A plugin's skills and subagents are skills and agents: none in light mode or with
-    // --no-skills. Its MCP servers are separate (see attach_mcp).
-    let (plugin_skill_paths, plugin_agent_paths) = if no_skills {
-        (Vec::new(), Vec::new())
+    // A plugin's skills are skills: none in light mode or with --no-skills. Its MCP servers are
+    // separate (see attach_mcp).
+    let plugin_skill_paths = if no_skills {
+        Vec::new()
     } else {
-        (plugins.skill_entries(), plugins.agent_files())
+        plugins.skill_entries()
     };
     // A `/plugin` change reaches the next reload through this: the current plugins, read each
     // time (see `load_session_plugins` and `hoocode_code_plugins::set_current`).
     let plugin_source: hoocode_code_resources::resource_loader::PluginSource =
         Arc::new(move || {
             if no_skills {
-                return (Vec::new(), Vec::new());
+                return Vec::new();
             }
-            let current = hoocode_code_plugins::current();
-            (current.skill_entries(), current.agent_files())
+            hoocode_code_plugins::current().skill_entries()
         });
     // Plugin skills' allowed-tools take effect only after the user approved them. The gate
     // needs the plugin skill folders to tell a plugin skill from any other; both are read when
@@ -359,7 +358,6 @@ fn resource_loader(
         additional_prompt_template_paths: resolve_cli_paths(cwd, &args.prompt_templates),
         additional_slash_command_paths: resolve_cli_paths(cwd, &args.slash_commands),
         plugin_skill_paths,
-        plugin_agent_paths,
         plugin_source: Some(plugin_source),
         skills_override: Some(gate_allowed_tools),
         no_skills,

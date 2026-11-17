@@ -46,15 +46,13 @@ fn an_agent_plugin_contributes_a_skill_and_mcp_servers() {
 }
 
 #[test]
-fn a_claude_plugin_contributes_skills_agents_and_dot_mcp_json() {
+fn a_claude_plugin_contributes_skills_and_dot_mcp_json() {
     let sb = Sandbox::new();
     let trust = empty_trust(&sb);
     let set = sb.load(&trust);
     let p = plugin(&set, "claude-demo");
     assert_eq!(p.format, PluginFormat::Claude);
     assert_eq!(p.skill_dirs, vec![p.root.join("skills/review")]);
-    // Only *.md files in agents/ are agents; notes.txt is not.
-    assert_eq!(p.agent_files, vec![p.root.join("agents/reviewer.md")]);
     assert_eq!(
         p.mcp_path.as_deref(),
         Some(p.root.join(".mcp.json").as_path())
@@ -71,6 +69,22 @@ fn a_claude_plugin_contributes_skills_agents_and_dot_mcp_json() {
 
     // A Claude plugin has no PLUGIN_DATA; nothing is created for it.
     assert!(!p.data_dir.exists());
+}
+
+/// `agents/` is not a component hoocode runs: the Claude plugin with one still loads, and the
+/// folder is reported as skipped (`/plugin list` shows the warning).
+#[test]
+fn a_claude_plugin_with_agents_loads_and_warns_that_agents_are_skipped() {
+    let sb = Sandbox::new();
+    let trust = empty_trust(&sb);
+    let set = sb.load(&trust);
+    let p = plugin(&set, "claude-demo");
+    assert!(p.root.join("agents/reviewer.md").is_file());
+    assert!(set.diagnostics.iter().any(|d| {
+        d.plugin.as_deref() == Some("claude-demo")
+            && d.severity == Severity::Warning
+            && d.message == "agents/ is not supported by hoocode; skipped"
+    }));
 }
 
 #[test]
@@ -276,4 +290,69 @@ fn a_claude_command_that_links_outside_the_plugin_is_refused() {
         .diagnostics
         .iter()
         .any(|d| d.server.as_deref() == Some("linked") && d.message.contains("leaves")));
+}
+
+/// A user folder holding a plugin named `name` in the Agent Plugins layout (`plugin.json`).
+fn agent_layout_plugin(user: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let root = user.join(name);
+    write(&root.join("plugin.json"), &MANIFEST.replace("linky", name));
+    root
+}
+
+#[test]
+fn extension_wasm_is_found_in_both_layouts_and_absent_when_missing() {
+    let sb = Sandbox::new();
+    let user = sb.repo.parent().unwrap().join("wasm-user");
+    let agent_root = agent_layout_plugin(&user, "wasm-agent");
+    write(&agent_root.join("dev.hoocode/extension.wasm"), "\0asm");
+    let claude_root = user.join("wasm-claude");
+    write(
+        &claude_root.join(".claude-plugin/plugin.json"),
+        r#"{"name": "wasm-claude"}"#,
+    );
+    write(&claude_root.join("dev.hoocode/extension.wasm"), "\0asm");
+    agent_layout_plugin(&user, "wasm-none");
+
+    let trust = empty_trust(&sb);
+    let mut options = sb.options(&trust);
+    options.user_plugins_dir = user;
+    let set = hoocode_code_plugins::load_plugins(&options);
+
+    let agent = plugin(&set, "wasm-agent");
+    assert_eq!(
+        agent.extension_wasm,
+        Some(agent_root.join("dev.hoocode/extension.wasm"))
+    );
+    let claude = plugin(&set, "wasm-claude");
+    assert_eq!(
+        claude.extension_wasm,
+        Some(claude_root.join("dev.hoocode/extension.wasm"))
+    );
+    assert_eq!(plugin(&set, "wasm-none").extension_wasm, None);
+    assert!(!set
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("extension.wasm")));
+}
+
+#[cfg(unix)]
+#[test]
+fn an_extension_wasm_that_links_outside_the_plugin_is_skipped() {
+    let sb = Sandbox::new();
+    let outside = sb.repo.parent().unwrap().join("outside.wasm");
+    write(&outside, "\0asm");
+    let user = sb.repo.parent().unwrap().join("wasm-link-user");
+    let root = agent_layout_plugin(&user, "wasm-link");
+    std::fs::create_dir_all(root.join("dev.hoocode")).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("dev.hoocode/extension.wasm")).unwrap();
+
+    let trust = empty_trust(&sb);
+    let mut options = sb.options(&trust);
+    options.user_plugins_dir = user;
+    let set = hoocode_code_plugins::load_plugins(&options);
+    assert_eq!(plugin(&set, "wasm-link").extension_wasm, None);
+    assert!(set.diagnostics.iter().any(|d| {
+        d.plugin.as_deref() == Some("wasm-link")
+            && d.message.contains("resolves outside the plugin")
+    }));
 }

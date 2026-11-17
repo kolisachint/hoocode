@@ -51,9 +51,8 @@ pub struct ResourceExtensionPaths {
 
 type Override<T> = Box<dyn Fn(T) -> T + Send + Sync>;
 
-/// The plugin skill folders and agent files, as [`DefaultResourceLoaderOptions::plugin_source`]
-/// gives them.
-pub type PluginSource = Arc<dyn Fn() -> (Vec<PathEntry>, Vec<String>) + Send + Sync>;
+/// The plugin skill folders, as [`DefaultResourceLoaderOptions::plugin_source`] gives them.
+pub type PluginSource = Arc<dyn Fn() -> Vec<PathEntry> + Send + Sync>;
 
 /// `DefaultResourceLoaderOptions`.
 #[derive(Default)]
@@ -67,10 +66,8 @@ pub struct DefaultResourceLoaderOptions {
     /// so the skills are named `<plugin>:<skill>`. Kept here (not only in `extend_resources`)
     /// so that every `reload()` applies them again.
     pub plugin_skill_paths: Vec<PathEntry>,
-    /// Agent definition files contributed by plugins; applied on every `reload()`.
-    pub plugin_agent_paths: Vec<String>,
-    /// Asked on every `reload()` for the plugin skill folders and agent files, when set, so a
-    /// change to the installed plugins applies at the next reload. Overrides the two fields above.
+    /// Asked on every `reload()` for the plugin skill folders, when set, so a change to the
+    /// installed plugins applies at the next reload. Overrides `plugin_skill_paths`.
     pub plugin_source: Option<PluginSource>,
     pub additional_prompt_template_paths: Vec<String>,
     pub additional_slash_command_paths: Vec<String>,
@@ -297,9 +294,7 @@ impl DefaultResourceLoader {
     /// `reload()`: settings, resolved resource paths, then every resource kind.
     pub fn reload(&mut self) {
         if let Some(source) = self.options.plugin_source.clone() {
-            let (skills, agents) = source();
-            self.options.plugin_skill_paths = skills;
-            self.options.plugin_agent_paths = agents;
+            self.options.plugin_skill_paths = source();
         }
         let (global, project, settings_slash_paths) = {
             let mut settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
@@ -359,16 +354,10 @@ impl DefaultResourceLoader {
             .map(|r| r.path)
             .collect();
         let _enabled_extensions = enabled(&resolved.extensions, &mut metadata_by_path);
-        let mut enabled_agents: Vec<String> = enabled(&resolved.agents, &mut metadata_by_path)
+        let enabled_agents: Vec<String> = enabled(&resolved.agents, &mut metadata_by_path)
             .into_iter()
             .map(|r| r.path)
             .collect();
-        enabled_agents.extend(
-            self.options
-                .plugin_agent_paths
-                .iter()
-                .map(|p| self.resolve_resource_path(p)),
-        );
 
         // `mapSkillPath`: an auto/package skill directory holding SKILL.md is its file.
         let enabled_skills: Vec<String> = enabled_skill_resources

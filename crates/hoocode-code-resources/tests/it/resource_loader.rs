@@ -538,33 +538,25 @@ fn plugin_skill_entry(path: &str, plugin: &str) -> PathEntry {
 }
 
 #[test]
-fn plugin_skills_are_named_by_plugin_and_agents_survive_reload() {
+fn plugin_skills_are_named_by_plugin_and_survive_reload() {
     let e = env();
     let skill_dir = format!("{}/plugins/deploy/skills/ship", e.temp);
     write(
         &format!("{skill_dir}/SKILL.md"),
         &skill("ship", "Ship it", "Body"),
     );
-    let agent_path = format!("{}/plugins/deploy/agents/reviewer.md", e.temp);
-    write(
-        &agent_path,
-        "---\nname: reviewer\ndescription: Reviews code\n---\nReview the diff.",
-    );
     let mut options = e.options();
     options.plugin_skill_paths = vec![plugin_skill_entry(&skill_dir, "deploy")];
-    options.plugin_agent_paths = vec![agent_path.clone()];
     let mut loader = DefaultResourceLoader::new(options);
     loader.reload();
 
     let names: Vec<String> = loader.skills().skills.into_iter().map(|s| s.name).collect();
     assert!(names.contains(&"deploy:ship".to_string()), "{names:?}");
-    assert_eq!(loader.agent_paths(), vec![agent_path.clone()]);
 
     // A reload clears the per-load state; the plugin contributions come back from the options.
     loader.reload();
     let names: Vec<String> = loader.skills().skills.into_iter().map(|s| s.name).collect();
     assert!(names.contains(&"deploy:ship".to_string()), "{names:?}");
-    assert_eq!(loader.agent_paths(), vec![agent_path]);
 }
 
 #[test]

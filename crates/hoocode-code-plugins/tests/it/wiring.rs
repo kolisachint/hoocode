@@ -1,5 +1,4 @@
-//! Wiring: the loaded plugins reach the skill loader (namespaced skills, agent files) and the
-//! MCP config (`hoocode-code-mcp`), through the same calls the runtime makes.
+//! Wiring: the loaded plugins reach the skill loader (namespaced skills) and the MCP config (`hoocode-code-mcp`), through the same calls the runtime makes.
 
 use std::sync::{Arc, Mutex};
 
@@ -17,7 +16,7 @@ fn load_set(sb: &Sandbox) -> PluginSet {
 }
 
 #[test]
-fn plugin_skills_load_as_plugin_namespaced_skills_and_agents_reach_the_registry() {
+fn plugin_skills_load_as_plugin_namespaced_skills() {
     let sb = Sandbox::new();
     let set = load_set(&sb);
     let base = sb.repo.parent().unwrap().to_path_buf();
@@ -30,7 +29,6 @@ fn plugin_skills_load_as_plugin_namespaced_skills_and_agents_reach_the_registry(
         home: Some(base.join("home").to_string_lossy().into_owned()),
         user_agents_dir: Some(base.join("home/.agents").to_string_lossy().into_owned()),
         plugin_skill_paths: set.skill_entries(),
-        plugin_agent_paths: set.agent_files(),
         ..Default::default()
     };
     let mut loader = DefaultResourceLoader::new(options);
@@ -45,10 +43,6 @@ fn plugin_skills_load_as_plugin_namespaced_skills_and_agents_reach_the_registry(
         names.contains(&"claude-demo:review".to_owned()),
         "{names:?}"
     );
-    assert!(loader
-        .agent_paths()
-        .iter()
-        .any(|p| p.ends_with("claude-demo/agents/reviewer.md")));
 }
 
 #[test]

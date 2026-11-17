@@ -50,7 +50,7 @@ my-plugin/
 | Format | Layout | Notes |
 |---|---|---|
 | Agent Plugins 1.0 | root `plugin.json`, `skills/`, `mcp.json` | Schemas are hand-coded from the 1.0.0 spec and bundled, never fetched. Only the 1.0.0 `$schema` ids are accepted. |
-| Claude | `.claude-plugin/plugin.json`, `skills/`, `.mcp.json` or inline `mcpServers` | Read only. Claude variables such as `${CLAUDE_PLUGIN_ROOT}` are not expanded. Plugin `agents/` is no longer loaded (decided 2026-11-17, PL-6; until PL-6 lands the code still loads it). |
+| Claude | `.claude-plugin/plugin.json`, `skills/`, `.mcp.json` or inline `mcpServers` | Read only. Claude variables such as `${CLAUDE_PLUGIN_ROOT}` are not expanded. Plugin `agents/` is no longer loaded (decided 2026-11-17, PL-6). |
 | Claude marketplace | `.claude-plugin/marketplace.json` | Read only. Never written. |
 
 Agent Plugins 1.0 rules:
@@ -60,7 +60,7 @@ Agent Plugins 1.0 rules:
 - `skills/`: each direct subdirectory with a `SKILL.md`. Not recursive.
 - `mcp.json`: its `$schema` version must match `plugin.json`, or MCP is off for that plugin. `stdio` `command` is one token with no expansion. `args`, `env` and `cwd` expand only `${PLUGIN_ROOT}` and `${PLUGIN_DATA}`, and `env` may not set those names. `streamable-http` needs HTTPS unless the host is loopback. A bad server is skipped and reported.
 - Every declared path must resolve inside the plugin root. Unknown `extensions` namespaces are ignored.
-- Ignored contents: hooks, commands, agents, prompts, themes and providers (agents after PL-6). The plugin still loads, and `/plugin list` reports what was skipped.
+- Ignored contents: hooks, commands, agents, prompts, themes and providers. The plugin still loads, and `/plugin list` reports what was skipped.
 
 Written: ProposePlugin writes one Agent Plugins package only. Never Claude or Copilot layouts, never `marketplace.json`.
 
@@ -114,6 +114,8 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 | `wasi:clocks`, `wasi:random` | WASI 0.2 | no |
 | `hoocode:extension/tool`: `list-tools() -> list of {name, description, input-schema-json}`, `call(name, args-json) -> result-json` | ours | n/a |
 | `hoocode:extension/host`: `config-get`, `log` | ours | no |
+
+The `wit/` package holds only hoocode's interfaces; WASI 0.2 interfaces are provided by the host and included by each plugin's own world (no WASI WIT is vendored: MIT-only repo).
 
 - API keys (for example Brave, Tavily) come through `config-get` from user settings.
 - Not in 0.1:
@@ -230,6 +232,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | MCP server binaries are expected on PATH. |
 | 2026-11-17 | A test-only setting may allow loopback through the SSRF block. It is never readable from plugin config. |
 | 2026-11-17 | PL-7: toolchain pinned to 1.100.0, `rust-version` 1.95. Trimmed wasmtime 48.0.9 halves the added clean build time (release +36% instead of +75%) but not the binary (+14.2 MiB) or peak build memory (x2.0). Stop rule: build cost is noticeably cut, size is not; the user decides before host code (PL-9). |
+| 2026-11-17 | `wit/` defines `hoocode:extension@0.1.0` with only `types`, `tool` and `host`; the host provides WASI 0.2 (`wasi:cli/imports`, `wasi:http/outgoing-handler`) and plugins include it in their own world. WASI WIT is not vendored (MIT only). |
 
 ## Open
 
@@ -240,9 +243,9 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-3 | Fix the TUI plugin tool list | S | None | `hoocode-code-tui-widgets/src/tools/plugins.rs` names `SuggestPluginInstall` (not a tool) and omits `UninstallPlugin`. |
 | PL-4 | Live reload of plugin tools | M | Users hit a stale tool list | A tool change needs `/reload` today. Route the change through the same reload path as install. |
 | PL-5 | Enforce `allowed-tools` or delete the approval | S | Decision | Nothing reads the approved list. Either gate tools with it, or delete the record and keep the warning. |
-| PL-6 | Stop loading Claude plugin `agents/` | S | None | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
+| PL-6 | Stop loading Claude plugin `agents/` | S | Done 2026-11-17 | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
 | PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Done 2026-11-17: toolchain bumped, numbers in PL-7 measurements. Waits for the user's go on the stop rule. |
-| PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | PL-7 | Interfaces as in Contract. Tag it so plugin repos can pin. |
+| PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | Done 2026-11-17 (tag `wit-v0.1.0` pending) | Interfaces as in Contract. Tag it so plugin repos can pin. |
 | PL-9 | M2: WASM host | L | PL-8 | Owner crate. Loader for `dev.hoocode/extension.wasm`, `.cwasm` cache, per-call instances, limits, `wasi:http` with gate and SSRF block, `config-get`, names, registry origin tag, subagent clearance. Check musl and ubuntu-24.04-arm builds. |
 | PL-10 | M3: webtools `Transport` trait and WASM features (webtools repo) | M | PL-8 | One GET without redirects per hop (fetch already loops by hand). Five search call sites. DNS guard moves to the host. Native CLI and MCP unchanged. Stop reading `~/.hoocode/settings.json`. |
 | PL-11 | M4: `web-plugins` component and package | M | PL-9, PL-10 | Builds `extension.wasm` in CI; skill on fetch and search; `plugin.json`. |

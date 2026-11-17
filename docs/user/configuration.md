@@ -50,7 +50,7 @@ state, and `/mcp login <server>` signs in to one that needs it.
 
 ## Plugins
 
-Plugins add skills, subagents and MCP servers. They live in `~/.agents/plugins/`
+Plugins add skills and MCP servers. They live in `~/.agents/plugins/`
 (yours) and `.agents/plugins/` (the project's). Manage them with `/plugin` in a
 session: add a marketplace, then install from it.
 
