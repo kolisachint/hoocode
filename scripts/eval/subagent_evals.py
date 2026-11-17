@@ -589,12 +589,12 @@ SCENARIOS: list[Scenario] = [
         doc=(
             "A subagent's Shell call needs approval and its parent (--mode json) has no UI to "
             "ask. The call is denied, not silently run: the child is told so, carries on, and "
-            "finishes. Nothing is auto-allowed in the config, so the denial is the gate's."
+            "finishes. Nothing is auto-allowed in the config and `touch` is not a safe_shell command, so the denial is the gate's."
         ),
         routes={
             "child": child_route(
                 [
-                    {"tool_calls": [{"name": "Shell", "arguments": {"command": "echo hi"}}]},
+                    {"tool_calls": [{"name": "Shell", "arguments": {"command": "touch denied_probe.txt"}}]},
                     {"text": CHILD_SUMMARY},
                 ]
             ),
@@ -604,7 +604,7 @@ SCENARIOS: list[Scenario] = [
                         background=False,
                         subagent_type="general-purpose",
                         description="run a command",
-                        prompt="Run echo hi and report.",
+                        prompt="Run touch denied_probe.txt and report.",
                     ),
                     {"text": PARENT_SUMMARY},
                 ]
