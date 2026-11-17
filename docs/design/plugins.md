@@ -146,9 +146,9 @@ The `wit/` package holds only hoocode's interfaces; WASI 0.2 interfaces are prov
 
 ### Distribution
 
-- Official marketplace: repo `hoocode-official-plugins`, a listing only (`marketplace.json` entries). Pre-trusted alongside the existing official directory (PL-12).
-- `web-plugins`: web plugins for hoocode. Its thin crate implements `hoocode:extension` on the webtools crates and builds `dev.hoocode/extension.wasm` in CI. It holds `plugin.json`, the skill and the component.
-- `webtools` stays hoocode-agnostic: a library, plus its native CLI and MCP server. It gains a `Transport` trait (native reqwest, and `wasi:http`) and WASM-compatible crate features. It stops reading `~/.hoocode/settings.json`.
+- Official marketplace: repo `hoo-plugins` (planned name `hoocode-official-plugins`), a listing only (`marketplace.json` entries). Pre-trusted alongside the existing official directory (PL-12).
+- `hoo-web-plugin` (the webtools repo, renamed): the webtools libraries, native CLI and MCP server, plus the hoocode plugin package in `plugin/` (`plugin.json`, the skill, the component crate in `plugin/component/` and the built `dev.hoocode/extension.wasm`). A marketplace entry points at the repo with path `plugin`.
+- The webtools libraries stay hoocode-agnostic. They have a `Transport` trait (one hop, no redirects; native reqwest, and `wasi:http` behind the `wasi` feature) and build for `wasm32-wasip2`. The CLI reads its own `~/.config/webtools/config.json` (`WEBTOOLS_CONFIG`), not `~/.hoocode/settings.json`.
 - MCP server binaries are expected on PATH. Plugins do not ship per-platform binaries.
 
 ### Measurements (2026-11-17)
@@ -239,6 +239,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | The WASM host sends HTTP itself (hyper, rustls with webpki roots, HTTP/1.1 only) and connects only to the addresses the SSRF check resolved, so DNS rebinding cannot reach a private address. wasmtime-wasi-http's `default-send-request` feature is off. |
 | 2026-11-17 | The 30 s call limit and Esc are wall-clock, not only epoch ticks, so a call blocked in host I/O stops too. Time spent waiting on the permission prompt does not count. Response bodies have a 600 s between-bytes timeout. |
 | 2026-11-17 | Plugin WASM tools load in the main session and subagents, but not in light mode, with `--no-tools`, or when a `--tools` list names no `ext_` tool (same rule as MCP). |
+| 2026-11-17 | The webtools repo is renamed `hoo-web-plugin` and also holds the plugin package (`plugin/`); no separate `web-plugins` repo. The official listing is `hoo-plugins`. The webtools CLI reads `~/.config/webtools/config.json` and env vars, never hoocode settings. |
 
 ## Open
 
@@ -253,8 +254,8 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Done 2026-11-17: toolchain bumped, numbers in PL-7 measurements. Waits for the user's go on the stop rule. |
 | PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | Done 2026-11-17 (tag `wit-v0.1.0` pending) | Interfaces as in Contract. Tag it so plugin repos can pin. |
 | PL-9 | M2: WASM host | L | Done 2026-11-17 (x86_64 musl: tests pass, static release binary 50.0 MiB; ubuntu-24.04-arm at the next release rehearsal) | Owner crate. Loader for `dev.hoocode/extension.wasm`, `.cwasm` cache, per-call instances, limits, `wasi:http` with gate and SSRF block, `config-get`, names, registry origin tag, subagent clearance. Check musl and ubuntu-24.04-arm builds. |
-| PL-10 | M3: webtools `Transport` trait and WASM features (webtools repo) | M | PL-8 | One GET without redirects per hop (fetch already loops by hand). Five search call sites. DNS guard moves to the host. Native CLI and MCP unchanged. Stop reading `~/.hoocode/settings.json`. |
-| PL-11 | M4: `web-plugins` component and package | M | PL-9, PL-10 | Builds `extension.wasm` in CI; skill on fetch and search; `plugin.json`. |
+| PL-10 | M3: webtools `Transport` trait and WASM features (`hoo-web-plugin` repo) | M | Done 2026-11-17 | One GET without redirects per hop (fetch already loops by hand). Five search call sites. DNS guard moves to the host. Native CLI and MCP unchanged. Stop reading `~/.hoocode/settings.json`. |
+| PL-11 | M4: plugin component and package (`hoo-web-plugin/plugin/`) | M | PL-9, PL-10 | Builds `extension.wasm` in CI; skill on fetch and search; `plugin.json`. |
 | PL-12 | M5: end to end and cleanup | M | PL-11 | List in `hoocode-official-plugins` and pre-trust it. Tests: marketplace add, install, trust; `ext_webtools_fetch` and `ext_webtools_search` work through a mock LLM in the main session and a subagent (`subagent_evals`); a gated call prompts; the SSRF block refuses a private IP (loopback allowed only by the test setting). Delete hoocode `webfetch`/`websearch` helpers, `--enable-webtools`, `enableWebTools`, `webtools.*` settings. Update `docs/user/` and `docs/maps/` in the same commit. Replaces AG-1. |
 | PL-13 | Notebook plugin | L | A user asks for notebooks | Workspace interface 0.2. Own `serde_json::Value` editor with `preserve_order`, indent 1, no ASCII escaping, new cell ids via `wasi:random`. Execution: a skill using `jupyter execute`; MCP server only for stateful kernels. |
 | PL-14 | Revisit hooks | S | Agent Plugins 1.1 final | Read the portable hooks contract. Decide whether to support it. |
