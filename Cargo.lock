@@ -1811,6 +1811,7 @@ dependencies = [
  "chrono",
  "hoocode-agent-compaction",
  "hoocode-agent-core",
+ "hoocode-agent-mcp",
  "hoocode-agent-types",
  "hoocode-ai-env",
  "hoocode-ai-oauth",
@@ -1825,6 +1826,7 @@ dependencies = [
  "hoocode-app-server",
  "hoocode-code-agent-session",
  "hoocode-code-auth",
+ "hoocode-code-mcp",
  "hoocode-code-media",
  "hoocode-code-models",
  "hoocode-code-modes",
@@ -1849,6 +1851,7 @@ dependencies = [
  "hoocode-code-tui-keybindings",
  "hoocode-code-tui-theme",
  "hoocode-code-update",
+ "hoocode-code-wasm",
  "hoocode-home",
  "hoocode-runtime",
  "hoocode-tui-fuzzy",
@@ -2363,13 +2366,19 @@ dependencies = [
  "hoocode-ai-types",
  "hoocode-runtime",
  "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "rustls",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
  "tokio",
+ "tokio-rustls",
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-http",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -5496,14 +5505,11 @@ dependencies = [
  "http-body-util",
  "hyper",
  "pin-project-lite",
- "rustls",
  "tokio",
- "tokio-rustls",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-io",
- "webpki-roots 1.0.9",
 ]
 
 [[package]]

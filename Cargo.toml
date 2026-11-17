@@ -187,7 +187,7 @@ hoocode-runtime = { path = "crates/hoocode-runtime" }
 # WASM extension host (the only crate that links wasmtime; see docs/design/plugins.md).
 wasmtime = { version = "=48.0.9", default-features = false, features = ["std", "runtime", "cranelift", "component-model", "async", "parallel-compilation"] }
 wasmtime-wasi = { version = "=48.0.9", default-features = false, features = ["p2"] }
-wasmtime-wasi-http = { version = "=48.0.9", default-features = false, features = ["p2", "default-send-request"] }
+wasmtime-wasi-http = { version = "=48.0.9", default-features = false, features = ["p2"] }
 
 # No debuginfo in dev builds (build-speed.md D1, changed 2026-10-10). target/
 # reached 61 GB, mostly ~647k .o files kept for macOS debug info. Panic

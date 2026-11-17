@@ -12,6 +12,7 @@
 //! block, `ssrf.rs`), and the rest go through the caller's [`NetGate`].
 
 mod cache;
+mod connect;
 mod error;
 mod extension;
 mod guest;
