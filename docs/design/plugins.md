@@ -129,7 +129,7 @@ The `wit/` package holds only hoocode's interfaces; WASI 0.2 interfaces are prov
 
 ### Host runtime
 
-- One owner crate links wasmtime (listed under `owners` in `scripts/ci/dep-firewall.json`). Always on. No cargo feature (one configuration to test).
+- One owner crate, `hoocode-code-wasm`, links wasmtime (listed under `owners` in `scripts/ci/dep-firewall.json`). Always on. No cargo feature (one configuration to test).
 - wasmtime 48 LTS. Patch updates when advisories land. Move to the next LTS (60) once a year. Track wasmtime security advisories: the sandbox is our security boundary.
 - Toolchain: wasmtime 48 needs rustc 1.95. Since PL-7, `rust-toolchain.toml` pins 1.100.0 and `rust-version` is 1.95 (EN-7 checks it).
 - Features (PL-7): `wasmtime` with `default-features = false` and `std`, `runtime`, `cranelift`, `component-model`, `async`, `parallel-compilation`; `wasmtime-wasi` with `p2`; `wasmtime-wasi-http` with `p2`, `default-send-request`. Off: `wat`, `profiling`, `cache`, `coredump`, `debug-builtins`, `pooling-allocator`, `gc`, `threads`, `component-model-async`. No transitive dependency turns them back on (`cargo tree -e features`). In 48, `Config::async_support` is a deprecated no-op.

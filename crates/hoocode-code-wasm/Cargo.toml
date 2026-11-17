@@ -1,0 +1,30 @@
+[package]
+name = "hoocode-code-wasm"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "WASM extension host for the hoocode coding agent: runs internal-tier plugin components (hoocode:extension@0.1.0) in wasmtime with per-call instances, limits and a gated wasi:http"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-ai-types = { workspace = true }
+hoocode-runtime = { workspace = true }
+http = "1"
+serde_json = "1"
+sha2 = "0.11"
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+wasmtime-wasi-http = { workspace = true }
+tokio = { version = "1", features = ["io-util"] }
+
+[dev-dependencies]
+tempfile = "3"
