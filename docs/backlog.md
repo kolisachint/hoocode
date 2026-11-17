@@ -2,6 +2,8 @@
 
 Status (2026-11-12): handover from the TUI session that worked the UI-25 to UI-34 rows and closed the roadmap TUI rows UI-15, UI-16, UI-18 and UI-20. `docs/wip/` is empty (the folder is absent). This is not the last TUI session. The plan stays in [design/roadmap.md](design/roadmap.md); the rules stay in [design/tui.md](design/tui.md). When this page and those disagree, they win and this page is stale.
 
+Plugins design session (2026-11-17, docs only): added [design/plugins.md](design/plugins.md). Decided: Agent Plugins 1.0 format; internal WASM tier (wasmtime 48 LTS, in-process, gate enforced) and external MCP tier; v1 is the webtools plugin, PL-7 to PL-12, gated by PL-7 (measure trimmed wasmtime and the toolchain bump; stop rule in plugins.md). Repos involved: hoocode, `kolisachint/webtools`, `web-plugins` and `hoocode-official-plugins` (the last two do not exist yet). Scratch measurement code is gone with the container; the numbers are in plugins.md.
+
 How to use it: read "Start here", then do "Next session" top to bottom. Delete rows as they land.
 
 ## Start here
