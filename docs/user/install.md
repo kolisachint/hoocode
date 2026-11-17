@@ -100,7 +100,7 @@ install -m 755 hoocode-aarch64-apple-darwin/hoocode ~/.local/bin/hoocode
 
 ## From source
 
-Rust 1.88 or newer.
+Rust 1.95 or newer.
 
 ```bash
 git clone https://github.com/kolisachint/hoocode

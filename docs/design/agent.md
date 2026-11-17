@@ -280,7 +280,7 @@ rpc (`--mode rpc`):
 | AG-11 | Verify the unchecked MCP, plugin and scope rules | S | None | Check: print and rpc wait 10 s for trusted servers; tool-list change at next turn; `Authorization` 401 text; git input hardening; npm refusal; elicitation decline in print and rpc; `hoo-config.json` mode rule (`auto_allow` is unioned); scoped-model alias, untagged and frontmatter-precedence rules. Add tests or mark not built. |
 | AG-12 | Wire `/goal` to the auto loop | M | User asks for `/goal` | `StartAutoLoop` maps to `None` in `hoocode-code-modes/src/extension.rs` (~457). Add a listener that calls the `/loop auto` path. |
 | AG-13 | `/grill` skips its questions in the loop | S | With AG-12 | Not done. |
-| AG-14 | Stale-lock fix with `flock` | S | Two processes take over one stale lock | Use `File::try_lock`, which needs Rust 1.89. The workspace MSRV is 1.88. Until then, keep the current scheme and accept the race. |
+| AG-14 | Stale-lock fix with `flock` | S | Two processes take over one stale lock | Use `File::try_lock`, which needs Rust 1.89. The workspace MSRV is 1.95 since PL-7, so this is no longer blocked. |
 | AG-15 | Cron batch 2 | M | None | Keep a one-shot until delivered. Add busy guards (retry, session op, attached view). Split the `/cd` store: tick uses the current cwd, tools use the start cwd. Handle a corrupt store. Handle DST. |
 | AG-16 | Off switch for the three Cron tools | S | Measured token cost | Add a setting. Interactive default stays on. |
 | AG-17 | Decide `/learn` | S | None | The tip shows as unavailable (`tips.rs`). Remove the tip, or build the command. Decision says no. |

@@ -98,7 +98,7 @@ authors = ["Mario Zechner (original author)", "Sachin Koli"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/kolisachint/hoocode"
-rust-version = "1.88"
+rust-version = "1.95"
 
 [workspace.dependencies]
 

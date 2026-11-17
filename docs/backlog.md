@@ -20,7 +20,7 @@ How to use it: read "Start here", then do "Next session" top to bottom. Delete r
 
 Environment notes:
 
-- The cloud container's pinned toolchain (1.94.1) may come without `cargo`. Fix: `rustup toolchain uninstall 1.94.1 && rustup toolchain install 1.94.1 --profile minimal -c rustfmt -c clippy`.
+- The cloud container's pinned toolchain (1.100.0) may come without `cargo`. Fix: `rustup toolchain uninstall 1.100.0 && rustup toolchain install 1.100.0 --profile minimal -c rustfmt -c clippy`.
 - Disk is about 30 GB free. One target directory is about 5 GB warm and grows to 15 GB. Two worktrees with a target directory each fit; three do not. Prune with `scripts/dev/prune_target.sh --apply --if-over 8 --target <dir>`.
 - Never share one `CARGO_TARGET_DIR` between worktrees that build at the same time.
 - One test fails only in a checkout with a long path (`tool_execution_component::parity::a_collapsed_read_shows_only_its_call_and_the_toggle_opens_it_whole`: the path wraps at 120 columns). It passes in `/home/user/hoocode`.
