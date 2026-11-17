@@ -129,8 +129,8 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 
 - One owner crate links wasmtime (listed under `owners` in `scripts/ci/dep-firewall.json`). Always on. No cargo feature (one configuration to test).
 - wasmtime 48 LTS. Patch updates when advisories land. Move to the next LTS (60) once a year. Track wasmtime security advisories: the sandbox is our security boundary.
-- Toolchain: wasmtime 48 needs rustc 1.95. The `rust-toolchain.toml` pin moves to the current stable, and `rust-version` rises to at least 1.95, with PL-7 (EN-7 then checks the new value).
-- Feature trimming: keep `cranelift`, `component-model`, `async`. Turn off `wat`, `profiling`, `cache`, `coredump`, `debug-builtins`, `pooling-allocator` unless PL-7 shows a need.
+- Toolchain: wasmtime 48 needs rustc 1.95. Since PL-7, `rust-toolchain.toml` pins 1.100.0 and `rust-version` is 1.95 (EN-7 checks it).
+- Features (PL-7): `wasmtime` with `default-features = false` and `std`, `runtime`, `cranelift`, `component-model`, `async`, `parallel-compilation`; `wasmtime-wasi` with `p2`; `wasmtime-wasi-http` with `p2`, `default-send-request`. Off: `wat`, `profiling`, `cache`, `coredump`, `debug-builtins`, `pooling-allocator`, `gc`, `threads`, `component-model-async`. No transitive dependency turns them back on (`cargo tree -e features`). In 48, `Config::async_support` is a deprecated no-op.
 - Precompile at install or trust into the `.cwasm` cache. Key: file SHA-256, wasmtime version, engine config. Loading a `.cwasm` is native code via an unsafe deserialize, so the folder is 0700 and owned by the user.
 - A fresh store and instance per call (`InstancePre`). No state between calls. Persistent state goes in plugin data.
 - Subagent processes load from the same cache.
@@ -188,6 +188,25 @@ CI fit:
 
 Accepted by the user 2026-11-17.
 
+### PL-7 measurements (2026-11-17)
+
+Single runs, same machine (4 vCPU, 15 GB), rustc 1.100.0. As-is hoocode vs. a scratch copy with wasmtime, wasmtime-wasi and wasmtime-wasi-http 48.0.9, trimmed (features under Host runtime). A probe in `hoocode-code-main` builds an engine, a linker with `wasi:p2` and `wasi:http`, and instantiates a component, so the code is linked. Untrimmed is the table above (wasmtime 51.0.0-rc.1, rustc 1.94.1), so its column is a different version and toolchain.
+
+| Measure | As-is | Untrimmed (above) | Trimmed 48 | Trimmed change | Share of untrimmed cost left |
+|---|---|---|---|---|---|
+| Clean `cargo check -p hoocode-code-main` | 67.8 s | +50.4 s (+75%) | 96.1 s | +28.3 s (+42%) | 56% |
+| Clean dev build | 115.5 s | +73.3 s (+69%) | 149.4 s | +33.9 s (+29%) | 46% |
+| Clean release build | 300.6 s | +213 s (+75%) | 408.1 s | +107.5 s (+36%) | 50% |
+| Incremental, touch `main.rs` | 1.5 s | +1.3 s | 2.3 s | +0.8 s | 62% |
+| Incremental, touch `hoocode-code-tools` | 5.1 s | +1.7 s | 5.5 s | +0.4 s | 24% |
+| Units compiled | 356 | +88 | 421 | +65 | 74% |
+| Peak build memory, release | 1.12 GiB | x2.2 | 2.24 GiB | x2.0 | about the same |
+| `target/` after dev + release | 2.8 GB | +2 GB | 4.3 GB | +1.5 GB | 75% |
+| Release binary (stripped) | 35.2 MiB | +13.5 MiB | 49.4 MiB | +14.2 MiB | not cut |
+| `hoocode --version` | 3.9 ms | noise | 3.5 ms | noise | — |
+
+Reading: trimming halves the added build time (clean check, dev and release) and cuts incremental and disk cost. It does not cut the binary size or the peak build memory: thin LTO already dropped the unused features from the binary, and cranelift is most of what remains.
+
 ## Decisions
 
 | Date | Decision |
@@ -210,6 +229,7 @@ Accepted by the user 2026-11-17.
 | 2026-11-17 | Notebooks wait for demand. Editing is internal (own serde_json editor, byte-identical round trips) with workspace 0.2. Execution is a skill using `jupyter execute`; an MCP server only for stateful kernels. |
 | 2026-11-17 | MCP server binaries are expected on PATH. |
 | 2026-11-17 | A test-only setting may allow loopback through the SSRF block. It is never readable from plugin config. |
+| 2026-11-17 | PL-7: toolchain pinned to 1.100.0, `rust-version` 1.95. Trimmed wasmtime 48.0.9 halves the added clean build time (release +36% instead of +75%) but not the binary (+14.2 MiB) or peak build memory (x2.0). Stop rule: build cost is noticeably cut, size is not; the user decides before host code (PL-9). |
 
 ## Open
 
@@ -221,7 +241,7 @@ Accepted by the user 2026-11-17.
 | PL-4 | Live reload of plugin tools | M | Users hit a stale tool list | A tool change needs `/reload` today. Route the change through the same reload path as install. |
 | PL-5 | Enforce `allowed-tools` or delete the approval | S | Decision | Nothing reads the approved list. Either gate tools with it, or delete the record and keep the warning. |
 | PL-6 | Stop loading Claude plugin `agents/` | S | None | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
-| PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Same benchmark as Measurements. Stop rule applies. Bump `rust-toolchain.toml` and `rust-version`. |
+| PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Done 2026-11-17: toolchain bumped, numbers in PL-7 measurements. Waits for the user's go on the stop rule. |
 | PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | PL-7 | Interfaces as in Contract. Tag it so plugin repos can pin. |
 | PL-9 | M2: WASM host | L | PL-8 | Owner crate. Loader for `dev.hoocode/extension.wasm`, `.cwasm` cache, per-call instances, limits, `wasi:http` with gate and SSRF block, `config-get`, names, registry origin tag, subagent clearance. Check musl and ubuntu-24.04-arm builds. |
 | PL-10 | M3: webtools `Transport` trait and WASM features (webtools repo) | M | PL-8 | One GET without redirects per hop (fetch already loops by hand). Five search call sites. DNS guard moves to the host. Native CLI and MCP unchanged. Stop reading `~/.hoocode/settings.json`. |
