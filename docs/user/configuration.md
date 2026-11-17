@@ -59,6 +59,10 @@ session: add a marketplace, then install from it.
 /plugin install <plugin>@<marketplace>
 ```
 
+Two marketplaces are built in and trusted: `claude-plugins-official` and
+`hoo-plugins` (`/plugin install webtools@hoo-plugins`). Installs from them need no
+extra grant.
+
 The same commands work from the shell, without a session: `hoocode install`,
 `hoocode remove`, `hoocode list` and `hoocode plugin ...`. See
 [Commands](commands.md).

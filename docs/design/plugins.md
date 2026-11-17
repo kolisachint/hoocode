@@ -79,7 +79,7 @@ Written: ProposePlugin writes one Agent Plugins package only. Never Claude or Co
 
 - Commands: `/plugin marketplace add|list|refresh`, `/plugin install|remove [--scope user|project]`, `/plugin list`, `/plugin update [name]`, `/plugin trust`.
 - Marketplaces are git repositories. Git runs with `GIT_TERMINAL_PROMPT=0`. Values never reach git as options. `ext::` and `fd::` are refused. A symlink that leaves the plugin folder refuses the install. `npm` sources are refused.
-- Only the official directory is pre-trusted. Its URL in code is an assumption, `https://github.com/anthropics/claude-plugins-official`, not stated in the docs.
+- Two built-in marketplaces are pre-trusted: the official directory (`claude-plugins-official`, URL in code an assumption: `https://github.com/anthropics/claude-plugins-official`, not stated in the docs) and `hoo-plugins` (`https://github.com/kolisachint/hoo-plugins`). Both are listed first; a user-added marketplace with a built-in name is not listed.
 - `marketplace add <src> --trust` marks a marketplace trusted. Without it, an install still succeeds (the user typed it), but its MCP servers need a grant in `/mcp`.
 - Project plugins need one folder grant. The fingerprint covers every file (SHA-256 of path and bytes). Any change asks again.
 - If the install records cannot be read, no marketplace counts as trusted (fail closed).

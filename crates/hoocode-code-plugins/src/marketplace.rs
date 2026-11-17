@@ -19,6 +19,12 @@ use crate::paths::{normalize, within};
 pub const OFFICIAL_NAME: &str = "claude-plugins-official";
 /// Its repository. Not stated in the design docs; this is the assumed location.
 pub const OFFICIAL_URL: &str = "https://github.com/anthropics/claude-plugins-official";
+/// The official hoocode marketplace (`docs/design/plugins.md`). Pre-trusted, like the Anthropic one.
+pub const HOO_NAME: &str = "hoo-plugins";
+/// Its repository.
+pub const HOO_URL: &str = "https://github.com/kolisachint/hoo-plugins";
+/// The built-in marketplaces, pre-trusted, in listing order.
+const BUILT_IN: [(&str, &str); 2] = [(OFFICIAL_NAME, OFFICIAL_URL), (HOO_NAME, HOO_URL)];
 /// How old a cached index may be before a command fetches it again: one day.
 pub const REFRESH_SECS: u64 = 24 * 60 * 60;
 
@@ -35,14 +41,14 @@ pub struct Marketplace {
     pub name: String,
     /// The git URL or local path the cache was cloned from.
     pub url: String,
-    /// Installs from a trusted marketplace need no further grant. Only the official directory
-    /// is trusted; a marketplace the user adds is not.
+    /// Installs from a trusted marketplace need no further grant. Only the built-in marketplaces
+    /// are trusted; a marketplace the user adds is not.
     pub trusted: bool,
     /// Unix seconds of the last fetch, or 0.
     pub fetched_at: u64,
 }
 
-/// The marketplaces the user added. The official directory is always listed (see [`Registry::all`]).
+/// The marketplaces the user added. The built-in ones are always listed (see [`Registry::all`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Registry {
     pub added: Vec<Marketplace>,
@@ -103,15 +109,14 @@ impl Registry {
         write_atomic(path, text.as_bytes())
     }
 
-    /// Every marketplace: the official directory first, then the added ones.
+    /// Every marketplace: the built-in ones first, then the added ones. A added marketplace
+    /// that has a built-in's name is not listed twice.
     pub fn all(&self) -> Vec<Marketplace> {
-        let mut out = vec![official(self.official_fetched_at())];
-        out.extend(
-            self.added
-                .iter()
-                .filter(|m| m.name != OFFICIAL_NAME)
-                .cloned(),
-        );
+        let mut out: Vec<Marketplace> = BUILT_IN
+            .iter()
+            .map(|(name, url)| built_in(name, url, self.fetched_at_of(name)))
+            .collect();
+        out.extend(self.added.iter().filter(|m| !is_built_in(&m.name)).cloned());
         out
     }
 
@@ -120,22 +125,23 @@ impl Registry {
         self.all().into_iter().find(|m| m.name == name)
     }
 
-    fn official_fetched_at(&self) -> u64 {
+    fn fetched_at_of(&self, name: &str) -> u64 {
         self.added
             .iter()
-            .find(|m| m.name == OFFICIAL_NAME)
+            .find(|m| m.name == name)
             .map_or(0, |m| m.fetched_at)
     }
 
-    /// Record a fetch of `name` at `at`. Returns false when it is not listed.
+    /// Record a fetch of `name` at `at`. Returns false when it is not listed. A built-in one is
+    /// recorded in the registry the first time it is fetched.
     pub fn set_fetched(&mut self, name: &str, at: u64) -> bool {
-        if name == OFFICIAL_NAME && !self.added.iter().any(|m| m.name == name) {
-            self.added.push(official(at));
+        if let Some(m) = self.added.iter_mut().find(|m| m.name == name) {
+            m.fetched_at = at;
             return true;
         }
-        match self.added.iter_mut().find(|m| m.name == name) {
-            Some(m) => {
-                m.fetched_at = at;
+        match BUILT_IN.iter().find(|(n, _)| *n == name) {
+            Some((n, url)) => {
+                self.added.push(built_in(n, url, at));
                 true
             }
             None => false,
@@ -143,10 +149,14 @@ impl Registry {
     }
 }
 
-fn official(fetched_at: u64) -> Marketplace {
+fn is_built_in(name: &str) -> bool {
+    BUILT_IN.iter().any(|(n, _)| *n == name)
+}
+
+fn built_in(name: &str, url: &str, fetched_at: u64) -> Marketplace {
     Marketplace {
-        name: OFFICIAL_NAME.to_owned(),
-        url: OFFICIAL_URL.to_owned(),
+        name: name.to_owned(),
+        url: url.to_owned(),
         trusted: true,
         fetched_at,
     }
