@@ -277,3 +277,10 @@ fn warns_when_tools_is_a_yaml_list() {
     assert_eq!(agent.unwrap().tools.unwrap(), ["Read", "Shell"]);
     assert!(d.iter().any(|m| m.contains("comma-separated string")));
 }
+
+#[test]
+fn keeps_the_ext_wildcard_as_written() {
+    let (t, d) = tools(json!("Read, ext_*"));
+    assert_eq!(t, ["Read", "ext_*"]);
+    assert!(d.is_empty());
+}

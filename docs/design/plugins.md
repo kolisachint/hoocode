@@ -226,6 +226,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | The internal contract is the WIT world `hoocode:extension@0.1.0`, shaped like an MCP tool. 0.1 has `wasi:http` (gated), plugin-data filesystem, clocks, random, `config-get` and `log`. Workspace access waits for 0.2. |
 | 2026-11-17 | One trust decision per plugin covers MCP and WASM. The gate applies to every gated host call. Only user or project settings bypass it. Plugins suggest permissions, never grant them. |
 | 2026-11-17 | Subagents get WASM plugin tools (gated calls via clearance). Never MCP plugin tools or plugin-management tools. |
+| 2026-11-17 | Agent tool lists accept `ext_*` (all plugin WASM tools). The built-in general-purpose agent has it; read-only built-ins do not, since plugin tools may write in workspace 0.2. |
 | 2026-11-17 | Names: `ext_<plugin>_<tool>` and `mcp_<plugin>_<server>_<tool>`. Built-ins are never shadowed. |
 | 2026-11-17 | wasmtime 48 LTS, owned by one crate, always on. Toolchain pin to current stable, `rust-version` at least 1.95. Build and size cost accepted (Measurements). |
 | 2026-11-17 | v1 is the webtools plugin only: `web-plugins` builds the component on the webtools crates; `hoocode-official-plugins` lists it; hoocode deletes its web helpers and `webtools.*` settings. Supersedes the 2026-11-06 web tools row and AG-1 (now PL-12). |

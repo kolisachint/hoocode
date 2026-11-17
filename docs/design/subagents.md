@@ -61,7 +61,7 @@ Files: `crates/hoocode-code-resources/templates/agents/*.md`. Parser: `crates/ho
 |---|---|
 | `name` | Agent id, used as `subagent_type` |
 | `description` | Use-when text for the parent |
-| `tools` | Allowlist. Agent is still offered when delegation is allowed |
+| `tools` | Allowlist. Agent is still offered when delegation is allowed. `ext_*` covers every plugin WASM tool (`ext_<plugin>_<tool>`); no other wildcard |
 | `model` | Default model. A call's `model` overrides |
 | `background` | `false` = foreground default, kept as `Some(false)` |
 | `delegate` | `true` = may dispatch |
@@ -71,6 +71,7 @@ Files: `crates/hoocode-code-resources/templates/agents/*.md`. Parser: `crates/ho
 Rules:
 
 - A writer has Edit, Write or Shell. Writers get the worktree instruction. Read-only agents do not.
+- Built-in tool lists: general-purpose is `Read, Shell, Edit, Write, CodeSearch, ext_*`. explore, plan, code-review and security-review have no `ext_*` (plugin tools may write later).
 - Every body ends with the final-answer rule. Custom bodies get `BASE_GUIDELINES` appended only at depth > 0. `--system-prompt` and `--light` still replace.
 - Child prompt is one wrapper, `Task: <prompt>` (`pool::child_prompt`). Run description is the call's first line, at most 60 characters, `"` replaced by `'`.
 - Code review and security review: Shell only for `git diff`, `git log`, `git show` (text rule; SA-3).
@@ -228,6 +229,7 @@ The mock tests mechanics only. It does not show that a real model follows the br
 | 2026-10-03 | Fallback retries region errors and `finish_reason: error`. Never retries a user cancel |
 | 2026-10-16 | Root 12, nested 6, queue 8 per slot, depth 4, wait 300 s, Shell default 1200 s |
 | 2026-11-17 | Subagents get WASM plugin tools (gated calls go through clearance). Never MCP plugin tools or plugin-management tools. See [plugins.md](plugins.md) |
+| 2026-11-17 | Agent tool lists accept `ext_*` (all plugin WASM tools). The built-in general-purpose agent has it; read-only built-ins do not. See [plugins.md](plugins.md) |
 
 Dispatch dirs are pruned (newest 50, older than 24 h dropped), so they are not kept for the whole session. Recover is view or resume on request, never automatic (TUI rule, 2026-10-09).
 

@@ -638,18 +638,13 @@ SCENARIOS: list[Scenario] = [
         name="subagent_plugin_tool_general_purpose",
         kind="parent",
         doc=(
-            "The same echo through general-purpose, whose definition lists its tools. The child's "
-            "--tools allowlist has no ext_ names, so the plugin tool is not offered. The design "
-            "(subagents.md, 2026-11-17) says subagents get WASM tools: this records the gap."
+            "The same echo through general-purpose, whose tools: list includes ext_* (every plugin "
+            "WASM tool). The child's --tools allowlist must offer the plugin tool (2026-11-17)."
         ),
         routes=_echo_routes("general-purpose"),
         prompt="Use a subagent to echo a marker.",
         echo_plugin=True,
         expect=_echo_expect(),
-        known_issue=(
-            "general-purpose has a tools: allowlist (Read, Shell, Edit, Write, CodeSearch) and the "
-            "child's --tools list drops ext_ tools, so the child is never offered the plugin tool."
-        ),
     ),
     Scenario(
         name="parent_region_error_falls_back",

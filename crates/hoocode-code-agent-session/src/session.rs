@@ -1292,12 +1292,12 @@ impl AgentSession {
         self.inner
             .allowed_tool_names
             .as_ref()
-            .is_none_or(|allowed| allowed.contains(name))
+            .is_none_or(|allowed| tool_listed(allowed, name))
             && !self
                 .inner
                 .disallowed_tool_names
                 .as_ref()
-                .is_some_and(|denied| denied.contains(name))
+                .is_some_and(|denied| tool_listed(denied, name))
     }
 
     fn tool_context_factory(&self) -> ToolContextFactory {
@@ -1456,7 +1456,7 @@ impl AgentSession {
             next_active.extend(
                 registry
                     .iter()
-                    .filter(|t| allowed.contains(&t.name))
+                    .filter(|t| tool_listed(allowed, &t.name))
                     .map(|t| t.name.clone()),
             );
         } else if include_all_custom {
@@ -2380,6 +2380,13 @@ impl AgentSession {
     }
 }
 
+/// Whether a tool list (`--tools` / `--disallowed-tools`) names `name`. An entry is an exact
+/// tool name, or the one wildcard `ext_*`, which covers every plugin WASM tool
+/// (`ext_<plugin>_<tool>`). No other globbing.
+pub(crate) fn tool_listed(list: &HashSet<String>, name: &str) -> bool {
+    list.contains(name) || (list.contains("ext_*") && name.starts_with("ext_"))
+}
+
 #[cfg(test)]
 mod unanswered_tests {
     use super::*;
@@ -2456,5 +2463,46 @@ mod unanswered_tests {
         calls.closed.insert("a".into());
         calls.open.clear();
         assert!(!note_persisted(&mut calls, &result("a")));
+    }
+}
+
+#[cfg(test)]
+mod tool_listed_tests {
+    use super::tool_listed;
+    use std::collections::HashSet;
+
+    fn list(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn ext_wildcard_covers_plugin_tools_only() {
+        let allowed = list(&["Read", "ext_*"]);
+        assert!(tool_listed(&allowed, "ext_a_b"));
+        assert!(tool_listed(&allowed, "Read"));
+        assert!(!tool_listed(&allowed, "mcp_x"));
+        assert!(!tool_listed(&allowed, "Shell"));
+    }
+
+    #[test]
+    fn exact_names_match_without_wildcard() {
+        let allowed = list(&["ext_a_b"]);
+        assert!(tool_listed(&allowed, "ext_a_b"));
+        assert!(!tool_listed(&allowed, "ext_a_c"));
+    }
+
+    #[test]
+    fn only_the_exact_ext_star_entry_is_a_wildcard() {
+        // No general globbing: `ext_a*` or `*` match nothing.
+        let allowed = list(&["ext_a*", "*"]);
+        assert!(!tool_listed(&allowed, "ext_a_b"));
+        assert!(!tool_listed(&allowed, "mcp_x"));
+    }
+
+    #[test]
+    fn wildcard_in_disallowed_list_denies_plugin_tools() {
+        let denied = list(&["ext_*"]);
+        assert!(tool_listed(&denied, "ext_a_b"));
+        assert!(!tool_listed(&denied, "Read"));
     }
 }
