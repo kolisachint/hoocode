@@ -10,8 +10,8 @@
 //!   `rootCertificates` in hoocode): a custom CA extends the set.
 //! - Fail closed: a missing/invalid CA source warns once and is skipped.
 //!
-//! This does not cover the `webfetch`/`websearch` tools, which shell out to a
-//! separate binary with its own TLS stack.
+//! This does not cover the webtools plugin's fetch and search tools, which run
+//! in their own WASM host and TLS stack.
 //!
 //! Every reqwest client in the workspace is built from [`http_client_builder`],
 //! which applies the trust set installed by [`configure_global_tls`] (the

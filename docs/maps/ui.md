@@ -90,7 +90,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | `CodeSearch` | `search.rs` |
 | `Agent`, `AgentOutput` (subagents) | `subagent.rs`. An Agent block's result slot shows its run's live tail (the newest 5 rows, collapsed) while the run goes, else its result. The tail and the run lookup are `hoocode-code-subagents` `live.rs` (`tail`, `is_running`, `run_for_tool_call`); the block is fed by `mode/subagents.rs` `apply_subagent_event`. `app.subagent.attach` (leader `n`, at the prompt) attaches to the newest Agent block's run (`mode/attach.rs` `attach_newest_agent_block`) |
 | Plugin tools | `plugins.rs` |
-| `WebFetch`, `WebSearch` | `web.rs` (web tools are deferred) |
+| `WebFetch`, `WebSearch`, `ext_webtools_fetch`, `ext_webtools_search` | `web.rs`. The webtools plugin's tools render here too (`mod.rs`); there are no built-in web tools |
 | Registry: tool name → renderer | `mod.rs` |
 | Shared helpers | `../render_utils.rs` |
 

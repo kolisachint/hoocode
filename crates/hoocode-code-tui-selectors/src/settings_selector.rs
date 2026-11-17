@@ -128,7 +128,6 @@ pub struct SettingsConfig {
     pub show_terminal_progress: bool,
     pub warnings: WarningSettings,
     pub voice_silence_ms: u64,
-    pub webtools_timeout_secs: u64,
     pub learn: LearnSettings,
     /// Re-measure the fixed per-turn surface; `None` without a session.
     pub measure_token_surface: Option<Rc<dyn Fn() -> PromptSurface>>,
@@ -181,7 +180,6 @@ impl Default for SettingsConfig {
             show_terminal_progress: false,
             warnings: WarningSettings::default(),
             voice_silence_ms: 800,
-            webtools_timeout_secs: 30,
             learn: LearnSettings {
                 max_sessions: 20,
                 max_age_days: 30,
@@ -247,7 +245,6 @@ pub enum SettingsChange {
     ShowTerminalProgress(bool),
     Warnings(WarningSettings),
     VoiceSilenceMs(u64),
-    WebtoolsTimeoutSecs(u64),
     LearnSetting(LearnSettingKey, u64),
     /// The "Models" row was opened: the host closes the pane and shows the
     /// `/scoped-models` picker.
@@ -548,22 +545,13 @@ fn warning_settings_submenu(
     on_change: impl Fn(WarningSettings) + 'static,
     slot: DoneSlot,
 ) -> ComponentHandle {
-    let items = vec![
-        Leaf::toggle(
-            "anthropic-extra-usage",
-            "Anthropic extra usage",
-            "Warn when Anthropic subscription auth may use paid extra usage",
-            warnings.anthropic_extra_usage.unwrap_or(true),
-        )
-        .to_item(),
-        Leaf::toggle(
-            "websearch-api-key",
-            "Web search API key",
-            "Warn when websearch is enabled with no search API key, so it falls back to keyless DuckDuckGo",
-            warnings.websearch_api_key.unwrap_or(true),
-        )
-        .to_item(),
-    ];
+    let items = vec![Leaf::toggle(
+        "anthropic-extra-usage",
+        "Anthropic extra usage",
+        "Warn when Anthropic subscription auth may use paid extra usage",
+        warnings.anthropic_extra_usage.unwrap_or(true),
+    )
+    .to_item()];
     let max = items.len().min(10);
     let mut state = warnings;
     let list = new_list(
@@ -574,7 +562,6 @@ fn warning_settings_submenu(
             let on = value == "true";
             match id {
                 "anthropic-extra-usage" => state.anthropic_extra_usage = Some(on),
-                "websearch-api-key" => state.websearch_api_key = Some(on),
                 _ => return,
             }
             on_change(state);
@@ -692,8 +679,6 @@ pub fn tool_row_sort_key(name: &str) -> &str {
         "Write" => "write",
         "CodeSearch" => "SearchCodebase",
         "AskUserQuestion" => "ask_options",
-        "WebFetch" => "webfetch",
-        "WebSearch" => "websearch",
         "Agent" => "Task",
         "AgentOutput" => "TaskOutput",
         other => other,
@@ -1602,13 +1587,6 @@ impl SettingsSelectorComponent {
                 config.voice_silence_ms,
             ),
         ));
-        leaves.push(Leaf::cycle(
-            "webtools-timeout-secs",
-            "Web tools timeout",
-            "Per-request timeout (secs) for WebFetch/WebSearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
-            config.webtools_timeout_secs.to_string(),
-            preset_values(&[5, 10, 15, 30, 60, 120], config.webtools_timeout_secs),
-        ));
         for (key, label, description, presets) in LEARN_SETTINGS {
             let value = learn_value(&config.learn, *key);
             leaves.push(Leaf::cycle(
@@ -1981,7 +1959,6 @@ impl SettingsSelectorComponent {
                     "clear-on-shrink" => Some(SettingsChange::ClearOnShrink(on)),
                     "terminal-progress" => Some(SettingsChange::ShowTerminalProgress(on)),
                     "voice-silence-ms" => Some(SettingsChange::VoiceSilenceMs(n)),
-                    "webtools-timeout-secs" => Some(SettingsChange::WebtoolsTimeoutSecs(n)),
                     // An action row: its single value is the summary, so Enter
                     // "cycles" to it and the host opens the picker.
                     "models" => Some(SettingsChange::OpenScopedModels),
@@ -2113,7 +2090,7 @@ impl SettingsSelectorComponent {
         top.push(category_row(
             "cat-advanced",
             "Advanced",
-            "Startup, tips, telemetry, skills, warnings, voice, and web tools.",
+            "Startup, tips, telemetry, skills, warnings, and voice.",
             ids(&[
                 "quiet-startup",
                 "tips",
@@ -2121,7 +2098,6 @@ impl SettingsSelectorComponent {
                 "skill-commands",
                 "warnings",
                 "voice-silence-ms",
-                "webtools-timeout-secs",
             ]),
         ));
 

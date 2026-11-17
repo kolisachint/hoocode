@@ -24,9 +24,7 @@ Numbers a contributor needs:
 | Late-fire window | 10 min | `store.rs` `LATE_FIRE_MINUTES` |
 | Turn chime | turn over 10 s; repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` |
 | Version check | once a day | `hoocode-code-update` |
-| Web timeout setting | 1 to 120 s | `settings/manager.rs` `webtools_timeout_secs` |
 | `/loop auto` default | 10 turns | `auto_loop.rs` |
-| Fetched page cap | 100000 bytes | `hoocode-code-tools/src/lib.rs` (helper, see plugins.md PL-12) |
 
 ## How it works
 
@@ -41,7 +39,6 @@ Numbers a contributor needs:
 | `Agent`, `AgentOutput` | `hoocode-code-subagents` | on | `Agent` starts a subagent. `AgentOutput` reads its result. |
 | `ShellOutput`, `ShellKill` | `hoocode-code-tool-bash` `job_tools.rs` | on when `enableBackgroundShell` (default true) and interactive | Background shell jobs. |
 | `TodoWrite` | `hoocode-code-tools-optin` `todo.rs` | on (`enableTodoWrite`, default true) | Main session only. |
-| `WebFetch`, `WebSearch` | names only | off (`enableWebTools` / `--enable-webtools`) | No tool definition is registered yet (plugins.md PL-12). |
 | `SearchPlugins`, `ListPlugins`, `InstallPlugin`, `UninstallPlugin`, `ProposePlugin` | `hoocode-code-tools-optin` `plugins.rs` | off (`enablePluginTools`) | Main session only. Takes effect at the next session. |
 | `mcp_<server>_<tool>` | `hoocode-code-mcp` and `hoocode-agent-mcp` | per server | See MCP client. |
 
@@ -111,14 +108,9 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 ### Web tools
 
-Current state:
-
-- `--enable-webtools` (`args.rs`) and `enableWebTools` (default false) add the names `WebFetch` and `WebSearch` to the active list (`services.rs`).
-- No `ToolDefinition` is built for either name, so the names activate nothing.
-- Helpers exist in `hoocode-code-tools/src/lib.rs`: `webfetch(url)` (30 s timeout, 100000-byte cap) and `websearch(query)` (DuckDuckGo HTML, 15 s timeout). Only tests call them.
-- Permission reach (`hoocode-code-permissions/src/lib.rs`) and TUI widgets (`hoocode-code-tui-widgets/src/tools/web.rs`) exist.
-- `webtools.timeoutSecs` is read by the settings pane only. Its env fallback is `HOOCODE_WEBTOOLS_TIMEOUT`. `webtools.search` is read by no code.
-- Decided 2026-11-17: fetch and search move to the webtools plugin (internal tier). PL-12 deletes the flag, helpers and settings. See plugins.md.
+- Web access is the webtools plugin, not a built-in tool: its tools are `ext_webtools_fetch` and `ext_webtools_search` (see plugins.md PL-12).
+- hoocode has no web flag, web settings or web helpers. `Claude` aliases `WebFetch` and `WebSearch` in agent frontmatter map to the plugin tools (`agent_frontmatter.rs`).
+- The permission gate still names a plugin's network calls `WebFetch` and `WebSearch` (`hoocode-code-permissions`), and the TUI renders those names and the plugin tools with `tools/web.rs`.
 
 ### DocSearch and capability index
 

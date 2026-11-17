@@ -136,9 +136,8 @@ pub(crate) fn unknown_option_error(names: &[String]) -> String {
 /// Flags from the pinned set that parse but are not implemented yet, in
 /// `Args` field order.
 pub fn unsupported_flags(a: &Args) -> Vec<&'static str> {
-    let checks: [(bool, &'static str); 11] = [
+    let checks: [(bool, &'static str); 10] = [
         (a.todo_write.is_some(), "--enable-todowrite"),
-        (a.enable_web_tools.is_some(), "--enable-webtools"),
         (a.enable_semantic_index.is_some(), "--enable-semantic-index"),
         (a.print_token_surface.is_some(), "--print-token-surface"),
         (a.platform.is_some(), "--platform"),

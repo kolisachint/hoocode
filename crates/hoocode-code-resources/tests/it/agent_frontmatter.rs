@@ -48,9 +48,9 @@ fn drops_unknown_tools_with_a_diagnostic() {
 }
 
 #[test]
-fn maps_claude_webfetch_websearch_to_the_opt_in_web_tools() {
+fn maps_claude_webfetch_websearch_to_the_webtools_plugin_tools() {
     let (t, d) = tools(json!("WebFetch, WebSearch"));
-    assert_eq!(t, ["WebFetch", "WebSearch"]);
+    assert_eq!(t, ["ext_webtools_fetch", "ext_webtools_search"]);
     assert!(d.is_empty());
 }
 
@@ -75,8 +75,12 @@ fn drops_ls_which_has_no_counterpart() {
 
 #[test]
 fn alias_map_only_targets_known_hoocode_tools() {
+    // Web aliases point at the webtools plugin's tools, which are not built-in.
     for (_, target) in CLAUDE_TOOL_ALIASES {
-        assert!(HOOCODE_TOOL_NAMES.contains(target));
+        assert!(
+            HOOCODE_TOOL_NAMES.contains(target) || target.starts_with("ext_webtools_"),
+            "{target}"
+        );
     }
 }
 

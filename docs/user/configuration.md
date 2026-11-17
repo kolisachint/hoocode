@@ -73,8 +73,12 @@ appear to the model as `ext_<plugin>_<tool>`, and they need `/reload` after an i
 - A component runs only when its plugin is trusted, the same trust that lets the
   plugin's MCP servers start without a `/mcp` grant. An untrusted plugin's component
   is skipped, and the session says so under diagnostics.
-- A call that reaches the network asks you like `WebFetch`. Later requests in the same
-  call (for example redirects) do not ask again.
+- Web access (fetch and search) is the webtools plugin, not a built-in tool: install it
+  with `/plugin install webtools@hoo-plugins`. Its tools are `ext_webtools_fetch` and
+  `ext_webtools_search`. Its settings go under `pluginConfig.webtools.<key>`
+  (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`,
+  `searchFallback`). A call that reaches the network asks you like `WebFetch`. Later
+  requests in the same call (for example redirects) do not ask again.
 - A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in
   `settings.json`. Only string values are read:
 

@@ -145,7 +145,6 @@ fn leaves_no_setting_stranded_outside_every_category() {
         "skill-commands",
         "warnings",
         "voice-silence-ms",
-        "webtools-timeout-secs",
     ] {
         assert!(ids.contains(id), "\"{id}\" reachable from the pane");
     }

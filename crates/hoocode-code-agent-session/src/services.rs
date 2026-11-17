@@ -98,7 +98,6 @@ pub struct CreateAgentSessionOptions {
     pub no_tools: Option<NoTools>,
     pub disallowed_tools: Option<Vec<String>>,
     pub custom_tools: Vec<ToolDefinition>,
-    pub enable_web_tools: bool,
     /// Default: [`default_base_tools`].
     pub base_tools: Option<BaseTools>,
     /// The session's background shell jobs (`enableBackgroundShell`). Ignored
@@ -379,10 +378,7 @@ pub fn create_agent_session(
         None => ThinkingLevel::Off,
     };
 
-    let mut initial_active: Vec<String> = DEFAULT_ACTIVE_TOOL_NAMES.map(String::from).to_vec();
-    if options.enable_web_tools {
-        initial_active.extend(["WebFetch".to_string(), "WebSearch".to_string()]);
-    }
+    let initial_active: Vec<String> = DEFAULT_ACTIVE_TOOL_NAMES.map(String::from).to_vec();
     let allowed_tool_names = options
         .tools
         .clone()

@@ -22,12 +22,6 @@
     "grep-regex": [
       "hoocode-code-tool-search"
     ],
-    "htmd": [
-      "hoocode-code-tool-web"
-    ],
-    "dom_smoothie": [
-      "hoocode-code-tool-web"
-    ],
     "process-wrap": [
       "hoocode-code-tool-bash"
     ],

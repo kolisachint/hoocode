@@ -291,7 +291,6 @@ pub struct ScopedModel {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WarningSettings {
     pub anthropic_extra_usage: Option<bool>,
-    pub websearch_api_key: Option<bool>,
 }
 
 /// A persisted extension flag value (`flags`).
@@ -331,9 +330,6 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
     "voice": {
         "silenceMs": 800
     },
-    "webtools": {
-        "timeoutSecs": 15
-    },
     "disabledTools": [],
     "branchSummary": {
         "reserveTokens": 16384,
@@ -371,7 +367,6 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
     "enableBackgroundShell": true,
     "pluginInstallScope": "user",
     "deferMcpSchemas": true,
-    "enableWebTools": false,
     "enableSemanticIndex": true,
     "checkForUpdates": true,
     "embsearchThresholdBytes": 0,
@@ -406,8 +401,7 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
         "codeBlockIndent": "  "
     },
     "warnings": {
-        "anthropicExtraUsage": true,
-        "websearchApiKey": true
+        "anthropicExtraUsage": true
     },
     "packages": [],
     "extensions": [],

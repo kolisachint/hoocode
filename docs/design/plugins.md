@@ -240,6 +240,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | The 30 s call limit and Esc are wall-clock, not only epoch ticks, so a call blocked in host I/O stops too. Time spent waiting on the permission prompt does not count. Response bodies have a 600 s between-bytes timeout. |
 | 2026-11-17 | Plugin WASM tools load in the main session and subagents, but not in light mode, with `--no-tools`, or when a `--tools` list names no `ext_` tool (same rule as MCP). |
 | 2026-11-17 | The webtools repo is renamed `hoo-web-plugin` and also holds the plugin package (`plugin/`); no separate `web-plugins` repo. The official listing is `hoo-plugins`. The webtools CLI reads `~/.config/webtools/config.json` and env vars, never hoocode settings. |
+| 2026-11-17 | Built-in web helpers, `--enable-webtools`, `enableWebTools` and `webtools.*` settings are removed; web access is the webtools plugin (PL-12). |
 
 ## Open
 

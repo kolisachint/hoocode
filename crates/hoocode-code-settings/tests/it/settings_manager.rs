@@ -3,7 +3,6 @@
 //! `.hoocode/`, as in hoocode-ts.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use hoocode_code_settings::*;
 use serde_json::{json, Value};
@@ -67,8 +66,6 @@ fn edit(path: &Path, f: impl FnOnce(&mut serde_json::Map<String, Value>)) {
 fn strings(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| s.to_string()).collect()
 }
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 // --- preserves externally added settings ---
 
@@ -293,89 +290,6 @@ fn voice_silence_defaults_round_trips_and_clamps() {
 
     write(&d.global_path(), &json!({"voice": {"silenceMs": 100}}));
     assert_eq!(d.manager().voice_silence_ms(), 300);
-}
-
-// --- webtools timeout ---
-
-fn with_webtools_env(value: Option<&str>, f: impl FnOnce()) {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let names = ["HOOCODE_WEBTOOLS_TIMEOUT"];
-    let saved: Vec<_> = names.iter().map(std::env::var_os).collect();
-    for n in names {
-        std::env::remove_var(n);
-    }
-    if let Some(value) = value {
-        std::env::set_var("HOOCODE_WEBTOOLS_TIMEOUT", value);
-    }
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-    for (n, v) in names.iter().zip(saved) {
-        match v {
-            Some(v) => std::env::set_var(n, v),
-            None => std::env::remove_var(n),
-        }
-    }
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
-}
-
-#[test]
-fn webtools_timeout_defaults_round_trips_and_clamps() {
-    with_webtools_env(None, || {
-        let d = Dirs::new();
-        let mut manager = d.manager();
-        assert_eq!(manager.webtools_timeout_secs(), 15);
-        manager.set_webtools_timeout_secs(45);
-        assert_eq!(read(&d.global_path())["webtools"]["timeoutSecs"], 45);
-        assert_eq!(d.manager().webtools_timeout_secs(), 45);
-
-        let mut manager = d.manager();
-        manager.set_webtools_timeout_secs(0);
-        assert_eq!(manager.webtools_timeout_secs(), 1);
-        manager.set_webtools_timeout_secs(999);
-        assert_eq!(manager.webtools_timeout_secs(), 120);
-
-        write(
-            &d.global_path(),
-            &json!({"webtools": {"timeoutSecs": "nope"}}),
-        );
-        assert_eq!(d.manager().webtools_timeout_secs(), 15);
-    });
-}
-
-#[test]
-fn webtools_timeout_env_is_used_when_unset_but_the_setting_wins() {
-    let d = Dirs::new();
-    with_webtools_env(Some("999"), || {
-        assert_eq!(d.manager().webtools_timeout_secs(), 120);
-        write(&d.global_path(), &json!({"webtools": {"timeoutSecs": 30}}));
-        assert_eq!(d.manager().webtools_timeout_secs(), 30);
-    });
-    std::fs::remove_file(d.global_path()).unwrap();
-    with_webtools_env(Some("not-a-number"), || {
-        assert_eq!(d.manager().webtools_timeout_secs(), 15);
-    });
-}
-
-// --- webtools search ---
-
-#[test]
-fn webtools_search_reads_the_user_level_block_only() {
-    let d = Dirs::new();
-    write(
-        &d.global_path(),
-        &json!({"webtools": {"search": {"provider": "brave", "providers": {"brave": {"api_key": "k"}}}}}),
-    );
-    let search = d.manager().webtools_search().unwrap();
-    assert_eq!(search["provider"], "brave");
-    assert_eq!(search["providers"]["brave"]["api_key"], "k");
-
-    std::fs::remove_file(d.global_path()).unwrap();
-    write(
-        &d.project_path(),
-        &json!({"webtools": {"search": {"providers": {"tavily": {"api_key": "k"}}}}}),
-    );
-    assert_eq!(d.manager().webtools_search(), None);
 }
 
 // --- flag overrides ---
@@ -714,7 +628,6 @@ fn project_overrides_merge_one_level_deep_and_defaults_fill_in() {
         manager.warnings(),
         WarningSettings {
             anthropic_extra_usage: Some(true),
-            websearch_api_key: Some(true)
         }
     );
     assert_eq!(
@@ -932,4 +845,28 @@ fn plugin_config_reads_only_the_plugins_own_string_settings() {
     let values = manager.plugin_config_values("webtools");
     assert_eq!(values.len(), 1);
     assert_eq!(values["braveApiKey"], "k1");
+}
+
+// --- retired web settings ---
+
+#[test]
+fn retired_web_settings_still_load_and_are_ignored() {
+    // Settings files written before PL-12 still carry these keys; they must load.
+    let d = Dirs::new();
+    write(
+        &d.global_path(),
+        &json!({
+            "enableWebTools": true,
+            "webtools": {"timeoutSecs": 30, "search": {"provider": "brave"}},
+            "warnings": {"websearchApiKey": false, "anthropicExtraUsage": false}
+        }),
+    );
+    let manager = d.manager();
+    assert_eq!(
+        manager.warnings(),
+        WarningSettings {
+            anthropic_extra_usage: Some(false)
+        }
+    );
+    assert_eq!(manager.plugin_config("webtools", "braveApiKey"), None);
 }
