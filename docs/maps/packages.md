@@ -136,16 +136,16 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2764 / 1580 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1204 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 8640 / 7525 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 8640 / 7546 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 4 | 876 / 994 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 0 | 574 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 7745 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 7746 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 2011 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 3 | 2031 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1582 / 608 | keep |
 | `code-models` | Model registry for the hoocode coding agent: built-in catalog plus models.json custom providers and overrides | 5 | 2145 / 1075 | keep |
 | `code-modes` | Modes for the hoocode coding agent: ask/plan/build/debug prompts, hoo-config.json, /mode /plan /grill /goal /approve | 4 | 1155 / 1107 | keep |
-| `code-paths` | App identity, config directories and path helpers for the hoocode coding agent | 19 | 1145 / 475 | keep |
+| `code-paths` | App identity, config directories and path helpers for the hoocode coding agent | 20 | 1145 / 475 | keep |
 | `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 4 | 1310 / 1175 | keep |
 | `code-plugins` | Plugins for the hoocode coding agent: loading Agent Plugins 1.0 and Claude plugin layouts (discovery, precedence, folder trust, and the skills and MCP servers they contribute), and installing them from git marketplaces | 4 | 4455 / 2197 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 297 / 281 | keep |
@@ -164,7 +164,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3461 / 2553 | keep |
 | `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite, AskUserQuestion and the plugin tools | 3 | 968 / 1140 | keep |
 | `code-update` | Startup version check and the `hoocode update` command for the hoocode coding agent | 2 | 562 / 0 | keep |
-| `code-wasm` | WASM extension host for the hoocode coding agent: runs internal-tier plugin components (hoocode:extension@0.1.0) in wasmtime with per-call instances, limits and a gated wasi:http | 1 | 2890 / 715 | keep |
+| `code-wasm` | WASM extension host for the hoocode coding agent: runs internal-tier plugin components (hoocode:extension@0.1.0) in wasmtime with per-call instances, limits and a gated wasi:http | 1 | 2986 / 739 | keep |
 
 ### Coding agent UI (`code-tui-*`)
 

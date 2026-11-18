@@ -52,8 +52,13 @@ impl Guest for Echo {
             tool("spin", "Loops forever (timeout test).", any.clone()),
             tool("alloc", "Allocates 100 MiB (memory limit test).", any.clone()),
             tool("fail", "Always fails with a message.", any.clone()),
-            tool("write-data", "Writes and reads back /data/x.txt.", any),
+            tool("write-data", "Writes and reads back /data/x.txt.", any.clone()),
             tool("fetch", "Does one GET of a URL over wasi:http.", url),
+            tool(
+                "chatter",
+                "Writes one line each to stdout, stderr and the debug log.",
+                any,
+            ),
         ]
     }
 
@@ -83,6 +88,12 @@ impl Guest for Echo {
                 Ok(json!({ "bytes": big.len() }).to_string())
             }
             "fail" => Err(ToolError::Failed("the fixture fails on purpose".to_owned())),
+            "chatter" => {
+                println!("CHATTER-STDOUT");
+                eprintln!("CHATTER-STDERR");
+                host::log(LogLevel::Debug, "CHATTER-DEBUG");
+                Ok(json!({ "ok": true }).to_string())
+            }
             "write-data" => {
                 std::fs::write("/data/x.txt", "hello from the fixture")
                     .map_err(|e| ToolError::Failed(e.to_string()))?;

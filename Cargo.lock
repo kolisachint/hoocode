@@ -2423,8 +2423,10 @@ dependencies = [
 name = "hoocode-code-wasm"
 version = "0.2.46"
 dependencies = [
+ "chrono",
  "hoocode-ai-types",
  "hoocode-ai-util",
+ "hoocode-code-paths",
  "hoocode-runtime",
  "http",
  "http-body-util",

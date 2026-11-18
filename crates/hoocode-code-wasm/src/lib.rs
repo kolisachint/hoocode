@@ -279,6 +279,31 @@ pub(crate) fn write_host_log(text: &str) {
     hoocode_runtime::diagnostics::write_stderr(text);
 }
 
+/// Whether debug output is on: `HOOCODE_DEBUG_AGENT_LOG=1`, the switch that
+/// also enables the agent log's debug log.
+pub(crate) fn debug_enabled() -> bool {
+    hoocode_code_paths::env_override("DEBUG_AGENT_LOG").as_deref() == Some("1")
+}
+
+/// Debug output (plugin trace and debug logs, guest stdout). It never reaches
+/// stderr: each line is appended to the debug log with the agent log's
+/// timestamp, the plugin name and the pid. Callers check `debug_enabled` first.
+pub(crate) fn write_debug_log(plugin: &str, text: &str) {
+    use std::io::Write;
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(hoocode_code_paths::debug_log_path())
+    else {
+        return;
+    };
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+    let pid = std::process::id();
+    for line in text.lines() {
+        let _ = writeln!(file, "[{now}] [{plugin} pid {pid}] {line}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

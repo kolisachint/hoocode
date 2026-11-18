@@ -27,6 +27,9 @@ fn retry_settings(
     settings
 }
 
+/// Paces the faux stream so an aborted reply is cut mid-stream, not raced.
+const PACED_TOKENS_PER_SECOND: f64 = 100.0;
+
 fn harness(settings: serde_json::Map<String, serde_json::Value>) -> Harness {
     Harness::new(HarnessOptions {
         settings,
@@ -156,7 +159,11 @@ async fn a_streak_ending_in_a_non_retryable_error_ends_failed_and_resets() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn abort_during_a_retry_attempt_ends_the_streak_as_cancelled() {
-    let h = harness(retry_settings(true, 3, 1));
+    let h = Harness::new(HarnessOptions {
+        settings: retry_settings(true, 3, 1),
+        tokens_per_second: Some(PACED_TOKENS_PER_SECOND),
+        ..Default::default()
+    });
     h.set_responses(vec![error("overloaded_error"), text(&"x".repeat(20_000))]);
     let armed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -461,7 +468,10 @@ async fn emits_agent_end_for_error_responses() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn emits_agent_end_for_aborted_runs_and_keeps_the_aborted_message() {
-    let h = harness(Default::default());
+    let h = Harness::new(HarnessOptions {
+        tokens_per_second: Some(PACED_TOKENS_PER_SECOND),
+        ..Default::default()
+    });
     h.set_responses(vec![text(&"x".repeat(20_000))]);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let tx = Mutex::new(Some(tx));

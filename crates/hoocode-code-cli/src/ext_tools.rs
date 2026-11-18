@@ -460,6 +460,7 @@ mod tests {
             names(&tools),
             [
                 "ext_demo_alloc",
+                "ext_demo_chatter",
                 "ext_demo_config",
                 "ext_demo_echo",
                 "ext_demo_fail",
