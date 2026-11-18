@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: plugin log noise in print mode (2026-11-18)
+- **A plugin's trace, debug and print output no longer goes to stderr.** `[wasm <plugin>] debug ...` lines appeared for every plugin call. They now go to the debug log (`~/.hoocode/hoocode-debug.log`) only with `DEBUG_AGENT_LOG=1`. Plugin info, warn and error lines, and refusal reasons, still print as before.
+
 ### Fixed: plugin HTTPS behind TLS-intercepting proxies (2026-11-18)
 - **Plugin HTTPS trusts hoocode's CA set** (`--ca-cert`, `HOOCODE_CA_CERT`, `NODE_EXTRA_CA_CERTS`, `--use-system-ca`). A plugin's HTTPS request now works behind a transparent TLS-intercepting proxy whose CA is given this way. Verification stays on. Plugins do not use `HTTPS_PROXY` yet: they connect directly to the checked address.
 

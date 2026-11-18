@@ -13,7 +13,7 @@ use wasmtime_wasi::cli::{IsTerminal, StdoutStream};
 use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder};
 
 use crate::error::WasmError;
-use crate::guest::LogBudget;
+use crate::guest::{LogBudget, LogRoute};
 
 /// Build the WASI context for one call, with `data_dir` mounted at `/data`.
 /// Stdout and stderr write into `logs`, the call's shared log budget.
@@ -41,7 +41,8 @@ pub(crate) fn build_wasi(
     Ok(builder.build())
 }
 
-/// Sends guest stdout or stderr to the host log, one write at a time.
+/// Sends guest stdout or stderr to the debug output, one write at a time.
+/// Plugin prints are debug output: they show only while debugging is on.
 #[derive(Clone)]
 struct LogSink {
     plugin: Arc<str>,
@@ -70,8 +71,11 @@ impl AsyncWrite for LogSink {
         let text = String::from_utf8_lossy(buf);
         let text = text.trim_end_matches('\n');
         if !text.is_empty() {
-            self.logs
-                .write(&format!("[wasm {} {}] ", self.plugin, self.stream), text);
+            self.logs.write(
+                LogRoute::Debug,
+                &format!("[wasm {} {}] ", self.plugin, self.stream),
+                text,
+            );
         }
         Poll::Ready(Ok(buf.len()))
     }

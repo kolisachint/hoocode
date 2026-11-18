@@ -18,6 +18,7 @@ doctest = false
 [dependencies]
 hoocode-ai-types = { workspace = true }
 hoocode-ai-util = { workspace = true }
+hoocode-code-paths = { workspace = true }
 hoocode-runtime = { workspace = true }
 http = "1"
 serde_json = "1"

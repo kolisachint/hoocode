@@ -106,14 +106,42 @@ impl ResourceLimiter for CallLimits {
     }
 }
 
+/// Where one plugin log line goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LogRoute {
+    /// Stderr (the TUI's debug log in the terminal): warn, error and info.
+    Host,
+    /// Debug output: the debug log, and only while debugging is on.
+    Debug,
+}
+
+/// The route of a plugin `log` call: trace and debug are debug output.
+pub(crate) fn log_route(level: &hoocode::extension::host::LogLevel) -> LogRoute {
+    use hoocode::extension::host::LogLevel;
+    match level {
+        LogLevel::Trace | LogLevel::Debug => LogRoute::Debug,
+        LogLevel::Info | LogLevel::Warn | LogLevel::Error => LogRoute::Host,
+    }
+}
+
 /// The log lines one call has written so far. Shared by the `log` import and
 /// the WASI stdout and stderr streams of that call, so the cap is per call.
 #[derive(Default)]
 pub(crate) struct LogBudget {
     written: Mutex<u32>,
+    /// Whether debug output is on for this call. Off, debug output is dropped
+    /// before it takes any of the budget.
+    debug: bool,
 }
 
 impl LogBudget {
+    pub(crate) fn new(debug: bool) -> Self {
+        Self {
+            written: Mutex::new(0),
+            debug,
+        }
+    }
+
     /// The host log line for one message, or `None` once the call is over its
     /// budget. The first message past the budget gets a "log truncated" line.
     pub(crate) fn line(&self, prefix: &str, message: &str) -> Option<String> {
@@ -134,10 +162,17 @@ impl LogBudget {
         }
     }
 
-    /// Write one message to the host log, within the budget.
-    pub(crate) fn write(&self, prefix: &str, message: &str) {
-        if let Some(line) = self.line(prefix, message) {
-            crate::write_host_log(&line);
+    /// Write one message along `route`, within the budget.
+    pub(crate) fn write(&self, route: LogRoute, prefix: &str, message: &str) {
+        if route == LogRoute::Debug && !self.debug {
+            return;
+        }
+        let Some(line) = self.line(prefix, message) else {
+            return;
+        };
+        match route {
+            LogRoute::Host => crate::write_host_log(&line),
+            LogRoute::Debug => crate::write_debug_log(&line),
         }
     }
 }
@@ -202,6 +237,7 @@ impl hoocode::extension::host::Host for State {
 
     fn log(&mut self, level: hoocode::extension::host::LogLevel, message: String) {
         use hoocode::extension::host::LogLevel;
+        let route = log_route(&level);
         let level = match level {
             LogLevel::Trace => "trace",
             LogLevel::Debug => "debug",
@@ -209,8 +245,11 @@ impl hoocode::extension::host::Host for State {
             LogLevel::Warn => "warn",
             LogLevel::Error => "error",
         };
-        self.logs
-            .write(&format!("[wasm {}] {level}: ", self.plugin), &message);
+        self.logs.write(
+            route,
+            &format!("[wasm {}] {level}: ", self.plugin),
+            &message,
+        );
     }
 }
 
@@ -230,7 +269,7 @@ pub(crate) fn new_store(
     tls: Arc<rustls::ClientConfig>,
     clock: Arc<PauseClock>,
 ) -> Result<Store<State>, WasmError> {
-    let logs = Arc::new(LogBudget::default());
+    let logs = Arc::new(LogBudget::new(crate::debug_enabled()));
     let state = State {
         plugin: plugin.to_owned(),
         wasi: crate::wasi::build_wasi(plugin, data_dir, logs.clone())?,
@@ -344,7 +383,7 @@ mod tests {
 
     #[test]
     fn a_call_writes_at_most_the_budget_of_lines() {
-        let budget = LogBudget::default();
+        let budget = LogBudget::new(false);
         let mut lines = Vec::new();
         for i in 0..(MAX_LOG_MESSAGES + 5) {
             if let Some(line) = budget.line("[wasm p] info: ", &format!("m{i}")) {
@@ -354,5 +393,26 @@ mod tests {
         assert_eq!(lines.len(), MAX_LOG_MESSAGES as usize + 1);
         assert!(lines[0].ends_with("m0\n"));
         assert!(lines.last().unwrap().contains("log truncated"));
+    }
+
+    #[test]
+    fn trace_and_debug_are_debug_output_and_the_rest_are_not() {
+        use hoocode::extension::host::LogLevel;
+        assert_eq!(log_route(&LogLevel::Trace), LogRoute::Debug);
+        assert_eq!(log_route(&LogLevel::Debug), LogRoute::Debug);
+        assert_eq!(log_route(&LogLevel::Info), LogRoute::Host);
+        assert_eq!(log_route(&LogLevel::Warn), LogRoute::Host);
+        assert_eq!(log_route(&LogLevel::Error), LogRoute::Host);
+    }
+
+    #[test]
+    fn debug_output_with_debug_off_is_dropped_without_using_the_budget() {
+        let budget = LogBudget::new(false);
+        for i in 0..(MAX_LOG_MESSAGES * 2) {
+            budget.write(LogRoute::Debug, "[wasm p] debug: ", &format!("d{i}"));
+        }
+        // Nothing was counted, so the first host line is still the first line.
+        let line = budget.line("[wasm p] info: ", "kept").unwrap();
+        assert_eq!(line, "[wasm p] info: kept\n");
     }
 }
