@@ -10,12 +10,15 @@ use super::text;
 use crate::fold::peek_block;
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 
-/// The plugin tools that render their own result.
-pub const RENDERED_PLUGIN_TOOLS: [&str; 4] = [
+/// The plugin tools that render their own result. This must match the real
+/// tool names in `hoocode-code-permissions` `PLUGIN_TOOLS`; this crate does not
+/// depend on that crate, so a test in `hoocode-code-tui-app` asserts the match.
+pub const RENDERED_PLUGIN_TOOLS: [&str; 5] = [
     "SearchPlugins",
     "ListPlugins",
-    "SuggestPluginInstall",
     "InstallPlugin",
+    "UninstallPlugin",
+    "ProposePlugin",
 ];
 
 pub fn format_plugin_tool_result(result: &ToolResultView<'_>, expanded: bool) -> String {

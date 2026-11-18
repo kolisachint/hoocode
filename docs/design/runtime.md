@@ -146,7 +146,7 @@ strip = "symbols"
 
 | Rule | Detail | Where |
 |---|---|---|
-| rpc fails closed | In `--mode rpc` a tool that needs approval is blocked unless `auto_allow` lists it. MCP and plugin lifecycle tools (`SearchPlugins`, `ListPlugins`, `SuggestPluginInstall`, `InstallPlugin`, `ProposePlugin`) are gated too. Approval dialogs over rpc are dropped; use the app-server. | `code-permissions` `evaluate`; `code-cli` `build_permission_gate` |
+| rpc fails closed | In `--mode rpc` a tool that needs approval is blocked unless `auto_allow` lists it. MCP and plugin lifecycle tools (`SearchPlugins`, `ListPlugins`, `InstallPlugin`, `UninstallPlugin`, `ProposePlugin`) are gated too. Approval dialogs over rpc are dropped; use the app-server. | `code-permissions` `evaluate`; `code-cli` `build_permission_gate` |
 | Children and approvals | Children inherit `HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED`; warm workers opt out with `HOOCODE_INTERNAL_WARM_WORKER` unless the parent is closed. A `--mode json` child with `--task-id` relays each approval to its parent. No UI, EOF, cancel or deadline: deny. | `code-subagents` `clearance.rs` |
 | Print and json | Allow, with one stderr line after the run naming the approval tools that ran. | `code-main` `approval_note.rs` |
 | Data directory | `~/.hoocode` (`agent_dir()`). `HOOCODE_` is the only env prefix. No old-name aliases, no migration. MCP trust store stays here. | `hoocode-code-paths` |

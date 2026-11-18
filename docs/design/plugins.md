@@ -248,9 +248,9 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 
 | ID | Item | Size | Trigger or gate | Design notes |
 |---|---|---|---|---|
-| PL-1 | Drop Copilot and `.agents-plugin` plugin-root markers | S | None | `hoocode-code-resources/src/skills.rs` `is_plugin_root` still lists `.agents-plugin/plugin.json`, `.github/plugin/plugin.json` and `.github/copilot-plugin.json`. Keep the native and Claude markers. |
-| PL-2 | Rewrite the plugin-authoring skill text | S | None | `builtin_skills.rs:47` names `UpdatePlugin` and hooks. Its tests pin the text, so change both together. Align the text with the 2026-11-17 decisions. |
-| PL-3 | Fix the TUI plugin tool list | S | None | `hoocode-code-tui-widgets/src/tools/plugins.rs` names `SuggestPluginInstall` (not a tool) and omits `UninstallPlugin`. |
+| PL-1 | Drop Copilot and `.agents-plugin` plugin-root markers | S | Done 2026-11-18 | `hoocode-code-resources/src/skills.rs` `is_plugin_root` still lists `.agents-plugin/plugin.json`, `.github/plugin/plugin.json` and `.github/copilot-plugin.json`. Keep the native and Claude markers. |
+| PL-2 | Rewrite the plugin-authoring skill text | S | Done 2026-11-18 | `builtin_skills.rs:47` names `UpdatePlugin` and hooks. Its tests pin the text, so change both together. Align the text with the 2026-11-17 decisions. |
+| PL-3 | Fix the TUI plugin tool list | S | Done 2026-11-18 | `hoocode-code-tui-widgets/src/tools/plugins.rs` names `SuggestPluginInstall` (not a tool) and omits `UninstallPlugin`. |
 | PL-4 | Live reload of plugin tools | M | Users hit a stale tool list | A tool change needs `/reload` today. Route the change through the same reload path as install. |
 | PL-5 | Enforce `allowed-tools` or delete the approval | S | Decision | Nothing reads the approved list. Either gate tools with it, or delete the record and keep the warning. |
 | PL-6 | Stop loading Claude plugin `agents/` | S | Done 2026-11-17 | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
