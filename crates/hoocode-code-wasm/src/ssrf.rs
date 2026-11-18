@@ -1,11 +1,18 @@
 //! The SSRF block for plugin HTTP requests.
 //!
-//! Before a plugin's request is gated, its target host is resolved and every
-//! address it maps to is checked. A request is refused when any address is
-//! private, loopback, link-local, or otherwise not a public unicast address.
-//! Literal IP hosts are checked the same way.
+//! The check runs in two steps around the network gate:
+//!
+//! - Before the gate, [`parse_target`] and [`check_literal`] look only at the
+//!   scheme and at a literal IP host. Nothing is resolved, so a plugin cannot
+//!   leak data through DNS queries for a request the user never allowed, and
+//!   cannot probe internal names by the error it gets back.
+//! - After the gate allows the request, [`resolve_and_check`] resolves the host
+//!   and refuses it when any address is private, loopback, link-local, or
+//!   otherwise not a public unicast address.
 
+use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
+use std::sync::Arc;
 
 use http::Uri;
 
@@ -37,28 +44,56 @@ pub(crate) fn parse_target(uri: &Uri) -> Result<Target, String> {
     Ok(Target { host, port })
 }
 
-/// Why [`resolve_and_check`] refused a target.
+/// The check before the gate. A literal IP host is checked against the block;
+/// a host name passes, because it cannot be checked without resolving it.
+pub(crate) fn check_literal(target: &Target, allow_loopback: bool) -> Result<(), String> {
+    match target.host.parse::<IpAddr>() {
+        Ok(ip) => match blocked_reason(ip, allow_loopback) {
+            Some(reason) => Err(format!("{} is {reason}", target.host)),
+            None => Ok(()),
+        },
+        Err(_) => Ok(()),
+    }
+}
+
+/// Resolves a host name to socket addresses. A type so tests can count lookups.
+pub(crate) type Resolver = dyn Fn(&str, u16) -> io::Result<Vec<SocketAddr>> + Send + Sync;
+
+/// A shared [`Resolver`].
+pub(crate) type Resolve = Arc<Resolver>;
+
+/// The resolver that asks the operating system.
+pub(crate) fn system_resolver() -> Resolve {
+    Arc::new(|host: &str, port: u16| -> io::Result<Vec<SocketAddr>> {
+        Ok((host, port).to_socket_addrs()?.collect())
+    })
+}
+
+/// Why [`resolve_and_check`] refused a target. The guest sees the same error
+/// for both; the variant only names the reason in the host log.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum CheckError {
-    /// The host did not resolve (or resolved to nothing). Reported to the
-    /// plugin as a DNS error, not as a policy refusal.
+    /// The host did not resolve (or resolved to nothing).
     Dns(String),
     /// The host resolved to an address the block refuses.
     Blocked(String),
 }
 
-/// Resolve `target` and check every address. `Ok` returns the checked
-/// addresses. Blocks on DNS, so call it on a blocking thread.
+/// Resolve `target` through `resolve` and check every address. `Ok` returns the
+/// checked addresses, which the send connects to. A literal IP host is not
+/// resolved. Blocks on DNS, so call it on a blocking thread.
 ///
 /// `allow_loopback` lets 127.0.0.0/8 and ::1 through. It is for tests only.
 pub(crate) fn resolve_and_check(
     target: &Target,
     allow_loopback: bool,
+    resolve: &Resolver,
 ) -> Result<Vec<SocketAddr>, CheckError> {
-    let addrs: Vec<SocketAddr> = (target.host.as_str(), target.port)
-        .to_socket_addrs()
-        .map_err(|e| CheckError::Dns(format!("cannot resolve {}: {e}", target.host)))?
-        .collect();
+    let addrs = match target.host.parse::<IpAddr>() {
+        Ok(ip) => vec![SocketAddr::new(ip, target.port)],
+        Err(_) => resolve(&target.host, target.port)
+            .map_err(|e| CheckError::Dns(format!("cannot resolve {}: {e}", target.host)))?,
+    };
     if addrs.is_empty() {
         return Err(CheckError::Dns(format!(
             "{} resolves to no address",
@@ -112,6 +147,15 @@ fn blocked_v4(ip: Ipv4Addr, allow_loopback: bool) -> Option<&'static str> {
     if (a, b, c) == (192, 0, 2) || (a, b, c) == (198, 51, 100) || (a, b, c) == (203, 0, 113) {
         return Some("documentation");
     }
+    if (a, b, c) == (192, 0, 0) {
+        return Some("IETF protocol assignments");
+    }
+    if (a, b, c) == (192, 88, 99) {
+        return Some("6to4 relay anycast");
+    }
+    if a == 198 && (b == 18 || b == 19) {
+        return Some("benchmarking");
+    }
     if ip.is_multicast() {
         return Some("multicast");
     }
@@ -137,18 +181,47 @@ fn blocked_v6(ip: Ipv6Addr, allow_loopback: bool) -> Option<&'static str> {
     if ip.is_unspecified() {
         return Some("unspecified");
     }
-    let first = ip.segments()[0];
-    if first & 0xffc0 == 0xfe80 {
+    let s = ip.segments();
+    let o = ip.octets();
+    if s[0] & 0xffc0 == 0xfe80 {
         return Some("link-local");
     }
-    if first & 0xfe00 == 0xfc00 {
+    if s[0] & 0xffc0 == 0xfec0 {
+        return Some("site-local");
+    }
+    if s[0] & 0xfe00 == 0xfc00 {
         return Some("unique-local");
     }
     if ip.is_multicast() {
         return Some("multicast");
     }
-    if first == 0x2001 && ip.segments()[1] == 0x0db8 {
+    if s[0] == 0x2001 && s[1] == 0x0db8 {
         return Some("documentation");
+    }
+    // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052): IPv4 in the last 32 bits.
+    if o[0..12] == [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0] {
+        let v4 = Ipv4Addr::new(o[12], o[13], o[14], o[15]);
+        return blocked_v4(v4, allow_loopback).map(|_| "NAT64 of a blocked IPv4 address");
+    }
+    // NAT64 local-use prefix 64:ff9b:1::/48 (RFC 8215): IPv4 in bits 48-63 and
+    // 72-87, with the reserved u octet (bits 64-71) between them.
+    if o[0..6] == [0, 0x64, 0xff, 0x9b, 0, 1] {
+        let v4 = Ipv4Addr::new(o[6], o[7], o[9], o[10]);
+        return blocked_v4(v4, allow_loopback).map(|_| "NAT64 of a blocked IPv4 address");
+    }
+    // 6to4 2002::/16 (RFC 3056): IPv4 in bits 16-48.
+    if s[0] == 0x2002 {
+        let v4 = Ipv4Addr::new(o[2], o[3], o[4], o[5]);
+        return blocked_v4(v4, allow_loopback).map(|_| "6to4 of a blocked IPv4 address");
+    }
+    // Teredo 2001::/32 (RFC 4380): tunnelled addresses are not checked, so the
+    // whole prefix is blocked.
+    if s[0] == 0x2001 && s[1] == 0 {
+        return Some("Teredo");
+    }
+    // Discard-only 100::/64 (RFC 6666).
+    if s[..4] == [0x0100, 0, 0, 0] {
+        return Some("discard-only");
     }
     None
 }
@@ -188,6 +261,26 @@ mod tests {
                 blocked_reason(v4(ip), false).is_some(),
                 "{ip} should be blocked"
             );
+        }
+    }
+
+    #[test]
+    fn blocks_ipv4_protocol_assignments_benchmarking_and_6to4_relay() {
+        for ip in [
+            "192.0.0.0",
+            "192.0.0.8",
+            "192.0.0.255",
+            "198.18.0.1",
+            "198.19.255.255",
+            "192.88.99.1",
+        ] {
+            assert!(
+                blocked_reason(v4(ip), false).is_some(),
+                "{ip} should be blocked"
+            );
+        }
+        for ip in ["192.0.1.1", "198.20.0.1", "198.17.255.255", "192.88.100.1"] {
+            assert!(blocked_reason(v4(ip), false).is_none(), "{ip} should pass");
         }
     }
 
@@ -238,6 +331,63 @@ mod tests {
     }
 
     #[test]
+    fn blocks_site_local_teredo_and_discard_ipv6() {
+        for ip in [
+            "fec0::1",
+            "feff::1",
+            "2001::1",
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+            "100::1",
+            "100::",
+        ] {
+            assert!(
+                blocked_reason(v6(ip), false).is_some(),
+                "{ip} should be blocked"
+            );
+        }
+        // Outside the /64 discard prefix, and outside the other blocks.
+        assert!(blocked_reason(v6("100:0:0:1::1"), false).is_none());
+        assert!(blocked_reason(v6("2001:4860:4860::8888"), false).is_none());
+    }
+
+    #[test]
+    fn blocks_nat64_wellknown_with_a_private_embedded_ipv4() {
+        // 64:ff9b::a9fe:a9fe is 169.254.169.254.
+        assert!(blocked_reason(v6("64:ff9b::a9fe:a9fe"), false).is_some());
+        assert!(blocked_reason(v6("64:ff9b::a00:1"), false).is_some());
+        assert!(blocked_reason(v6("64:ff9b::7f00:1"), false).is_some());
+        assert!(blocked_reason(v6("64:ff9b::7f00:1"), true).is_none());
+        // A public embedded address passes: 8.8.8.8.
+        assert!(blocked_reason(v6("64:ff9b::808:808"), false).is_none());
+    }
+
+    #[test]
+    fn blocks_nat64_local_use_with_a_private_embedded_ipv4() {
+        // 64:ff9b:1::/48 holds the IPv4 in bits 48-63 and 72-87 (RFC 8215).
+        let embedded = |v4: [u8; 4]| {
+            let mut o = [0u8; 16];
+            o[..6].copy_from_slice(&[0, 0x64, 0xff, 0x9b, 0, 1]);
+            o[6] = v4[0];
+            o[7] = v4[1];
+            o[9] = v4[2];
+            o[10] = v4[3];
+            IpAddr::V6(Ipv6Addr::from(o))
+        };
+        assert!(blocked_reason(embedded([169, 254, 169, 254]), false).is_some());
+        assert!(blocked_reason(embedded([10, 0, 0, 1]), false).is_some());
+        assert!(blocked_reason(embedded([8, 8, 8, 8]), false).is_none());
+    }
+
+    #[test]
+    fn blocks_6to4_with_a_private_embedded_ipv4() {
+        // 2002:a9fe:a9fe:: embeds 169.254.169.254 in bits 16-48.
+        assert!(blocked_reason(v6("2002:a9fe:a9fe::"), false).is_some());
+        assert!(blocked_reason(v6("2002:7f00:1::"), false).is_some());
+        assert!(blocked_reason(v6("2002:7f00:1::"), true).is_none());
+        assert!(blocked_reason(v6("2002:808:808::"), false).is_none());
+    }
+
+    #[test]
     fn mapped_and_compatible_addresses_use_their_ipv4() {
         assert!(blocked_reason(v6("::ffff:127.0.0.1"), false).is_some());
         assert!(blocked_reason(v6("::ffff:10.0.0.1"), false).is_some());
@@ -278,22 +428,63 @@ mod tests {
     }
 
     #[test]
-    fn literal_hosts_are_checked_without_dns() {
+    fn literal_hosts_are_checked_before_the_gate_without_dns() {
         let loopback = Target {
             host: "127.0.0.1".into(),
             port: 80,
         };
-        assert!(resolve_and_check(&loopback, false).is_err());
-        assert!(resolve_and_check(&loopback, true).is_ok());
+        assert!(check_literal(&loopback, false).is_err());
+        assert!(check_literal(&loopback, true).is_ok());
         let private = Target {
             host: "10.0.0.1".into(),
             port: 80,
         };
-        assert!(resolve_and_check(&private, true).is_err());
+        assert!(check_literal(&private, true).is_err());
         let mapped = Target {
             host: "::ffff:127.0.0.1".into(),
             port: 80,
         };
-        assert!(resolve_and_check(&mapped, false).is_err());
+        assert!(check_literal(&mapped, false).is_err());
+        let name = Target {
+            host: "localhost".into(),
+            port: 80,
+        };
+        assert!(check_literal(&name, false).is_ok());
+    }
+
+    #[test]
+    fn literal_hosts_are_not_resolved() {
+        let refuse: &Resolver = &|_: &str, _: u16| -> io::Result<Vec<SocketAddr>> {
+            panic!("a literal host must not be resolved")
+        };
+        let public = Target {
+            host: "8.8.8.8".into(),
+            port: 443,
+        };
+        let addrs = resolve_and_check(&public, false, refuse).unwrap();
+        assert_eq!(addrs, vec!["8.8.8.8:443".parse().unwrap()]);
+    }
+
+    #[test]
+    fn every_resolved_address_is_checked() {
+        let target = Target {
+            host: "mixed.example".into(),
+            port: 80,
+        };
+        let mixed: &Resolver = &|_: &str, port: u16| {
+            Ok(vec![
+                SocketAddr::new(v4("8.8.8.8"), port),
+                SocketAddr::new(v4("10.0.0.5"), port),
+            ])
+        };
+        assert!(matches!(
+            resolve_and_check(&target, false, mixed),
+            Err(CheckError::Blocked(_))
+        ));
+        let nothing: &Resolver = &|_: &str, _: u16| Ok(Vec::new());
+        assert!(matches!(
+            resolve_and_check(&target, false, nothing),
+            Err(CheckError::Dns(_))
+        ));
     }
 }

@@ -329,31 +329,53 @@ fn gate_wait_does_not_count_toward_the_call_timeout() {
     });
 }
 
+/// The gate comes before DNS, so an unresolvable name is asked about like any
+/// other host. Once allowed, the lookup fails and the guest gets the same
+/// `HttpRequestDenied` a block gets, so it cannot tell the two apart. The
+/// lookup itself is counted in the unit tests of `http.rs`.
 #[test]
-fn dns_failure_is_not_a_policy_refusal_and_skips_the_gate() {
+fn unresolvable_name_is_asked_then_denied_with_the_block_error() {
     block_on_entry(async {
         let dir = tempfile::tempdir().unwrap();
         let ext = load(dir.path(), host(dir.path()));
         let gate = CountingGate::new(true);
+        let url = "http://nonexistent.invalid/".to_owned();
+        let err = ext
+            .call("fetch", json!({ "url": url }), env(&gate))
+            .await
+            .unwrap_err();
+        match &err {
+            WasmError::Failed(msg) => {
+                assert!(msg.contains("HttpRequestDenied"), "{msg}");
+                assert!(!msg.contains("DnsError"), "{msg}");
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        assert_eq!(gate.asked(), vec![url]);
+    });
+}
+
+#[test]
+fn gate_refused_unresolvable_name_gets_the_same_error() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path(), host(dir.path()));
+        let gate = CountingGate::new(false);
         let err = ext
             .call(
                 "fetch",
-                json!({ "url": "http://nonexistent.invalid/" }),
+                json!({ "url": "https://secret.nonexistent.invalid/" }),
                 env(&gate),
             )
             .await
             .unwrap_err();
         match &err {
             WasmError::Failed(msg) => {
-                assert!(msg.contains("DnsError"), "{msg}");
-                assert!(!msg.contains("HttpRequestDenied"), "{msg}");
+                assert!(msg.contains("HttpRequestDenied"), "{msg}");
+                assert!(!msg.contains("DnsError"), "{msg}");
             }
             other => panic!("expected Failed, got {other:?}"),
         }
-        assert!(
-            gate.asked().is_empty(),
-            "gate was asked: {:?}",
-            gate.asked()
-        );
+        assert_eq!(gate.asked().len(), 1);
     });
 }
