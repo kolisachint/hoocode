@@ -85,7 +85,8 @@ installed, updated or removed, with no `/reload`.
 - A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in your user
   `settings.json` (`~/.hoocode/settings.json`). It is read from user settings only, never
   from a project's `.hoocode/settings.json`, so a cloned repository cannot point a plugin
-  at its own server. Only string values are read:
+  at its own server. Only string values are read. After you edit them, run `/reload`
+  (or start a new session) for the plugin's tools to use the new values:
 
 ```json
 { "pluginConfig": { "webtools": { "braveApiKey": "..." } } }

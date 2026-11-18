@@ -136,7 +136,7 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2764 / 1580 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1204 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 8640 / 7546 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 8644 / 7562 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 4 | 876 / 994 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 0 | 574 / 0 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 7746 / 0 | keep |

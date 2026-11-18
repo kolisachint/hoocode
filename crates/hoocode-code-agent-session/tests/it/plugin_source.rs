@@ -146,6 +146,22 @@ async fn a_reload_picks_up_the_plugins_too() {
     assert!(active(&h).contains(&"ext_echo_echo".to_owned()));
 }
 
+/// A reload re-reads the settings, and the plugin tools hold their `pluginConfig` values from
+/// the build: the tools are built again even when the plugin set did not change, and the MCP
+/// hub is kept when its servers did not change.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reload_builds_the_plugin_tools_again_for_new_settings() {
+    let (h, plugins, hub) = session_with_mcp();
+    plugins.set(vec![echo()]);
+    h.session.refresh_plugins();
+    let builds = plugins.builds();
+    h.session.reload().await;
+    assert_eq!(plugins.builds(), builds + 1);
+    assert!(active(&h).contains(&"ext_echo_echo".to_owned()));
+    assert_eq!(plugins.hub_builds(), 0);
+    assert!(Arc::ptr_eq(&h.session.mcp().unwrap(), &hub));
+}
+
 #[test]
 fn an_unchanged_plugin_set_is_not_built_again() {
     let h = session();
