@@ -398,3 +398,26 @@ fn ignore_files_plugin_roots_allowed_tools_and_namespaces() {
     let r = load_skills(&opts);
     assert_eq!(r.skills[0].name, "myplug:keep");
 }
+
+#[test]
+fn copilot_only_folder_is_not_a_plugin_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().into_owned();
+    let write = |rel: &str, content: &str| {
+        let path = dir.path().join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    };
+    let skill =
+        |name: &str| format!("---\nname: {name}\ndescription: The {name} skill.\n---\nBody\n");
+    // Copilot markers are no longer plugin roots, so the nested skill is scanned.
+    write("copi/.github/copilot-plugin.json", "{\"name\": \"copi\"}");
+    write("copi/skills/inner/SKILL.md", &skill("inner"));
+    // Native and Claude markers still make a folder a plugin root.
+    write("native/plugin.json", "{\"name\": \"native\"}");
+    write("native/skills/hidden/SKILL.md", &skill("hidden"));
+
+    let r = load_skills_from_dir(&root, "test");
+    let names: Vec<&str> = r.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["inner"]);
+}

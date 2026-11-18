@@ -179,13 +179,10 @@ fn create_skill_source_info(file_path: &str, base_dir: &str, source: &str) -> So
 /// any supported format (native, Claude, Copilot). Only its presence as valid
 /// JSON matters.
 fn is_plugin_root(root: &str) -> bool {
-    const MANIFESTS: [&str; 6] = [
-        ".agents-plugin/plugin.json",
+    const MANIFESTS: [&str; 3] = [
         ".claude-plugin/plugin.json",
         ".plugin/plugin.json",
         "plugin.json",
-        ".github/plugin/plugin.json",
-        ".github/copilot-plugin.json",
     ];
     MANIFESTS.iter().any(|rel| {
         std::fs::read_to_string(node_path::join(&[root, rel]))
