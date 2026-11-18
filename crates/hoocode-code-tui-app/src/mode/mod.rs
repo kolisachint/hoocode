@@ -416,6 +416,8 @@ struct Mode {
     turn_stop_reason: Option<StopReason>,
     /// A `/plugin` change made while a turn ran: applied when the turn ends (`PromptDone`).
     plugin_reload_pending: bool,
+    /// The plugin generation this UI last acted on (see `sync_plugin_changes`).
+    plugins_seen: u64,
     /// Notices of `/plugin` changes, shown after the reload that makes them live.
     plugin_notices: Vec<String>,
     /// When the current prompt was submitted (set at submit, taken at `PromptDone`).
@@ -934,6 +936,7 @@ impl Mode {
             last_turn: None,
             turn_stop_reason: None,
             plugin_reload_pending: false,
+            plugins_seen: hoocode_code_plugins::generation(),
             plugin_notices: Vec::new(),
             turn_timer,
             chime: ChimeDebounce::default(),
@@ -1176,6 +1179,7 @@ impl Mode {
         if std::mem::take(&mut self.plugin_reload_pending) {
             self.reload_plugins();
         }
+        self.sync_plugin_changes();
         // Messages queued behind the prompt while it started, and left over
         // because it ran no turn. A prompt that succeeded without a turn (an
         // extension command, which may send its own follow-up, e.g. `/grill`)

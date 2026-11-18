@@ -114,7 +114,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [RT-37](runtime.md#open) | macOS baseline and lane QoS | A macOS machine |
 | [RT-38](runtime.md#open) | Windows `Shell` priority | Windows ships (not planned) |
 | [AG-2](agent.md#open) | Decide MCP schema deferral | Measured token cost of MCP schemas |
-| [PL-4](plugins.md#open) | Live reload of plugin tools | Users hit a stale tool list |
 | [AG-9](agent.md#open) | Publish the OAuth Client ID Metadata document | An OAuth MCP server needs CIMD |
 | [AG-10](agent.md#open) | MCP conformance run and manual runs | Before MCP counts as done |
 | [AG-13](agent.md#open) | `/grill` skips its questions in the loop | With AG-12 |

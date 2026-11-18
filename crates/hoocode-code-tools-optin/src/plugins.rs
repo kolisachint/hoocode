@@ -180,7 +180,7 @@ fn install_definition(host: Arc<PluginToolHost>) -> ToolDefinition {
     definition(
         INSTALL_PLUGIN_TOOL_NAME,
         "Install plugin",
-        "Install a plugin from a marketplace the user trusts. Give the plugin name, or name@marketplace when more than one marketplace has it. Installs from a marketplace the user has not trusted are refused: ask the user to install it with /plugin install. The plugin's skills load on /reload.",
+        "Install a plugin from a marketplace the user trusts. Give the plugin name, or name@marketplace when more than one marketplace has it. Installs from a marketplace the user has not trusted are refused: ask the user to install it with /plugin install. The plugin's tools and MCP servers are live at once; its skills load on /reload.",
         "Install a plugin from a trusted marketplace",
         json!({
             "type": "object",
@@ -196,7 +196,7 @@ fn install_definition(host: Arc<PluginToolHost>) -> ToolDefinition {
             let installed = model::install_trusted(&host.paths, spec, scope)?;
             model::reload(&host.paths, &host.trust_path);
             let text = format!(
-                "Installed {} {} from {} ({} scope) at {}. Run /reload to load its skills now.{}",
+                "Installed {} {} from {} ({} scope) at {}. Its tools are live now; run /reload to load its skills.{}",
                 installed.name,
                 installed.version,
                 installed.marketplace,

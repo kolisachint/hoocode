@@ -33,6 +33,7 @@ pub mod skills;
 mod trust;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 
 use hoocode_code_mcp::{PluginServers, ServerDef};
@@ -47,9 +48,19 @@ pub use trust::{load_default_trust, trust_project_plugins};
 /// update or trust (`/plugin`), so the resource loader and the skill gate read the same set.
 static CURRENT: RwLock<Option<PluginSet>> = RwLock::new(None);
 
+/// Counts the changes to [`CURRENT`]. A session that built something from the plugins (its
+/// plugin tools, its MCP servers) compares this to know it must build again (see `PL-4`).
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Make `set` the current plugins (see [`current`]).
 pub fn set_current(set: PluginSet) {
     *CURRENT.write().unwrap_or_else(|e| e.into_inner()) = Some(set);
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
+/// How many times [`set_current`] has run in this process. It only grows.
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::SeqCst)
 }
 
 /// The current plugins: what was last set, or none.

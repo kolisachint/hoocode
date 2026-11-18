@@ -50,9 +50,11 @@ state, and `/mcp login <server>` signs in to one that needs it.
 
 ## Plugins
 
-Plugins add skills and MCP servers. They live in `~/.agents/plugins/`
+Plugins add skills, MCP servers and tools. They live in `~/.agents/plugins/`
 (yours) and `.agents/plugins/` (the project's). Manage them with `/plugin` in a
-session: add a marketplace, then install from it.
+session: add a marketplace, then install from it. A plugin's tools and MCP servers
+are live as soon as you install, update or remove it, with no `/reload`. Its skills
+load on `/reload`.
 
 ```text
 /plugin marketplace add <git-url-or-owner/repo>
@@ -68,7 +70,8 @@ The same commands work from the shell, without a session: `hoocode install`,
 [Commands](commands.md).
 
 A plugin may also ship a WASM component at `dev.hoocode/extension.wasm`. Its tools
-appear to the model as `ext_<plugin>_<tool>`, and they need `/reload` after an install.
+appear to the model as `ext_<plugin>_<tool>`. They are live as soon as the plugin is
+installed, updated or removed, with no `/reload`.
 
 - A component runs only when its plugin is trusted, the same trust that lets the
   plugin's MCP servers start without a `/mcp` grant. An untrusted plugin's component

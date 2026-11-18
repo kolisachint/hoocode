@@ -43,6 +43,7 @@ use crate::hooks::{
     TemplateKind,
 };
 use crate::mcp::{McpHub, SHUTDOWN_WAIT};
+use crate::plugin_source::PluginSource;
 use crate::retry::RetryState;
 use crate::stats::{self, ContextUsage, ForkableMessage, SessionStats, TranscriptSelection};
 use hoocode_agent_compaction::CompactionResult;
@@ -457,6 +458,12 @@ struct State {
     mcp_tools: Vec<ToolDefinition>,
     mcp_generation: Option<u64>,
     mcp_auto_active: bool,
+    /// Plugin tools as the attached plugin source last built them (PL-4).
+    plugin_tools: Vec<ToolDefinition>,
+    /// The plugin generation the tools above were built from.
+    plugin_generation: Option<u64>,
+    /// Problems the last plugin build found, until the UI takes them.
+    plugin_notices: Vec<String>,
     tool_definitions: Vec<(String, DefinitionEntry)>,
     tool_prompt_snippets: HashMap<String, String>,
     tool_prompt_guidelines: HashMap<String, Vec<String>>,
@@ -492,6 +499,8 @@ struct Inner {
     run_ended: std::sync::atomic::AtomicBool,
     compaction: Mutex<CompactionState>,
     mcp: Mutex<Option<Arc<McpHub>>>,
+    /// Builds the plugin tools and MCP hub again when the plugins change (PL-4).
+    plugin_source: Mutex<Option<Arc<dyn PluginSource>>>,
     /// The completion notices of the session's background shell jobs, when it has any.
     job_notices: Mutex<Option<Arc<crate::services::JobNotices>>>,
     /// Tool calls of the last persisted assistant message that have no
@@ -717,6 +726,7 @@ impl AgentSession {
             run_ended: std::sync::atomic::AtomicBool::new(false),
             compaction: Mutex::new(CompactionState::default()),
             mcp: Mutex::new(None),
+            plugin_source: Mutex::new(None),
             job_notices: Mutex::new(None),
             unanswered_calls: Mutex::new(UnansweredCalls::default()),
         });
@@ -735,10 +745,11 @@ impl AgentSession {
                 };
                 // Servers that finished connecting since the last turn join it now
                 // (docs/design/mcp.md: tool-list changes apply at the next turn).
-                AgentSession {
+                let session = AgentSession {
                     inner: inner.clone(),
-                }
-                .sync_mcp_tools();
+                };
+                session.refresh_plugins();
+                session.sync_mcp_tools();
                 if !std::mem::take(&mut lock(&inner.state).runtime_context_dirty) {
                     return Ok(None);
                 }
@@ -1059,6 +1070,7 @@ impl AgentSession {
                 .await;
         }
         self.settings().reload();
+        self.refresh_plugins();
         self.inner.resource_loader.reload();
         self.build_runtime(Some(self.get_active_tool_names()), true);
         // `session_start` with reason `reload`: handlers re-read their state
@@ -1373,10 +1385,12 @@ impl AgentSession {
 
         let mcp_tools = lock(&self.inner.state).mcp_tools.clone();
         let mcp_names: HashSet<String> = mcp_tools.iter().map(|t| t.name.clone()).collect();
+        let plugin_tools = lock(&self.inner.state).plugin_tools.clone();
         let custom: Vec<ToolDefinition> = self
             .inner
             .custom_tools
             .iter()
+            .chain(plugin_tools.iter())
             .chain(mcp_tools.iter())
             .filter(|d| self.is_allowed_tool(&d.name))
             .cloned()
@@ -1519,6 +1533,96 @@ impl AgentSession {
         lock(&self.inner.mcp).clone()
     }
 
+    /// Attach the session's plugin source (PL-4) and register its tools now. Returns the problems
+    /// the build found. Attach before [`attach_mcp`](Self::attach_mcp): a hub attached later is
+    /// the one the source's refresh replaces.
+    pub fn attach_plugins(&self, source: Arc<dyn PluginSource>) -> Vec<String> {
+        let generation = source.generation();
+        let (tools, notices) = source.tools(&self.tool_names_taken());
+        let auto_activate = source.auto_activate();
+        *lock(&self.inner.plugin_source) = Some(source);
+        lock(&self.inner.state).plugin_generation = Some(generation);
+        self.set_plugin_tools(tools, auto_activate);
+        notices
+    }
+
+    /// Brings the plugin tools and the MCP hub in line with the plugins, when they changed since
+    /// the last check. Runs before each prompt, between the turns of a run and on `/reload`, so
+    /// a change made by `/plugin`, by the model's plugin tools or by hand applies from the next
+    /// turn. The problems of the build wait for [`take_plugin_notices`](Self::take_plugin_notices).
+    pub fn refresh_plugins(&self) {
+        let Some(source) = lock(&self.inner.plugin_source).clone() else {
+            return;
+        };
+        // Read the generation before building: a change made meanwhile is built next time.
+        let generation = source.generation();
+        {
+            let mut state = lock(&self.inner.state);
+            if state.plugin_generation == Some(generation) {
+                return;
+            }
+            state.plugin_generation = Some(generation);
+        }
+        let (tools, notices) = source.tools(&self.tool_names_taken());
+        lock(&self.inner.state).plugin_notices.extend(notices);
+        self.set_plugin_tools(tools, source.auto_activate());
+        if self.mcp().is_some() {
+            if let Some(hub) = source.mcp_hub() {
+                let old = lock(&self.inner.mcp).replace(hub);
+                // A new hub has its own tool-list generation, so the sync must not skip it.
+                lock(&self.inner.state).mcp_generation = None;
+                if let Some(old) = old {
+                    old.shutdown();
+                }
+                self.sync_mcp_tools();
+            }
+        }
+    }
+
+    /// The problems the last plugin build found, once: the caller shows them.
+    pub fn take_plugin_notices(&self) -> Vec<String> {
+        std::mem::take(&mut lock(&self.inner.state).plugin_notices)
+    }
+
+    /// Names a plugin tool must not take: the built-in tools and the session's own tools.
+    fn tool_names_taken(&self) -> Vec<String> {
+        let state = lock(&self.inner.state);
+        state
+            .base_tool_definitions
+            .iter()
+            .map(|t| t.name.clone())
+            .chain(self.inner.custom_tools.iter().map(|t| t.name.clone()))
+            .collect()
+    }
+
+    /// Replaces the plugin tools. A tool that is new is active at once when `auto_activate`; a
+    /// tool that is gone leaves the active set.
+    fn set_plugin_tools(&self, tools: Vec<ToolDefinition>, auto_activate: bool) {
+        let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
+        let previous: Vec<String> = {
+            let mut state = lock(&self.inner.state);
+            let previous = state.plugin_tools.iter().map(|t| t.name.clone()).collect();
+            state.plugin_tools = tools;
+            previous
+        };
+        if names.is_empty() && previous.is_empty() {
+            return;
+        }
+        let mut active: Vec<String> = self
+            .get_active_tool_names()
+            .into_iter()
+            .filter(|n| !previous.contains(n) || names.contains(n))
+            .collect();
+        if auto_activate {
+            for name in &names {
+                if !previous.contains(name) && !active.contains(name) {
+                    active.push(name.clone());
+                }
+            }
+        }
+        self.refresh_tool_registry(Some(active), false);
+    }
+
     /// Takes the hub's tool list when it changed since the last sync. Runs before each prompt
     /// and between the turns of a run, so a tool list change applies from the next turn.
     fn sync_mcp_tools(&self) {
@@ -1657,6 +1761,7 @@ impl AgentSession {
         options: PromptOptions,
         preflight: &Preflight,
     ) -> Result<()> {
+        self.refresh_plugins();
         self.sync_mcp_tools();
         if options.expand_prompt_templates && text.starts_with('/') {
             let (name, args) = Self::split_command(text);

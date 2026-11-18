@@ -1,11 +1,9 @@
 //! `/plugin`: the listing, marketplaces, installs, removes, updates and trust (part 2 of
 //! `docs/design/plugins.md`). The command itself is `hoocode_code_plugins::command`; this file
-//! shows its reply and makes a change live: the MCP servers of the new plugin set start, and the resources reload
-//! (the `/reload` path). A change during a turn waits for the turn to end.
+//! shows its reply and makes a change live: the session's plugin tools and MCP servers follow the
+//! new plugin set at once (PL-4), and the resources reload (the `/reload` path). A change during
+//! a turn waits for the turn to end.
 
-use std::sync::Arc;
-
-use hoocode_code_agent_session::mcp::McpHub;
 use hoocode_code_plugins::command;
 use hoocode_code_plugins::install::Paths;
 use hoocode_tui_components::{Spacer, Text};
@@ -48,27 +46,45 @@ impl Mode {
         self.reload_plugins();
     }
 
-    /// Reload the plugins: the current set, then the MCP servers of its plugins (only when this
-    /// session runs MCP), then the resources. Skills and subagents are live from the next turn.
+    /// Reload the plugins: the current set, then the session's plugin tools and MCP servers (new
+    /// servers ask for trust), then the resources. Skills and subagents are live from the next turn.
     pub(super) fn reload_plugins(&mut self) {
         let cwd = self.session.cwd().to_path_buf();
         let set = Paths::for_cwd(&cwd).load();
-        hoocode_code_plugins::set_current(set.clone());
-        if let Some(old) = self.session.mcp() {
-            let hub = Arc::new(McpHub::for_folder_with_plugins(&cwd, &set.mcp_servers()));
-            hub.set_elicitation(Arc::new(crate::mcp_elicitation::TuiElicitation));
-            self.session.attach_mcp(hub.clone(), true);
-            hub.start();
-            old.shutdown();
-            self.ask_mcp_trust();
-        }
+        hoocode_code_plugins::set_current(set);
+        self.session.refresh_plugins();
+        self.plugins_seen = hoocode_code_plugins::generation();
+        // The trust prompt is for the hub the refresh made, so it comes after it.
+        self.ask_mcp_trust();
         self.handle_reload_command();
     }
 
-    /// The notices of `/plugin` changes, shown after a reload.
+    /// A plugin change the session made by itself (the model's plugin tools, during a turn):
+    /// the session follows it, and its MCP servers ask for trust, as `/plugin` does. Runs when
+    /// the turn ends.
+    pub(super) fn sync_plugin_changes(&mut self) {
+        let generation = hoocode_code_plugins::generation();
+        if generation == self.plugins_seen || self.session.is_streaming() {
+            return;
+        }
+        self.plugins_seen = generation;
+        self.session.refresh_plugins();
+        self.show_session_plugin_notices();
+        self.ask_mcp_trust();
+    }
+
+    /// The notices of `/plugin` changes, and the problems the session's plugin build found, shown
+    /// after a reload.
     pub(super) fn show_plugin_notices(&mut self) {
         for notice in std::mem::take(&mut self.plugin_notices) {
             self.show_record(&notice);
+        }
+        self.show_session_plugin_notices();
+    }
+
+    fn show_session_plugin_notices(&mut self) {
+        for notice in self.session.take_plugin_notices() {
+            self.show_warning(&notice);
         }
     }
 

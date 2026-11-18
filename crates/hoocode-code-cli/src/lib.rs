@@ -16,6 +16,7 @@ pub mod initial_message;
 mod keybindings_command;
 mod list_models;
 mod plugin_command;
+mod plugin_live;
 mod runtime;
 mod session_flags;
 

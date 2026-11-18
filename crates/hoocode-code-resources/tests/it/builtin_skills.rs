@@ -126,7 +126,7 @@ fn writes_the_embedded_content_to_a_content_addressed_cache_dir() {
     }
     // The name is a hash of the content: a changed skill gets a new directory.
     assert!(
-        root.ends_with("/cache/builtin-skills/fe80ba97b3e6"),
+        root.ends_with("/cache/builtin-skills/97fb6aea2e58"),
         "{root}"
     );
 }

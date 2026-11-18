@@ -87,7 +87,7 @@ them. The permission gate still applies to every gated action.
 Updates are a human step: `/plugin update [name]`. No tool edits an installed
 plugin. A plugin written by `ProposePlugin` has no marketplace, so it cannot be
 updated that way. Edit its files, or remove it and propose it again. A changed
-tool needs `/reload`.
+tool is live from the next turn; its skills need `/reload`.
 
 ## Two things that are never yours to do
 
