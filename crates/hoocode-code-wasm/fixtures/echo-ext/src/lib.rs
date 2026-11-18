@@ -2,7 +2,7 @@
 //! Built by scripts/dev/build_wasm_fixtures.sh; not shipped.
 
 wit_bindgen::generate!({
-    path: "../../../../../wit",
+    path: "../../../../wit",
     world: "extension",
 });
 
