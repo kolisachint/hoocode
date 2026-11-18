@@ -243,6 +243,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | Plugin WASM tools load in the main session and subagents, but not in light mode, with `--no-tools`, or when a `--tools` list names no `ext_` tool (same rule as MCP). |
 | 2026-11-17 | The webtools repo is renamed `hoo-web-plugin` and also holds the plugin package (`plugin/`); no separate `web-plugins` repo. The official listing is `hoo-plugins`. The webtools CLI reads `~/.config/webtools/config.json` and env vars, never hoocode settings. |
 | 2026-11-17 | Built-in web helpers, `--enable-webtools`, `enableWebTools` and `webtools.*` settings are removed; web access is the webtools plugin (PL-12). |
+| 2026-11-18 | Plugin skills' `allowed-tools` is parsed and warned about, never honoured; the approval record is removed (PL-5). |
 
 ## Open
 
@@ -252,7 +253,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-2 | Rewrite the plugin-authoring skill text | S | Done 2026-11-18 | `builtin_skills.rs:47` names `UpdatePlugin` and hooks. Its tests pin the text, so change both together. Align the text with the 2026-11-17 decisions. |
 | PL-3 | Fix the TUI plugin tool list | S | Done 2026-11-18 | `hoocode-code-tui-widgets/src/tools/plugins.rs` names `SuggestPluginInstall` (not a tool) and omits `UninstallPlugin`. |
 | PL-4 | Live reload of plugin tools | M | Users hit a stale tool list | A tool change needs `/reload` today. Route the change through the same reload path as install. |
-| PL-5 | Enforce `allowed-tools` or delete the approval | S | Decision | Nothing reads the approved list. Either gate tools with it, or delete the record and keep the warning. |
+| PL-5 | Enforce `allowed-tools` or delete the approval | S | Done 2026-11-18 | Approval record and its trust-file field deleted. `allowed-tools` is parsed and warned about as ignored (`hoocode-code-plugins/src/skills.rs` `ignore_allowed_tools`). Old trust files still load. |
 | PL-6 | Stop loading Claude plugin `agents/` | S | Done 2026-11-17 | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
 | PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Done 2026-11-17: toolchain bumped, numbers in PL-7 measurements. Waits for the user's go on the stop rule. |
 | PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | Done 2026-11-17 (tag `wit-v0.1.0` pending) | Interfaces as in Contract. Tag it so plugin repos can pin. |

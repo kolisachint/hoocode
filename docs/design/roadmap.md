@@ -80,7 +80,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [EN-11](README.md#open) | Build for Windows? | No. Wait until a user asks |
 | [EN-13](README.md#open) | Run subagent fast evals on PRs that touch `hoocode-code-subagents`? | Yes |
 | [RT-32](runtime.md#open) | Fix the frame-build tail from the bash block now? | No. Wait until the user asks |
-| [PL-5](plugins.md#open) | Enforce `allowed-tools`, or delete the approval record? | Delete the record. Keep the warning |
 | [AG-12](agent.md#open) | Wire `/goal` to `/loop auto`? | Not yet. Do it when someone asks for `/goal` |
 | [AG-19](agent.md#open) | Remove `DocSearch` instead of indexing docs? | Decided 2026-11-07: yes, remove (with the single-view decision of 2026-11-07); code removal pending |
 | [AG-20](agent.md#open) | Build semantic code search? | No. Keep the "not available" message |

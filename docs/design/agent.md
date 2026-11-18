@@ -123,7 +123,7 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 - Extensions are MCP servers, Agent Skills, subagents, and WASM components shipped in plugins. Plugins: plugins.md.
 - Skills: `SKILL.md` frontmatter follows the Agent Skills rules. Problems are warnings. Plugin skills are named `<plugin>:<skill>`.
-- `allowed-tools` in a plugin skill is kept only when the user approves that exact list. The approval is stored in `mcp-trust.json`, keyed by `<plugin>:<skill>`. Nothing reads the list at run time (PL-5).
+- `allowed-tools` in a plugin skill is parsed, then dropped with a warning that it is ignored. hoocode never honours it, and records no approval (PL-5, 2026-11-18).
 - Overloaded word: "extension" also names mode extensions and UI requests (`hoocode-code-modes/src/extension.rs`).
 
 ### MCP client

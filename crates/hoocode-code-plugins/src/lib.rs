@@ -41,7 +41,7 @@ use hoocode_code_resources::source_info::{SourceOrigin, SourceScope};
 use hoocode_code_resources::PathEntry;
 
 pub use load::{load_plugins, LoadOptions};
-pub use trust::{approve_skill_tools, load_default_trust, trust_project_plugins};
+pub use trust::{load_default_trust, trust_project_plugins};
 
 /// The plugins the running session uses. Set at session start and after an install, remove,
 /// update or trust (`/plugin`), so the resource loader and the skill gate read the same set.
