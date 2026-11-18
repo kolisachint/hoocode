@@ -26,7 +26,7 @@ hoocode-tui-keys = { workspace = true }
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
 
 # Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
 [lints.clippy]
