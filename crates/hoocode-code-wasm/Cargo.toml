@@ -36,3 +36,5 @@ webpki-roots = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# Test-only: a CA and a leaf certificate for the local https send-path test.
+rcgen = "0.14"

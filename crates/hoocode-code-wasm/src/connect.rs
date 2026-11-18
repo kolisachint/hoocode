@@ -55,6 +55,21 @@ pub(crate) async fn send_checked(
     addrs: &[SocketAddr],
     options: Option<RequestOptions>,
 ) -> Result<(Response<WasiBody>, Outgoing), Error> {
+    send_checked_with_tls(request, addrs, options, production_tls_config).await
+}
+
+/// [`send_checked`] with the TLS client config supplied by `tls`, which is only
+/// called for an https request. Production passes [`production_tls_config`];
+/// the tests pass a config whose root store they control.
+async fn send_checked_with_tls<C>(
+    request: Request<WasiBody>,
+    addrs: &[SocketAddr],
+    options: Option<RequestOptions>,
+    tls: C,
+) -> Result<(Response<WasiBody>, Outgoing), Error>
+where
+    C: FnOnce() -> Result<Arc<ClientConfig>, Error>,
+{
     let connect_timeout = options
         .and_then(|o| o.connect_timeout)
         .unwrap_or(DEFAULT_CONNECT_TIMEOUT);
@@ -72,8 +87,9 @@ pub(crate) async fn send_checked(
     };
     if request.uri().scheme_str() == Some("https") {
         let name = server_name(request.uri())?;
-        let tls = tls_handshake(tcp, name, connect_timeout).await?;
-        exchange(tls, request, timeouts).await
+        let config = tls()?;
+        let stream = tls_handshake(tcp, name, config, connect_timeout).await?;
+        exchange(stream, request, timeouts).await
     } else {
         exchange(tcp, request, timeouts).await
     }
@@ -121,9 +137,10 @@ fn server_name(uri: &Uri) -> Result<ServerName<'static>, Error> {
 async fn tls_handshake(
     tcp: TcpStream,
     name: ServerName<'static>,
+    config: Arc<ClientConfig>,
     timeout: Duration,
 ) -> Result<tokio_rustls::client::TlsStream<TcpStream>, Error> {
-    let connector = TlsConnector::from(tls_config()?);
+    let connector = TlsConnector::from(config);
     match tokio::time::timeout(timeout, connector.connect(name, tcp)).await {
         Ok(Ok(stream)) => Ok(stream),
         Ok(Err(err)) => Err(map_tls_error(&err)),
@@ -141,21 +158,28 @@ fn map_tls_error(err: &io::Error) -> Error {
     }
 }
 
-/// The client TLS config, built once. Only a successful build is cached.
-fn tls_config() -> Result<Arc<ClientConfig>, Error> {
+/// The production client TLS config (bundled webpki roots), built once. Only a
+/// successful build is cached.
+fn production_tls_config() -> Result<Arc<ClientConfig>, Error> {
     static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
     if let Some(config) = CONFIG.get() {
         return Ok(config.clone());
     }
     let mut roots = RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = client_config(roots)?;
+    Ok(CONFIG.get_or_init(|| Arc::new(config)).clone())
+}
+
+/// A client config that verifies server certificates against `roots`, on the
+/// aws-lc-rs provider with the safe default protocol versions.
+fn client_config(roots: RootCertStore) -> Result<ClientConfig, Error> {
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let config = ClientConfig::builder_with_provider(provider)
+    Ok(ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|_| Error::TlsProtocolError)?
         .with_root_certificates(roots)
-        .with_no_client_auth();
-    Ok(CONFIG.get_or_init(|| Arc::new(config)).clone())
+        .with_no_client_auth())
 }
 
 /// The wait limits of one exchange.
@@ -292,6 +316,11 @@ mod tests {
 
     use hoocode_runtime::{block_on_entry, spawn_thread};
     use http_body_util::Empty;
+    use rcgen::{BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair};
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    use rustls::server::Acceptor;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_rustls::LazyConfigAcceptor;
 
     use super::*;
 
@@ -389,6 +418,179 @@ mod tests {
                 .map(|_| ())
                 .unwrap_err();
             assert!(matches!(err, Error::ConnectionRefused), "{err:?}");
+        });
+    }
+
+    /// A throwaway CA for the https tests, so no real root is needed.
+    struct TestPki {
+        ca: CertifiedIssuer<'static, KeyPair>,
+    }
+
+    /// A leaf certificate and its key, as the test server presents them.
+    struct ServerCert {
+        chain: Vec<CertificateDer<'static>>,
+        key: PrivateKeyDer<'static>,
+    }
+
+    impl TestPki {
+        fn new() -> Self {
+            let mut params = CertificateParams::new(Vec::<String>::new()).expect("ca params");
+            params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            let key = KeyPair::generate().expect("ca key");
+            let ca = CertifiedIssuer::self_signed(params, key).expect("ca");
+            Self { ca }
+        }
+
+        fn root(&self) -> CertificateDer<'static> {
+            self.ca.der().clone()
+        }
+
+        /// A certificate for `name`, issued by this CA.
+        fn leaf(&self, name: &str) -> ServerCert {
+            let key = KeyPair::generate().expect("leaf key");
+            let params = CertificateParams::new(vec![name.to_owned()]).expect("leaf params");
+            let cert = params.signed_by(&key, &*self.ca).expect("leaf");
+            ServerCert {
+                chain: vec![cert.der().clone()],
+                key: PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+            }
+        }
+    }
+
+    fn root_store(root: CertificateDer<'static>) -> RootCertStore {
+        let mut roots = RootCertStore::empty();
+        roots.add(root).expect("root");
+        roots
+    }
+
+    /// What the TLS test server saw of one connection.
+    struct Seen {
+        sni: Option<String>,
+        head: String,
+    }
+
+    /// Serve one TLS connection on 127.0.0.1 with `cert`, read the request head,
+    /// report what the client sent, and answer `200 ok`. A failed handshake
+    /// reports nothing.
+    async fn serve_tls(cert: ServerCert) -> (SocketAddr, mpsc::Receiver<Seen>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let config = Arc::new(
+            rustls::ServerConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .expect("versions")
+                .with_no_client_auth()
+                .with_single_cert(cert.chain, cert.key)
+                .expect("server cert"),
+        );
+        let (tx, rx) = mpsc::channel();
+        tokio::spawn(async move {
+            let Ok((tcp, _)) = listener.accept().await else {
+                return;
+            };
+            let Ok(start) = LazyConfigAcceptor::new(Acceptor::default(), tcp).await else {
+                return;
+            };
+            let sni = start.client_hello().server_name().map(str::to_owned);
+            let Ok(mut tls) = start.into_stream(config).await else {
+                return;
+            };
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                match tls.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => head.extend_from_slice(&buf[..n]),
+                }
+            }
+            let _ = tx.send(Seen {
+                sni,
+                head: String::from_utf8_lossy(&head).into_owned(),
+            });
+            let _ = tls
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .await;
+            let _ = tls.shutdown().await;
+        });
+        (addr, rx)
+    }
+
+    fn https_request(port: u16) -> Request<WasiBody> {
+        Request::builder()
+            .uri(format!("https://localhost.test:{port}/"))
+            .body(empty_body())
+            .expect("request")
+    }
+
+    /// The error of an https send to `addr` whose client trusts `roots`.
+    async fn tls_error(addr: SocketAddr, roots: RootCertStore) -> Error {
+        let request = https_request(addr.port());
+        let sent = send_checked_with_tls(request, &[addr], None, move || {
+            client_config(roots).map(Arc::new)
+        })
+        .await;
+        match sent {
+            Ok(_) => panic!("the TLS handshake should have failed"),
+            Err(err) => err,
+        }
+    }
+
+    #[test]
+    fn https_send_verifies_against_the_root_and_sends_sni_and_host() {
+        block_on_entry(async {
+            let pki = TestPki::new();
+            let (addr, seen) = serve_tls(pki.leaf("localhost.test")).await;
+            let roots = root_store(pki.root());
+            let request = https_request(addr.port());
+            let (response, outgoing) = send_checked_with_tls(request, &[addr], None, move || {
+                client_config(roots).map(Arc::new)
+            })
+            .await
+            .expect("send");
+            assert_eq!(response.status(), 200);
+            let body = response
+                .into_body()
+                .collect()
+                .await
+                .expect("body")
+                .to_bytes();
+            assert_eq!(&body[..], b"ok");
+            Box::into_pin(outgoing).await.expect("connection");
+
+            let seen = seen.recv().expect("server saw the request");
+            assert_eq!(seen.sni.as_deref(), Some("localhost.test"));
+            assert!(seen.head.starts_with("GET / HTTP/1.1\r\n"), "{}", seen.head);
+            let host = format!("host: localhost.test:{}\r\n", addr.port());
+            assert!(
+                seen.head.to_ascii_lowercase().contains(&host),
+                "{}",
+                seen.head
+            );
+        });
+    }
+
+    #[test]
+    fn https_send_rejects_a_certificate_for_another_name() {
+        block_on_entry(async {
+            let pki = TestPki::new();
+            let (addr, seen) = serve_tls(pki.leaf("other.test")).await;
+            let err = tls_error(addr, root_store(pki.root())).await;
+            assert!(matches!(err, Error::TlsCertificateError), "{err:?}");
+            assert!(seen.recv().is_err(), "no request may reach the server");
+        });
+    }
+
+    #[test]
+    fn https_send_rejects_an_untrusted_certificate() {
+        block_on_entry(async {
+            let pki = TestPki::new();
+            let (addr, seen) = serve_tls(pki.leaf("localhost.test")).await;
+            let err = tls_error(addr, RootCertStore::empty()).await;
+            assert!(matches!(err, Error::TlsCertificateError), "{err:?}");
+            assert!(seen.recv().is_err(), "no request may reach the server");
         });
     }
 }
