@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: plugin HTTPS behind TLS-intercepting proxies (2026-11-18)
+- **Plugin HTTPS trusts hoocode's CA set** (`--ca-cert`, `HOOCODE_CA_CERT`, `NODE_EXTRA_CA_CERTS`, `--use-system-ca`). A plugin's HTTPS request now works behind a transparent TLS-intercepting proxy whose CA is given this way. Verification stays on. Plugins do not use `HTTPS_PROXY` yet: they connect directly to the checked address.
+
 ### Added: plugin WASM tools and the webtools plugin (2026-11-18)
 - **Plugins can ship a WASM component** at `dev.hoocode/extension.wasm` (WIT world `hoocode:extension@0.1.0`, in `wit/`). Its tools appear as `ext_<plugin>_<tool>` in the main session and in subagents. A component runs in-process with a 30 s and 64 MB limit per call; Esc stops it. Its network requests ask permission as WebFetch (once per tool call), and requests to private, loopback and link-local addresses are refused. Settings for a plugin go under `pluginConfig.<plugin>.<key>`. Components are compiled once into `~/.hoocode/cache/wasm` (safe to delete).
 - **Web fetch and search are the webtools plugin:** `/plugin install webtools@hoo-plugins`. The `hoo-plugins` marketplace is built in and trusted. Search settings move to `pluginConfig.webtools.*` (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`, `searchFallback`).

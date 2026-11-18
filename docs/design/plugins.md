@@ -1,6 +1,6 @@
 # Plugins
 
-Status (2026-11-17): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`; plugin tools `ext_<plugin>_<tool>`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Open: PL-1 to PL-5, PL-13 to PL-15.
+Status (2026-11-17): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`; plugin tools `ext_<plugin>_<tool>`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Open: PL-1 to PL-5, PL-13 to PL-16.
 
 ## Principles
 
@@ -246,6 +246,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-18 | Plugin skills' `allowed-tools` is parsed and warned about, never honoured; the approval record is removed (PL-5). |
 | 2026-11-18 | Plugin tools are live without `/reload` (PL-4). The plugin set's generation counter (`hoocode-code-plugins::generation`) moves on every `set_current`. A session with a `PluginSource` compares it before each prompt, between the turns of a run and on `/reload`, and when it changes it rebuilds the `ext_` tools (same trust rule, gate and cache as at start, names taken by built-ins and its own tools skipped) and its plugin MCP hub (the old hub is shut down, and the new hub's servers keep their trust). `/plugin` refreshes at once and asks for MCP trust; a model install is followed at the next turn, and its MCP trust is asked when the turn ends. Skills still load on `/reload`. A build problem is a warning, shown like the other plugin notices. Chosen over a full `/reload` on every change, which would replay the transcript and reset the editor. |
 | 2026-11-18 | pluginConfig is read from user settings only (a project cannot configure a plugin). The project `.hoocode/settings.json` comes from the working tree, which may be untrusted. In agent definitions, WebFetch/WebSearch name the webtools plugin tools (`ext_webtools_fetch`, `ext_webtools_search`); to keep an agent off the network entirely, deny `ext_*`. |
+| 2026-11-18 | WASM HTTPS uses hoocode's TLS trust set (same as providers): bundled roots plus `--ca-cert`, `HOOCODE_CA_CERT`, `NODE_EXTRA_CA_CERTS` and `--use-system-ca`, verification always on. The host gets the set from `hoocode_ai_util::tls::installed_trust()`. |
 
 ## Open
 
@@ -266,6 +267,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-13 | Notebook plugin | L | A user asks for notebooks | Workspace interface 0.2. Own `serde_json::Value` editor with `preserve_order`, indent 1, no ASCII escaping, new cell ids via `wasi:random`. Execution: a skill using `jupyter execute`; MCP server only for stateful kernels. |
 | PL-14 | Revisit hooks | S | Agent Plugins 1.1 final | Read the portable hooks contract. Decide whether to support it. |
 | PL-15 | Second-consumer review | S | Two releases after PL-12 | If only one WASM plugin exists, record it and decide whether to keep the host. |
+| PL-16 | Plugin HTTP through an explicit HTTPS_PROXY (CONNECT) | M | A user behind an explicit proxy | Needs care: the proxy resolves the host, so the SSRF address pin can't apply; opt-in only. |
 
 ## Not doing
 

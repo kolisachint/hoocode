@@ -7,31 +7,39 @@
 //! DNS answer that changes between the check and the connect cannot move the
 //! request to an address the check refused.
 //!
-//! HTTP/1.1 only. TLS uses rustls with the bundled webpki-roots and the
-//! aws-lc-rs provider, chosen explicitly because the workspace enables both
-//! rustls providers somewhere and the process default would be ambiguous.
+//! HTTP/1.1 only. TLS uses rustls with the bundled webpki-roots plus the host's
+//! [`TrustedCas`] (the same trust set the providers use: `--ca-cert`,
+//! `HOOCODE_CA_CERT`, `NODE_EXTRA_CA_CERTS`, `--use-system-ca`), on the aws-lc-rs
+//! provider, chosen explicitly because the workspace enables both rustls
+//! providers somewhere and the process default would be ambiguous. Verification
+//! is always on.
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use hoocode_ai_util::tls::{ExtraCa, TrustedCas};
 use http::header::HOST;
 use http::uri::PathAndQuery;
 use http::{HeaderValue, Request, Response, Uri, Version};
 use http_body_util::BodyExt;
 use hyper::body::{Body, Bytes, Frame, SizeHint};
 use hyper_util::rt::TokioIo;
-use rustls::pki_types::ServerName;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{ClientConfig, RootCertStore};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::time::{Instant, Sleep};
 use tokio_rustls::TlsConnector;
 use wasmtime_wasi_http::{Error, RequestOptions, WasiBody};
+
+use crate::write_host_log;
 
 /// The connect timeout when the guest sets none. It applies to each address
 /// attempt, and separately to the TLS handshake.
@@ -48,28 +56,15 @@ const DEFAULT_BETWEEN_BYTES_TIMEOUT: Duration = Duration::from_secs(600);
 pub(crate) type Outgoing = Box<dyn Future<Output = Result<(), Error>> + Send>;
 
 /// Send `request` to `addrs`, which must be the addresses the SSRF check
-/// returned for the request's host. Returns the response head and body, and the
+/// returned for the request's host. `tls` verifies https servers and is only
+/// used for an https request. Returns the response head and body, and the
 /// driver future for the connection.
 pub(crate) async fn send_checked(
     request: Request<WasiBody>,
     addrs: &[SocketAddr],
     options: Option<RequestOptions>,
+    tls: Arc<ClientConfig>,
 ) -> Result<(Response<WasiBody>, Outgoing), Error> {
-    send_checked_with_tls(request, addrs, options, production_tls_config).await
-}
-
-/// [`send_checked`] with the TLS client config supplied by `tls`, which is only
-/// called for an https request. Production passes [`production_tls_config`];
-/// the tests pass a config whose root store they control.
-async fn send_checked_with_tls<C>(
-    request: Request<WasiBody>,
-    addrs: &[SocketAddr],
-    options: Option<RequestOptions>,
-    tls: C,
-) -> Result<(Response<WasiBody>, Outgoing), Error>
-where
-    C: FnOnce() -> Result<Arc<ClientConfig>, Error>,
-{
     let connect_timeout = options
         .and_then(|o| o.connect_timeout)
         .unwrap_or(DEFAULT_CONNECT_TIMEOUT);
@@ -87,8 +82,7 @@ where
     };
     if request.uri().scheme_str() == Some("https") {
         let name = server_name(request.uri())?;
-        let config = tls()?;
-        let stream = tls_handshake(tcp, name, config, connect_timeout).await?;
+        let stream = tls_handshake(tcp, name, tls, connect_timeout).await?;
         exchange(stream, request, timeouts).await
     } else {
         exchange(tcp, request, timeouts).await
@@ -158,26 +152,63 @@ fn map_tls_error(err: &io::Error) -> Error {
     }
 }
 
-/// The production client TLS config (bundled webpki roots), built once. Only a
-/// successful build is cached.
-fn production_tls_config() -> Result<Arc<ClientConfig>, Error> {
-    static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
-    if let Some(config) = CONFIG.get() {
-        return Ok(config.clone());
+/// Writes a host log line the first time `text` is seen in this process. The TLS
+/// config is rebuilt for every build, refresh and child, so a skipped CA would
+/// otherwise be reported again each time.
+fn log_once(text: &str) {
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let seen = SEEN.get_or_init(Mutex::default);
+    let first = seen
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(text.to_owned());
+    if first {
+        write_host_log(text);
     }
+}
+
+/// The client TLS config for the send path: the bundled webpki roots plus the
+/// certificates of `trust`. Verification is never disabled.
+pub(crate) fn tls_config(trust: &TrustedCas) -> Result<Arc<ClientConfig>, rustls::Error> {
     let mut roots = RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config = client_config(roots)?;
-    Ok(CONFIG.get_or_init(|| Arc::new(config)).clone())
+    for cert in extra_certificates(trust) {
+        // A certificate the store refuses is skipped: trust only ever grows
+        // by what verifies, so this cannot widen it.
+        if let Err(err) = roots.add(cert) {
+            log_once(&format!("plugin TLS: skipping a CA certificate ({err})\n"));
+        }
+    }
+    Ok(Arc::new(client_config(roots)?))
+}
+
+/// The extra trust set as DER certificates. A PEM bundle that does not parse is
+/// logged and skipped, as the providers do.
+fn extra_certificates(trust: &TrustedCas) -> Vec<CertificateDer<'static>> {
+    let mut out = Vec::new();
+    for ca in &trust.extra {
+        match ca {
+            ExtraCa::Pem(pem) => {
+                match CertificateDer::pem_slice_iter(pem.as_bytes()).collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(certs) => out.extend(certs),
+                    Err(err) => log_once(&format!(
+                        "plugin TLS: CA certificate bundle could not be parsed, skipping ({err})\n"
+                    )),
+                }
+            }
+            ExtraCa::SystemDer(der) => out.push(CertificateDer::from(der.clone())),
+        }
+    }
+    out
 }
 
 /// A client config that verifies server certificates against `roots`, on the
 /// aws-lc-rs provider with the safe default protocol versions.
-fn client_config(roots: RootCertStore) -> Result<ClientConfig, Error> {
+fn client_config(roots: RootCertStore) -> Result<ClientConfig, rustls::Error> {
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
     Ok(ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .map_err(|_| Error::TlsProtocolError)?
+        .with_safe_default_protocol_versions()?
         .with_root_certificates(roots)
         .with_no_client_auth())
 }
@@ -369,7 +400,9 @@ mod tests {
                 .uri("http://example.invalid/path?q=1")
                 .body(empty_body())
                 .expect("request");
-            let (response, outgoing) = send_checked(request, &[addr], None).await.expect("send");
+            let (response, outgoing) = send_checked(request, &[addr], None, plain_tls())
+                .await
+                .expect("send");
             assert_eq!(response.status(), 200);
             let body = response
                 .into_body()
@@ -398,9 +431,10 @@ mod tests {
                 .uri("http://example.invalid/")
                 .body(empty_body())
                 .expect("request");
-            let (response, _outgoing) = send_checked(request, &[closed_addr(), addr], None)
-                .await
-                .expect("send");
+            let (response, _outgoing) =
+                send_checked(request, &[closed_addr(), addr], None, plain_tls())
+                    .await
+                    .expect("send");
             assert_eq!(response.status(), 200);
             assert!(heads.recv().is_ok());
         });
@@ -413,7 +447,7 @@ mod tests {
                 .uri("http://example.invalid/")
                 .body(empty_body())
                 .expect("request");
-            let err = send_checked(request, &[closed_addr()], None)
+            let err = send_checked(request, &[closed_addr()], None, plain_tls())
                 .await
                 .map(|_| ())
                 .unwrap_err();
@@ -441,10 +475,6 @@ mod tests {
             Self { ca }
         }
 
-        fn root(&self) -> CertificateDer<'static> {
-            self.ca.der().clone()
-        }
-
         /// A certificate for `name`, issued by this CA.
         fn leaf(&self, name: &str) -> ServerCert {
             let key = KeyPair::generate().expect("leaf key");
@@ -457,10 +487,17 @@ mod tests {
         }
     }
 
-    fn root_store(root: CertificateDer<'static>) -> RootCertStore {
-        let mut roots = RootCertStore::empty();
-        roots.add(root).expect("root");
-        roots
+    /// The config that trusts only the bundled roots.
+    fn plain_tls() -> Arc<ClientConfig> {
+        tls_config(&TrustedCas::default()).expect("tls config")
+    }
+
+    /// A trust set holding the test CA as an explicit PEM bundle, as
+    /// `--ca-cert` supplies it.
+    fn trust_with(pki: &TestPki) -> TrustedCas {
+        TrustedCas {
+            extra: vec![ExtraCa::Pem(pki.ca.pem())],
+        }
     }
 
     /// What the TLS test server saw of one connection.
@@ -525,17 +562,30 @@ mod tests {
             .expect("request")
     }
 
-    /// The error of an https send to `addr` whose client trusts `roots`.
-    async fn tls_error(addr: SocketAddr, roots: RootCertStore) -> Error {
+    /// The error of an https send to `addr` whose client trusts `trust`.
+    async fn tls_error(addr: SocketAddr, trust: &TrustedCas) -> Error {
         let request = https_request(addr.port());
-        let sent = send_checked_with_tls(request, &[addr], None, move || {
-            client_config(roots).map(Arc::new)
-        })
-        .await;
-        match sent {
+        let config = tls_config(trust).expect("tls config");
+        match send_checked(request, &[addr], None, config).await {
             Ok(_) => panic!("the TLS handshake should have failed"),
             Err(err) => err,
         }
+    }
+
+    #[test]
+    fn https_send_trusts_an_extra_ca_from_the_trust_set() {
+        block_on_entry(async {
+            let pki = TestPki::new();
+            let (addr, seen) = serve_tls(pki.leaf("localhost.test")).await;
+            let config = tls_config(&trust_with(&pki)).expect("tls config");
+            let request = https_request(addr.port());
+            let (response, outgoing) = send_checked(request, &[addr], None, config)
+                .await
+                .expect("send through the extra CA");
+            assert_eq!(response.status(), 200);
+            Box::into_pin(outgoing).await.expect("connection");
+            assert!(seen.recv().is_ok(), "the server saw the request");
+        });
     }
 
     #[test]
@@ -543,13 +593,11 @@ mod tests {
         block_on_entry(async {
             let pki = TestPki::new();
             let (addr, seen) = serve_tls(pki.leaf("localhost.test")).await;
-            let roots = root_store(pki.root());
+            let config = tls_config(&trust_with(&pki)).expect("tls config");
             let request = https_request(addr.port());
-            let (response, outgoing) = send_checked_with_tls(request, &[addr], None, move || {
-                client_config(roots).map(Arc::new)
-            })
-            .await
-            .expect("send");
+            let (response, outgoing) = send_checked(request, &[addr], None, config)
+                .await
+                .expect("send");
             assert_eq!(response.status(), 200);
             let body = response
                 .into_body()
@@ -577,7 +625,7 @@ mod tests {
         block_on_entry(async {
             let pki = TestPki::new();
             let (addr, seen) = serve_tls(pki.leaf("other.test")).await;
-            let err = tls_error(addr, root_store(pki.root())).await;
+            let err = tls_error(addr, &trust_with(&pki)).await;
             assert!(matches!(err, Error::TlsCertificateError), "{err:?}");
             assert!(seen.recv().is_err(), "no request may reach the server");
         });
@@ -588,7 +636,8 @@ mod tests {
         block_on_entry(async {
             let pki = TestPki::new();
             let (addr, seen) = serve_tls(pki.leaf("localhost.test")).await;
-            let err = tls_error(addr, RootCertStore::empty()).await;
+            // No extra CA: only the bundled roots, which do not include the test CA.
+            let err = tls_error(addr, &TrustedCas::default()).await;
             assert!(matches!(err, Error::TlsCertificateError), "{err:?}");
             assert!(seen.recv().is_err(), "no request may reach the server");
         });

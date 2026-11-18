@@ -48,6 +48,8 @@ pub(crate) struct GatedHooks {
     pub(crate) net: Arc<dyn NetGate>,
     /// Test-only: let loopback addresses through the SSRF block.
     pub(crate) allow_loopback: bool,
+    /// The TLS config for https sends: bundled roots plus the host's trust set.
+    pub(crate) tls: Arc<rustls::ClientConfig>,
     /// Time spent waiting on the gate, which the call timeout does not count.
     pub(crate) clock: Arc<PauseClock>,
     /// The call's abort signal. An aborted call is refused before the gate is asked.
@@ -176,6 +178,7 @@ impl GatedHooks {
     ) -> SendFuture {
         let net = self.net.clone();
         let allow_loopback = self.allow_loopback;
+        let tls = self.tls.clone();
         let clock = self.clock.clone();
         let abort = self.abort.clone();
         let liveness = Liveness::new();
@@ -230,7 +233,7 @@ impl GatedHooks {
             // The send connects to `addrs`, the addresses checked above, and does
             // not resolve the host again, so a changed DNS answer cannot move the
             // request to a refused address.
-            connect::send_checked(request, &addrs, options).await
+            connect::send_checked(request, &addrs, options, tls).await
         })
     }
 }
@@ -248,6 +251,7 @@ impl WasiHttpHooks for GatedHooks {
 
 #[cfg(test)]
 mod tests {
+    use hoocode_ai_util::tls::TrustedCas;
     use std::io;
     use std::net::SocketAddr;
     use std::sync::atomic::AtomicUsize;
@@ -294,6 +298,7 @@ mod tests {
         let hooks = GatedHooks {
             net,
             allow_loopback: false,
+            tls: connect::tls_config(&TrustedCas::default()).expect("tls config"),
             clock: Arc::new(PauseClock::default()),
             abort: None,
         };

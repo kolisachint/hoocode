@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-17): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 79 open rows in the area docs. This plan lists 43 next, 14 need a user decision, 49 deferred behind a trigger or gate.
+Status (2026-11-17): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 80 open rows in the area docs. This plan lists 43 next, 14 need a user decision, 50 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
@@ -141,6 +141,7 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [PL-13](plugins.md#open) | Notebook plugin | A user asks for notebooks |
 | [PL-14](plugins.md#open) | Revisit hooks | Agent Plugins 1.1 final |
 | [PL-15](plugins.md#open) | Second-consumer review | Two releases after PL-12 |
+| [PL-16](plugins.md#open) | Plugin HTTP through an explicit HTTPS_PROXY (CONNECT) | A user behind an explicit proxy |
 
 ## Not doing
 
