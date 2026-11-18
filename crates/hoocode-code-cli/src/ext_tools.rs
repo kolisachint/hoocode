@@ -3,13 +3,13 @@
 //! Each tool a loaded `dev.hoocode/extension.wasm` lists becomes a model tool named
 //! `ext_<plugin>_<tool>`. A call runs the component in the host (`hoocode-code-wasm`) on a
 //! blocking thread. Its network requests ask the session's permission gate as `WebFetch`, once
-//! per tool call. The call itself is not gated.
+//! per origin (scheme, host, port) per tool call. The call itself is not gated.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use hoocode_agent_mcp::ext_tool_name;
 use hoocode_agent_types::{AgentToolCall, AgentToolResult, PermissionDecision, PermissionGate};
@@ -23,6 +23,7 @@ use hoocode_code_wasm::{
 use hoocode_runtime::io_handle;
 use serde_json::Value;
 use tokio::runtime::Handle;
+use url::Url;
 
 use crate::args::DiagnosticKind;
 use crate::runtime::Diagnostics;
@@ -36,8 +37,26 @@ const NET_TOOL: &str = "WebFetch";
 /// plugin cannot switch it on. Never set it anywhere else.
 pub const INTERNAL_WASM_LOOPBACK_ENV: &str = "HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK";
 
+/// The `pluginConfig` values of each plugin, by plugin name. Copied out of the settings so the
+/// caller can drop its settings lock before any component is built.
+pub(crate) type PluginConfigs = HashMap<String, BTreeMap<String, String>>;
+
+/// The config values of every plugin in `plugins`, read from `settings` now.
+pub(crate) fn plugin_configs(plugins: &PluginSet, settings: &SettingsManager) -> PluginConfigs {
+    plugins
+        .plugins
+        .iter()
+        .map(|plugin| {
+            (
+                plugin.name.clone(),
+                settings.plugin_config_values(&plugin.name),
+            )
+        })
+        .collect()
+}
+
 /// The model tools of every loaded plugin component, with the cache folder the default host
-/// uses (`<agent dir>/cache/wasm`).
+/// uses (`<agent dir>/cache/wasm`). `configs` comes from [`plugin_configs`].
 ///
 /// A plugin whose marketplace is not trusted is skipped, as its MCP servers would wait for a
 /// grant: the component runs only under the same trust (`LoadedPlugin::marketplace_trusted`).
@@ -45,19 +64,19 @@ pub const INTERNAL_WASM_LOOPBACK_ENV: &str = "HOOCODE_INTERNAL_WASM_ALLOW_LOOPBA
 /// diagnostic. Nothing here fails the session.
 pub(crate) fn build(
     plugins: &PluginSet,
-    settings: &SettingsManager,
+    configs: &PluginConfigs,
     gate: Arc<dyn PermissionGate>,
     taken: &[String],
     diagnostics: &mut Diagnostics,
 ) -> Vec<ToolDefinition> {
     let cache_dir = hoocode_code_paths::agent_dir().join("cache").join("wasm");
-    build_with_cache(plugins, settings, gate, taken, &cache_dir, diagnostics)
+    build_with_cache(plugins, configs, gate, taken, &cache_dir, diagnostics)
 }
 
 /// [`build`] with the component cache folder given.
 fn build_with_cache(
     plugins: &PluginSet,
-    settings: &SettingsManager,
+    configs: &PluginConfigs,
     gate: Arc<dyn PermissionGate>,
     taken: &[String],
     cache_dir: &Path,
@@ -109,7 +128,7 @@ fn build_with_cache(
             }
         };
         // A plugin reads only `pluginConfig.<its name>`, taken when the session starts.
-        let values = settings.plugin_config_values(&plugin.name);
+        let values = configs.get(&plugin.name).cloned().unwrap_or_default();
         let config: ConfigLookup = Arc::new(move |key: &str| values.get(key).cloned());
         for info in extension.tools() {
             let name = ext_tool_name(&plugin.name, &info.name);
@@ -210,19 +229,31 @@ fn call_blocking(
     })
 }
 
-/// The network gate of one tool call. Its first request asks the session's gate as `WebFetch`;
-/// that answer, allow or deny, holds for the rest of the call, so a redirect hop does not ask
-/// again. Each request still passes the host's own checks before it reaches this gate.
+/// An origin: scheme, host and port. Two URLs share one only if all three match.
+type Origin = (String, String, u16);
+
+/// The origin of an absolute URL with a host, or `None` when it has none.
+fn origin_of(url: &str) -> Option<Origin> {
+    let parsed = Url::parse(url).ok()?;
+    let host = parsed.host_str()?.to_owned();
+    let port = parsed.port_or_known_default()?;
+    Some((parsed.scheme().to_owned(), host, port))
+}
+
+/// The network gate of one tool call. The first request to an origin asks the session's gate as
+/// `WebFetch`; that answer, allow or deny, holds for later requests to the same origin in the
+/// call, so a redirect hop on the same origin does not ask again. A request to another origin
+/// asks again. Each request still passes the host's own checks before it reaches this gate.
 pub(crate) struct ToolNetGate {
     gate: Arc<dyn PermissionGate>,
-    decision: OnceLock<Result<(), String>>,
+    decisions: Mutex<HashMap<Origin, Result<(), String>>>,
 }
 
 impl ToolNetGate {
     pub(crate) fn new(gate: Arc<dyn PermissionGate>) -> Self {
         Self {
             gate,
-            decision: OnceLock::new(),
+            decisions: Mutex::new(HashMap::new()),
         }
     }
 
@@ -242,7 +273,18 @@ impl ToolNetGate {
 
 impl NetGate for ToolNetGate {
     fn check(&self, url: &str) -> Result<(), String> {
-        self.decision.get_or_init(|| self.ask(url)).clone()
+        // A URL with no origin is refused without asking.
+        let Some(origin) = origin_of(url) else {
+            return Err("URL has no origin".to_owned());
+        };
+        // Held across the ask, so two requests to one origin cannot both ask.
+        let mut decisions = self.decisions.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(decision) = decisions.get(&origin) {
+            return decision.clone();
+        }
+        let decision = self.ask(url);
+        decisions.insert(origin, decision.clone());
+        decision
     }
 }
 
@@ -378,7 +420,7 @@ mod tests {
         let mut diagnostics = Diagnostics::new();
         let tools = build_with_cache(
             set,
-            settings,
+            &plugin_configs(set, settings),
             gate,
             taken,
             &layout.cache(),
@@ -566,6 +608,89 @@ mod tests {
             Err("no answer scripted".into())
         );
         assert_eq!(gate.asked().len(), 2);
+    }
+
+    #[test]
+    fn net_gate_grant_for_one_origin_does_not_cover_another() {
+        let gate = ScriptedGate::new(vec![
+            PermissionDecision::Grant,
+            PermissionDecision::Deny {
+                reason: "not api.other".into(),
+            },
+        ]);
+        let net = ToolNetGate::new(gate.clone());
+        assert_eq!(net.check("https://api.example/a"), Ok(()));
+        assert_eq!(net.check("https://api.example/b?x=1"), Ok(()));
+        assert_eq!(gate.asked().len(), 1);
+        // Another host asks again, and is refused.
+        assert_eq!(
+            net.check("https://api.other/a"),
+            Err("not api.other".into())
+        );
+        assert_eq!(gate.asked().len(), 2);
+        assert_eq!(
+            gate.asked()[1].arguments,
+            json!({"url": "https://api.other/a"})
+        );
+    }
+
+    #[test]
+    fn net_gate_origin_includes_scheme_and_port() {
+        let gate = ScriptedGate::new(vec![
+            PermissionDecision::Grant,
+            PermissionDecision::Deny {
+                reason: "other scheme".into(),
+            },
+            PermissionDecision::Deny {
+                reason: "other port".into(),
+            },
+        ]);
+        let net = ToolNetGate::new(gate.clone());
+        assert_eq!(net.check("https://api.example/a"), Ok(()));
+        // Same host, other scheme: a different origin.
+        assert_eq!(
+            net.check("http://api.example/a"),
+            Err("other scheme".into())
+        );
+        // Same host and scheme, other port: a different origin.
+        assert_eq!(
+            net.check("https://api.example:8443/a"),
+            Err("other port".into())
+        );
+        assert_eq!(gate.asked().len(), 3);
+        // The default port is the https port: the same origin as the first request.
+        assert_eq!(net.check("https://api.example:443/b"), Ok(()));
+        assert_eq!(gate.asked().len(), 3);
+    }
+
+    #[test]
+    fn net_gate_deny_for_one_origin_is_remembered_for_that_origin_only() {
+        let gate = ScriptedGate::new(vec![
+            PermissionDecision::Deny {
+                reason: "no a".into(),
+            },
+            PermissionDecision::Grant,
+        ]);
+        let net = ToolNetGate::new(gate.clone());
+        assert_eq!(net.check("https://a.example/1"), Err("no a".into()));
+        // Refused again for A without asking.
+        assert_eq!(net.check("https://a.example/2"), Err("no a".into()));
+        assert_eq!(gate.asked().len(), 1);
+        // B is a new origin: it asks, and is granted.
+        assert_eq!(net.check("https://b.example/1"), Ok(()));
+        assert_eq!(gate.asked().len(), 2);
+    }
+
+    #[test]
+    fn net_gate_refuses_an_unparseable_url_without_asking() {
+        let gate = ScriptedGate::new(vec![PermissionDecision::Grant]);
+        let net = ToolNetGate::new(gate.clone());
+        assert!(net.check("not a url").is_err());
+        assert!(net.check("").is_err());
+        assert!(gate.asked().is_empty());
+        // The gate still answers a real request.
+        assert_eq!(net.check("https://example.com/"), Ok(()));
+        assert_eq!(gate.asked().len(), 1);
     }
 
     #[test]

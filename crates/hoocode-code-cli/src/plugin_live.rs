@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use hoocode_agent_types::PermissionGate;
 use hoocode_code_agent_session::mcp::McpHub;
 use hoocode_code_agent_session::PluginSource;
+use hoocode_code_mcp::PluginServers;
 use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::ToolDefinition;
 
@@ -46,13 +47,22 @@ impl PluginSource for PluginToolSource {
         }
         let set = hoocode_code_plugins::current();
         let mut diagnostics = Diagnostics::new();
-        let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
-        let tools = ext_tools::build(&set, &settings, self.gate.clone(), taken, &mut diagnostics);
+        // Copy the config values out, then release the settings lock before any component is
+        // compiled or loaded.
+        let configs = {
+            let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
+            ext_tools::plugin_configs(&set, &settings)
+        };
+        let tools = ext_tools::build(&set, &configs, self.gate.clone(), taken, &mut diagnostics);
         let notices = diagnostics
             .into_iter()
             .map(|(_, message)| message)
             .collect();
         (tools, notices)
+    }
+
+    fn mcp_servers(&self) -> Option<Vec<PluginServers>> {
+        Some(hoocode_code_plugins::current().mcp_servers())
     }
 
     fn mcp_hub(&self) -> Option<Arc<McpHub>> {
