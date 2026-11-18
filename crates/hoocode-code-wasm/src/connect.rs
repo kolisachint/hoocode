@@ -14,11 +14,12 @@
 //! providers somewhere and the process default would be ambiguous. Verification
 //! is always on.
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -151,6 +152,21 @@ fn map_tls_error(err: &io::Error) -> Error {
     }
 }
 
+/// Writes a host log line the first time `text` is seen in this process. The TLS
+/// config is rebuilt for every build, refresh and child, so a skipped CA would
+/// otherwise be reported again each time.
+fn log_once(text: &str) {
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let seen = SEEN.get_or_init(Mutex::default);
+    let first = seen
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(text.to_owned());
+    if first {
+        write_host_log(text);
+    }
+}
+
 /// The client TLS config for the send path: the bundled webpki roots plus the
 /// certificates of `trust`. Verification is never disabled.
 pub(crate) fn tls_config(trust: &TrustedCas) -> Result<Arc<ClientConfig>, rustls::Error> {
@@ -160,7 +176,7 @@ pub(crate) fn tls_config(trust: &TrustedCas) -> Result<Arc<ClientConfig>, rustls
         // A certificate the store refuses is skipped: trust only ever grows
         // by what verifies, so this cannot widen it.
         if let Err(err) = roots.add(cert) {
-            write_host_log(&format!("plugin TLS: skipping a CA certificate ({err})\n"));
+            log_once(&format!("plugin TLS: skipping a CA certificate ({err})\n"));
         }
     }
     Ok(Arc::new(client_config(roots)?))
@@ -176,7 +192,7 @@ fn extra_certificates(trust: &TrustedCas) -> Vec<CertificateDer<'static>> {
                 match CertificateDer::pem_slice_iter(pem.as_bytes()).collect::<Result<Vec<_>, _>>()
                 {
                     Ok(certs) => out.extend(certs),
-                    Err(err) => write_host_log(&format!(
+                    Err(err) => log_once(&format!(
                         "plugin TLS: CA certificate bundle could not be parsed, skipping ({err})\n"
                     )),
                 }

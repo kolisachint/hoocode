@@ -1920,6 +1920,7 @@ dependencies = [
  "hoocode-tui-keys",
  "hoocode-tui-terminal",
  "hoocode-tui-util",
+ "rcgen",
  "serde_json",
  "tempfile",
  "tokio",

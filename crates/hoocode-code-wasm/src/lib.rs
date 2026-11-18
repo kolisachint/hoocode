@@ -22,7 +22,7 @@ mod wasi;
 
 use std::path::PathBuf;
 use std::sync::mpsc::RecvTimeoutError;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use hoocode_ai_types::AbortSignal;
@@ -110,8 +110,10 @@ pub struct WasmHost {
     inner: Arc<Inner>,
     call_timeout: Duration,
     allow_loopback: bool,
-    /// The client TLS config for plugin https requests: bundled roots plus `trust`.
-    tls: Arc<ClientConfig>,
+    /// The client TLS config for plugin https requests (bundled roots plus
+    /// `trust`). Built once, on first use, so a host never builds a config for a
+    /// trust set it does not use.
+    tls: OnceLock<Arc<ClientConfig>>,
     trust: TrustedCas,
 }
 
@@ -145,15 +147,12 @@ impl WasmHost {
             cache,
         });
         spawn_epoch_ticker(&inner)?;
-        let trust = TrustedCas::default();
-        let tls = connect::tls_config(&trust)
-            .map_err(|e| WasmError::Engine(format!("plugin TLS config: {e}")))?;
         Ok(Self {
             inner,
             call_timeout: CALL_TIMEOUT,
             allow_loopback: false,
-            tls,
-            trust,
+            tls: OnceLock::new(),
+            trust: TrustedCas::default(),
         })
     }
 
@@ -161,10 +160,21 @@ impl WasmHost {
     /// `NODE_EXTRA_CA_CERTS`, `--use-system-ca`) for https plugin requests, on top
     /// of the bundled roots. Verification stays on.
     pub fn with_tls_trust(mut self, trust: &TrustedCas) -> Result<Self, WasmError> {
-        self.tls = connect::tls_config(trust)
+        let tls = connect::tls_config(trust)
             .map_err(|e| WasmError::Engine(format!("plugin TLS config: {e}")))?;
+        self.tls = OnceLock::from(tls);
         self.trust = trust.clone();
         Ok(self)
+    }
+
+    /// The client TLS config for this host's trust set, built on first use.
+    fn tls(&self) -> Result<Arc<ClientConfig>, WasmError> {
+        if let Some(tls) = self.tls.get() {
+            return Ok(tls.clone());
+        }
+        let built = connect::tls_config(&self.trust)
+            .map_err(|e| WasmError::Engine(format!("plugin TLS config: {e}")))?;
+        Ok(self.tls.get_or_init(|| built).clone())
     }
 
     /// The CA set beyond the bundled roots that plugin https requests trust.
@@ -195,7 +205,7 @@ impl WasmHost {
         let inner = self.inner.clone();
         let call_timeout = self.call_timeout;
         let allow_loopback = self.allow_loopback;
-        let tls = self.tls.clone();
+        let tls = self.tls()?;
         let label = format!("plugin {}", spec.plugin);
         bounded(LOAD_TIMEOUT, label, move || {
             let component =

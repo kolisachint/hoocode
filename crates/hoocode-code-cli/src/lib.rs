@@ -156,6 +156,27 @@ pub fn unsupported_flags(a: &Args) -> Vec<&'static str> {
         .collect()
 }
 
+/// The environment variables that carry `--ca-cert` and `--use-system-ca` to
+/// child processes. A relative `--ca-cert` path is made absolute against `cwd`
+/// (a child may run in another directory). The flag's value replaces any
+/// inherited `HOOCODE_CA_CERT`, so the flag wins for this process and its
+/// children, as it does for this process's own argv.
+pub(crate) fn tls_env_from_flags(
+    parsed: &Args,
+    cwd: &std::path::Path,
+) -> Vec<(&'static str, String)> {
+    let mut env = Vec::new();
+    if let Some(path) = parsed.ca_cert.as_deref() {
+        let joined = cwd.join(path);
+        let absolute = std::fs::canonicalize(&joined).unwrap_or(joined);
+        env.push(("HOOCODE_CA_CERT", absolute.display().to_string()));
+    }
+    if parsed.use_system_ca == Some(true) {
+        env.push(("HOOCODE_USE_SYSTEM_CA", "1".to_owned()));
+    }
+    env
+}
+
 /// Process entry point used by the `hoocode` binary. Returns the exit code.
 pub fn main(argv: &[String]) -> i32 {
     // cli.ts: install the CA trust set before anything builds an HTTP client.
@@ -204,6 +225,11 @@ pub fn main(argv: &[String]) -> i32 {
     // through the env var the permission gate reads.
     if parsed.skip_permissions == Some(true) {
         std::env::set_var(hoocode_code_modes::config::SKIP_PERMISSIONS_ENV, "1");
+    }
+    // The TLS flags reach children the same way: they re-exec this binary and
+    // inherit the environment, and their argv has no `--ca-cert`.
+    for (key, value) in tls_env_from_flags(&parsed, &cwd) {
+        std::env::set_var(key, value);
     }
     // First run: ship the default `hoo-config.json` (mode rules, safe shell)
     // so it is there to read and edit. An existing file is never touched.
@@ -401,6 +427,42 @@ mod tests {
             String::from_utf8(out).unwrap(),
             String::from_utf8(err).unwrap(),
         )
+    }
+
+    #[test]
+    fn tls_flags_are_exported_for_children() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = dir.path().join("proxy-ca.pem");
+        std::fs::write(&ca, "x").unwrap();
+        let argv =
+            |args: &[&str]| parse_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+
+        // A relative path is made absolute against the working directory.
+        let relative = argv(&["--ca-cert", "proxy-ca.pem", "--use-system-ca"]);
+        let env = tls_env_from_flags(&relative, dir.path());
+        assert_eq!(
+            env,
+            vec![
+                (
+                    "HOOCODE_CA_CERT",
+                    ca.canonicalize().unwrap().display().to_string()
+                ),
+                ("HOOCODE_USE_SYSTEM_CA", "1".to_owned()),
+            ]
+        );
+
+        // Without the flags nothing is exported, so inherited values pass through untouched.
+        assert!(tls_env_from_flags(&argv(&["-p", "hi"]), dir.path()).is_empty());
+
+        // A missing file still exports its joined path: the child warns about it once.
+        let missing = argv(&["--ca-cert", "nope.pem"]);
+        assert_eq!(
+            tls_env_from_flags(&missing, dir.path()),
+            vec![(
+                "HOOCODE_CA_CERT",
+                dir.path().join("nope.pem").display().to_string()
+            )]
+        );
     }
 
     #[test]

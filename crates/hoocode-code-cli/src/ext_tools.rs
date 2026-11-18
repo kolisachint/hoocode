@@ -718,36 +718,85 @@ mod tests {
         assert_eq!(asked[0].arguments, json!({"url": "https://93.184.216.34/"}));
     }
 
-    /// `--ca-cert <file>` and `HOOCODE_CA_CERT` reach the plugin host's trust set,
-    /// through the same resolution the providers use.
-    #[test]
-    fn ca_cert_source_reaches_the_plugin_host_trust_set() {
-        let dir = tempfile::tempdir().unwrap();
-        let ca = dir.path().join("proxy-ca.pem");
-        let pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
-        std::fs::write(&ca, pem).unwrap();
-        let path = ca.display().to_string();
+    /// A PEM CA certificate generated for the test (not an invalid placeholder).
+    fn test_ca_pem() -> String {
+        use rcgen::{BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair};
+        let mut params = CertificateParams::new(Vec::new()).expect("ca params");
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let key = KeyPair::generate().expect("ca key");
+        CertifiedIssuer::self_signed(params, key).expect("ca").pem()
+    }
 
+    /// The host the CLI builds from the TLS sources, through the same resolution
+    /// the providers use. `configure_global_tls` is process-wide, so the test
+    /// resolves and builds directly instead of calling it.
+    fn trust_host_for(
+        cache: &Path,
+        sources: &hoocode_ai_util::tls::TlsSources,
+    ) -> Result<WasmHost, WasmError> {
+        new_host(cache, &hoocode_ai_util::tls::resolve_trusted_cas(sources))
+    }
+
+    /// `--ca-cert <file>`, `HOOCODE_CA_CERT` and `NODE_EXTRA_CA_CERTS` reach the
+    /// plugin host's trust set as the generated certificate; the flag beats the
+    /// env; an unreadable path warns and leaves the bundled roots only.
+    #[test]
+    fn ca_cert_sources_reach_the_plugin_host_trust_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("cache");
+        let pem = test_ca_pem();
+        let other = test_ca_pem();
+        let ca = dir.path().join("proxy-ca.pem");
+        std::fs::write(&ca, &pem).unwrap();
+        let other_ca = dir.path().join("other-ca.pem");
+        std::fs::write(&other_ca, &other).unwrap();
+        let path = ca.display().to_string();
+        let other_path = other_ca.display().to_string();
+        let expected = vec![hoocode_ai_util::tls::ExtraCa::Pem(pem.clone())];
+
+        // `--ca-cert` through the argv pre-scan.
         let argv = vec!["--ca-cert".to_owned(), path.clone()];
         let flag = hoocode_ai_util::tls::TlsSources::from_args_and_env(&argv, |_| None);
-        let host = new_host(
-            &dir.path().join("cache"),
-            &hoocode_ai_util::tls::resolve_trusted_cas(&flag),
-        )
-        .unwrap();
-        assert_eq!(
-            host.tls_trust().extra,
-            vec![hoocode_ai_util::tls::ExtraCa::Pem(pem.to_owned())]
-        );
+        let host = trust_host_for(&cache, &flag).unwrap();
+        assert_eq!(host.tls_trust().extra, expected);
+        assert_eq!(host.tls_trust().certificates().len(), 1);
 
+        // `HOOCODE_CA_CERT`.
         let env = hoocode_ai_util::tls::TlsSources::from_args_and_env(&[], |k| {
             (k == "HOOCODE_CA_CERT").then(|| path.clone())
         });
-        let host = new_host(
-            &dir.path().join("cache"),
-            &hoocode_ai_util::tls::resolve_trusted_cas(&env),
-        )
-        .unwrap();
-        assert_eq!(host.tls_trust().extra.len(), 1);
+        assert_eq!(
+            trust_host_for(&cache, &env).unwrap().tls_trust().extra,
+            expected
+        );
+
+        // `NODE_EXTRA_CA_CERTS`, the lowest-precedence source.
+        let node = hoocode_ai_util::tls::TlsSources::from_args_and_env(&[], |k| {
+            (k == "NODE_EXTRA_CA_CERTS").then(|| path.clone())
+        });
+        assert_eq!(
+            trust_host_for(&cache, &node).unwrap().tls_trust().extra,
+            expected
+        );
+
+        // The flag wins over an env value that points elsewhere.
+        let both = hoocode_ai_util::tls::TlsSources::from_args_and_env(&argv, |k| {
+            (k == "HOOCODE_CA_CERT").then(|| other_path.clone())
+        });
+        assert_eq!(
+            trust_host_for(&cache, &both).unwrap().tls_trust().extra,
+            expected
+        );
+
+        // An unreadable path: the host still builds, with the bundled roots only.
+        let missing = dir.path().join("missing.pem").display().to_string();
+        let bad = hoocode_ai_util::tls::TlsSources::from_args_and_env(&[], |k| {
+            (k == "HOOCODE_CA_CERT").then(|| missing.clone())
+        });
+        assert!(trust_host_for(&cache, &bad)
+            .unwrap()
+            .tls_trust()
+            .extra
+            .is_empty());
     }
 }

@@ -46,7 +46,7 @@ and does not open the picker.
 | `--light` | Minimal low-token preset for small or local models |
 | `--list-models [search]` | List the models hoocode knows |
 | `--offline` | No startup network calls, such as the version check |
-| `--ca-cert <path>` | Trust an extra PEM CA bundle for hoocode's HTTPS traffic, such as a TLS-intercepting proxy's CA. Verification stays on. Also applies to plugin (WASM) network requests. See [configuration](configuration.md) |
+| `--ca-cert <path>` | Trust an extra PEM CA bundle for hoocode's HTTPS traffic, such as a TLS-intercepting proxy's CA. Verification stays on. Also applies to plugin (WASM) network requests, which connect directly and do not use `HTTPS_PROXY` yet. See [configuration](configuration.md) |
 | `--use-system-ca` | Also trust the operating system's CA store. Also applies to plugin (WASM) network requests |
 
 Built-in tools: **Read**, **Shell**, **Edit**, **Write** and **CodeSearch**.
