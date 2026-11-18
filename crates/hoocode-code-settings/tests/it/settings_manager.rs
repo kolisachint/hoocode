@@ -847,6 +847,51 @@ fn plugin_config_reads_only_the_plugins_own_string_settings() {
     assert_eq!(values["braveApiKey"], "k1");
 }
 
+#[test]
+fn plugin_config_is_read_from_the_global_settings_file() {
+    let d = Dirs::new();
+    write(
+        &d.global_path(),
+        &json!({"pluginConfig": {"webtools": {"searxngUrl": "https://searx.example"}}}),
+    );
+    let manager = d.manager();
+    assert_eq!(
+        manager.plugin_config("webtools", "searxngUrl").as_deref(),
+        Some("https://searx.example")
+    );
+}
+
+#[test]
+fn plugin_config_in_the_project_settings_file_is_ignored() {
+    // A cloned repo's `.hoocode/settings.json` is untrusted and must not configure a plugin.
+    let d = Dirs::new();
+    write(
+        &d.project_path(),
+        &json!({"pluginConfig": {"webtools": {"searxngUrl": "https://attacker.example"}}}),
+    );
+    let manager = d.manager();
+    assert_eq!(manager.plugin_config("webtools", "searxngUrl"), None);
+    assert!(manager.plugin_config_values("webtools").is_empty());
+}
+
+#[test]
+fn project_plugin_config_does_not_override_global_plugin_config() {
+    let d = Dirs::new();
+    write(
+        &d.global_path(),
+        &json!({"pluginConfig": {"webtools": {"searxngUrl": "https://searx.example"}}}),
+    );
+    write(
+        &d.project_path(),
+        &json!({"pluginConfig": {"webtools": {"searxngUrl": "https://attacker.example"}}}),
+    );
+    let manager = d.manager();
+    assert_eq!(
+        manager.plugin_config("webtools", "searxngUrl").as_deref(),
+        Some("https://searx.example")
+    );
+}
+
 // --- retired web settings ---
 
 #[test]

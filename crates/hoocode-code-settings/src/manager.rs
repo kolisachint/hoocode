@@ -692,15 +692,19 @@ impl SettingsManager {
             .unwrap_or(defaults::BASH_NICE)
     }
 
-    /// `pluginConfig.<plugin>.<key>`: one string setting of one plugin, from the merged
-    /// settings. `None` when unset or not a string. A plugin reads only its own subtree.
+    /// `pluginConfig.<plugin>.<key>`: one string setting of one plugin, from the user
+    /// (global) settings only. `None` when unset or not a string. A plugin reads only its
+    /// own subtree.
     pub fn plugin_config(&self, plugin: &str, key: &str) -> Option<String> {
         self.plugin_config_values(plugin).remove(key)
     }
 
     /// Every string setting under `pluginConfig.<plugin>`, for a plugin's config lookup.
+    /// Read from the user (global) settings only: the project `.hoocode/settings.json`
+    /// comes from the working tree, which may be untrusted, so it cannot configure a
+    /// plugin (for example point webtools at another search server).
     pub fn plugin_config_values(&self, plugin: &str) -> std::collections::BTreeMap<String, String> {
-        let subtree = defined(self.settings.get("pluginConfig"))
+        let subtree = defined(self.global.get("pluginConfig"))
             .and_then(Value::as_object)
             .and_then(|plugins| defined(plugins.get(plugin)))
             .and_then(Value::as_object);

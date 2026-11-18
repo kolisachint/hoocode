@@ -82,8 +82,10 @@ installed, updated or removed, with no `/reload`.
   (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`,
   `searchFallback`). A call that reaches the network asks you like `WebFetch`. Later
   requests in the same call (for example redirects) do not ask again.
-- A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in
-  `settings.json`. Only string values are read:
+- A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in your user
+  `settings.json` (`~/.hoocode/settings.json`). It is read from user settings only, never
+  from a project's `.hoocode/settings.json`, so a cloned repository cannot point a plugin
+  at its own server. Only string values are read:
 
 ```json
 { "pluginConfig": { "webtools": { "braveApiKey": "..." } } }
