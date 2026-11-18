@@ -13,19 +13,27 @@ use wasmtime_wasi::cli::{IsTerminal, StdoutStream};
 use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder};
 
 use crate::error::WasmError;
+use crate::guest::LogBudget;
 
 /// Build the WASI context for one call, with `data_dir` mounted at `/data`.
-pub(crate) fn build_wasi(plugin: &str, data_dir: &Path) -> Result<WasiCtx, WasmError> {
+/// Stdout and stderr write into `logs`, the call's shared log budget.
+pub(crate) fn build_wasi(
+    plugin: &str,
+    data_dir: &Path,
+    logs: Arc<LogBudget>,
+) -> Result<WasiCtx, WasmError> {
     let plugin: Arc<str> = Arc::from(plugin);
     let mut builder = WasiCtxBuilder::new();
     builder
         .stdout(LogSink {
             plugin: plugin.clone(),
             stream: "stdout",
+            logs: logs.clone(),
         })
         .stderr(LogSink {
             plugin,
             stream: "stderr",
+            logs,
         });
     builder
         .preopened_dir(data_dir, "/data", FsPerms::ReadWrite)
@@ -38,6 +46,7 @@ pub(crate) fn build_wasi(plugin: &str, data_dir: &Path) -> Result<WasiCtx, WasmE
 struct LogSink {
     plugin: Arc<str>,
     stream: &'static str,
+    logs: Arc<LogBudget>,
 }
 
 impl IsTerminal for LogSink {
@@ -61,7 +70,8 @@ impl AsyncWrite for LogSink {
         let text = String::from_utf8_lossy(buf);
         let text = text.trim_end_matches('\n');
         if !text.is_empty() {
-            crate::write_host_log(&format!("[wasm {} {}] {text}\n", self.plugin, self.stream));
+            self.logs
+                .write(&format!("[wasm {} {}] ", self.plugin, self.stream), text);
         }
         Poll::Ready(Ok(buf.len()))
     }

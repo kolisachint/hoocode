@@ -4,7 +4,7 @@
 //! `hoocode:extension@0.1.0` world (`wit/`). See `docs/design/plugins.md`
 //! ("Contract" and "Host runtime").
 //!
-//! Each call gets a fresh store and instance, a 64 MiB memory limit, a 30 s
+//! Each call gets a fresh store and instance, 64 MiB of memory in total, a 30 s
 //! timeout (`CALL_TIMEOUT`) and the abort signal of the caller. The WASI context
 //! has no environment or arguments, stdout and stderr go to the host log, and
 //! the plugin's data folder is the only preopen (at `/data`). Sockets are denied.
@@ -20,14 +20,13 @@ mod http;
 mod ssrf;
 mod wasi;
 
-use std::future::Future;
 use std::path::PathBuf;
-use std::pin::pin;
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
 use std::time::Duration;
 
 use hoocode_ai_types::AbortSignal;
+use hoocode_runtime::block_on_current_thread;
 use wasmtime::component::Linker;
 use wasmtime::{Config, Engine};
 
@@ -36,6 +35,11 @@ pub use extension::{Extension, ToolInfo};
 
 /// The default timeout of one tool call.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The wall-clock bound on loading one extension (compile or cache read, link,
+/// list-tools). Independent of the per-host call timeout: a cold compile is not
+/// a call, and a short call timeout must not make loads fail.
+const LOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How often the epoch counter advances. Calls are checked at this rate.
 const EPOCH_TICK: Duration = Duration::from_millis(100);
@@ -90,11 +94,12 @@ pub struct ExtensionSpec {
     pub data_dir: PathBuf,
 }
 
-/// The engine and cache shared by every extension of one host.
+/// The engine and cache shared by every extension of one host. `cache` is
+/// `None` when the cache folder cannot be used safely (see `cache.rs`).
 pub(crate) struct Inner {
     pub(crate) engine: Engine,
     pub(crate) linker: Linker<guest::State>,
-    pub(crate) cache_dir: PathBuf,
+    pub(crate) cache: Option<cache::Cache>,
 }
 
 /// The WASM host. Cheap to clone; clones share one engine.
@@ -120,11 +125,19 @@ impl WasmHost {
             .map_err(|e| WasmError::Engine(format!("wasi:http: {e}")))?;
         guest::link_host(&mut linker).map_err(|e| WasmError::Engine(format!("host: {e}")))?;
 
-        cache::create_cache_dir(&cache_dir)?;
+        let cache = match cache::Cache::open(&cache_dir) {
+            Ok(cache) => Some(cache),
+            Err(reason) => {
+                write_host_log(&format!(
+                    "wasm cache disabled, components compile in memory: {reason}\n"
+                ));
+                None
+            }
+        };
         let inner = Arc::new(Inner {
             engine,
             linker,
-            cache_dir,
+            cache,
         });
         spawn_epoch_ticker(&inner)?;
         Ok(Self {
@@ -147,32 +160,64 @@ impl WasmHost {
     }
 
     /// Load one extension: compile (or reuse the cached compile), link, and
-    /// list its tools. Blocks for the tool listing, which takes milliseconds.
+    /// list its tools. The work runs on a dedicated thread and the call waits at
+    /// most `LOAD_TIMEOUT` for it; a load that overruns is an error.
     pub fn load(&self, spec: ExtensionSpec) -> Result<Extension, WasmError> {
         std::fs::create_dir_all(&spec.data_dir).map_err(|source| WasmError::Io {
             path: spec.data_dir.clone(),
             source,
         })?;
-        let component =
-            cache::load_component(&self.inner.engine, &self.inner.cache_dir, &spec.wasm_path)?;
-        let instance_pre = self
-            .inner
-            .linker
-            .instantiate_pre(&component)
-            .map_err(|e| WasmError::Compile(e.to_string()))?;
-        let pre = guest::ExtensionPre::new(instance_pre)
-            .map_err(|e| WasmError::Compile(e.to_string()))?;
-        let mut extension = Extension {
-            host: self.inner.clone(),
-            pre,
-            plugin: spec.plugin,
-            data_dir: spec.data_dir,
-            call_timeout: self.call_timeout,
-            allow_loopback: self.allow_loopback,
-            tools: Vec::new(),
-        };
-        extension.tools = block_on(extension.discover_tools())?;
-        Ok(extension)
+        let inner = self.inner.clone();
+        let call_timeout = self.call_timeout;
+        let allow_loopback = self.allow_loopback;
+        let label = format!("plugin {}", spec.plugin);
+        bounded(LOAD_TIMEOUT, label, move || {
+            let component =
+                cache::load_component(&inner.engine, inner.cache.as_ref(), &spec.wasm_path)?;
+            let instance_pre = inner
+                .linker
+                .instantiate_pre(&component)
+                .map_err(|e| WasmError::Compile(e.to_string()))?;
+            let pre = guest::ExtensionPre::new(instance_pre)
+                .map_err(|e| WasmError::Compile(e.to_string()))?;
+            let mut extension = Extension {
+                host: inner,
+                pre,
+                plugin: spec.plugin,
+                data_dir: spec.data_dir,
+                call_timeout,
+                allow_loopback,
+                tools: Vec::new(),
+            };
+            extension.tools = block_on_current_thread(extension.discover_tools())?;
+            Ok(extension)
+        })
+    }
+}
+
+/// Runs `work` on a dedicated thread and waits at most `bound` for its result.
+/// Compiling and listing a component are not covered by the epoch deadline, so
+/// this wall-clock bound is what ends a hung load. A thread that overruns keeps
+/// running until its own epoch deadline stops the guest; its result is dropped.
+fn bounded<T, F>(bound: Duration, label: String, work: F) -> Result<T, WasmError>
+where
+    F: FnOnce() -> Result<T, WasmError> + Send + 'static,
+    T: Send + 'static,
+{
+    let (tx, rx) = hoocode_runtime::sync_bounded_channel(1);
+    hoocode_runtime::spawn_named_thread("hoocode-wasm-load", move || {
+        let _ = tx.send(work());
+    })
+    .map_err(|e| WasmError::Engine(format!("{label}: cannot start the loader: {e}")))?;
+    match rx.recv_timeout(bound) {
+        Ok(result) => result,
+        Err(RecvTimeoutError::Timeout) => Err(WasmError::Compile(format!(
+            "{label}: did not finish loading within {} s",
+            bound.as_secs()
+        ))),
+        Err(RecvTimeoutError::Disconnected) => Err(WasmError::Engine(format!(
+            "{label}: the loader thread stopped"
+        ))),
     }
 }
 
@@ -191,27 +236,46 @@ fn spawn_epoch_ticker(inner: &Arc<Inner>) -> Result<(), WasmError> {
     .map_err(|e| WasmError::Engine(format!("epoch thread: {e}")))
 }
 
-/// Run a future to completion on this thread, parking while it waits.
-fn block_on<F: Future>(future: F) -> F::Output {
-    struct Unpark(std::thread::Thread);
-    impl Wake for Unpark {
-        fn wake(self: Arc<Self>) {
-            self.0.unpark();
-        }
-    }
-    let waker = Waker::from(Arc::new(Unpark(std::thread::current())));
-    let mut cx = Context::from_waker(&waker);
-    let mut future = pin!(future);
-    loop {
-        match future.as_mut().poll(&mut cx) {
-            Poll::Ready(value) => return value,
-            Poll::Pending => std::thread::park(),
-        }
-    }
-}
-
 /// Host diagnostics (plugin logs, cache notes). Goes to the debug log in the
 /// TUI and to stderr otherwise.
 pub(crate) fn write_host_log(text: &str) {
     hoocode_runtime::diagnostics::write_stderr(text);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_result_within_the_bound_is_returned() {
+        let value = bounded(Duration::from_secs(5), "fast".to_owned(), || Ok(7)).unwrap();
+        assert_eq!(value, 7);
+    }
+
+    #[test]
+    fn an_error_within_the_bound_is_returned() {
+        let err = bounded::<(), _>(Duration::from_secs(5), "bad".to_owned(), || {
+            Err(WasmError::Compile("broken".to_owned()))
+        })
+        .unwrap_err();
+        assert!(
+            matches!(err, WasmError::Compile(ref m) if m == "broken"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_slow_load_is_a_load_error_at_the_bound() {
+        let started = std::time::Instant::now();
+        let err = bounded(Duration::from_millis(50), "slow".to_owned(), || {
+            std::thread::sleep(Duration::from_millis(1500));
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(
+            matches!(err, WasmError::Compile(ref m) if m.contains("did not finish loading")),
+            "{err:?}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 }

@@ -280,3 +280,51 @@ fn cache_dir_is_owner_only() {
         .mode();
     assert_eq!(mode & 0o777, 0o700);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_world_writable_cache_dir_is_not_used() {
+    use std::os::unix::fs::PermissionsExt;
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(0o777)).unwrap();
+
+        let ext = load(dir.path());
+        assert!(
+            cwasm_files(dir.path()).is_empty(),
+            "nothing is cached in an open folder"
+        );
+        let out = ext
+            .call("echo", json!({"ok": true}), env_with(&[], None))
+            .await
+            .unwrap();
+        assert_eq!(out, json!({"ok": true}));
+    });
+}
+
+#[test]
+fn a_failed_cache_write_still_loads_and_leaves_no_temp_file() {
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let _first = load(dir.path());
+        let file = cwasm_files(dir.path()).remove(0);
+        std::fs::remove_file(&file).unwrap();
+        // The rename onto the entry's name now fails: a directory is in the way.
+        std::fs::create_dir(&file).unwrap();
+
+        let ext = load(dir.path());
+        let out = ext
+            .call("echo", json!({"ok": true}), env_with(&[], None))
+            .await
+            .unwrap();
+        assert_eq!(out, json!({"ok": true}));
+        let leftovers: Vec<String> = std::fs::read_dir(dir.path().join("cache"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(".tmp-"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    });
+}

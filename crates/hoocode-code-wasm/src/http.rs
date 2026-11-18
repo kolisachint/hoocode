@@ -30,7 +30,7 @@ use wasmtime_wasi_http::{Error, RequestOptions, WasiBody, WasiHttpHooks};
 
 use crate::connect::{self, Outgoing};
 use crate::ssrf::{self, CheckError, Resolve};
-use crate::NetGate;
+use crate::{AbortSignal, NetGate};
 
 /// The most time one call may spend paused on the network gate. Past it, a pause
 /// no longer extends the call's deadlines, so a prompt left open cannot keep a
@@ -50,6 +50,8 @@ pub(crate) struct GatedHooks {
     pub(crate) allow_loopback: bool,
     /// Time spent waiting on the gate, which the call timeout does not count.
     pub(crate) clock: Arc<PauseClock>,
+    /// The call's abort signal. An aborted call is refused before the gate is asked.
+    pub(crate) abort: Option<AbortSignal>,
 }
 
 /// The time one call spent waiting on the network gate (which may prompt the
@@ -175,6 +177,7 @@ impl GatedHooks {
         let net = self.net.clone();
         let allow_loopback = self.allow_loopback;
         let clock = self.clock.clone();
+        let abort = self.abort.clone();
         let liveness = Liveness::new();
         let alive = liveness.flag();
         Box::new(async move {
@@ -191,7 +194,13 @@ impl GatedHooks {
             }
 
             // 2. The gate. The wait may be a user prompt; it does not count
-            // against the call timeout (see PauseClock).
+            // against the call timeout (see PauseClock). An aborted call is
+            // refused first, so the user is not asked for it.
+            if abort.as_ref().is_some_and(AbortSignal::aborted) {
+                return refuse(&format!(
+                    "{url}: the call was aborted before the gate was asked"
+                ));
+            }
             let pause = clock.pause();
             let gate_url = url.clone();
             let verdict =
@@ -286,6 +295,7 @@ mod tests {
             net,
             allow_loopback: false,
             clock: Arc::new(PauseClock::default()),
+            abort: None,
         };
         let request = Request::builder()
             .uri(url)
