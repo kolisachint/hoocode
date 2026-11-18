@@ -43,6 +43,9 @@ pub struct HarnessOptions {
     pub extensions: Option<Arc<dyn ExtensionHooks>>,
     pub without_auth: bool,
     pub models: Vec<FauxModelDefinition>,
+    /// Paces the faux stream (see `RegisterFauxProviderOptions`). Set it for a
+    /// test that aborts mid-stream, so the stream outlives the abort.
+    pub tokens_per_second: Option<f64>,
     pub allowed_tool_names: Option<Vec<String>>,
     pub disallowed_tool_names: Option<Vec<String>>,
     pub initial_active_tool_names: Option<Vec<String>>,
@@ -70,6 +73,7 @@ impl Harness {
         // Registered on the API registry so compaction summaries reach it too.
         let registration = register_faux_provider(RegisterFauxProviderOptions {
             models: options.models,
+            tokens_per_second: options.tokens_per_second,
             ..Default::default()
         });
         let faux = registration.provider().clone();

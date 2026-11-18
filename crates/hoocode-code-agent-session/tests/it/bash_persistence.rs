@@ -192,9 +192,16 @@ async fn does_not_emit_message_end_for_bash_execution_messages() {
     assert!(roles.lock().unwrap().is_empty());
 }
 
+/// Paces the faux stream so a 20,000-char reply takes minutes to finish: the
+/// abort lands mid-stream on any machine, instead of racing a fast stream.
+const PACED_TOKENS_PER_SECOND: f64 = 100.0;
+
 #[tokio::test(flavor = "multi_thread")]
 async fn persists_aborted_assistant_messages() {
-    let h = Harness::new(HarnessOptions::default());
+    let h = Harness::new(HarnessOptions {
+        tokens_per_second: Some(PACED_TOKENS_PER_SECOND),
+        ..Default::default()
+    });
     h.set_responses(vec![faux_assistant_message(
         "x".repeat(20_000),
         Default::default(),
