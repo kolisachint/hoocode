@@ -22,6 +22,7 @@ use hoocode_ai_types::{
     AbortSignal, AssistantMessage, Content, ImageContent, Model, TextContent, ThinkingLevel,
     UserContent, UserMessage,
 };
+use hoocode_code_mcp::PluginServers;
 use hoocode_code_models::{clamp_effort, AuthLookup, ModelRegistry, ResolvedScoped};
 use hoocode_code_prompts::BuildSystemPromptOptions;
 use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
@@ -42,7 +43,7 @@ use crate::hooks::{
     ExtensionError, ExtensionHooks, NoExtensions, ResourceLoader, SessionEvent, SessionStartEvent,
     TemplateKind,
 };
-use crate::mcp::{McpHub, SHUTDOWN_WAIT};
+use crate::mcp::{McpHub, SHUTDOWN_WAIT, STARTUP_WAIT};
 use crate::plugin_source::PluginSource;
 use crate::retry::RetryState;
 use crate::stats::{self, ContextUsage, ForkableMessage, SessionStats, TranscriptSelection};
@@ -462,8 +463,14 @@ struct State {
     plugin_tools: Vec<ToolDefinition>,
     /// The plugin generation the tools above were built from.
     plugin_generation: Option<u64>,
+    /// The MCP servers of the plugins the MCP hub was built from (`None`: the source does not
+    /// say, so every plugin change builds the hub again).
+    plugin_mcp_servers: Option<Vec<PluginServers>>,
     /// Problems the last plugin build found, until the UI takes them.
     plugin_notices: Vec<String>,
+    /// Print and rpc wait here, once per new hub, up to `STARTUP_WAIT` for its servers (set by
+    /// the entry point: the TUI does not wait).
+    wait_for_mcp_startup: bool,
     tool_definitions: Vec<(String, DefinitionEntry)>,
     tool_prompt_snippets: HashMap<String, String>,
     tool_prompt_guidelines: HashMap<String, Vec<String>>,
@@ -1538,12 +1545,24 @@ impl AgentSession {
     /// the one the source's refresh replaces.
     pub fn attach_plugins(&self, source: Arc<dyn PluginSource>) -> Vec<String> {
         let generation = source.generation();
+        let servers = source.mcp_servers();
         let (tools, notices) = source.tools(&self.tool_names_taken());
         let auto_activate = source.auto_activate();
         *lock(&self.inner.plugin_source) = Some(source);
-        lock(&self.inner.state).plugin_generation = Some(generation);
+        {
+            let mut state = lock(&self.inner.state);
+            state.plugin_generation = Some(generation);
+            state.plugin_mcp_servers = servers;
+        }
         self.set_plugin_tools(tools, auto_activate);
         notices
+    }
+
+    /// Print and rpc call this with `true`: a plugin change that builds a new MCP hub waits, on
+    /// a blocking thread, up to `STARTUP_WAIT` for its servers before the next prompt. The TUI
+    /// passes `false` and never waits.
+    pub fn set_wait_for_mcp_startup(&self, wait: bool) {
+        lock(&self.inner.state).wait_for_mcp_startup = wait;
     }
 
     /// Brings the plugin tools and the MCP hub in line with the plugins, when they changed since
@@ -1551,32 +1570,66 @@ impl AgentSession {
     /// a change made by `/plugin`, by the model's plugin tools or by hand applies from the next
     /// turn. The problems of the build wait for [`take_plugin_notices`](Self::take_plugin_notices).
     pub fn refresh_plugins(&self) {
-        let Some(source) = lock(&self.inner.plugin_source).clone() else {
-            return;
-        };
+        self.refresh_plugins_swapped();
+    }
+
+    /// [`refresh_plugins`](Self::refresh_plugins), returning the new MCP hub when it built one.
+    fn refresh_plugins_swapped(&self) -> Option<Arc<McpHub>> {
+        let source = lock(&self.inner.plugin_source).clone()?;
         // Read the generation before building: a change made meanwhile is built next time.
         let generation = source.generation();
         {
             let mut state = lock(&self.inner.state);
             if state.plugin_generation == Some(generation) {
-                return;
+                return None;
             }
             state.plugin_generation = Some(generation);
         }
+        let servers = source.mcp_servers();
         let (tools, notices) = source.tools(&self.tool_names_taken());
         lock(&self.inner.state).plugin_notices.extend(notices);
         self.set_plugin_tools(tools, source.auto_activate());
-        if self.mcp().is_some() {
-            if let Some(hub) = source.mcp_hub() {
-                let old = lock(&self.inner.mcp).replace(hub);
-                // A new hub has its own tool-list generation, so the sync must not skip it.
-                lock(&self.inner.state).mcp_generation = None;
-                if let Some(old) = old {
-                    old.shutdown();
-                }
-                self.sync_mcp_tools();
+        // Only a change to the plugins' MCP servers builds the hub again: a running server keeps
+        // its connection and its tools when just the plugin tools changed.
+        let servers_changed = {
+            let mut state = lock(&self.inner.state);
+            let changed = servers.is_none() || state.plugin_mcp_servers != servers;
+            state.plugin_mcp_servers = servers;
+            changed
+        };
+        if !servers_changed || self.mcp().is_none() {
+            return None;
+        }
+        let hub = source.mcp_hub()?;
+        let old = lock(&self.inner.mcp).replace(hub.clone());
+        // A new hub has its own tool-list generation, so the sync must not skip it.
+        lock(&self.inner.state).mcp_generation = None;
+        if let Some(old) = old {
+            // Stops on the io runtime: the turn being prepared does not wait for it.
+            old.shutdown_in_background();
+        }
+        self.sync_mcp_tools();
+        Some(hub)
+    }
+
+    /// Waits, on a blocking thread, for the servers of a new hub to finish starting, up to
+    /// `STARTUP_WAIT`, when this session waits (print and rpc). A server still connecting then
+    /// is reported as a notice and its tools are picked up at a later turn.
+    async fn wait_for_new_mcp_hub(&self, hub: Arc<McpHub>) {
+        let slow = tokio::task::spawn_blocking(move || hub.wait_for_startup(STARTUP_WAIT))
+            .await
+            .unwrap_or_default();
+        {
+            let mut state = lock(&self.inner.state);
+            for server in slow {
+                state.plugin_notices.push(format!(
+                    "MCP server {} did not finish starting within {} s; its tools are skipped for this run.",
+                    server.name,
+                    STARTUP_WAIT.as_secs()
+                ));
             }
         }
+        self.sync_mcp_tools();
     }
 
     /// The problems the last plugin build found, once: the caller shows them.
@@ -1761,8 +1814,13 @@ impl AgentSession {
         options: PromptOptions,
         preflight: &Preflight,
     ) -> Result<()> {
-        self.refresh_plugins();
+        let fresh_hub = self.refresh_plugins_swapped();
         self.sync_mcp_tools();
+        if let Some(hub) = fresh_hub {
+            if lock(&self.inner.state).wait_for_mcp_startup {
+                self.wait_for_new_mcp_hub(hub).await;
+            }
+        }
         if options.expand_prompt_templates && text.starts_with('/') {
             let (name, args) = Self::split_command(text);
             if self.inner.extensions.has_command(name) {

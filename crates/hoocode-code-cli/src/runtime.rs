@@ -1115,6 +1115,8 @@ fn attach_mcp(
     mode_restricted: bool,
     plugins: &hoocode_code_plugins::PluginSet,
 ) {
+    // A plugin change that builds a new hub later waits for it the same way, in print and rpc.
+    session.set_wait_for_mcp_startup(!interactive);
     let hub = new_mcp_hub(cwd, interactive, plugins);
     hub.start();
     if !interactive {

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use hoocode_code_tool_api::ToolDefinition;
 
 use crate::mcp::McpHub;
+use hoocode_code_mcp::PluginServers;
 
 pub trait PluginSource: Send + Sync {
     /// Changes whenever the plugins may have changed. Read before [`tools`](Self::tools) and
@@ -28,6 +29,13 @@ pub trait PluginSource: Send + Sync {
     /// session's own tools: a plugin tool never takes one of them. The second value is the
     /// problems found, one line each.
     fn tools(&self, taken: &[String]) -> (Vec<ToolDefinition>, Vec<String>);
+
+    /// The MCP servers the current plugins declare. The session builds a new MCP hub only when
+    /// this set changed, so a change to plugin tools alone keeps the running servers. `None`
+    /// means the source does not say: the hub is built again at every plugin change.
+    fn mcp_servers(&self) -> Option<Vec<PluginServers>> {
+        None
+    }
 
     /// A new, started MCP hub for the current plugins' servers. `None` when this session does
     /// not run MCP. The session shuts the old hub down and uses the new one.

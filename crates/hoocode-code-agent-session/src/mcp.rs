@@ -431,6 +431,23 @@ impl McpHub {
 
     /// [`shutdown`](Self::shutdown) with the wait given by the caller.
     pub fn shutdown_within(&self, timeout: Duration) {
+        let Some(wait) = self.begin_shutdown() else {
+            return;
+        };
+        let _ = wait.recv_timeout(timeout);
+    }
+
+    /// [`shutdown`](Self::shutdown) without waiting: the servers stop on the io runtime while
+    /// the caller goes on. Used where the caller must not block, such as a session that swaps
+    /// its hub while a turn is being prepared.
+    pub fn shutdown_in_background(&self) {
+        // The receiver is dropped: nobody waits for the signal.
+        let _ = self.begin_shutdown();
+    }
+
+    /// Marks the hub shut down, drops its clients and stops them on the io runtime. The receiver
+    /// gets a signal once they have all stopped. `None` when there was nothing to stop.
+    fn begin_shutdown(&self) -> Option<std::sync::mpsc::Receiver<()>> {
         let clients: Vec<McpClient> = {
             let mut state = lock(&self.state);
             state.shut_down = true;
@@ -442,7 +459,7 @@ impl McpHub {
         };
         self.tracker.clear();
         if clients.is_empty() {
-            return;
+            return None;
         }
         let (done, wait) = std::sync::mpsc::channel();
         io_handle().spawn(async move {
@@ -453,7 +470,7 @@ impl McpHub {
             while set.join_next().await.is_some() {}
             let _ = done.send(());
         });
-        let _ = wait.recv_timeout(timeout);
+        Some(wait)
     }
 
     /// Blocks until no trusted server is still connecting, or `timeout` passes, and returns the
