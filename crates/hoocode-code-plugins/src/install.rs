@@ -678,7 +678,7 @@ fn update_one(paths: &Paths, record: &Record) -> Result<UpdateOutcome, String> {
 }
 
 /// Add a marketplace by git URL, `owner/repo`, or local path. It is trusted only when `trust` is
-/// set (`--trust`); the official directory is always trusted. Returns its name, read from the
+/// set (`--trust`); the built-in marketplaces are always trusted. Returns its name, read from the
 /// repository's index.
 pub fn marketplace_add(paths: &Paths, source: &str, trust: bool) -> Result<String, String> {
     let url = marketplace::normalize_source(source);

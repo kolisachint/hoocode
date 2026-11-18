@@ -87,7 +87,7 @@ tar xzf hoocode-aarch64-apple-darwin.tar.gz
 install -m 755 hoocode-aarch64-apple-darwin/hoocode ~/.local/bin/hoocode
 ```
 
-**From source** (Rust 1.88 or newer; the repo pins its dev toolchain in
+**From source** (Rust 1.95 or newer; the repo pins its dev toolchain in
 [`rust-toolchain.toml`](rust-toolchain.toml), which rustup picks up by itself):
 
 ```bash

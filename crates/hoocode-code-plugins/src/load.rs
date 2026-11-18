@@ -20,7 +20,9 @@ use crate::{
 /// The folder under `.agents` (project and user) that holds plugins.
 const PLUGINS_DIR: &str = "plugins";
 /// Component folders hoocode does not run. A plugin that has one still loads, with a warning.
-const UNSUPPORTED_DIRS: [&str; 4] = ["hooks", "commands", "themes", "providers"];
+const UNSUPPORTED_DIRS: [&str; 5] = ["hooks", "commands", "themes", "providers", "agents"];
+/// The hoocode-only component file, inside the `dev.hoocode/` folder (plugins.md).
+const EXTENSION_WASM: &str = "dev.hoocode/extension.wasm";
 
 /// Where to look, and the trust that decides whether project plugins load.
 pub struct LoadOptions<'a> {
@@ -245,17 +247,15 @@ fn load_one(
         root: root.clone(),
         marketplace_trusted,
         skill_dirs: Vec::new(),
-        agent_files: Vec::new(),
+        extension_wasm: None,
         mcp_path: None,
         mcp_servers: Vec::new(),
     };
     plugin.skill_dirs = skill_dirs(&plugin, diags);
+    plugin.extension_wasm = extension_wasm(&plugin, diags);
     match schema {
         Some(schema) => load_agent_plugins_mcp(&mut plugin, &schema, diags),
-        None => {
-            plugin.agent_files = agent_files(&plugin, diags);
-            load_claude_mcp(&mut plugin, &manifest_path, &text, diags);
-        }
+        None => load_claude_mcp(&mut plugin, &manifest_path, &text, diags),
     }
     for dir in UNSUPPORTED_DIRS {
         if root.join(dir).is_dir() {
@@ -306,26 +306,23 @@ fn skill_dirs(plugin: &LoadedPlugin, diags: &mut Vec<PluginDiagnostic>) -> Vec<P
     out
 }
 
-/// Claude `agents/*.md`: subagent definitions, one file each, not recursive.
-fn agent_files(plugin: &LoadedPlugin, diags: &mut Vec<PluginDiagnostic>) -> Vec<PathBuf> {
-    let dir = plugin.root.join("agents");
-    if !dir.exists() {
-        return Vec::new();
+/// `dev.hoocode/extension.wasm`: the internal-tier WASM component (PL-9). Nothing runs it yet;
+/// this only finds it. A file that is not inside the plugin is skipped with a warning.
+fn extension_wasm(plugin: &LoadedPlugin, diags: &mut Vec<PluginDiagnostic>) -> Option<PathBuf> {
+    let path = plugin.root.join(EXTENSION_WASM);
+    if !path.is_file() {
+        return None;
     }
-    if !dir.is_dir() || !within(&plugin.root, &dir) {
+    if !within(&plugin.root, &path) {
         diags.push(warn(
             Some(&plugin.name),
-            &dir,
+            &path,
             None,
-            "agents is not a folder inside the plugin; skipped".to_owned(),
+            format!("{EXTENSION_WASM} resolves outside the plugin; skipped"),
         ));
-        return Vec::new();
+        return None;
     }
-    sorted_children(&dir)
-        .into_iter()
-        .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
-        .filter(|path| path.is_file() && within(&plugin.root, path))
-        .collect()
+    Some(path)
 }
 
 fn sorted_children(dir: &Path) -> Vec<PathBuf> {

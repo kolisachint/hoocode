@@ -144,7 +144,7 @@ mod tests {
             marketplace_trusted: true,
             data_dir: "/x/data/lint-pack".into(),
             skill_dirs: Vec::new(),
-            agent_files: Vec::new(),
+            extension_wasm: None,
             mcp_path: None,
             mcp_servers: Vec::new(),
         };

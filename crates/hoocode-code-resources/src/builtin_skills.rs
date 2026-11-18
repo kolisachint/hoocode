@@ -44,7 +44,7 @@ pub const BUILTIN_SKILLS: &[BuiltinSkill] = &[
     },
     BuiltinSkill {
         name: "plugin-authoring",
-        summary: "The craft half of ProposePlugin/UpdatePlugin: when a capability is worth extracting, naming it so it triggers again, portability, and the hook trap.",
+        summary: "The craft half of ProposePlugin: when a capability is worth extracting, naming it so it triggers again, portability, the Agent Plugins package, and trust.",
         gate: Some(|g| g.enable_plugin_tools),
     },
 ];

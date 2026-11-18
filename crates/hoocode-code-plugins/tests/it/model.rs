@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use hoocode_code_plugins::install::{self, Paths, Scope};
-use hoocode_code_plugins::marketplace::{now_secs, OFFICIAL_NAME, OFFICIAL_URL, REGISTRY_FILE};
+use hoocode_code_plugins::marketplace::{
+    now_secs, HOO_NAME, HOO_URL, OFFICIAL_NAME, OFFICIAL_URL, REGISTRY_FILE,
+};
 use hoocode_code_plugins::model;
 
 use crate::common::write;
@@ -40,10 +42,14 @@ impl Env {
     fn seed_official(&self, plugins: &[(&str, &str)]) {
         let root = hoocode_code_plugins::marketplace::cache_path(&self.paths.state, OFFICIAL_NAME);
         marketplace_files(&root, OFFICIAL_NAME, plugins);
+        // The other built-in, hoo-plugins, is seeded empty and fresh, so no test fetches it.
+        let hoo_root = hoocode_code_plugins::marketplace::cache_path(&self.paths.state, HOO_NAME);
+        marketplace_files(&hoo_root, HOO_NAME, &[]);
         write(
             &self.paths.state.join(REGISTRY_FILE),
             &format!(
-                r#"{{"marketplaces": [{{"name": "{OFFICIAL_NAME}", "url": "{OFFICIAL_URL}", "trusted": true, "fetchedAt": {}}}]}}"#,
+                r#"{{"marketplaces": [{{"name": "{OFFICIAL_NAME}", "url": "{OFFICIAL_URL}", "trusted": true, "fetchedAt": {}}}, {{"name": "{HOO_NAME}", "url": "{HOO_URL}", "trusted": true, "fetchedAt": {}}}]}}"#,
+                now_secs(),
                 now_secs()
             ),
         );

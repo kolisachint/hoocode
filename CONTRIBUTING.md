@@ -84,7 +84,7 @@ cargo run -p hoocode-code-main --bin hoocode -- --help
 
 - **Toolchain.** [`rust-toolchain.toml`](rust-toolchain.toml) pins the toolchain
   (with rustfmt and clippy) so formatting and lints match CI. The minimum supported
-  Rust version is **1.88** (`rust-version` in [`Cargo.toml`](Cargo.toml)); don't use
+  Rust version is **1.95** (`rust-version` in [`Cargo.toml`](Cargo.toml)); don't use
   newer language or library features.
 - **Disk.** A full dev build is a few GB. Dev builds have `debug = false` to keep it
   that way. `scripts/dev/prune_target.sh` (dry run by default, `--apply` to delete)

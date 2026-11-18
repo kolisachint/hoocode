@@ -6,6 +6,7 @@
 //! actual LLM-backed sessions.
 
 use crate::args::Mode;
+use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
 use hoocode_agent_types::{AgentEvent, PermissionGate};
 use hoocode_ai_types::{Model, ThinkingLevel};
@@ -296,38 +297,36 @@ fn resource_loader(
 ) -> DefaultResources {
     let no_skills = args.no_skills == Some(true) || light;
     let agent_dir_str = agent_dir.to_string_lossy().into_owned();
-    // A plugin's skills and subagents are skills and agents: none in light mode or with
-    // --no-skills. Its MCP servers are separate (see attach_mcp).
-    let (plugin_skill_paths, plugin_agent_paths) = if no_skills {
-        (Vec::new(), Vec::new())
+    // A plugin's skills are skills: none in light mode or with --no-skills. Its MCP servers are
+    // separate (see attach_mcp).
+    let plugin_skill_paths = if no_skills {
+        Vec::new()
     } else {
-        (plugins.skill_entries(), plugins.agent_files())
+        plugins.skill_entries()
     };
     // A `/plugin` change reaches the next reload through this: the current plugins, read each
     // time (see `load_session_plugins` and `hoocode_code_plugins::set_current`).
     let plugin_source: hoocode_code_resources::resource_loader::PluginSource =
         Arc::new(move || {
             if no_skills {
-                return (Vec::new(), Vec::new());
+                return Vec::new();
             }
-            let current = hoocode_code_plugins::current();
-            (current.skill_entries(), current.agent_files())
+            hoocode_code_plugins::current().skill_entries()
         });
-    // Plugin skills' allowed-tools take effect only after the user approved them. The gate
+    // A plugin skill's allowed-tools is never honoured: the gate drops it with a warning. It
     // needs the plugin skill folders to tell a plugin skill from any other; both are read when
-    // a skill is loaded, so a newly installed plugin is gated too.
+    // a skill is loaded, so a newly installed plugin is covered too.
     let gate_allowed_tools: Box<
         dyn Fn(hoocode_code_resources::LoadSkillsResult) -> hoocode_code_resources::LoadSkillsResult
             + Send
             + Sync,
     > = Box::new(move |result| {
-        let trust = hoocode_code_plugins::load_default_trust();
         let plugin_skill_dirs: Vec<std::path::PathBuf> = hoocode_code_plugins::current()
             .plugins
             .iter()
             .flat_map(|plugin| plugin.skill_dirs.iter().cloned())
             .collect();
-        hoocode_code_plugins::skills::gate_allowed_tools(result, &trust, &plugin_skill_dirs)
+        hoocode_code_plugins::skills::ignore_allowed_tools(result, &plugin_skill_dirs)
     });
     let mut skill_paths = resolve_cli_paths(cwd, &args.skills);
     if !no_skills {
@@ -359,7 +358,6 @@ fn resource_loader(
         additional_prompt_template_paths: resolve_cli_paths(cwd, &args.prompt_templates),
         additional_slash_command_paths: resolve_cli_paths(cwd, &args.slash_commands),
         plugin_skill_paths,
-        plugin_agent_paths,
         plugin_source: Some(plugin_source),
         skills_override: Some(gate_allowed_tools),
         no_skills,
@@ -845,6 +843,7 @@ fn create_runtime(
         interactive,
         gate,
         &plugins,
+        &mut diagnostics,
     );
     (session, services, diagnostics)
 }
@@ -878,8 +877,12 @@ fn assemble_session(
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
     plugins: &hoocode_code_plugins::PluginSet,
+    diagnostics: &mut Diagnostics,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
+    // The gate is built here, not at `create_agent_session`, so the plugin tools' network
+    // calls can ask the same one (see `ext_tools`).
+    let gate = gate.unwrap_or_else(|| build_permission_gate(args, interactive, &cwd));
     // Background shell jobs (`enableBackgroundShell`, on by default) in the
     // interactive TUI only, which shows them and asks about them on quit.
     // Print, json, rpc and app-server runs, the light preset and subagents
@@ -907,11 +910,10 @@ fn assemble_session(
             ),
         )
     } else {
-        (
-            None,
-            custom_tools(args, &settings, &cwd, interactive, jobs.as_ref()),
-            None,
-        )
+        // The plugin tools (`ext_`) are attached after the session exists, from its plugin
+        // source, so they can follow the plugins (see `plugin_live`).
+        let custom = custom_tools(args, &settings, &cwd, interactive, jobs.as_ref());
+        (None, custom, None)
     };
     // main.ts: explicit tool flags win over the light preset's allowlist.
     let explicit =
@@ -934,6 +936,8 @@ fn assemble_session(
         ),
     );
     let settings = Arc::new(Mutex::new(settings));
+    let plugin_settings = settings.clone();
+    let plugin_gate = gate.clone();
     let resources = resource_loader(args, light, &cwd, &agent_dir, &settings, plugins);
     if subagents_on {
         resources
@@ -997,9 +1001,7 @@ fn assemble_session(
             custom_tools: custom,
             base_tools,
             background_jobs: jobs,
-            permission_gate: Some(
-                gate.unwrap_or_else(|| build_permission_gate(args, interactive, &services.cwd)),
-            ),
+            permission_gate: Some(gate),
             disallowed_tools,
             extensions: Some(modes),
             session_start_event,
@@ -1011,7 +1013,25 @@ fn assemble_session(
     if let Some(tools) = mode_tools {
         session.set_active_tools_by_name(&tools);
     }
-    if mcp_wanted(args, light) {
+    // Plugin tools and the plugin MCP servers follow the plugins from here on (PL-4). Attached
+    // before the MCP hub, which the source's refresh replaces only when one is attached.
+    let ext = ext_tools_wanted(args, light);
+    let mcp = mcp_wanted(args, light);
+    if ext || mcp {
+        let source = Arc::new(plugin_live::PluginToolSource {
+            cwd: services.cwd.clone(),
+            interactive,
+            ext,
+            mcp,
+            auto_activate: !mode_restricted,
+            settings: plugin_settings,
+            gate: plugin_gate,
+        });
+        for notice in session.attach_plugins(source) {
+            diagnostics.push((DiagnosticKind::Warning, notice));
+        }
+    }
+    if mcp {
         attach_mcp(
             &session,
             &services.cwd,
@@ -1034,6 +1054,18 @@ fn mcp_wanted(args: &Args, light: bool) -> bool {
         .is_none_or(|tools| tools.iter().any(|t| t.starts_with("mcp_")))
 }
 
+/// Plugin WASM components are loaded only when the session's tool list can use their tools: as
+/// for MCP, no `--tools` list or a list that names an `ext_` tool. Light mode and `--no-tools`
+/// load none. Subagents follow the same rule, from their own `--tools` list.
+fn ext_tools_wanted(args: &Args, light: bool) -> bool {
+    if light || args.no_tools == Some(true) {
+        return false;
+    }
+    args.tools
+        .as_ref()
+        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("ext_")))
+}
+
 /// Load the session's MCP servers and start the trusted ones in the background. Untrusted
 /// servers stay off; print and rpc say so on stderr and never prompt (fail closed). The
 /// interactive mode asks about the rest, answers server questions (elicitation) and starts
@@ -1041,13 +1073,13 @@ fn mcp_wanted(args: &Args, light: bool) -> bool {
 /// and its server questions are declined. Print and rpc wait here, once, up to
 /// `STARTUP_WAIT` for the trusted servers to finish connecting, so the first prompt has their
 /// tools; a server still connecting then is reported on stderr and skipped for that prompt.
-fn attach_mcp(
-    session: &AgentSession,
+/// The session's MCP hub for `cwd` and the plugins' servers, wired for the mode: the TUI answers
+/// elicitation; print and rpc decline it and report on stderr. Not started.
+pub(crate) fn new_mcp_hub(
     cwd: &std::path::Path,
     interactive: bool,
-    mode_restricted: bool,
     plugins: &hoocode_code_plugins::PluginSet,
-) {
+) -> std::sync::Arc<hoocode_code_agent_session::mcp::McpHub> {
     let hub = std::sync::Arc::new(
         hoocode_code_agent_session::mcp::McpHub::for_folder_with_plugins(
             cwd,
@@ -1073,6 +1105,19 @@ fn attach_mcp(
             );
         }
     }
+    hub
+}
+
+fn attach_mcp(
+    session: &AgentSession,
+    cwd: &std::path::Path,
+    interactive: bool,
+    mode_restricted: bool,
+    plugins: &hoocode_code_plugins::PluginSet,
+) {
+    // A plugin change that builds a new hub later waits for it the same way, in print and rpc.
+    session.set_wait_for_mcp_startup(!interactive);
+    let hub = new_mcp_hub(cwd, interactive, plugins);
     hub.start();
     if !interactive {
         // Print and rpc answer their first prompt with the servers that connect in time. This
@@ -2163,6 +2208,7 @@ mod tests {
             interactive,
             None,
             &hoocode_code_plugins::PluginSet::default(),
+            &mut Diagnostics::new(),
         );
         (session.system_prompt(), session.get_active_tool_names())
     }
@@ -2231,6 +2277,7 @@ mod tests {
             true,
             None,
             &hoocode_code_plugins::PluginSet::default(),
+            &mut Diagnostics::new(),
         );
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
@@ -2667,6 +2714,7 @@ mod tests {
                 true,
                 None,
                 &hoocode_code_plugins::PluginSet::default(),
+                &mut Diagnostics::new(),
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {

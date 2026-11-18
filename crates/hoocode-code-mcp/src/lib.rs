@@ -30,8 +30,8 @@ pub use config::{
 pub use discover::{discover, DiscoveredServer, Discovery, ServerState, TrustPrompt};
 pub use expand::{expand_value, ExpandError};
 pub use trust::{
-    diff, fingerprint, tools_fingerprint, ApprovedServer, ServerDiff, TrustError, TrustStatus,
-    TrustStore, TRUST_FILE_NAME,
+    diff, fingerprint, ApprovedServer, ServerDiff, TrustError, TrustStatus, TrustStore,
+    TRUST_FILE_NAME,
 };
 
 #[cfg(test)]

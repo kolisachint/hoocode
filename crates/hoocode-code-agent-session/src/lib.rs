@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod mcp_rows;
 pub mod model_fallback;
 pub mod output_guard;
+pub mod plugin_source;
 pub mod provider_health;
 pub mod resources;
 pub mod retry;
@@ -31,6 +32,7 @@ pub use hooks::{
     SessionStartReason, SessionSwitchReason, SlashCommandInfo, StaticResourceLoader, TemplateKind,
     TreePreparation,
 };
+pub use plugin_source::PluginSource;
 pub use resources::DefaultResources;
 pub use runtime::{
     create_agent_session_runtime, AgentSessionRuntime, ChangeDirectoryResult, CreatedRuntime,

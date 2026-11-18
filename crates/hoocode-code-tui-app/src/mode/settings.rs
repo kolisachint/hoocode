@@ -62,21 +62,13 @@ impl Mode {
             SettingsConfig {
                 auto_compact: settings.compaction_enabled(),
                 tools,
-                tool_groups: vec![
-                    ToolGroupInfo {
-                        id: "web".into(),
-                        label: "Web tools".into(),
-                        description: "WebFetch + WebSearch (network access).".into(),
-                        enabled: settings.enable_web_tools(),
-                    },
-                    ToolGroupInfo {
-                        id: "embsearch".into(),
-                        label: "Semantic search".into(),
-                        description: "Semantic index layer fused into the always-on search tool."
-                            .into(),
-                        enabled: settings.enable_semantic_index(),
-                    },
-                ],
+                tool_groups: vec![ToolGroupInfo {
+                    id: "embsearch".into(),
+                    label: "Semantic search".into(),
+                    description: "Semantic index layer fused into the always-on search tool."
+                        .into(),
+                    enabled: settings.enable_semantic_index(),
+                }],
                 // Resolved fresh on every open, never downloaded.
                 // Extension flags arrive with the extension runner (12.3).
                 flags: Vec::new(),
@@ -124,7 +116,6 @@ impl Mode {
                 show_terminal_progress: settings.show_terminal_progress(),
                 warnings: settings.warnings(),
                 voice_silence_ms: resolve_voice_silence_ms(settings.voice_silence_ms()),
-                webtools_timeout_secs: settings.webtools_timeout_secs(),
                 learn,
                 // Re-measured on every change so the pane can price a toggle.
                 measure_token_surface: Some(Rc::new(move || {
@@ -215,10 +206,8 @@ impl Mode {
             SettingsChange::ToolGroup { id, enabled } => {
                 // These gate tool creation: next session.
                 let mut settings = self.session.settings();
-                match id.as_str() {
-                    "web" => settings.set_enable_web_tools(enabled),
-                    "embsearch" => settings.set_enable_semantic_index(enabled),
-                    _ => {}
+                if id.as_str() == "embsearch" {
+                    settings.set_enable_semantic_index(enabled)
                 }
             }
             SettingsChange::ToolOutputMaxBytes(bytes) => self
@@ -369,10 +358,6 @@ impl Mode {
                 // Voice input is not ported; the value is kept for it.
                 self.session.settings().set_voice_silence_ms(ms as i64)
             }
-            SettingsChange::WebtoolsTimeoutSecs(secs) => self
-                .session
-                .settings()
-                .set_webtools_timeout_secs(secs as i64),
             SettingsChange::LearnSetting(key, value) => {
                 self.session.settings().set_learn_setting(key, value as i64)
             }

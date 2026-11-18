@@ -1,7 +1,7 @@
 //! Settings for the hoocode coding agent: types, defaults, storage and the manager.
 //!
 //! Settings stay the raw `settings.json` object, so keys this version does not
-//! know (newer releases, the webtools binary's own block)
+//! know (newer releases, plugin blocks)
 //! pass through reads and writes unchanged. [`SettingsManager`]'s getters
 //! apply the defaults and the range checks and return typed values.
 

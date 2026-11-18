@@ -3,7 +3,6 @@
 pub mod oauth;
 pub mod server;
 
-use std::path::Path;
 use std::sync::Arc;
 
 use hyper::server::conn::http1;
@@ -73,16 +72,33 @@ pub async fn start_http_server() -> HttpServer {
 }
 
 /// The stdio test server: the `mcp_test_server` example, which `cargo test`
-/// builds next to this test binary (`target/<profile>/examples/`).
+/// builds into `<profile>/examples/`. The test binary's location varies by
+/// cargo version (`<profile>/deps/` or `<profile>/build/<crate>/<hash>/deps/`),
+/// so walk up its ancestors and take the first `examples/` that holds the server.
 pub fn stdio_config() -> McpServerConfig {
     let exe = std::env::current_exe().expect("test binary path");
-    let profile_dir = exe
-        .parent()
-        .and_then(Path::parent)
-        .expect("target/<profile>/deps/<test>");
-    let server = profile_dir
-        .join("examples")
-        .join(format!("mcp_test_server{}", std::env::consts::EXE_SUFFIX));
+    let file_name = format!("mcp_test_server{}", std::env::consts::EXE_SUFFIX);
+    let mut tried = Vec::new();
+    let mut server = None;
+    for dir in exe.ancestors().skip(1) {
+        let candidate = dir.join("examples").join(&file_name);
+        if candidate.is_file() {
+            server = Some(candidate);
+            break;
+        }
+        tried.push(candidate);
+    }
+    let server = server.unwrap_or_else(|| {
+        panic!(
+            "mcp_test_server not found next to test binary {}; tried:\n  {}",
+            exe.display(),
+            tried
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        )
+    });
     McpServerConfig::Stdio {
         command: server.to_string_lossy().into_owned(),
         args: Vec::new(),

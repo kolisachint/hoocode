@@ -88,12 +88,27 @@ fn carries_the_guidance_the_plugin_tools_stopped_shipping() {
     for needle in [
         "portab",
         "capability, not the",
-        "second hook",
-        "never grant a subagent",
+        "/plugin update",
+        "never give a subagent",
         "publish",
     ] {
         assert!(body.contains(needle), "{needle}");
     }
+}
+
+#[test]
+fn describes_the_current_plugin_format_and_tools() {
+    let body = embedded("plugin-authoring/SKILL.md");
+    for needle in [
+        "plugin.json",
+        "skills/<name>/SKILL.md",
+        "mcp.json",
+        "extension.wasm",
+    ] {
+        assert!(body.contains(needle), "{needle}");
+    }
+    assert!(!body.contains("UpdatePlugin"));
+    assert!(!body.contains("second hook"));
 }
 
 // materializing
@@ -111,7 +126,7 @@ fn writes_the_embedded_content_to_a_content_addressed_cache_dir() {
     }
     // The name is a hash of the content: a changed skill gets a new directory.
     assert!(
-        root.ends_with("/cache/builtin-skills/4587010f7c59"),
+        root.ends_with("/cache/builtin-skills/97fb6aea2e58"),
         "{root}"
     );
 }

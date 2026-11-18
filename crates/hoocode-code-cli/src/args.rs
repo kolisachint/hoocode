@@ -87,7 +87,6 @@ pub struct Args {
     /// Internal: restricts which subagent types this process may delegate to.
     pub delegate_allow: Option<Vec<String>>,
     pub todo_write: Option<bool>,
-    pub enable_web_tools: Option<bool>,
     pub enable_plugin_tools: Option<bool>,
     pub enable_semantic_index: Option<bool>,
     pub light: Option<bool>,
@@ -291,7 +290,6 @@ pub fn parse_args(args: &[String]) -> Args {
                 result.delegate_allow = Some(split_trim_nonempty(&args[i]));
             }
             "--enable-todowrite" => result.todo_write = Some(true),
-            "--enable-webtools" => result.enable_web_tools = Some(true),
             "--enable-semantic-index" => result.enable_semantic_index = Some(true),
             "--enable-plugintools" => result.enable_plugin_tools = Some(true),
             "--light" => result.light = Some(true),
@@ -735,7 +733,7 @@ mod tests {
         assert_eq!(parse(&[]).max_subagent_depth, None);
     }
 
-    // --enable-todowrite / --enable-webtools
+    // --enable-todowrite
     #[test]
     fn parses_enable_todowrite_flag() {
         assert_eq!(parse(&["--enable-todowrite"]).todo_write, Some(true));
@@ -743,14 +741,6 @@ mod tests {
     #[test]
     fn todo_write_defaults_to_undefined_when_absent() {
         assert_eq!(parse(&[]).todo_write, None);
-    }
-    #[test]
-    fn parses_enable_webtools_flag() {
-        assert_eq!(parse(&["--enable-webtools"]).enable_web_tools, Some(true));
-    }
-    #[test]
-    fn enable_web_tools_defaults_to_undefined_when_absent() {
-        assert_eq!(parse(&[]).enable_web_tools, None);
     }
 
     // --slash-command / --no-slash-commands

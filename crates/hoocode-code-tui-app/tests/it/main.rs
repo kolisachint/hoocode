@@ -18,6 +18,7 @@ mod interactive_mode_status;
 mod login_controller;
 mod notification_panel;
 mod permission_keymap;
+mod plugin_tool_list;
 mod progress_bar;
 mod prompt_row_markers;
 mod resource_display;

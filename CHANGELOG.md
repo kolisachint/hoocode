@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: plugin WASM tools and the webtools plugin (2026-11-18)
+- **Plugins can ship a WASM component** at `dev.hoocode/extension.wasm` (WIT world `hoocode:extension@0.1.0`, in `wit/`). Its tools appear as `ext_<plugin>_<tool>` in the main session and in subagents. A component runs in-process with a 30 s and 64 MB limit per call; Esc stops it. Its network requests ask permission as WebFetch (once per tool call), and requests to private, loopback and link-local addresses are refused. Settings for a plugin go under `pluginConfig.<plugin>.<key>`. Components are compiled once into `~/.hoocode/cache/wasm` (safe to delete).
+- **Web fetch and search are the webtools plugin:** `/plugin install webtools@hoo-plugins`. The `hoo-plugins` marketplace is built in and trusted. Search settings move to `pluginConfig.webtools.*` (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`, `searchFallback`).
+- **Plugin tools appear right after `/plugin install`, `remove`, `update` and `trust`,** with no `/reload`.
+- **Agent tool lists accept `ext_*`** (every plugin WASM tool). The built-in general-purpose agent has it. Agent definitions that name `WebFetch` or `WebSearch` get `ext_webtools_fetch` and `ext_webtools_search`.
+
+### Removed: built-in web settings and Claude plugin agents (2026-11-18)
+- **`--enable-webtools`, `enableWebTools` and the `webtools.*` settings are gone.** Old settings files still load; the keys are ignored. Install the webtools plugin instead.
+- **A Claude plugin's `agents/` folder is no longer loaded;** `/plugin list` reports it as skipped, like hooks and commands.
+- **A plugin skill's `allowed-tools` is ignored, with a warning.** The approval record for it is removed.
+- **Copilot (`.github/plugin/plugin.json`, `.github/copilot-plugin.json`) and `.agents-plugin/` plugin layouts are no longer recognised.**
+
+### Changed: Rust 1.95 or newer to build from source (2026-11-18)
+- The minimum Rust version is 1.95 (was 1.88). The repository pins 1.100.0 for development.
+
 ### Changed: settings sub-panes, provider in model pickers, clearer panes (2026-11-12)
 - **Every `/settings` sub-pane looks like `/settings`.** The category lists, Tools, Tool output, Flags, Warnings, Thinking level and the flag editor now share its title chip, spacing, selection and hint row. Thinking level shows each level in the list and its description in the detail column. Keys are unchanged.
 - **`/model` and scoped-models rows show the provider after the model id,** so the same model from two providers reads as two rows.

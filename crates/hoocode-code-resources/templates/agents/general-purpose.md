@@ -12,7 +12,7 @@ description: |
   Output: The completed result plus a summary of what was done and where.
   Cost: Variable (read + write + run)
   Isolation: Should not run concurrently with other write tasks on the same files
-tools: Read, Shell, Edit, Write, CodeSearch
+tools: Read, Shell, Edit, Write, CodeSearch, ext_*
 model: standard
 background: true
 delegate: true

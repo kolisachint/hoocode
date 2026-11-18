@@ -106,7 +106,7 @@ Status (2026-11-06): Built: the done bar, the CI jobs and guards, the release pi
 **Build and profiles**
 
 - The bottleneck is linking and running test binaries, not compiling. The linker is LLD, the Rust default on x86_64 Linux since 1.90.
-- `rust-toolchain.toml` pins 1.94.1, so fmt and clippy match CI. `rust-version = "1.88"` in `Cargo.toml` is the MSRV. No CI job checks it (EN-7).
+- `rust-toolchain.toml` pins 1.100.0, so fmt and clippy match CI. `rust-version = "1.95"` in `Cargo.toml` is the MSRV. No CI job checks it (EN-7).
 - Dev profile: `debug = false`. For one crate, add `[profile.dev.package.<crate>] debug = "line-tables-only"`. The regex crates (`regex-automata`, `regex-syntax`, `fancy-regex`) build at opt-level 3, because the markdown rules take about 1 s to build unoptimised.
 - Release profile: `lto = "thin"`, `codegen-units = 1`, `strip = "symbols"`, `panic = "unwind"`. Unwind stays on: `run_blocking` turns a tool panic into an error.
 - Environments: cloud sessions are Linux x86_64, 4 vCPU, 15 GB, ephemeral, with a fixed disk. Local is macOS arm64. CI is GitHub-hosted; the repo is public, so runner minutes are free.
@@ -200,7 +200,7 @@ Not shipped: Windows (no build; the npm main package is `os`-gated), crates.io (
 | EN-4 | Highlight opt-level experiment | S | Measure with EN-5 | `[profile.dev.package.hoocode-tui-highlight] opt-level = 1`. `highlight_gold` took 10.8 s in debug. Keep only if the test gain beats the slower rebuild of that crate. No blanket `"*"` override |
 | EN-5 | Re-measure the build and decide on mold | M | After EN-2 and EN-4 | Measure a clean `cargo check --workspace --all-targets --timings`, a clean `cargo nextest run --workspace --no-run`, and a base-crate edit followed by both. Adopt mold only if linking is over 30% of an incremental `nextest --no-run`. Linux only, never macOS |
 | EN-6 | Doctests: CI runs none | S | User picks: recommend adding a doctest step for the crates that have doctests | The earlier CI plan put `cargo test --doc` in CI; `ci.yml` `test` runs nextest only. Either add the step or drop the rule and keep `doctest = false` |
-| EN-7 | MSRV job | S | None | Build with the `rust-version` MSRV (1.88 today; at least 1.95 with PL-7), `--locked`, the way the other jobs run. Nothing checks `rust-version` today |
+| EN-7 | MSRV job | S | None | Build with the `rust-version` MSRV (1.95 since PL-7), `--locked`, the way the other jobs run. Nothing checks `rust-version` today |
 | EN-9 | Self-update prints the right command for the install method | S | User asks for `hoocode update` to be fixed | Under `~/.hoocode/bin`: the curl command. Under `node_modules`: the npm command. PyPI runs from the user cache dir: the pip command. Today `hoocode-code-update` does not detect the method |
 | EN-10 | Remove the dead `publish_crates` input from `release.yml` | S | Next edit to `release.yml` | The input does nothing; the job prints a notice. Or re-enable it with a paced publish script |
 | EN-11 | Windows build | M | User asks for Windows | Add `x86_64-pc-windows-msvc` to `binaries.yml`, a `.zip`, an `install.ps1` and a `win32-x64` npm package. The old Windows leg was the slowest part of a release |

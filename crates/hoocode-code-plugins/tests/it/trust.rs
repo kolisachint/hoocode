@@ -2,7 +2,7 @@
 //! them asks again. User plugins need no folder trust.
 
 use hoocode_code_mcp::TrustStore;
-use hoocode_code_plugins::{approve_skill_tools, trust_project_plugins, PluginScope};
+use hoocode_code_plugins::{trust_project_plugins, PluginScope};
 
 use crate::common::{plugin, write, Sandbox};
 
@@ -121,14 +121,4 @@ fn user_plugins_need_no_folder_trust() {
     let set = sb.load(&trust);
     assert!(set.pending_project_trust.is_none());
     assert_eq!(plugin(&set, "agent-demo").scope, PluginScope::User);
-}
-
-#[test]
-fn allowed_tools_approval_is_kept_in_the_trust_file() {
-    let sb = Sandbox::new();
-    let tools = vec!["Read".to_owned(), "Grep".to_owned()];
-    approve_skill_tools(&sb.trust_path, "claude-demo:review", &tools).unwrap();
-    let store = sb.trust();
-    assert!(store.skill_tools_approved("claude-demo:review", &tools));
-    assert!(!store.skill_tools_approved("claude-demo:review", &["Read".to_owned()]));
 }

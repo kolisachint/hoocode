@@ -75,7 +75,6 @@ mod tests {
             "--no-themes",
             "--verbose",
             "--platform",
-            "--enable-webtools",
             "--enable-todowrite",
             "--enable-semantic-index",
             "--print-token-surface",

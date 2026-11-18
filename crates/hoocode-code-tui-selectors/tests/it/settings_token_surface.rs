@@ -39,7 +39,7 @@ fn pane_config() -> SettingsConfig {
                 tokens: Some(849),
             },
             ToolToggleInfo {
-                name: "WebSearch".into(),
+                name: "ext_webtools_search".into(),
                 enabled: true,
                 tokens: None,
             },
@@ -148,7 +148,7 @@ fn prices_each_tool_beside_its_switch_including_the_ones_that_are_off() {
     assert_eq!(suffix("ProposePlugin").as_deref(), Some("849 tok/turn"));
     assert_eq!(suffix("Read").as_deref(), Some("162 tok/turn"));
     // A tool disabled before launch has no schema this session, so no price.
-    assert_eq!(suffix("WebSearch"), None);
+    assert_eq!(suffix("ext_webtools_search"), None);
 }
 
 /// The tool rows come in hoocode-ts's order (its names: bash, edit, read,

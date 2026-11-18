@@ -741,10 +741,7 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
     ) -> bool {
         let text_before_cursor = cursor_line_text(lines, cursor_line, cursor_col);
         let trimmed = text_before_cursor.trim();
-        if trimmed.starts_with('/') && !trimmed.contains(' ') {
-            return false;
-        }
-        true
+        !(trimmed.starts_with('/') && !trimmed.contains(' '))
     }
 }
 

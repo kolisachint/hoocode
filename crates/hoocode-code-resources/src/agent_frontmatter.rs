@@ -23,15 +23,7 @@ pub enum AgentSource {
 pub const MODEL_INHERIT: &str = "inherit";
 
 /// `HOOCODE_TOOL_NAMES`: built-in tools an agent's `tools` list is normalized against.
-pub const HOOCODE_TOOL_NAMES: &[&str] = &[
-    "Shell",
-    "Edit",
-    "Read",
-    "CodeSearch",
-    "WebFetch",
-    "WebSearch",
-    "Write",
-];
+pub const HOOCODE_TOOL_NAMES: &[&str] = &["Shell", "Edit", "Read", "CodeSearch", "Write"];
 
 /// `TASK_TOOL_NAME`: the subagent tool's canonical name (`Agent`).
 pub const TASK_TOOL_NAME: &str = "Agent";
@@ -51,8 +43,9 @@ pub const CLAUDE_TOOL_ALIASES: &[(&str, &str)] = &[
     ("grep", "CodeSearch"),
     ("glob", "CodeSearch"),
     ("find", "CodeSearch"),
-    ("webfetch", "WebFetch"),
-    ("websearch", "WebSearch"),
+    // Web access is the webtools plugin (PL-12).
+    ("webfetch", "ext_webtools_fetch"),
+    ("websearch", "ext_webtools_search"),
 ];
 
 const KNOWN_MODEL_ALIASES: &[&str] = &[
@@ -174,6 +167,14 @@ pub fn normalize_tools(
     }
     let mut resolved: Vec<String> = Vec::new();
     for raw in split_tools_value(value) {
+        // A plugin's WASM tool (`ext_<plugin>_<tool>`) has no alias: it is kept as written, so a
+        // subagent can be given it. Whether it exists is decided when the session starts.
+        if raw.starts_with("ext_") {
+            if !resolved.contains(&raw) {
+                resolved.push(raw);
+            }
+            continue;
+        }
         let lower = raw.to_lowercase();
         let Some((_, mapped)) = CLAUDE_TOOL_ALIASES.iter().find(|(k, _)| *k == lower) else {
             diagnostics.push(ResourceDiagnostic::warning(

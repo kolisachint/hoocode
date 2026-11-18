@@ -2,6 +2,8 @@
 
 Status (2026-11-12): handover from the TUI session that worked the UI-25 to UI-34 rows and closed the roadmap TUI rows UI-15, UI-16, UI-18 and UI-20. `docs/wip/` is empty (the folder is absent). This is not the last TUI session. The plan stays in [design/roadmap.md](design/roadmap.md); the rules stay in [design/tui.md](design/tui.md). When this page and those disagree, they win and this page is stale.
 
+Plugins v1 (2026-11-17): PL-6 to PL-12 done on branch `claude/eager-pascal-o0xkwr` in three repos (no PRs yet, by the user's choice): hoocode, `kolisachint/hoo-web-plugin` (webtools renamed; `Transport` trait, `wasi` feature, own config `~/.config/webtools/config.json`, plugin package in `plugin/`) and `kolisachint/hoo-plugins` (marketplace listing, pre-trusted). Left for the user: merge the three branches (the listing points at hoo-web-plugin `main`), tag `wit-v0.1.0` on the hoocode merge commit, apply `ci/workflow-updates.patch` in hoo-web-plugin with a token that has the `workflow` scope, check the ubuntu-24.04-arm build at the next release rehearsal. Known: hoo-web-plugin's MSRV CI job already failed before this work (zeroize 1.9, clap_lex 1.1 need edition 2024); the plugin's `extension.wasm` is byte-identical only for the same checkout path, so its CI job builds without a diff check. cargo 1.100 moved test binaries under `target/debug/build/<crate>/<hash>/`, so test helpers must not derive paths from `current_exe()` parents. One subagent eval run hung before the first request while other builds ran; 18 later runs passed.
+
 Plugins design session (2026-11-17, docs only): added [design/plugins.md](design/plugins.md). Decided: Agent Plugins 1.0 format; internal WASM tier (wasmtime 48 LTS, in-process, gate enforced) and external MCP tier; v1 is the webtools plugin, PL-7 to PL-12, gated by PL-7 (measure trimmed wasmtime and the toolchain bump; stop rule in plugins.md). Repos involved: hoocode, `kolisachint/webtools`, `web-plugins` and `hoocode-official-plugins` (the last two do not exist yet). Scratch measurement code is gone with the container; the numbers are in plugins.md.
 
 How to use it: read "Start here", then do "Next session" top to bottom. Delete rows as they land.
@@ -20,7 +22,7 @@ How to use it: read "Start here", then do "Next session" top to bottom. Delete r
 
 Environment notes:
 
-- The cloud container's pinned toolchain (1.94.1) may come without `cargo`. Fix: `rustup toolchain uninstall 1.94.1 && rustup toolchain install 1.94.1 --profile minimal -c rustfmt -c clippy`.
+- The cloud container's pinned toolchain (1.100.0) may come without `cargo`. Fix: `rustup toolchain uninstall 1.100.0 && rustup toolchain install 1.100.0 --profile minimal -c rustfmt -c clippy`.
 - Disk is about 30 GB free. One target directory is about 5 GB warm and grows to 15 GB. Two worktrees with a target directory each fit; three do not. Prune with `scripts/dev/prune_target.sh --apply --if-over 8 --target <dir>`.
 - Never share one `CARGO_TARGET_DIR` between worktrees that build at the same time.
 - One test fails only in a checkout with a long path (`tool_execution_component::parity::a_collapsed_read_shows_only_its_call_and_the_toggle_opens_it_whole`: the path wraps at 120 columns). It passes in `/home/user/hoocode`.

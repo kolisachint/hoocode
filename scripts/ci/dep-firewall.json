@@ -22,12 +22,6 @@
     "grep-regex": [
       "hoocode-code-tool-search"
     ],
-    "htmd": [
-      "hoocode-code-tool-web"
-    ],
-    "dom_smoothie": [
-      "hoocode-code-tool-web"
-    ],
     "process-wrap": [
       "hoocode-code-tool-bash"
     ],
@@ -74,6 +68,15 @@
     ],
     "signal-hook": [
       "hoocode-runtime"
+    ],
+    "wasmtime": [
+      "hoocode-code-wasm"
+    ],
+    "wasmtime-wasi": [
+      "hoocode-code-wasm"
+    ],
+    "wasmtime-wasi-http": [
+      "hoocode-code-wasm"
     ],
     "tokio-tungstenite": [
       "hoocode-ai-provider-openai-codex",

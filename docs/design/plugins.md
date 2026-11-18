@@ -1,6 +1,6 @@
 # Plugins
 
-Status (2026-11-17): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools. Decided, not built: two extension tiers (internal WASM, external MCP) and the webtools plugin as v1 (PL-7 to PL-12).
+Status (2026-11-17): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`; plugin tools `ext_<plugin>_<tool>`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Open: PL-1 to PL-5, PL-13 to PL-15.
 
 ## Principles
 
@@ -50,7 +50,7 @@ my-plugin/
 | Format | Layout | Notes |
 |---|---|---|
 | Agent Plugins 1.0 | root `plugin.json`, `skills/`, `mcp.json` | Schemas are hand-coded from the 1.0.0 spec and bundled, never fetched. Only the 1.0.0 `$schema` ids are accepted. |
-| Claude | `.claude-plugin/plugin.json`, `skills/`, `.mcp.json` or inline `mcpServers` | Read only. Claude variables such as `${CLAUDE_PLUGIN_ROOT}` are not expanded. Plugin `agents/` is no longer loaded (decided 2026-11-17, PL-6; until PL-6 lands the code still loads it). |
+| Claude | `.claude-plugin/plugin.json`, `skills/`, `.mcp.json` or inline `mcpServers` | Read only. Claude variables such as `${CLAUDE_PLUGIN_ROOT}` are not expanded. Plugin `agents/` is no longer loaded (decided 2026-11-17, PL-6). |
 | Claude marketplace | `.claude-plugin/marketplace.json` | Read only. Never written. |
 
 Agent Plugins 1.0 rules:
@@ -60,7 +60,7 @@ Agent Plugins 1.0 rules:
 - `skills/`: each direct subdirectory with a `SKILL.md`. Not recursive.
 - `mcp.json`: its `$schema` version must match `plugin.json`, or MCP is off for that plugin. `stdio` `command` is one token with no expansion. `args`, `env` and `cwd` expand only `${PLUGIN_ROOT}` and `${PLUGIN_DATA}`, and `env` may not set those names. `streamable-http` needs HTTPS unless the host is loopback. A bad server is skipped and reported.
 - Every declared path must resolve inside the plugin root. Unknown `extensions` namespaces are ignored.
-- Ignored contents: hooks, commands, agents, prompts, themes and providers (agents after PL-6). The plugin still loads, and `/plugin list` reports what was skipped.
+- Ignored contents: hooks, commands, agents, prompts, themes and providers. The plugin still loads, and `/plugin list` reports what was skipped.
 
 Written: ProposePlugin writes one Agent Plugins package only. Never Claude or Copilot layouts, never `marketplace.json`.
 
@@ -79,7 +79,7 @@ Written: ProposePlugin writes one Agent Plugins package only. Never Claude or Co
 
 - Commands: `/plugin marketplace add|list|refresh`, `/plugin install|remove [--scope user|project]`, `/plugin list`, `/plugin update [name]`, `/plugin trust`.
 - Marketplaces are git repositories. Git runs with `GIT_TERMINAL_PROMPT=0`. Values never reach git as options. `ext::` and `fd::` are refused. A symlink that leaves the plugin folder refuses the install. `npm` sources are refused.
-- Only the official directory is pre-trusted. Its URL in code is an assumption, `https://github.com/anthropics/claude-plugins-official`, not stated in the docs.
+- Two built-in marketplaces are pre-trusted: the official directory (`claude-plugins-official`, URL in code an assumption: `https://github.com/anthropics/claude-plugins-official`, not stated in the docs) and `hoo-plugins` (`https://github.com/kolisachint/hoo-plugins`). Both are listed first; a user-added marketplace with a built-in name is not listed.
 - `marketplace add <src> --trust` marks a marketplace trusted. Without it, an install still succeeds (the user typed it), but its MCP servers need a grant in `/mcp`.
 - Project plugins need one folder grant. The fingerprint covers every file (SHA-256 of path and bytes). Any change asks again.
 - If the install records cannot be read, no marketplace counts as trusted (fail closed).
@@ -115,6 +115,8 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 | `hoocode:extension/tool`: `list-tools() -> list of {name, description, input-schema-json}`, `call(name, args-json) -> result-json` | ours | n/a |
 | `hoocode:extension/host`: `config-get`, `log` | ours | no |
 
+The `wit/` package holds only hoocode's interfaces; WASI 0.2 interfaces are provided by the host and included by each plugin's own world (no WASI WIT is vendored: MIT-only repo).
+
 - API keys (for example Brave, Tavily) come through `config-get` from user settings.
 - Not in 0.1:
   - Workspace read and write (0.2, with its first consumer). Writes will count as Write and Edit.
@@ -127,13 +129,14 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 
 ### Host runtime
 
-- One owner crate links wasmtime (listed under `owners` in `scripts/ci/dep-firewall.json`). Always on. No cargo feature (one configuration to test).
+- One owner crate, `hoocode-code-wasm`, links wasmtime (listed under `owners` in `scripts/ci/dep-firewall.json`). Always on. No cargo feature (one configuration to test).
 - wasmtime 48 LTS. Patch updates when advisories land. Move to the next LTS (60) once a year. Track wasmtime security advisories: the sandbox is our security boundary.
-- Toolchain: wasmtime 48 needs rustc 1.95. The `rust-toolchain.toml` pin moves to the current stable, and `rust-version` rises to at least 1.95, with PL-7 (EN-7 then checks the new value).
-- Feature trimming: keep `cranelift`, `component-model`, `async`. Turn off `wat`, `profiling`, `cache`, `coredump`, `debug-builtins`, `pooling-allocator` unless PL-7 shows a need.
+- Toolchain: wasmtime 48 needs rustc 1.95. Since PL-7, `rust-toolchain.toml` pins 1.100.0 and `rust-version` is 1.95 (EN-7 checks it).
+- Features (PL-7): `wasmtime` with `default-features = false` and `std`, `runtime`, `cranelift`, `component-model`, `async`, `parallel-compilation`; `wasmtime-wasi` with `p2`; `wasmtime-wasi-http` with `p2`, `default-send-request`. Off: `wat`, `profiling`, `cache`, `coredump`, `debug-builtins`, `pooling-allocator`, `gc`, `threads`, `component-model-async`. No transitive dependency turns them back on (`cargo tree -e features`). In 48, `Config::async_support` is a deprecated no-op.
 - Precompile at install or trust into the `.cwasm` cache. Key: file SHA-256, wasmtime version, engine config. Loading a `.cwasm` is native code via an unsafe deserialize, so the folder is 0700 and owned by the user.
 - A fresh store and instance per call (`InstancePre`). No state between calls. Persistent state goes in plugin data.
 - Subagent processes load from the same cache.
+- `HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK=1` (internal, tests only, not in `--help`) lets loopback through the SSRF block. It is read from the environment only, never from plugin config.
 
 ### Naming
 
@@ -144,9 +147,9 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 
 ### Distribution
 
-- Official marketplace: repo `hoocode-official-plugins`, a listing only (`marketplace.json` entries). Pre-trusted alongside the existing official directory (PL-12).
-- `web-plugins`: web plugins for hoocode. Its thin crate implements `hoocode:extension` on the webtools crates and builds `dev.hoocode/extension.wasm` in CI. It holds `plugin.json`, the skill and the component.
-- `webtools` stays hoocode-agnostic: a library, plus its native CLI and MCP server. It gains a `Transport` trait (native reqwest, and `wasi:http`) and WASM-compatible crate features. It stops reading `~/.hoocode/settings.json`.
+- Official marketplace: repo `hoo-plugins` (planned name `hoocode-official-plugins`), a listing only (`marketplace.json` entries). Pre-trusted alongside the existing official directory (PL-12).
+- `hoo-web-plugin` (the webtools repo, renamed): the webtools libraries, native CLI and MCP server, plus the hoocode plugin package in `plugin/` (`plugin.json`, the skill, the component crate in `plugin/component/` and the built `dev.hoocode/extension.wasm`). A marketplace entry points at the repo with path `plugin`.
+- The webtools libraries stay hoocode-agnostic. They have a `Transport` trait (one hop, no redirects; native reqwest, and `wasi:http` behind the `wasi` feature) and build for `wasm32-wasip2`. The CLI reads its own `~/.config/webtools/config.json` (`WEBTOOLS_CONFIG`), not `~/.hoocode/settings.json`.
 - MCP server binaries are expected on PATH. Plugins do not ship per-platform binaries.
 
 ### Measurements (2026-11-17)
@@ -188,6 +191,25 @@ CI fit:
 
 Accepted by the user 2026-11-17.
 
+### PL-7 measurements (2026-11-17)
+
+Single runs, same machine (4 vCPU, 15 GB), rustc 1.100.0. As-is hoocode vs. a scratch copy with wasmtime, wasmtime-wasi and wasmtime-wasi-http 48.0.9, trimmed (features under Host runtime). A probe in `hoocode-code-main` builds an engine, a linker with `wasi:p2` and `wasi:http`, and instantiates a component, so the code is linked. Untrimmed is the table above (wasmtime 51.0.0-rc.1, rustc 1.94.1), so its column is a different version and toolchain.
+
+| Measure | As-is | Untrimmed (above) | Trimmed 48 | Trimmed change | Share of untrimmed cost left |
+|---|---|---|---|---|---|
+| Clean `cargo check -p hoocode-code-main` | 67.8 s | +50.4 s (+75%) | 96.1 s | +28.3 s (+42%) | 56% |
+| Clean dev build | 115.5 s | +73.3 s (+69%) | 149.4 s | +33.9 s (+29%) | 46% |
+| Clean release build | 300.6 s | +213 s (+75%) | 408.1 s | +107.5 s (+36%) | 50% |
+| Incremental, touch `main.rs` | 1.5 s | +1.3 s | 2.3 s | +0.8 s | 62% |
+| Incremental, touch `hoocode-code-tools` | 5.1 s | +1.7 s | 5.5 s | +0.4 s | 24% |
+| Units compiled | 356 | +88 | 421 | +65 | 74% |
+| Peak build memory, release | 1.12 GiB | x2.2 | 2.24 GiB | x2.0 | about the same |
+| `target/` after dev + release | 2.8 GB | +2 GB | 4.3 GB | +1.5 GB | 75% |
+| Release binary (stripped) | 35.2 MiB | +13.5 MiB | 49.4 MiB | +14.2 MiB | not cut |
+| `hoocode --version` | 3.9 ms | noise | 3.5 ms | noise | — |
+
+Reading: trimming halves the added build time (clean check, dev and release) and cuts incremental and disk cost. It does not cut the binary size or the peak build memory: thin LTO already dropped the unused features from the binary, and cranelift is most of what remains.
+
 ## Decisions
 
 | Date | Decision |
@@ -204,29 +226,43 @@ Accepted by the user 2026-11-17.
 | 2026-11-17 | The internal contract is the WIT world `hoocode:extension@0.1.0`, shaped like an MCP tool. 0.1 has `wasi:http` (gated), plugin-data filesystem, clocks, random, `config-get` and `log`. Workspace access waits for 0.2. |
 | 2026-11-17 | One trust decision per plugin covers MCP and WASM. The gate applies to every gated host call. Only user or project settings bypass it. Plugins suggest permissions, never grant them. |
 | 2026-11-17 | Subagents get WASM plugin tools (gated calls via clearance). Never MCP plugin tools or plugin-management tools. |
+| 2026-11-17 | Agent tool lists accept `ext_*` (all plugin WASM tools). The built-in general-purpose agent has it; read-only built-ins do not, since plugin tools may write in workspace 0.2. |
 | 2026-11-17 | Names: `ext_<plugin>_<tool>` and `mcp_<plugin>_<server>_<tool>`. Built-ins are never shadowed. |
 | 2026-11-17 | wasmtime 48 LTS, owned by one crate, always on. Toolchain pin to current stable, `rust-version` at least 1.95. Build and size cost accepted (Measurements). |
 | 2026-11-17 | v1 is the webtools plugin only: `web-plugins` builds the component on the webtools crates; `hoocode-official-plugins` lists it; hoocode deletes its web helpers and `webtools.*` settings. Supersedes the 2026-11-06 web tools row and AG-1 (now PL-12). |
 | 2026-11-17 | Notebooks wait for demand. Editing is internal (own serde_json editor, byte-identical round trips) with workspace 0.2. Execution is a skill using `jupyter execute`; an MCP server only for stateful kernels. |
 | 2026-11-17 | MCP server binaries are expected on PATH. |
 | 2026-11-17 | A test-only setting may allow loopback through the SSRF block. It is never readable from plugin config. |
+| 2026-11-17 | PL-7: toolchain pinned to 1.100.0, `rust-version` 1.95. Trimmed wasmtime 48.0.9 halves the added clean build time (release +36% instead of +75%) but not the binary (+14.2 MiB) or peak build memory (x2.0). Stop rule: build cost is noticeably cut, size is not; the user decides before host code (PL-9). |
+| 2026-11-17 | `wit/` defines `hoocode:extension@0.1.0` with only `types`, `tool` and `host`; the host provides WASI 0.2 (`wasi:cli/imports`, `wasi:http/outgoing-handler`) and plugins include it in their own world. WASI WIT is not vendored (MIT only). |
+| 2026-11-17 | Plugin settings live under `pluginConfig.<plugin>.<key>` (`extensions` is an existing settings key). |
+| 2026-11-17 | A WASM component loads under the same trust as the plugin's MCP servers (`marketplace_trusted`); untrusted plugins' components are skipped with a diagnostic. |
+| 2026-11-17 | Network calls from a WASM tool ask once per origin per tool call (changed 2026-11-18), as WebFetch. Origin is scheme, host and port. Later requests to the same origin in the call (redirect hops) do not ask again, but each passes the SSRF block. A request to another origin asks again, and a denial holds only for its own origin. A URL with no origin is refused without asking. |
+| 2026-11-17 | The WASM host sends HTTP itself (hyper, rustls with webpki roots, HTTP/1.1 only) and connects only to the addresses the SSRF check resolved, so DNS rebinding cannot reach a private address. wasmtime-wasi-http's `default-send-request` feature is off. |
+| 2026-11-17 | The 30 s call limit and Esc are wall-clock, not only epoch ticks, so a call blocked in host I/O stops too. Time spent waiting on the permission prompt does not count. Response bodies have a 600 s between-bytes timeout. |
+| 2026-11-17 | Plugin WASM tools load in the main session and subagents, but not in light mode, with `--no-tools`, or when a `--tools` list names no `ext_` tool (same rule as MCP). |
+| 2026-11-17 | The webtools repo is renamed `hoo-web-plugin` and also holds the plugin package (`plugin/`); no separate `web-plugins` repo. The official listing is `hoo-plugins`. The webtools CLI reads `~/.config/webtools/config.json` and env vars, never hoocode settings. |
+| 2026-11-17 | Built-in web helpers, `--enable-webtools`, `enableWebTools` and `webtools.*` settings are removed; web access is the webtools plugin (PL-12). |
+| 2026-11-18 | Plugin skills' `allowed-tools` is parsed and warned about, never honoured; the approval record is removed (PL-5). |
+| 2026-11-18 | Plugin tools are live without `/reload` (PL-4). The plugin set's generation counter (`hoocode-code-plugins::generation`) moves on every `set_current`. A session with a `PluginSource` compares it before each prompt, between the turns of a run and on `/reload`, and when it changes it rebuilds the `ext_` tools (same trust rule, gate and cache as at start, names taken by built-ins and its own tools skipped) and its plugin MCP hub (the old hub is shut down, and the new hub's servers keep their trust). `/plugin` refreshes at once and asks for MCP trust; a model install is followed at the next turn, and its MCP trust is asked when the turn ends. Skills still load on `/reload`. A build problem is a warning, shown like the other plugin notices. Chosen over a full `/reload` on every change, which would replay the transcript and reset the editor. |
+| 2026-11-18 | pluginConfig is read from user settings only (a project cannot configure a plugin). The project `.hoocode/settings.json` comes from the working tree, which may be untrusted. In agent definitions, WebFetch/WebSearch name the webtools plugin tools (`ext_webtools_fetch`, `ext_webtools_search`); to keep an agent off the network entirely, deny `ext_*`. |
 
 ## Open
 
 | ID | Item | Size | Trigger or gate | Design notes |
 |---|---|---|---|---|
-| PL-1 | Drop Copilot and `.agents-plugin` plugin-root markers | S | None | `hoocode-code-resources/src/skills.rs` `is_plugin_root` still lists `.agents-plugin/plugin.json`, `.github/plugin/plugin.json` and `.github/copilot-plugin.json`. Keep the native and Claude markers. |
-| PL-2 | Rewrite the plugin-authoring skill text | S | None | `builtin_skills.rs:47` names `UpdatePlugin` and hooks. Its tests pin the text, so change both together. Align the text with the 2026-11-17 decisions. |
-| PL-3 | Fix the TUI plugin tool list | S | None | `hoocode-code-tui-widgets/src/tools/plugins.rs` names `SuggestPluginInstall` (not a tool) and omits `UninstallPlugin`. |
-| PL-4 | Live reload of plugin tools | M | Users hit a stale tool list | A tool change needs `/reload` today. Route the change through the same reload path as install. |
-| PL-5 | Enforce `allowed-tools` or delete the approval | S | Decision | Nothing reads the approved list. Either gate tools with it, or delete the record and keep the warning. |
-| PL-6 | Stop loading Claude plugin `agents/` | S | None | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
-| PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Same benchmark as Measurements. Stop rule applies. Bump `rust-toolchain.toml` and `rust-version`. |
-| PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | PL-7 | Interfaces as in Contract. Tag it so plugin repos can pin. |
-| PL-9 | M2: WASM host | L | PL-8 | Owner crate. Loader for `dev.hoocode/extension.wasm`, `.cwasm` cache, per-call instances, limits, `wasi:http` with gate and SSRF block, `config-get`, names, registry origin tag, subagent clearance. Check musl and ubuntu-24.04-arm builds. |
-| PL-10 | M3: webtools `Transport` trait and WASM features (webtools repo) | M | PL-8 | One GET without redirects per hop (fetch already loops by hand). Five search call sites. DNS guard moves to the host. Native CLI and MCP unchanged. Stop reading `~/.hoocode/settings.json`. |
-| PL-11 | M4: `web-plugins` component and package | M | PL-9, PL-10 | Builds `extension.wasm` in CI; skill on fetch and search; `plugin.json`. |
-| PL-12 | M5: end to end and cleanup | M | PL-11 | List in `hoocode-official-plugins` and pre-trust it. Tests: marketplace add, install, trust; `ext_webtools_fetch` and `ext_webtools_search` work through a mock LLM in the main session and a subagent (`subagent_evals`); a gated call prompts; the SSRF block refuses a private IP (loopback allowed only by the test setting). Delete hoocode `webfetch`/`websearch` helpers, `--enable-webtools`, `enableWebTools`, `webtools.*` settings. Update `docs/user/` and `docs/maps/` in the same commit. Replaces AG-1. |
+| PL-1 | Drop Copilot and `.agents-plugin` plugin-root markers | S | Done 2026-11-18 | `hoocode-code-resources/src/skills.rs` `is_plugin_root` still lists `.agents-plugin/plugin.json`, `.github/plugin/plugin.json` and `.github/copilot-plugin.json`. Keep the native and Claude markers. |
+| PL-2 | Rewrite the plugin-authoring skill text | S | Done 2026-11-18 | `builtin_skills.rs:47` names `UpdatePlugin` and hooks. Its tests pin the text, so change both together. Align the text with the 2026-11-17 decisions. |
+| PL-3 | Fix the TUI plugin tool list | S | Done 2026-11-18 | `hoocode-code-tui-widgets/src/tools/plugins.rs` names `SuggestPluginInstall` (not a tool) and omits `UninstallPlugin`. |
+| PL-4 | Live reload of plugin tools | M | Done 2026-11-18 | Plugin tools (`ext_`) and plugin MCP servers follow the plugin set at the next turn, from `/plugin`, the model's plugin tools, or `/reload`. See the 2026-11-18 decisions. |
+| PL-5 | Enforce `allowed-tools` or delete the approval | S | Done 2026-11-18 | Approval record and its trust-file field deleted. `allowed-tools` is parsed and warned about as ignored (`hoocode-code-plugins/src/skills.rs` `ignore_allowed_tools`). Old trust files still load. |
+| PL-6 | Stop loading Claude plugin `agents/` | S | Done 2026-11-17 | `hoocode-code-plugins/src/load.rs` ~309 and `lib.rs` `agent_files`. Treat `agents/` like the other ignored folders: warn and skip. Update `/plugin list`. |
+| PL-7 | M0: measure trimmed wasmtime 48 and the toolchain bump | S | Gates PL-8 to PL-12 | Done 2026-11-17: toolchain bumped, numbers in PL-7 measurements. Waits for the user's go on the stop rule. |
+| PL-8 | M1: WIT world `hoocode:extension@0.1.0` in `wit/` | S | Done 2026-11-17 (tag `wit-v0.1.0` pending) | Interfaces as in Contract. Tag it so plugin repos can pin. |
+| PL-9 | M2: WASM host | L | Done 2026-11-17 (x86_64 musl: tests pass, static release binary 50.0 MiB; ubuntu-24.04-arm at the next release rehearsal) | Owner crate. Loader for `dev.hoocode/extension.wasm`, `.cwasm` cache, per-call instances, limits, `wasi:http` with gate and SSRF block, `config-get`, names, registry origin tag, subagent clearance. Check musl and ubuntu-24.04-arm builds. |
+| PL-10 | M3: webtools `Transport` trait and WASM features (`hoo-web-plugin` repo) | M | Done 2026-11-17 | One GET without redirects per hop (fetch already loops by hand). Five search call sites. DNS guard moves to the host. Native CLI and MCP unchanged. Stop reading `~/.hoocode/settings.json`. |
+| PL-11 | M4: plugin component and package (`hoo-web-plugin/plugin/`) | M | Done 2026-11-17 (branches `claude/eager-pascal-o0xkwr` in hoocode, hoo-web-plugin, hoo-plugins; live install needs them merged) | Builds `extension.wasm` in CI; skill on fetch and search; `plugin.json`. |
+| PL-12 | M5: end to end and cleanup | M | Done 2026-11-17 (branches `claude/eager-pascal-o0xkwr` in hoocode, hoo-web-plugin, hoo-plugins; live install needs them merged) | List in `hoocode-official-plugins` and pre-trust it. Tests: marketplace add, install, trust; `ext_webtools_fetch` and `ext_webtools_search` work through a mock LLM in the main session and a subagent (`subagent_evals`); a gated call prompts; the SSRF block refuses a private IP (loopback allowed only by the test setting). Delete hoocode `webfetch`/`websearch` helpers, `--enable-webtools`, `enableWebTools`, `webtools.*` settings. Update `docs/user/` and `docs/maps/` in the same commit. Replaces AG-1. |
 | PL-13 | Notebook plugin | L | A user asks for notebooks | Workspace interface 0.2. Own `serde_json::Value` editor with `preserve_order`, indent 1, no ASCII escaping, new cell ids via `wasi:random`. Execution: a skill using `jupyter execute`; MCP server only for stateful kernels. |
 | PL-14 | Revisit hooks | S | Agent Plugins 1.1 final | Read the portable hooks contract. Decide whether to support it. |
 | PL-15 | Second-consumer review | S | Two releases after PL-12 | If only one WASM plugin exists, record it and decide whether to keep the host. |

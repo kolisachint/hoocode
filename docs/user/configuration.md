@@ -50,18 +50,49 @@ state, and `/mcp login <server>` signs in to one that needs it.
 
 ## Plugins
 
-Plugins add skills, subagents and MCP servers. They live in `~/.agents/plugins/`
+Plugins add skills, MCP servers and tools. They live in `~/.agents/plugins/`
 (yours) and `.agents/plugins/` (the project's). Manage them with `/plugin` in a
-session: add a marketplace, then install from it.
+session: add a marketplace, then install from it. A plugin's tools and MCP servers
+are live as soon as you install, update or remove it, with no `/reload`. Its skills
+load on `/reload`.
 
 ```text
 /plugin marketplace add <git-url-or-owner/repo>
 /plugin install <plugin>@<marketplace>
 ```
 
+Two marketplaces are built in and trusted: `claude-plugins-official` and
+`hoo-plugins` (`/plugin install webtools@hoo-plugins`). Installs from them need no
+extra grant.
+
 The same commands work from the shell, without a session: `hoocode install`,
 `hoocode remove`, `hoocode list` and `hoocode plugin ...`. See
 [Commands](commands.md).
+
+A plugin may also ship a WASM component at `dev.hoocode/extension.wasm`. Its tools
+appear to the model as `ext_<plugin>_<tool>`. They are live as soon as the plugin is
+installed, updated or removed, with no `/reload`.
+
+- A component runs only when its plugin is trusted, the same trust that lets the
+  plugin's MCP servers start without a `/mcp` grant. An untrusted plugin's component
+  is skipped, and the session says so under diagnostics.
+- Web access (fetch and search) is the webtools plugin, not a built-in tool: install it
+  with `/plugin install webtools@hoo-plugins`. Its tools are `ext_webtools_fetch` and
+  `ext_webtools_search`. Its settings go under `pluginConfig.webtools.<key>`
+  (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`,
+  `searchFallback`). A call that reaches the network asks you like `WebFetch`. Later
+  requests in the same call (for example redirects) do not ask again.
+- A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in your user
+  `settings.json` (`~/.hoocode/settings.json`). It is read from user settings only, never
+  from a project's `.hoocode/settings.json`, so a cloned repository cannot point a plugin
+  at its own server. Only string values are read:
+
+```json
+{ "pluginConfig": { "webtools": { "braveApiKey": "..." } } }
+```
+
+- hoocode compiles each component once into `~/.hoocode/cache/wasm`. The folder is
+  safe to delete; the next start compiles again.
 
 `hoocode config` opens a list for turning skills, prompts and other resources on or
 off. Themes are not in it: pick one with `/theme`.

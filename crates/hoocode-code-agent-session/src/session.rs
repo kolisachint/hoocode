@@ -22,6 +22,7 @@ use hoocode_ai_types::{
     AbortSignal, AssistantMessage, Content, ImageContent, Model, TextContent, ThinkingLevel,
     UserContent, UserMessage,
 };
+use hoocode_code_mcp::PluginServers;
 use hoocode_code_models::{clamp_effort, AuthLookup, ModelRegistry, ResolvedScoped};
 use hoocode_code_prompts::BuildSystemPromptOptions;
 use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
@@ -42,7 +43,8 @@ use crate::hooks::{
     ExtensionError, ExtensionHooks, NoExtensions, ResourceLoader, SessionEvent, SessionStartEvent,
     TemplateKind,
 };
-use crate::mcp::{McpHub, SHUTDOWN_WAIT};
+use crate::mcp::{McpHub, SHUTDOWN_WAIT, STARTUP_WAIT};
+use crate::plugin_source::PluginSource;
 use crate::retry::RetryState;
 use crate::stats::{self, ContextUsage, ForkableMessage, SessionStats, TranscriptSelection};
 use hoocode_agent_compaction::CompactionResult;
@@ -457,6 +459,18 @@ struct State {
     mcp_tools: Vec<ToolDefinition>,
     mcp_generation: Option<u64>,
     mcp_auto_active: bool,
+    /// Plugin tools as the attached plugin source last built them (PL-4).
+    plugin_tools: Vec<ToolDefinition>,
+    /// The plugin generation the tools above were built from.
+    plugin_generation: Option<u64>,
+    /// The MCP servers of the plugins the MCP hub was built from (`None`: the source does not
+    /// say, so every plugin change builds the hub again).
+    plugin_mcp_servers: Option<Vec<PluginServers>>,
+    /// Problems the last plugin build found, until the UI takes them.
+    plugin_notices: Vec<String>,
+    /// Print and rpc wait here, once per new hub, up to `STARTUP_WAIT` for its servers (set by
+    /// the entry point: the TUI does not wait).
+    wait_for_mcp_startup: bool,
     tool_definitions: Vec<(String, DefinitionEntry)>,
     tool_prompt_snippets: HashMap<String, String>,
     tool_prompt_guidelines: HashMap<String, Vec<String>>,
@@ -492,6 +506,8 @@ struct Inner {
     run_ended: std::sync::atomic::AtomicBool,
     compaction: Mutex<CompactionState>,
     mcp: Mutex<Option<Arc<McpHub>>>,
+    /// Builds the plugin tools and MCP hub again when the plugins change (PL-4).
+    plugin_source: Mutex<Option<Arc<dyn PluginSource>>>,
     /// The completion notices of the session's background shell jobs, when it has any.
     job_notices: Mutex<Option<Arc<crate::services::JobNotices>>>,
     /// Tool calls of the last persisted assistant message that have no
@@ -717,6 +733,7 @@ impl AgentSession {
             run_ended: std::sync::atomic::AtomicBool::new(false),
             compaction: Mutex::new(CompactionState::default()),
             mcp: Mutex::new(None),
+            plugin_source: Mutex::new(None),
             job_notices: Mutex::new(None),
             unanswered_calls: Mutex::new(UnansweredCalls::default()),
         });
@@ -735,10 +752,11 @@ impl AgentSession {
                 };
                 // Servers that finished connecting since the last turn join it now
                 // (docs/design/mcp.md: tool-list changes apply at the next turn).
-                AgentSession {
+                let session = AgentSession {
                     inner: inner.clone(),
-                }
-                .sync_mcp_tools();
+                };
+                session.refresh_plugins();
+                session.sync_mcp_tools();
                 if !std::mem::take(&mut lock(&inner.state).runtime_context_dirty) {
                     return Ok(None);
                 }
@@ -1059,6 +1077,7 @@ impl AgentSession {
                 .await;
         }
         self.settings().reload();
+        self.refresh_plugins();
         self.inner.resource_loader.reload();
         self.build_runtime(Some(self.get_active_tool_names()), true);
         // `session_start` with reason `reload`: handlers re-read their state
@@ -1292,12 +1311,12 @@ impl AgentSession {
         self.inner
             .allowed_tool_names
             .as_ref()
-            .is_none_or(|allowed| allowed.contains(name))
+            .is_none_or(|allowed| tool_listed(allowed, name))
             && !self
                 .inner
                 .disallowed_tool_names
                 .as_ref()
-                .is_some_and(|denied| denied.contains(name))
+                .is_some_and(|denied| tool_listed(denied, name))
     }
 
     fn tool_context_factory(&self) -> ToolContextFactory {
@@ -1373,10 +1392,12 @@ impl AgentSession {
 
         let mcp_tools = lock(&self.inner.state).mcp_tools.clone();
         let mcp_names: HashSet<String> = mcp_tools.iter().map(|t| t.name.clone()).collect();
+        let plugin_tools = lock(&self.inner.state).plugin_tools.clone();
         let custom: Vec<ToolDefinition> = self
             .inner
             .custom_tools
             .iter()
+            .chain(plugin_tools.iter())
             .chain(mcp_tools.iter())
             .filter(|d| self.is_allowed_tool(&d.name))
             .cloned()
@@ -1456,7 +1477,7 @@ impl AgentSession {
             next_active.extend(
                 registry
                     .iter()
-                    .filter(|t| allowed.contains(&t.name))
+                    .filter(|t| tool_listed(allowed, &t.name))
                     .map(|t| t.name.clone()),
             );
         } else if include_all_custom {
@@ -1517,6 +1538,142 @@ impl AgentSession {
     /// The MCP hub attached by [`attach_mcp`](Self::attach_mcp).
     pub fn mcp(&self) -> Option<Arc<McpHub>> {
         lock(&self.inner.mcp).clone()
+    }
+
+    /// Attach the session's plugin source (PL-4) and register its tools now. Returns the problems
+    /// the build found. Attach before [`attach_mcp`](Self::attach_mcp): a hub attached later is
+    /// the one the source's refresh replaces.
+    pub fn attach_plugins(&self, source: Arc<dyn PluginSource>) -> Vec<String> {
+        let generation = source.generation();
+        let servers = source.mcp_servers();
+        let (tools, notices) = source.tools(&self.tool_names_taken());
+        let auto_activate = source.auto_activate();
+        *lock(&self.inner.plugin_source) = Some(source);
+        {
+            let mut state = lock(&self.inner.state);
+            state.plugin_generation = Some(generation);
+            state.plugin_mcp_servers = servers;
+        }
+        self.set_plugin_tools(tools, auto_activate);
+        notices
+    }
+
+    /// Print and rpc call this with `true`: a plugin change that builds a new MCP hub waits, on
+    /// a blocking thread, up to `STARTUP_WAIT` for its servers before the next prompt. The TUI
+    /// passes `false` and never waits.
+    pub fn set_wait_for_mcp_startup(&self, wait: bool) {
+        lock(&self.inner.state).wait_for_mcp_startup = wait;
+    }
+
+    /// Brings the plugin tools and the MCP hub in line with the plugins, when they changed since
+    /// the last check. Runs before each prompt, between the turns of a run and on `/reload`, so
+    /// a change made by `/plugin`, by the model's plugin tools or by hand applies from the next
+    /// turn. The problems of the build wait for [`take_plugin_notices`](Self::take_plugin_notices).
+    pub fn refresh_plugins(&self) {
+        self.refresh_plugins_swapped();
+    }
+
+    /// [`refresh_plugins`](Self::refresh_plugins), returning the new MCP hub when it built one.
+    fn refresh_plugins_swapped(&self) -> Option<Arc<McpHub>> {
+        let source = lock(&self.inner.plugin_source).clone()?;
+        // Read the generation before building: a change made meanwhile is built next time.
+        let generation = source.generation();
+        {
+            let mut state = lock(&self.inner.state);
+            if state.plugin_generation == Some(generation) {
+                return None;
+            }
+            state.plugin_generation = Some(generation);
+        }
+        let servers = source.mcp_servers();
+        let (tools, notices) = source.tools(&self.tool_names_taken());
+        lock(&self.inner.state).plugin_notices.extend(notices);
+        self.set_plugin_tools(tools, source.auto_activate());
+        // Only a change to the plugins' MCP servers builds the hub again: a running server keeps
+        // its connection and its tools when just the plugin tools changed.
+        let servers_changed = {
+            let mut state = lock(&self.inner.state);
+            let changed = servers.is_none() || state.plugin_mcp_servers != servers;
+            state.plugin_mcp_servers = servers;
+            changed
+        };
+        if !servers_changed || self.mcp().is_none() {
+            return None;
+        }
+        let hub = source.mcp_hub()?;
+        let old = lock(&self.inner.mcp).replace(hub.clone());
+        // A new hub has its own tool-list generation, so the sync must not skip it.
+        lock(&self.inner.state).mcp_generation = None;
+        if let Some(old) = old {
+            // Stops on the io runtime: the turn being prepared does not wait for it.
+            old.shutdown_in_background();
+        }
+        self.sync_mcp_tools();
+        Some(hub)
+    }
+
+    /// Waits, on a blocking thread, for the servers of a new hub to finish starting, up to
+    /// `STARTUP_WAIT`, when this session waits (print and rpc). A server still connecting then
+    /// is reported as a notice and its tools are picked up at a later turn.
+    async fn wait_for_new_mcp_hub(&self, hub: Arc<McpHub>) {
+        let slow = tokio::task::spawn_blocking(move || hub.wait_for_startup(STARTUP_WAIT))
+            .await
+            .unwrap_or_default();
+        {
+            let mut state = lock(&self.inner.state);
+            for server in slow {
+                state.plugin_notices.push(format!(
+                    "MCP server {} did not finish starting within {} s; its tools are skipped for this run.",
+                    server.name,
+                    STARTUP_WAIT.as_secs()
+                ));
+            }
+        }
+        self.sync_mcp_tools();
+    }
+
+    /// The problems the last plugin build found, once: the caller shows them.
+    pub fn take_plugin_notices(&self) -> Vec<String> {
+        std::mem::take(&mut lock(&self.inner.state).plugin_notices)
+    }
+
+    /// Names a plugin tool must not take: the built-in tools and the session's own tools.
+    fn tool_names_taken(&self) -> Vec<String> {
+        let state = lock(&self.inner.state);
+        state
+            .base_tool_definitions
+            .iter()
+            .map(|t| t.name.clone())
+            .chain(self.inner.custom_tools.iter().map(|t| t.name.clone()))
+            .collect()
+    }
+
+    /// Replaces the plugin tools. A tool that is new is active at once when `auto_activate`; a
+    /// tool that is gone leaves the active set.
+    fn set_plugin_tools(&self, tools: Vec<ToolDefinition>, auto_activate: bool) {
+        let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
+        let previous: Vec<String> = {
+            let mut state = lock(&self.inner.state);
+            let previous = state.plugin_tools.iter().map(|t| t.name.clone()).collect();
+            state.plugin_tools = tools;
+            previous
+        };
+        if names.is_empty() && previous.is_empty() {
+            return;
+        }
+        let mut active: Vec<String> = self
+            .get_active_tool_names()
+            .into_iter()
+            .filter(|n| !previous.contains(n) || names.contains(n))
+            .collect();
+        if auto_activate {
+            for name in &names {
+                if !previous.contains(name) && !active.contains(name) {
+                    active.push(name.clone());
+                }
+            }
+        }
+        self.refresh_tool_registry(Some(active), false);
     }
 
     /// Takes the hub's tool list when it changed since the last sync. Runs before each prompt
@@ -1657,7 +1814,13 @@ impl AgentSession {
         options: PromptOptions,
         preflight: &Preflight,
     ) -> Result<()> {
+        let fresh_hub = self.refresh_plugins_swapped();
         self.sync_mcp_tools();
+        if let Some(hub) = fresh_hub {
+            if lock(&self.inner.state).wait_for_mcp_startup {
+                self.wait_for_new_mcp_hub(hub).await;
+            }
+        }
         if options.expand_prompt_templates && text.starts_with('/') {
             let (name, args) = Self::split_command(text);
             if self.inner.extensions.has_command(name) {
@@ -2380,6 +2543,13 @@ impl AgentSession {
     }
 }
 
+/// Whether a tool list (`--tools` / `--disallowed-tools`) names `name`. An entry is an exact
+/// tool name, or the one wildcard `ext_*`, which covers every plugin WASM tool
+/// (`ext_<plugin>_<tool>`). No other globbing.
+pub(crate) fn tool_listed(list: &HashSet<String>, name: &str) -> bool {
+    list.contains(name) || (list.contains("ext_*") && name.starts_with("ext_"))
+}
+
 #[cfg(test)]
 mod unanswered_tests {
     use super::*;
@@ -2456,5 +2626,46 @@ mod unanswered_tests {
         calls.closed.insert("a".into());
         calls.open.clear();
         assert!(!note_persisted(&mut calls, &result("a")));
+    }
+}
+
+#[cfg(test)]
+mod tool_listed_tests {
+    use super::tool_listed;
+    use std::collections::HashSet;
+
+    fn list(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn ext_wildcard_covers_plugin_tools_only() {
+        let allowed = list(&["Read", "ext_*"]);
+        assert!(tool_listed(&allowed, "ext_a_b"));
+        assert!(tool_listed(&allowed, "Read"));
+        assert!(!tool_listed(&allowed, "mcp_x"));
+        assert!(!tool_listed(&allowed, "Shell"));
+    }
+
+    #[test]
+    fn exact_names_match_without_wildcard() {
+        let allowed = list(&["ext_a_b"]);
+        assert!(tool_listed(&allowed, "ext_a_b"));
+        assert!(!tool_listed(&allowed, "ext_a_c"));
+    }
+
+    #[test]
+    fn only_the_exact_ext_star_entry_is_a_wildcard() {
+        // No general globbing: `ext_a*` or `*` match nothing.
+        let allowed = list(&["ext_a*", "*"]);
+        assert!(!tool_listed(&allowed, "ext_a_b"));
+        assert!(!tool_listed(&allowed, "mcp_x"));
+    }
+
+    #[test]
+    fn wildcard_in_disallowed_list_denies_plugin_tools() {
+        let denied = list(&["ext_*"]);
+        assert!(tool_listed(&denied, "ext_a_b"));
+        assert!(!tool_listed(&denied, "Read"));
     }
 }

@@ -166,7 +166,6 @@ mod defaults {
     /// Smallest non-zero memory limit, in MB (`performance.memory*LimitMb`).
     /// The default caps live in `hoocode_runtime::default_memory_limits_mb`.
     pub const MEMORY_FLOOR_MB: u64 = 256;
-    pub const WEBTOOLS_TIMEOUT_SECS: u64 = 15;
     pub const BRANCH_SUMMARY_RESERVE_TOKENS: u64 = 16384;
     pub const RETRY_MAX_RETRIES: u64 = 5;
     pub const RETRY_BASE_DELAY_MS: u64 = 2000;
@@ -693,31 +692,27 @@ impl SettingsManager {
             .unwrap_or(defaults::BASH_NICE)
     }
 
-    /// Webfetch/websearch timeout: the setting, else `*_WEBTOOLS_TIMEOUT`,
-    /// else 15; clamped to 1..=120.
-    pub fn webtools_timeout_secs(&self) -> u64 {
-        let clamp = |n: f64| n.floor().clamp(1.0, 120.0) as u64;
-        if let Some(configured) = finite(self.get_in("webtools", "timeoutSecs")) {
-            return clamp(configured);
-        }
-        if let Some(env) = hoocode_code_paths::env_override("WEBTOOLS_TIMEOUT") {
-            if let Ok(value) = env.trim().parse::<f64>() {
-                if value.is_finite() && value > 0.0 {
-                    return clamp(value);
-                }
-            }
-        }
-        defaults::WEBTOOLS_TIMEOUT_SECS
+    /// `pluginConfig.<plugin>.<key>`: one string setting of one plugin, from the user
+    /// (global) settings only. `None` when unset or not a string. A plugin reads only its
+    /// own subtree.
+    pub fn plugin_config(&self, plugin: &str, key: &str) -> Option<String> {
+        self.plugin_config_values(plugin).remove(key)
     }
 
-    /// `getWebtoolsSearch`: the user-level `webtools.search` block only,
-    /// since that is the file the webtools binary reads.
-    pub fn webtools_search(&self) -> Option<Value> {
-        defined(self.global.get("webtools")?.as_object()?.get("search")).cloned()
-    }
-
-    pub fn set_webtools_timeout_secs(&mut self, secs: i64) {
-        self.set_nested("webtools", "timeoutSecs", secs.clamp(1, 120).into());
+    /// Every string setting under `pluginConfig.<plugin>`, for a plugin's config lookup.
+    /// Read from the user (global) settings only: the project `.hoocode/settings.json`
+    /// comes from the working tree, which may be untrusted, so it cannot configure a
+    /// plugin (for example point webtools at another search server).
+    pub fn plugin_config_values(&self, plugin: &str) -> std::collections::BTreeMap<String, String> {
+        let subtree = defined(self.global.get("pluginConfig"))
+            .and_then(Value::as_object)
+            .and_then(|plugins| defined(plugins.get(plugin)))
+            .and_then(Value::as_object);
+        subtree
+            .into_iter()
+            .flatten()
+            .filter_map(|(key, value)| Some((key.clone(), value.as_str()?.to_owned())))
+            .collect()
     }
 
     pub fn disabled_tools(&self) -> Vec<String> {
@@ -1105,14 +1100,6 @@ impl SettingsManager {
         self.set("deferMcpSchemas", Some(enabled.into()));
     }
 
-    pub fn enable_web_tools(&self) -> bool {
-        self.bool_or("enableWebTools", false)
-    }
-
-    pub fn set_enable_web_tools(&mut self, enabled: bool) {
-        self.set("enableWebTools", Some(enabled.into()));
-    }
-
     pub fn enable_semantic_index(&self) -> bool {
         self.bool_or("enableSemanticIndex", true)
     }
@@ -1468,7 +1455,6 @@ impl SettingsManager {
         };
         WarningSettings {
             anthropic_extra_usage: flag("anthropicExtraUsage"),
-            websearch_api_key: flag("websearchApiKey"),
         }
     }
 
@@ -1477,9 +1463,6 @@ impl SettingsManager {
         let mut map = Map::new();
         if let Some(v) = warnings.anthropic_extra_usage {
             map.insert("anthropicExtraUsage".into(), v.into());
-        }
-        if let Some(v) = warnings.websearch_api_key {
-            map.insert("websearchApiKey".into(), v.into());
         }
         self.set("warnings", Some(Value::Object(map)));
     }

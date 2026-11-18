@@ -1,0 +1,64 @@
+/// The hoocode extension contract, version 0.1.0.
+///
+/// An internal plugin is a WASI 0.2 component that implements the `extension`
+/// world. The host provides the WASI 0.2 interfaces by linker; each plugin's own
+/// world includes them (see README.md). This package has no WASI dependencies.
+package hoocode:extension@0.1.0;
+
+/// Shared data types for tools and their errors.
+interface types {
+    /// One tool a plugin offers.
+    record tool-info {
+        /// Short tool name, without prefix. The host prefixes it as
+        /// `ext_<plugin>_<name>`, so use `search`, not `plugin-search-tool`.
+        name: string,
+        /// One sentence the model reads to decide when to call the tool.
+        description: string,
+        /// A JSON Schema object (as JSON text) describing the call arguments.
+        input-schema-json: string,
+    }
+
+    /// Why a tool call failed.
+    variant tool-error {
+        /// The arguments did not match the input schema. The payload explains why.
+        invalid-args(string),
+        /// No tool with this name exists in this plugin.
+        unknown-tool(string),
+        /// The tool ran and failed. The payload is a message for the model.
+        failed(string),
+    }
+}
+
+/// Tools the plugin exports to the host.
+interface tool {
+    use types.{tool-info, tool-error};
+
+    /// List the tools this plugin offers.
+    list-tools: func() -> list<tool-info>;
+
+    /// Run one tool. `args-json` is JSON text matching the tool's input schema.
+    /// On success the `string` is the result as JSON text.
+    /// Each call runs in a fresh instance: no state carries over between calls.
+    /// Limits: 30 seconds and 64 MB of memory per call.
+    call: func(name: string, args-json: string) -> result<string, tool-error>;
+}
+
+/// Services the host provides to the plugin.
+interface host {
+    /// Severity of a log message.
+    enum log-level { trace, debug, info, warn, error }
+
+    /// Read one of this plugin's own settings from the user's settings.
+    /// Returns only keys that belong to this plugin, never other settings.
+    /// Returns `none` when the key is not set.
+    config-get: func(key: string) -> option<string>;
+
+    /// Write a message to the host log. It is not shown to the model.
+    log: func(level: log-level, message: string);
+}
+
+/// The hoocode extension world. A plugin exports `tool` and imports `host`.
+world extension {
+    import host;
+    export tool;
+}

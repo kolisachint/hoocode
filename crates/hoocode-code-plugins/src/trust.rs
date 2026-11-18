@@ -113,13 +113,3 @@ pub fn trust_project_plugins(
         store.grant_project_plugins(&folder, &prompt.fingerprint);
     })
 }
-
-/// Record the user's approval of the `allowed-tools` list `tools` for the plugin skill `skill`
-/// (`<plugin>:<skill>`), in the trust file at `trust_path`.
-pub fn approve_skill_tools(
-    trust_path: &Path,
-    skill: &str,
-    tools: &[String],
-) -> Result<(), TrustError> {
-    TrustStore::update(trust_path, |store| store.approve_skill_tools(skill, tools))
-}

@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use hoocode_code_plugins::install::{self, Paths, Scope, UpdateOutcome};
-use hoocode_code_plugins::marketplace::{Registry, REGISTRY_FILE};
+use hoocode_code_plugins::marketplace::{
+    parse_index, EntrySource, Marketplace, Registry, HOO_NAME, HOO_URL, OFFICIAL_NAME,
+    REGISTRY_FILE,
+};
 
 use crate::common::write;
 
@@ -135,6 +138,7 @@ fn add_lists_the_marketplace_and_refuses_a_duplicate() {
     assert!(listed
         .iter()
         .any(|m| m.name == "claude-plugins-official" && m.trusted));
+    assert!(listed.iter().any(|m| m.name == HOO_NAME && m.trusted));
 
     let again = install::marketplace_add(&env.paths, &repo.display().to_string(), false);
     assert!(again.unwrap_err().contains("already listed"));
@@ -157,7 +161,7 @@ fn a_bad_marketplace_is_refused_and_leaves_nothing_behind() {
     assert!(install::marketplace_list(&env.paths)
         .unwrap()
         .iter()
-        .all(|m| m.name == "claude-plugins-official"));
+        .all(|m| m.name == OFFICIAL_NAME || m.name == HOO_NAME));
 
     // An index whose name is not a valid marketplace name.
     let bad_name = env.origin.join("bad-name");
@@ -569,4 +573,94 @@ fn add_with_trust_marks_the_marketplace_and_its_installs_trusted() {
     assert!(installed.trusted);
     let set = env.load();
     assert!(set.plugins[0].marketplace_trusted);
+}
+
+/// A copy of `marketplace.json` from the hoo-plugins repository. Keep it in step with that file.
+const HOO_INDEX: &str = r#"{
+  "name": "hoo-plugins",
+  "owner": {
+    "name": "kolisachint"
+  },
+  "description": "The official hoocode plugin marketplace: a listing of plugins for hoocode.",
+  "plugins": [
+    {
+      "name": "webtools",
+      "description": "Web fetch and search tools (WASM, gated network)",
+      "version": "0.6.0",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/kolisachint/hoo-web-plugin.git",
+        "path": "plugin",
+        "ref": "main"
+      }
+    }
+  ]
+}
+"#;
+
+#[test]
+fn both_built_in_marketplaces_are_listed_and_trusted() {
+    let env = Env::new();
+    let listed = install::marketplace_list(&env.paths).unwrap();
+    let names: Vec<&str> = listed.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(names, vec![OFFICIAL_NAME, HOO_NAME]);
+    assert!(listed.iter().all(|m| m.trusted));
+    assert_eq!(listed[1].url, HOO_URL);
+}
+
+#[test]
+fn a_user_marketplace_with_a_built_in_name_stays_filtered() {
+    let mut registry = Registry {
+        added: vec![Marketplace {
+            name: HOO_NAME.to_owned(),
+            url: "https://example.com/impostor.git".to_owned(),
+            trusted: false,
+            fetched_at: 0,
+        }],
+    };
+    let all = registry.all();
+    assert_eq!(all.iter().filter(|m| m.name == HOO_NAME).count(), 1);
+    let hoo = registry.find(HOO_NAME).unwrap();
+    assert_eq!(hoo.url, HOO_URL);
+    assert!(hoo.trusted);
+
+    // A fetch of hoo-plugins updates the registry, and the built-in is listed from it.
+    assert!(registry.set_fetched(HOO_NAME, 42));
+    assert_eq!(registry.find(HOO_NAME).unwrap().fetched_at, 42);
+    assert!(!registry.set_fetched("not-listed", 1));
+}
+
+#[test]
+fn a_fetch_of_hoo_plugins_is_saved_to_the_registry() {
+    let env = Env::new();
+    let mut registry = Registry::load(&env.paths.state.join(REGISTRY_FILE)).unwrap();
+    assert!(registry.set_fetched(HOO_NAME, 4242));
+    registry.save(&env.paths.state.join(REGISTRY_FILE)).unwrap();
+
+    let reloaded = Registry::load(&env.paths.state.join(REGISTRY_FILE)).unwrap();
+    let hoo = reloaded.find(HOO_NAME).unwrap();
+    assert_eq!(hoo.fetched_at, 4242);
+    assert!(hoo.trusted);
+}
+
+#[test]
+fn webtools_in_the_hoo_plugins_index_is_a_git_subfolder_at_main() {
+    let index = parse_index(HOO_INDEX).unwrap();
+    assert_eq!(index.name, HOO_NAME);
+    assert!(index.warnings.is_empty(), "{:?}", index.warnings);
+    let entry = index.entry("webtools").unwrap();
+    assert_eq!(entry.version, "0.6.0");
+    assert_eq!(
+        entry.description,
+        "Web fetch and search tools (WASM, gated network)"
+    );
+    assert_eq!(
+        entry.source,
+        EntrySource::Git {
+            url: "https://github.com/kolisachint/hoo-web-plugin.git".to_owned(),
+            path: Some("plugin".to_owned()),
+            git_ref: Some("main".to_owned()),
+            sha: None,
+        }
+    );
 }

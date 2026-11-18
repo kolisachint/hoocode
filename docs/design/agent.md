@@ -24,9 +24,7 @@ Numbers a contributor needs:
 | Late-fire window | 10 min | `store.rs` `LATE_FIRE_MINUTES` |
 | Turn chime | turn over 10 s; repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` |
 | Version check | once a day | `hoocode-code-update` |
-| Web timeout setting | 1 to 120 s | `settings/manager.rs` `webtools_timeout_secs` |
 | `/loop auto` default | 10 turns | `auto_loop.rs` |
-| Fetched page cap | 100000 bytes | `hoocode-code-tools/src/lib.rs` (helper, see plugins.md PL-12) |
 
 ## How it works
 
@@ -41,7 +39,6 @@ Numbers a contributor needs:
 | `Agent`, `AgentOutput` | `hoocode-code-subagents` | on | `Agent` starts a subagent. `AgentOutput` reads its result. |
 | `ShellOutput`, `ShellKill` | `hoocode-code-tool-bash` `job_tools.rs` | on when `enableBackgroundShell` (default true) and interactive | Background shell jobs. |
 | `TodoWrite` | `hoocode-code-tools-optin` `todo.rs` | on (`enableTodoWrite`, default true) | Main session only. |
-| `WebFetch`, `WebSearch` | names only | off (`enableWebTools` / `--enable-webtools`) | No tool definition is registered yet (plugins.md PL-12). |
 | `SearchPlugins`, `ListPlugins`, `InstallPlugin`, `UninstallPlugin`, `ProposePlugin` | `hoocode-code-tools-optin` `plugins.rs` | off (`enablePluginTools`) | Main session only. Takes effect at the next session. |
 | `mcp_<server>_<tool>` | `hoocode-code-mcp` and `hoocode-agent-mcp` | per server | See MCP client. |
 
@@ -111,14 +108,9 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 ### Web tools
 
-Current state:
-
-- `--enable-webtools` (`args.rs`) and `enableWebTools` (default false) add the names `WebFetch` and `WebSearch` to the active list (`services.rs`).
-- No `ToolDefinition` is built for either name, so the names activate nothing.
-- Helpers exist in `hoocode-code-tools/src/lib.rs`: `webfetch(url)` (30 s timeout, 100000-byte cap) and `websearch(query)` (DuckDuckGo HTML, 15 s timeout). Only tests call them.
-- Permission reach (`hoocode-code-permissions/src/lib.rs`) and TUI widgets (`hoocode-code-tui-widgets/src/tools/web.rs`) exist.
-- `webtools.timeoutSecs` is read by the settings pane only. Its env fallback is `HOOCODE_WEBTOOLS_TIMEOUT`. `webtools.search` is read by no code.
-- Decided 2026-11-17: fetch and search move to the webtools plugin (internal tier). PL-12 deletes the flag, helpers and settings. See plugins.md.
+- Web access is the webtools plugin, not a built-in tool: its tools are `ext_webtools_fetch` and `ext_webtools_search` (see plugins.md PL-12).
+- hoocode has no web flag, web settings or web helpers. `Claude` aliases `WebFetch` and `WebSearch` in agent frontmatter map to the plugin tools (`agent_frontmatter.rs`).
+- The permission gate still names a plugin's network calls `WebFetch` and `WebSearch` (`hoocode-code-permissions`), and the TUI renders those names and the plugin tools with `tools/web.rs`.
 
 ### DocSearch and capability index
 
@@ -131,7 +123,7 @@ Current state:
 
 - Extensions are MCP servers, Agent Skills, subagents, and WASM components shipped in plugins. Plugins: plugins.md.
 - Skills: `SKILL.md` frontmatter follows the Agent Skills rules. Problems are warnings. Plugin skills are named `<plugin>:<skill>`.
-- `allowed-tools` in a plugin skill is kept only when the user approves that exact list. The approval is stored in `mcp-trust.json`, keyed by `<plugin>:<skill>`. Nothing reads the list at run time (PL-5).
+- `allowed-tools` in a plugin skill is parsed, then dropped with a warning that it is ignored. hoocode never honours it, and records no approval (PL-5, 2026-11-18).
 - Overloaded word: "extension" also names mode extensions and UI requests (`hoocode-code-modes/src/extension.rs`).
 
 ### MCP client
@@ -280,7 +272,7 @@ rpc (`--mode rpc`):
 | AG-11 | Verify the unchecked MCP, plugin and scope rules | S | None | Check: print and rpc wait 10 s for trusted servers; tool-list change at next turn; `Authorization` 401 text; git input hardening; npm refusal; elicitation decline in print and rpc; `hoo-config.json` mode rule (`auto_allow` is unioned); scoped-model alias, untagged and frontmatter-precedence rules. Add tests or mark not built. |
 | AG-12 | Wire `/goal` to the auto loop | M | User asks for `/goal` | `StartAutoLoop` maps to `None` in `hoocode-code-modes/src/extension.rs` (~457). Add a listener that calls the `/loop auto` path. |
 | AG-13 | `/grill` skips its questions in the loop | S | With AG-12 | Not done. |
-| AG-14 | Stale-lock fix with `flock` | S | Two processes take over one stale lock | Use `File::try_lock`, which needs Rust 1.89. The workspace MSRV is 1.88. Until then, keep the current scheme and accept the race. |
+| AG-14 | Stale-lock fix with `flock` | S | Two processes take over one stale lock | Use `File::try_lock`, which needs Rust 1.89. The workspace MSRV is 1.95 since PL-7, so this is no longer blocked. |
 | AG-15 | Cron batch 2 | M | None | Keep a one-shot until delivered. Add busy guards (retry, session op, attached view). Split the `/cd` store: tick uses the current cwd, tools use the start cwd. Handle a corrupt store. Handle DST. |
 | AG-16 | Off switch for the three Cron tools | S | Measured token cost | Add a setting. Interactive default stays on. |
 | AG-17 | Decide `/learn` | S | None | The tip shows as unavailable (`tips.rs`). Remove the tip, or build the command. Decision says no. |

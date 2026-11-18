@@ -4,16 +4,15 @@
 //!
 //! - **Agent Plugins 1.0**: `plugin.json` at the root (`$schema`, `name`, ...), `skills/`, and
 //!   `mcp.json`. Its rules are in [`manifest`] and [`agent_mcp`].
-//! - **Claude**: `.claude-plugin/plugin.json`, `skills/`, `agents/`, and `.mcp.json` (or an
-//!   inline `mcpServers` in the manifest).
+//! - **Claude**: `.claude-plugin/plugin.json`, `skills/`, and `.mcp.json` (or an inline
+//!   `mcpServers` in the manifest).
 //!
 //! [`load_plugins`] reads `~/.agents/plugins/` (user) and `<cwd>/.agents/plugins/` (project;
 //! needs folder trust). A user plugin wins a name over a project plugin, so a repository cannot
 //! shadow the user's plugins; within one folder the first name in sorted order wins. The result
 //! is a [`PluginSet`]: [`PluginSet::skill_entries`] for the skill loader (skills are named
-//! `<plugin>:<skill>`), [`PluginSet::agent_files`] for subagent definitions, and
-//! [`PluginSet::mcp_servers`] for the MCP config. Hooks, commands, themes and providers are
-//! skipped with a warning.
+//! `<plugin>:<skill>`) and [`PluginSet::mcp_servers`] for the MCP config. Hooks, commands,
+//! agents, themes and providers are skipped with a warning.
 //!
 //! [`command`] is the plugin command shared by `/plugin` and the CLI subcommands.
 //! [`install`] copies plugins from [`marketplace`]s (Claude's `marketplace.json`, read only) into the
@@ -34,6 +33,7 @@ pub mod skills;
 mod trust;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 
 use hoocode_code_mcp::{PluginServers, ServerDef};
@@ -42,15 +42,25 @@ use hoocode_code_resources::source_info::{SourceOrigin, SourceScope};
 use hoocode_code_resources::PathEntry;
 
 pub use load::{load_plugins, LoadOptions};
-pub use trust::{approve_skill_tools, load_default_trust, trust_project_plugins};
+pub use trust::{load_default_trust, trust_project_plugins};
 
 /// The plugins the running session uses. Set at session start and after an install, remove,
 /// update or trust (`/plugin`), so the resource loader and the skill gate read the same set.
 static CURRENT: RwLock<Option<PluginSet>> = RwLock::new(None);
 
+/// Counts the changes to [`CURRENT`]. A session that built something from the plugins (its
+/// plugin tools, its MCP servers) compares this to know it must build again (see `PL-4`).
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Make `set` the current plugins (see [`current`]).
 pub fn set_current(set: PluginSet) {
     *CURRENT.write().unwrap_or_else(|e| e.into_inner()) = Some(set);
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
+/// How many times [`set_current`] has run in this process. It only grows.
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::SeqCst)
 }
 
 /// The current plugins: what was last set, or none.
@@ -116,8 +126,9 @@ pub struct LoadedPlugin {
     pub data_dir: PathBuf,
     /// Skill folders (each holds a `SKILL.md`), in name order.
     pub skill_dirs: Vec<PathBuf>,
-    /// Subagent definition files (Claude `agents/*.md`), in name order.
-    pub agent_files: Vec<PathBuf>,
+    /// `dev.hoocode/extension.wasm`, when the plugin has one inside its root: the internal-tier
+    /// WASM component (PL-9). Nothing runs it yet.
+    pub extension_wasm: Option<PathBuf>,
     /// The file the MCP servers came from (`mcp.json`, `.mcp.json`, or the manifest).
     pub mcp_path: Option<PathBuf>,
     /// The MCP servers, with placeholders already expanded, for `hoocode-code-mcp`.
@@ -165,15 +176,6 @@ impl PluginSet {
                     },
                 })
             })
-            .collect()
-    }
-
-    /// Subagent definition files for the agent registry.
-    pub fn agent_files(&self) -> Vec<String> {
-        self.plugins
-            .iter()
-            .flat_map(|plugin| plugin.agent_files.iter())
-            .map(|path| path.to_string_lossy().into_owned())
             .collect()
     }
 

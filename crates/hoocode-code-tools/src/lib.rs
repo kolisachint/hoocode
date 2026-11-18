@@ -4,13 +4,12 @@
 //! `hoocode-code-tools-fs`, `bash` from
 //! `hoocode-code-tool-bash` and `CodeSearch` from
 //! `hoocode-code-tool-search`. The free functions below (grep, find,
-//! ls, webfetch, websearch, todo) are plain helpers, not tools.
+//! ls, todo) are plain helpers, not tools. Web access is the webtools
+//! plugin (`ext_webtools_fetch`, `ext_webtools_search`), not this crate.
 
 use hoocode_agent_types::{AgentTool, AgentToolResult};
 use hoocode_ai_types::{Content, TextContent};
-use hoocode_code_tool_api::{
-    text_slice, wrap_tool_definitions, ToolContextFactory, ToolDefinition,
-};
+use hoocode_code_tool_api::{wrap_tool_definitions, ToolContextFactory, ToolDefinition};
 use hoocode_code_tool_bash::{create_bash_tool_definition, BashToolOptions};
 use hoocode_code_tool_search::{create_search_tool_definition, SearchToolOptions};
 use hoocode_code_tools_fs::{
@@ -174,93 +173,6 @@ pub fn ls(dir: impl AsRef<Path>) -> Result<Vec<std::path::PathBuf>, std::io::Err
     Ok(entries)
 }
 
-/// Fetch content from a URL.
-pub async fn webfetch(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let client = hoocode_ai_util::tls::http_client_builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-    let response = client.get(url).send().await?;
-    let text = response.text().await?;
-    Ok(cap_fetched_text(text, 100_000))
-}
-
-/// Cut a fetched page to `limit` bytes for the model. The cut moves back to a
-/// character boundary, so a multi-byte character across the limit is not a panic.
-fn cap_fetched_text(text: String, limit: usize) -> String {
-    if text.len() <= limit {
-        return text;
-    }
-    format!(
-        "{}...[truncated, total {} bytes]",
-        text_slice::prefix(&text, limit),
-        text.len()
-    )
-}
-
-/// Pull `**title**\nsnippet` entries out of DuckDuckGo's HTML results page.
-///
-/// The page is untrusted network input. A line can hold `</a>` before any `>`,
-/// so the title and snippet bounds are not ordered; `text_slice::range` keeps
-/// that from panicking.
-fn parse_search_results(html: &str) -> Vec<String> {
-    let mut results = Vec::new();
-    let mut in_result = false;
-    let mut current_title = String::new();
-    let mut current_snippet = String::new();
-
-    for line in html.lines() {
-        if line.contains("result__a") {
-            in_result = true;
-            // Extract title
-            if let Some(start) = line.find(">") {
-                if let Some(end) = line.find("</a>") {
-                    current_title = text_slice::range(line, start + 1, end).trim().to_string();
-                }
-            }
-        } else if in_result && line.contains("result__snippet") {
-            if let Some(start) = line.find(">") {
-                if let Some(end) = line.find("</a>") {
-                    current_snippet = text_slice::range(line, start + 1, end).trim().to_string();
-                }
-            }
-            if !current_title.is_empty() {
-                results.push(format!("**{}**\n{}", current_title, current_snippet));
-            }
-            current_title.clear();
-            current_snippet.clear();
-            in_result = false;
-        }
-    }
-    results
-}
-
-/// Search the web using DuckDuckGo.
-pub async fn websearch(query: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let encoded_query = urlencoding::encode(query);
-    let search_url = format!("https://html.duckduckgo.com/html/?q={}", encoded_query);
-    let client = hoocode_ai_util::tls::http_client_builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .user_agent("Mozilla/5.0")
-        .build()?;
-    let response = client.get(&search_url).send().await?;
-    let html = response.text().await?;
-
-    let results = parse_search_results(&html);
-
-    if results.is_empty() {
-        Ok(format!(
-            "No results found for '{}'. Visit: {}",
-            query, search_url
-        ))
-    } else {
-        Ok(format!(
-            "Search results for '{}':\n\n{}",
-            query,
-            results.join("\n\n")
-        ))
-    }
-}
-
 /// Todo list storage
 use std::sync::Mutex;
 
@@ -339,7 +251,7 @@ pub fn default_tools_with(
 /// The default coding bundle (`CODING_TOOL_NAMES`): Read, Shell, Edit, Write
 /// and CodeSearch, in hoocode's order. AskUserQuestion and the other extension
 /// tools are registered by the CLI, after these.
-/// WebFetch/WebSearch and TodoWrite are opt-in tools (10.2e, 10.2f).
+/// TodoWrite is an opt-in tool (10.2f).
 pub fn default_tool_definitions(
     cwd: std::path::PathBuf,
     _permissions: PermissionPolicy,
@@ -358,32 +270,6 @@ pub fn default_tool_definitions(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn fetched_text_cut_does_not_split_a_multibyte_character() {
-        // "abé" is 4 bytes; "é" spans bytes 2-3, so a cut at 3 steps back to 2.
-        let page = "abé".to_string() + &"x".repeat(10);
-        let capped = cap_fetched_text(page, 3);
-        assert_eq!(capped, "ab...[truncated, total 14 bytes]");
-        assert_eq!(cap_fetched_text("short".to_string(), 10), "short");
-    }
-
-    #[test]
-    fn search_parse_survives_a_closing_anchor_before_any_angle_bracket() {
-        // The only `>` on each line belongs to `</a>`, so the range starts after its end.
-        let html = "result__a x</a>\nresult__snippet y</a>\n";
-        assert_eq!(parse_search_results(html), Vec::<String>::new());
-    }
-
-    #[test]
-    fn search_parse_extracts_title_and_snippet() {
-        let html = "<a class=\"result__a\" href=\"x\">Título</a>\n\
-                    <a class=\"result__snippet\">Snippet é</a>\n";
-        assert_eq!(
-            parse_search_results(html),
-            vec!["**Título**\nSnippet é".to_string()]
-        );
-    }
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -475,27 +361,5 @@ mod tests {
     fn test_todo_empty_task() {
         let result = todo_action("add", "", 0);
         assert!(result.is_err());
-    }
-
-    #[allow(clippy::disallowed_methods)] // test helper: builds its own runtime
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("tokio runtime")
-            .block_on(future)
-    }
-
-    #[test]
-    fn test_webfetch_invalid_url() {
-        let result = block_on(webfetch("not-a-valid-url"));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_websearch_empty_query() {
-        let result = block_on(websearch(""));
-        // Should return some result or error, not panic
-        assert!(result.is_ok() || result.is_err());
     }
 }

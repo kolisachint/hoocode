@@ -66,20 +66,10 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 33. [EN-3](README.md#open) Hygiene job: `cargo machete` and `cargo deny` (S)
 34. [EN-7](README.md#open) MSRV job on the `rust-version` MSRV (S)
 35. [AG-3](agent.md#open) Delete the dead `packages` setting (S)
-36. [PL-1](plugins.md#open) Drop Copilot and `.agents-plugin` plugin markers (S)
-37. [PL-2](plugins.md#open) Rewrite the plugin-authoring skill text (S)
-38. [PL-3](plugins.md#open) Fix the TUI plugin tool list (S)
 39. [AG-17](agent.md#open) Remove the `/learn` tip. The decision says no (S)
 40. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
 42. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
 43. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
-44. [PL-6](plugins.md#open) Stop loading Claude plugin `agents/` (S)
-45. [PL-7](plugins.md#open) M0: measure trimmed wasmtime 48 and the toolchain bump. Gates PL-8 to PL-12 (S)
-46. [PL-8](plugins.md#open) M1: WIT world `hoocode:extension@0.1.0` in `wit/` (S)
-47. [PL-9](plugins.md#open) M2: WASM host, `.cwasm` cache, `wasi:http` with gate and SSRF block (L)
-48. [PL-10](plugins.md#open) M3: webtools `Transport` trait and WASM features, in the webtools repo (M)
-49. [PL-11](plugins.md#open) M4: `web-plugins` component and package (M)
-50. [PL-12](plugins.md#open) M5: end to end and cleanup. Web tools: replaced by the webtools plugin (M)
 
 ## Needs a user decision
 
@@ -90,7 +80,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [EN-11](README.md#open) | Build for Windows? | No. Wait until a user asks |
 | [EN-13](README.md#open) | Run subagent fast evals on PRs that touch `hoocode-code-subagents`? | Yes |
 | [RT-32](runtime.md#open) | Fix the frame-build tail from the bash block now? | No. Wait until the user asks |
-| [PL-5](plugins.md#open) | Enforce `allowed-tools`, or delete the approval record? | Delete the record. Keep the warning |
 | [AG-12](agent.md#open) | Wire `/goal` to `/loop auto`? | Not yet. Do it when someone asks for `/goal` |
 | [AG-19](agent.md#open) | Remove `DocSearch` instead of indexing docs? | Decided 2026-11-07: yes, remove (with the single-view decision of 2026-11-07); code removal pending |
 | [AG-20](agent.md#open) | Build semantic code search? | No. Keep the "not available" message |
@@ -125,7 +114,6 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 | [RT-37](runtime.md#open) | macOS baseline and lane QoS | A macOS machine |
 | [RT-38](runtime.md#open) | Windows `Shell` priority | Windows ships (not planned) |
 | [AG-2](agent.md#open) | Decide MCP schema deferral | Measured token cost of MCP schemas |
-| [PL-4](plugins.md#open) | Live reload of plugin tools | Users hit a stale tool list |
 | [AG-9](agent.md#open) | Publish the OAuth Client ID Metadata document | An OAuth MCP server needs CIMD |
 | [AG-10](agent.md#open) | MCP conformance run and manual runs | Before MCP counts as done |
 | [AG-13](agent.md#open) | `/grill` skips its questions in the loop | With AG-12 |

@@ -54,6 +54,7 @@ members = [
     "crates/hoocode-code-modes",
     "crates/hoocode-code-permissions",
     "crates/hoocode-code-plugins",
+    "crates/hoocode-code-wasm",
     "crates/hoocode-code-print",
     "crates/hoocode-code-prompts",
     "crates/hoocode-code-resources",
@@ -90,7 +91,7 @@ members = [
 ]
 resolver = "2"
 # fuzz/ is a separate nightly-only workspace (cargo-fuzz); see fuzz/README.md.
-exclude = ["fuzz"]
+exclude = ["fuzz", "crates/hoocode-code-wasm/fixtures/echo-ext"]
 
 [workspace.package]
 version = "0.2.44"
@@ -98,7 +99,7 @@ authors = ["Mario Zechner (original author)", "Sachin Koli"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/kolisachint/hoocode"
-rust-version = "1.88"
+rust-version = "1.95"
 
 [workspace.dependencies]
 
@@ -150,6 +151,7 @@ hoocode-code-mcp = { path = "crates/hoocode-code-mcp" }
 hoocode-code-modes = { path = "crates/hoocode-code-modes" }
 hoocode-code-permissions = { path = "crates/hoocode-code-permissions" }
 hoocode-code-plugins = { path = "crates/hoocode-code-plugins" }
+hoocode-code-wasm = { path = "crates/hoocode-code-wasm" }
 hoocode-ai-registry = { path = "crates/hoocode-ai-registry" }
 hoocode-code-prompts = { path = "crates/hoocode-code-prompts" }
 hoocode-code-resources = { path = "crates/hoocode-code-resources" }
@@ -181,6 +183,11 @@ hoocode-tui-terminal = { path = "crates/hoocode-tui-terminal" }
 hoocode-tui-util = { path = "crates/hoocode-tui-util" }
 
 hoocode-runtime = { path = "crates/hoocode-runtime" }
+
+# WASM extension host (the only crate that links wasmtime; see docs/design/plugins.md).
+wasmtime = { version = "=48.0.9", default-features = false, features = ["std", "runtime", "cranelift", "component-model", "async", "parallel-compilation"] }
+wasmtime-wasi = { version = "=48.0.9", default-features = false, features = ["p2"] }
+wasmtime-wasi-http = { version = "=48.0.9", default-features = false, features = ["p2"] }
 
 # No debuginfo in dev builds (build-speed.md D1, changed 2026-10-10). target/
 # reached 61 GB, mostly ~647k .o files kept for macOS debug info. Panic
