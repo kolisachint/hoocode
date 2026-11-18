@@ -1077,6 +1077,10 @@ impl AgentSession {
                 .await;
         }
         self.settings().reload();
+        // The plugin tools carry their `pluginConfig` values from when they were built, so the
+        // re-read settings reach them only by building them again, even when the plugin set
+        // itself did not change. The MCP hub is still built again only when its servers changed.
+        lock(&self.inner.state).plugin_generation = None;
         self.refresh_plugins();
         self.inner.resource_loader.reload();
         self.build_runtime(Some(self.get_active_tool_names()), true);
