@@ -74,7 +74,8 @@ fn loads_and_lists_tools() {
             "alloc",
             "fail",
             "write-data",
-            "fetch"
+            "fetch",
+            "chatter"
         ]
     );
     let echo = &ext.tools()[0];
@@ -159,6 +160,29 @@ fn unknown_tool_is_refused_before_the_call() {
             "{err:?}"
         );
     });
+}
+
+/// Guest stdout and debug-level logs stay off stderr unless debugging is on;
+/// guest stderr (a panic message, say) always reaches the host log.
+#[test]
+fn guest_stdout_and_debug_stay_off_stderr_but_guest_stderr_shows() {
+    let captured = Arc::new(std::sync::Mutex::new(String::new()));
+    let sink = captured.clone();
+    hoocode_runtime::diagnostics::set_stderr_sink(Some(Box::new(move |text| {
+        sink.lock().unwrap().push_str(text);
+    })));
+    block_on_entry(async {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = load(dir.path());
+        ext.call("chatter", json!({}), env_with(&[], None))
+            .await
+            .unwrap();
+    });
+    hoocode_runtime::diagnostics::set_stderr_sink(None);
+    let seen = captured.lock().unwrap().clone();
+    assert!(!seen.contains("CHATTER-STDOUT"), "{seen}");
+    assert!(!seen.contains("CHATTER-DEBUG"), "{seen}");
+    assert!(seen.contains("CHATTER-STDERR"), "{seen}");
 }
 
 #[test]

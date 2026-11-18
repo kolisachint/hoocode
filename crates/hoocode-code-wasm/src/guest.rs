@@ -126,18 +126,20 @@ pub(crate) fn log_route(level: &hoocode::extension::host::LogLevel) -> LogRoute 
 
 /// The log lines one call has written so far. Shared by the `log` import and
 /// the WASI stdout and stderr streams of that call, so the cap is per call.
-#[derive(Default)]
 pub(crate) struct LogBudget {
     written: Mutex<u32>,
+    /// The plugin this call runs, for the debug log's line prefix.
+    plugin: String,
     /// Whether debug output is on for this call. Off, debug output is dropped
     /// before it takes any of the budget.
     debug: bool,
 }
 
 impl LogBudget {
-    pub(crate) fn new(debug: bool) -> Self {
+    pub(crate) fn new(plugin: &str, debug: bool) -> Self {
         Self {
             written: Mutex::new(0),
+            plugin: plugin.to_owned(),
             debug,
         }
     }
@@ -172,7 +174,7 @@ impl LogBudget {
         };
         match route {
             LogRoute::Host => crate::write_host_log(&line),
-            LogRoute::Debug => crate::write_debug_log(&line),
+            LogRoute::Debug => crate::write_debug_log(&self.plugin, &line),
         }
     }
 }
@@ -269,7 +271,7 @@ pub(crate) fn new_store(
     tls: Arc<rustls::ClientConfig>,
     clock: Arc<PauseClock>,
 ) -> Result<Store<State>, WasmError> {
-    let logs = Arc::new(LogBudget::new(crate::debug_enabled()));
+    let logs = Arc::new(LogBudget::new(plugin, crate::debug_enabled()));
     let state = State {
         plugin: plugin.to_owned(),
         wasi: crate::wasi::build_wasi(plugin, data_dir, logs.clone())?,
@@ -383,7 +385,7 @@ mod tests {
 
     #[test]
     fn a_call_writes_at_most_the_budget_of_lines() {
-        let budget = LogBudget::new(false);
+        let budget = LogBudget::new("p", false);
         let mut lines = Vec::new();
         for i in 0..(MAX_LOG_MESSAGES + 5) {
             if let Some(line) = budget.line("[wasm p] info: ", &format!("m{i}")) {
@@ -407,7 +409,7 @@ mod tests {
 
     #[test]
     fn debug_output_with_debug_off_is_dropped_without_using_the_budget() {
-        let budget = LogBudget::new(false);
+        let budget = LogBudget::new("p", false);
         for i in 0..(MAX_LOG_MESSAGES * 2) {
             budget.write(LogRoute::Debug, "[wasm p] debug: ", &format!("d{i}"));
         }

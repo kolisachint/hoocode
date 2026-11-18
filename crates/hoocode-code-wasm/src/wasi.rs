@@ -24,15 +24,19 @@ pub(crate) fn build_wasi(
 ) -> Result<WasiCtx, WasmError> {
     let plugin: Arc<str> = Arc::from(plugin);
     let mut builder = WasiCtxBuilder::new();
+    // Guest stdout is debug output. Guest stderr goes to the host log: a Rust
+    // guest writes its panic message there, and nothing else would show it.
     builder
         .stdout(LogSink {
             plugin: plugin.clone(),
             stream: "stdout",
+            route: LogRoute::Debug,
             logs: logs.clone(),
         })
         .stderr(LogSink {
             plugin,
             stream: "stderr",
+            route: LogRoute::Host,
             logs,
         });
     builder
@@ -41,12 +45,13 @@ pub(crate) fn build_wasi(
     Ok(builder.build())
 }
 
-/// Sends guest stdout or stderr to the debug output, one write at a time.
-/// Plugin prints are debug output: they show only while debugging is on.
+/// Sends guest stdout or stderr to its route, one write at a time: stdout to
+/// the debug output (shown only while debugging is on), stderr to the host log.
 #[derive(Clone)]
 struct LogSink {
     plugin: Arc<str>,
     stream: &'static str,
+    route: LogRoute,
     logs: Arc<LogBudget>,
 }
 
@@ -72,7 +77,7 @@ impl AsyncWrite for LogSink {
         let text = text.trim_end_matches('\n');
         if !text.is_empty() {
             self.logs.write(
-                LogRoute::Debug,
+                self.route,
                 &format!("[wasm {} {}] ", self.plugin, self.stream),
                 text,
             );

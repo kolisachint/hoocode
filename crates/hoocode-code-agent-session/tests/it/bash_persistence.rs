@@ -192,7 +192,7 @@ async fn does_not_emit_message_end_for_bash_execution_messages() {
     assert!(roles.lock().unwrap().is_empty());
 }
 
-/// Paces the faux stream so a 20,000-char reply takes minutes to finish: the
+/// Paces the faux stream so a 20,000-char reply takes about 50 s to finish: the
 /// abort lands mid-stream on any machine, instead of racing a fast stream.
 const PACED_TOKENS_PER_SECOND: f64 = 100.0;
 
