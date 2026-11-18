@@ -85,6 +85,7 @@ fn build_with_cache(
     let mut out = Vec::new();
     let mut names: HashSet<String> = taken.iter().cloned().collect();
     let mut host: Option<WasmHost> = None;
+    let trust = hoocode_ai_util::tls::installed_trust();
     for plugin in &plugins.plugins {
         let Some(wasm_path) = &plugin.extension_wasm else {
             continue;
@@ -98,7 +99,7 @@ fn build_with_cache(
             continue;
         }
         if host.is_none() {
-            match new_host(cache_dir) {
+            match new_host(cache_dir, &trust) {
                 Ok(new) => host = Some(new),
                 Err(error) => {
                     diagnostics.push((
@@ -155,8 +156,11 @@ fn build_with_cache(
 }
 
 /// A host for `cache_dir`, with the test-only loopback switch applied when its variable is `1`.
-fn new_host(cache_dir: &Path) -> Result<WasmHost, WasmError> {
-    let host = WasmHost::new(cache_dir.to_path_buf())?;
+fn new_host(
+    cache_dir: &Path,
+    trust: &hoocode_ai_util::tls::TrustedCas,
+) -> Result<WasmHost, WasmError> {
+    let host = WasmHost::new(cache_dir.to_path_buf())?.with_tls_trust(trust)?;
     let allow = loopback_switch_on(std::env::var_os(INTERNAL_WASM_LOOPBACK_ENV).as_deref());
     Ok(if allow {
         host.with_loopback_allowed()
@@ -712,5 +716,38 @@ mod tests {
         let asked = gate.asked();
         assert_eq!(asked.len(), 1);
         assert_eq!(asked[0].arguments, json!({"url": "https://93.184.216.34/"}));
+    }
+
+    /// `--ca-cert <file>` and `HOOCODE_CA_CERT` reach the plugin host's trust set,
+    /// through the same resolution the providers use.
+    #[test]
+    fn ca_cert_source_reaches_the_plugin_host_trust_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = dir.path().join("proxy-ca.pem");
+        let pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
+        std::fs::write(&ca, pem).unwrap();
+        let path = ca.display().to_string();
+
+        let argv = vec!["--ca-cert".to_owned(), path.clone()];
+        let flag = hoocode_ai_util::tls::TlsSources::from_args_and_env(&argv, |_| None);
+        let host = new_host(
+            &dir.path().join("cache"),
+            &hoocode_ai_util::tls::resolve_trusted_cas(&flag),
+        )
+        .unwrap();
+        assert_eq!(
+            host.tls_trust().extra,
+            vec![hoocode_ai_util::tls::ExtraCa::Pem(pem.to_owned())]
+        );
+
+        let env = hoocode_ai_util::tls::TlsSources::from_args_and_env(&[], |k| {
+            (k == "HOOCODE_CA_CERT").then(|| path.clone())
+        });
+        let host = new_host(
+            &dir.path().join("cache"),
+            &hoocode_ai_util::tls::resolve_trusted_cas(&env),
+        )
+        .unwrap();
+        assert_eq!(host.tls_trust().extra.len(), 1);
     }
 }

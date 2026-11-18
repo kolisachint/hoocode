@@ -37,6 +37,7 @@ pub struct Extension {
     pub(crate) data_dir: PathBuf,
     pub(crate) call_timeout: Duration,
     pub(crate) allow_loopback: bool,
+    pub(crate) tls: Arc<rustls::ClientConfig>,
     pub(crate) tools: Vec<ToolInfo>,
 }
 
@@ -80,6 +81,7 @@ impl Extension {
             &self.data_dir,
             env.clone(),
             self.allow_loopback,
+            self.tls.clone(),
             clock.clone(),
         )?;
         guest::set_deadline(
@@ -125,6 +127,7 @@ impl Extension {
             &self.data_dir,
             CallEnv::for_discovery(),
             self.allow_loopback,
+            self.tls.clone(),
             Arc::new(PauseClock::default()),
         )?;
         guest::set_deadline(

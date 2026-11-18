@@ -227,6 +227,7 @@ pub(crate) fn new_store(
     data_dir: &Path,
     env: CallEnv,
     allow_loopback: bool,
+    tls: Arc<rustls::ClientConfig>,
     clock: Arc<PauseClock>,
 ) -> Result<Store<State>, WasmError> {
     let logs = Arc::new(LogBudget::default());
@@ -238,6 +239,7 @@ pub(crate) fn new_store(
         hooks: GatedHooks {
             net: env.net.clone(),
             allow_loopback,
+            tls,
             clock,
             abort: env.abort.clone(),
         },

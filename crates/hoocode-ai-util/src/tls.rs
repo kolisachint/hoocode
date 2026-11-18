@@ -10,8 +10,8 @@
 //!   `rootCertificates` in hoocode): a custom CA extends the set.
 //! - Fail closed: a missing/invalid CA source warns once and is skipped.
 //!
-//! This does not cover the webtools plugin's fetch and search tools, which run
-//! in their own WASM host and TLS stack.
+//! The WASM plugin host (`hoocode-code-wasm`) takes the same trust set through
+//! [`installed_trust`], so plugin HTTPS honours the same CA sources.
 //!
 //! Every reqwest client in the workspace is built from [`http_client_builder`],
 //! which applies the trust set installed by [`configure_global_tls`] (the
@@ -234,12 +234,24 @@ fn global() -> &'static RwLock<Vec<reqwest::Certificate>> {
     GLOBAL.get_or_init(RwLock::default)
 }
 
+fn installed() -> &'static RwLock<TrustedCas> {
+    static INSTALLED: OnceLock<RwLock<TrustedCas>> = OnceLock::new();
+    INSTALLED.get_or_init(RwLock::default)
+}
+
+/// The trust set last installed by [`configure_global_tls`], for consumers that
+/// build their own TLS config (the WASM plugin host). Empty until it runs.
+pub fn installed_trust() -> TrustedCas {
+    installed().read().unwrap().clone()
+}
+
 /// `configureGlobalTLS`: resolve the trust set and install it for every client
 /// later built with [`http_client_builder`]. Warns once when
 /// `NODE_TLS_REJECT_UNAUTHORIZED=0` is set (hoocode never honors it).
 pub fn configure_global_tls(sources: &TlsSources) -> TrustedCas {
     let cas = resolve_trusted_cas(sources);
     *global().write().unwrap() = cas.certificates();
+    *installed().write().unwrap() = cas.clone();
     if sources.reject_unauthorized_disabled {
         warn_once(
             "NODE_TLS_REJECT_UNAUTHORIZED=0 disables all TLS certificate verification and is insecure. \

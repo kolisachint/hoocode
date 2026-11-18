@@ -37,8 +37,8 @@ Each one is also listed by `hoocode --help`. Provider API keys (such as
 | `HOOCODE_USER_AGENTS_DIR` | Folder for user plugins and `mcp.json` (default: `~/.agents`). |
 | `HOOCODE_PACKAGE_DIR` | Folder of hoocode's bundled files such as `CHANGELOG.md` (for Nix/Guix store paths). |
 | `HOOCODE_CODING_AGENT_SESSION_DIR` | Session storage directory (overridden by `--session-dir`). |
-| `HOOCODE_CA_CERT` | Path to an extra PEM CA bundle to trust for hoocode's own TLS traffic (additive; verification stays on). Precedence: `--ca-cert` > this > `NODE_EXTRA_CA_CERTS`. |
-| `HOOCODE_USE_SYSTEM_CA` | Also trust the OS/system CA store when set to `1`, `true` or `yes` (same as `--use-system-ca`). |
+| `HOOCODE_CA_CERT` | Path to an extra PEM CA bundle to trust for hoocode's own TLS traffic, including plugin (WASM) network requests (additive; verification stays on). Precedence: `--ca-cert` > this > `NODE_EXTRA_CA_CERTS`. |
+| `HOOCODE_USE_SYSTEM_CA` | Also trust the OS/system CA store when set to `1`, `true` or `yes` (same as `--use-system-ca`). Applies to plugin (WASM) network requests too. |
 | `NODE_EXTRA_CA_CERTS` | Path to an extra PEM CA bundle (the lowest-precedence CA source). |
 | `HOOCODE_TELEMETRY` | Set to `1`, `true` or `yes`, or `0`, `false` or `no`, to override the `enableInstallTelemetry` setting (OpenRouter app attribution headers). |
 
