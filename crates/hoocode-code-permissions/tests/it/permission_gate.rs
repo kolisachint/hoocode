@@ -523,6 +523,53 @@ fn the_webfetch_category_still_prompts_for_network_access() {
 }
 
 #[test]
+fn a_plugin_network_request_is_the_webfetch_category_and_needs_webfetch_enabled() {
+    // The plugin's own call is a plugin tool: `plugin:webtools` takes it. Its network request is
+    // asked as the built-in `WebFetch` category (ToolNetGate), so `enabled_tools` must list
+    // WebFetch too, or the request is blocked as "not enabled" while the call itself runs.
+    let input = json!({"url": "https://example.com/a"});
+    let fetch = plugin("webtools", "WebFetch");
+    let only_plugin = json!({"modes": {"build": {"enabled_tools": ["Read", "plugin:webtools"]}}});
+    assert_eq!(
+        judge(only_plugin.clone(), "WebFetch", &fetch, input.clone(), UI),
+        Verdict::Allow
+    );
+    match judge(
+        only_plugin,
+        "WebFetch",
+        &ToolOrigin::BuiltIn,
+        input.clone(),
+        UI,
+    ) {
+        Verdict::Block(reason) => assert!(reason.contains("not enabled"), "{reason}"),
+        v => panic!("{v:?}"),
+    }
+    // Listing WebFetch in enabled_tools lets the request reach the prompt; auto_allow WebFetch
+    // answers it without asking.
+    let with_category = json!({"modes": {"build": {
+        "enabled_tools": ["Read", "plugin:webtools", "WebFetch"]
+    }}});
+    assert_eq!(
+        judge(
+            with_category.clone(),
+            "WebFetch",
+            &ToolOrigin::BuiltIn,
+            input.clone(),
+            UI
+        ),
+        Verdict::Prompt
+    );
+    let allowed = json!({"modes": {"build": {
+        "enabled_tools": ["Read", "plugin:webtools", "WebFetch"],
+        "auto_allow": ["WebFetch"]
+    }}});
+    assert_eq!(
+        judge(allowed, "WebFetch", &ToolOrigin::BuiltIn, input, UI),
+        Verdict::Allow
+    );
+}
+
+#[test]
 fn web_search_is_not_a_built_in_gated_tool() {
     // No built-in WebSearch exists: the webtools plugin's tool is a plugin tool, never gated.
     let no_rules = json!({"modes": {"build": {}}});

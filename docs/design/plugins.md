@@ -189,7 +189,7 @@ Selectors. Permission rules, `auto_allow`, agent `tools` and `disallowedTools`, 
 | `mcp:*` | Every MCP tool |
 
 - No other form is a selector. `ext_*`, `mcp_*` and other globs are removed, with no alias.
-- A selector names a tool, not a permission category. `WebFetch` as a selector matches the tool of that name. The gate still uses `WebFetch` as the category for a plugin's network calls, so the prompt says what is asked. Network from other plugin tools is covered by `plugin:<p>`.
+- A selector names a tool, not a permission category. `WebFetch` as a selector matches the tool of that name. The gate still uses `WebFetch` as the category for a plugin's network calls, so the prompt says what is asked. Network for every plugin, whatever its tool, is the `WebFetch` category, not `plugin:<p>`: `plugin:<p>` takes the plugin's calls, and a mode whose `enabled_tools` or `auto_allow` do not take `WebFetch` blocks the network request even when the call itself runs (see the 2026-11-19 row).
 - A malformed selector in an agent definition rejects that definition, with a diagnostic. In a permission rule it is refused, with a diagnostic. Fail closed.
 
 Renderer hint. A plugin says how the TUI draws its tools, in `plugin.json`:
@@ -321,6 +321,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-19 | Model-facing names: a plugin's WASM tools use the name the plugin declares (PascalCase, `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). MCP tools are `mcp__<server>__<tool>`, sanitised, 64 cap with an FNV-1a suffix. Old `ext_*` and `mcp_*` names are removed, with no aliases. |
 | 2026-11-19 | Collisions: a built-in is never shadowed. Between plugin and MCP tools the first in load order wins and the other is not loaded. Always a diagnostic that names both origins. The silent MCP overwrite is a bug. |
 | 2026-11-19 | A plugin WASM tool name may not start with `mcp__` (any case). That prefix is the MCP tools' own, so such a name is not loaded, with a diagnostic. |
+| 2026-11-19 | Plugin network is always the `WebFetch` permission category (`ToolNetGate` asks `("WebFetch", BuiltIn)`), for every plugin and tool. A selector for the plugin (`plugin:<p>`) does not cover it. To allow a plugin's network in a mode, `enabled_tools` and `auto_allow` must list `WebFetch`. `enabled_tools: ["Read", "plugin:webtools"]` runs the plugin's call but blocks its request as "not enabled". |
 | 2026-11-19 | Name collisions are case-insensitive (`Read` and `read` are one name). Holders are keyed by lowercase name in the component loader and in the session's admit step. The notice keeps each tool's own spelling. |
 | 2026-11-19 | Selectors: `Name`, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>`, `mcp:*`. They match origin. A malformed selector fails closed. |
 | 2026-11-19 | Webtools tools are `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The `Claude` aliases and `ext_webtools_*` names go. Supersedes the WebFetch/WebSearch part of the 2026-11-18 row. |

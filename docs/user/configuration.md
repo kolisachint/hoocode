@@ -97,6 +97,11 @@ no `/reload`.
   (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`,
   `searchFallback`). A call that reaches the network asks you like `WebFetch`. Later
   requests in the same call (for example redirects) do not ask again.
+- Network access for any plugin's tool, not only webtools, is the `WebFetch` permission
+  category. A mode whose `enabled_tools` does not list `WebFetch` blocks that request
+  ("not enabled") even when the plugin's own call runs, so list `WebFetch` in `enabled_tools`
+  as well as `plugin:<plugin>`. Add `WebFetch` to `auto_allow` to answer the request without
+  asking. `plugin:<plugin>` alone does not allow a plugin's network access.
 - A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in your user
   `settings.json` (`~/.hoocode/settings.json`). It is read from user settings only, never
   from a project's `.hoocode/settings.json`, so a cloned repository cannot point a plugin

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: plugin network access is the WebFetch category (2026-11-19)
+- The design doc and the user docs said a plugin's network access was covered by `plugin:<p>`.
+  It is the `WebFetch` permission category for every plugin. A mode whose `enabled_tools` lists
+  the plugin but not `WebFetch` runs the plugin's call and blocks its network request. Add
+  `WebFetch` to `enabled_tools` (and to `auto_allow` to skip the prompt) to allow it.
+
 ### Fixed: a plugin tool cannot take the MCP name prefix (2026-11-19)
 - A plugin's WASM tool named `mcp__<x>` (any case) is not loaded, with a diagnostic. The
   `mcp__` prefix is the MCP tools' own, so such a tool could pass as an MCP tool.
