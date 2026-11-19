@@ -67,8 +67,6 @@ CHILD_RESULT_NEEDLE = CHILD_SUMMARY[:30]
 # What a request body is searched for, so a scenario can say what a model was told.
 NEEDLES = {
     "child_result": CHILD_RESULT_NEEDLE,
-    # The subagent's gated Shell call was denied: its parent has no UI to ask.
-    "clearance_denied": "has no UI to ask",
     # Two background runs of one agent type (`parent_tells_parallel_runs_apart`).
     # Request bodies are JSON, so the quotes around a description arrive escaped.
     # Each call's placeholder names the run's handle and description, in call order:
@@ -174,6 +172,11 @@ class Expect:
     # on how many subagents ran together.
     peak_inflight_max: dict[str, int] | None = None
     peak_inflight_min: dict[str, int] | None = None
+    # Words that must (`tool_results_have`) or must not (`tool_results_lack`) appear
+    # in the last tool result a route's model was sent, per request. This is what a
+    # tool returned, not the whole request body (which carries the system prompt).
+    tool_results_have: dict[str, list[str]] | None = None
+    tool_results_lack: dict[str, list[str]] | None = None
 
 
 @dataclass
@@ -584,17 +587,19 @@ SCENARIOS: list[Scenario] = [
         ),
     ),
     Scenario(
-        name="subagent_shell_denied_without_a_ui",
+        name="subagent_shell_runs_under_a_headless_parent",
         kind="parent",
         doc=(
             "A subagent's Shell call needs approval and its parent (--mode json) has no UI to "
-            "ask. The call is denied, not silently run: the child is told so, carries on, and "
-            "finishes. Nothing is auto-allowed in the config and `touch` is not a safe_shell command, so the denial is the gate's."
+            "ask. The parent's own gate decides it, as it decides its own calls: the default for "
+            "a headless run is to run it, so the child's call runs and is not denied. Nothing is "
+            "auto-allowed in the config and `touch` is not a safe_shell command, so the answer is "
+            "the parent's headless default, not an auto-allow. (2026-11-19)"
         ),
         routes={
             "child": child_route(
                 [
-                    {"tool_calls": [{"name": "Shell", "arguments": {"command": "touch denied_probe.txt"}}]},
+                    {"tool_calls": [{"name": "Shell", "arguments": {"command": "touch headless_probe.txt"}}]},
                     {"text": CHILD_SUMMARY},
                 ]
             ),
@@ -604,7 +609,7 @@ SCENARIOS: list[Scenario] = [
                         background=False,
                         subagent_type="general-purpose",
                         description="run a command",
-                        prompt="Run touch denied_probe.txt and report.",
+                        prompt="Run touch headless_probe.txt and report.",
                     ),
                     {"text": PARENT_SUMMARY},
                 ]
@@ -616,7 +621,7 @@ SCENARIOS: list[Scenario] = [
             ledger_ok=[True],
             child_requests=2,
             parent_requests=2,
-            route_sees={"child": ["clearance_denied"]},
+            tool_results_lack={"child": ["denied", "Denied", "no UI"]},
         ),
     ),
     Scenario(
@@ -1466,6 +1471,15 @@ def check(
     for route in expect.results_flow or []:
         received = any("child_result" in e.get("sees", []) for e in route_entries.get(route, []))
         want(received, f"{route} never received a child's result")
+    for route, words in (expect.tool_results_have or {}).items():
+        sent = [e.get("last_tool", "") for e in route_entries.get(route, [])]
+        for word in words:
+            want(any(word in text for text in sent), f"{route} was never sent a tool result with {word!r}")
+    for route, words in (expect.tool_results_lack or {}).items():
+        sent = [e.get("last_tool", "") for e in route_entries.get(route, [])]
+        for word in words:
+            hit = next((text for text in sent if word in text), None)
+            want(hit is None, f"{route} was sent a tool result with {word!r}: {str(hit)[:160]!r}")
     for route, cap in (expect.peak_inflight_max or {}).items():
         got = peaks.get(route, 0)
         want(got <= cap, f"{route} had {got} requests in flight at once, cap {cap}")

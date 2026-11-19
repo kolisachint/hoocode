@@ -1806,7 +1806,7 @@ impl PoolInner {
     }
 
     /// A child asks for a gated call to be decided. The relay (the TUI's card,
-    /// or this process's own parent) answers on a thread of its own, because a
+    /// a headless run's own gate, or this process's own parent) answers on a thread of its own, because a
     /// person may take minutes; the answer goes back on the child's stdin. With
     /// nobody to ask, the call is denied at once. While the question is open
     /// the child is not stalled: it waits on a human, not on a model.

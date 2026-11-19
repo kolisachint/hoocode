@@ -12,7 +12,7 @@ use hoocode_agent_types::{AgentEvent, PermissionGate};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
-use hoocode_code_permissions::{ApprovalChannel, HooPermissionGate};
+use hoocode_code_permissions::{ApprovalChannel, HeadlessClearanceRelay, HooPermissionGate};
 
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionEvent, AgentSessionRuntime,
@@ -705,6 +705,21 @@ fn install_clearance_relay(args: &Args) {
     hoocode_code_subagents::instance::set_clearance_relay(Some(relay));
 }
 
+/// A json or print run with subagents answers their clearance requests with
+/// its own gate (`HeadlessClearanceRelay`), so a subagent's call gets the same
+/// verdict the run gives its own calls. A subagent child relays upward instead
+/// (`install_clearance_relay`), so it is skipped here.
+fn install_headless_clearance_relay(args: &Args, cwd: &std::path::Path) {
+    if relays_clearance(args) {
+        return;
+    }
+    let ApprovalChannel::Headless { fail_closed } = headless_approval_channel_for(args) else {
+        return;
+    };
+    let relay = HeadlessClearanceRelay::new(cwd.to_path_buf(), fail_closed);
+    hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(relay)));
+}
+
 /// Build the session for a CLI run: the initial session manager, then the
 /// `createRuntime` factory on it. Diagnostics are for the caller to report.
 fn build_session(args: &Args, interactive: bool) -> (AgentSession, Diagnostics) {
@@ -1188,8 +1203,8 @@ fn print_mode_label(mode: PrintMode) -> &'static str {
 
 /// The one stderr line for a print or json run that asked nobody for approval:
 /// it names the tools that ran and would have needed approval in rpc, and says
-/// that its subagents, which relay such calls to a parent with no UI to ask,
-/// are denied them. `None` when no such tool ran.
+/// that its subagents, whose such calls this run decides for them, get the
+/// same answer. `None` when no such tool ran.
 fn ungated_run_note(mode_label: &str, ran: &std::collections::BTreeSet<String>) -> Option<String> {
     let names: Vec<&str> = ran
         .iter()
@@ -1199,7 +1214,7 @@ fn ungated_run_note(mode_label: &str, ran: &std::collections::BTreeSet<String>) 
     (!names.is_empty()).then(|| {
         format!(
             "Note: {mode_label} does not ask for tool approval; these tools ran without it: {}. \
-             Its subagents cannot ask either: their tools that need approval are denied.",
+             Its subagents get the same answer from these rules: their tools that need approval run too.",
             names.join(", ")
         )
     })
@@ -1219,6 +1234,7 @@ fn run_print_body(
     let home = hoocode_home::home_dir();
     install_clearance_relay(args);
     let (session, diagnostics) = build_session(args, false);
+    install_headless_clearance_relay(args, session.cwd());
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| match event {
         AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) => {
@@ -2179,7 +2195,7 @@ mod tests {
             .collect();
         assert_eq!(
             ungated_run_note("--print", &ran).as_deref(),
-            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp_fs_list. Its subagents cannot ask either: their tools that need approval are denied.")
+            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp_fs_list. Its subagents get the same answer from these rules: their tools that need approval run too.")
         );
         let read_only: std::collections::BTreeSet<String> =
             ["Read", "Grep"].iter().map(|t| t.to_string()).collect();

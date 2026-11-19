@@ -422,6 +422,30 @@ pub trait ClearanceRelay: Send + Sync {
     fn ask(&self, request: &RelayRequest) -> Option<String>;
 }
 
+/// The relay of a headless json or print run that has subagents. Nobody can
+/// prompt there, so a subagent's call that needs approval is decided by the
+/// run's own gate: the same rules as its own calls, and the same headless
+/// default (`fail_closed` denies with the gate's reason, otherwise it runs).
+/// A call the run's rules would deny is therefore denied for the subagent too.
+pub struct HeadlessClearanceRelay {
+    gate: HooPermissionGate,
+}
+
+impl HeadlessClearanceRelay {
+    /// The relay for a run in `cwd`, failing closed when `fail_closed` is set.
+    pub fn new(cwd: PathBuf, fail_closed: bool) -> Self {
+        Self {
+            gate: HooPermissionGate::new(cwd, ApprovalChannel::Headless { fail_closed }, None),
+        }
+    }
+}
+
+impl ClearanceRelay for HeadlessClearanceRelay {
+    fn ask(&self, request: &RelayRequest) -> Option<String> {
+        self.gate.check(&request.tool, &request.input)
+    }
+}
+
 /// `matchesAllowedPath`: exact or `*`-glob match of the path (and, for an
 /// absolute path, its cwd-relative form), all with `/` separators.
 pub fn matches_allowed_path(file_path: &str, allowed: &[String], cwd: &Path) -> bool {

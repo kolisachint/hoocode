@@ -3,7 +3,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use hoocode_code_permissions::{ApprovalChannel, ClearanceRelay, HooPermissionGate, RelayRequest};
+use hoocode_code_permissions::{
+    ApprovalChannel, ClearanceRelay, HeadlessClearanceRelay, HooPermissionGate, RelayRequest,
+};
 use serde_json::{json, Value};
 
 /// A relay that records what it was asked and answers with a fixed verdict.
@@ -81,5 +83,60 @@ fn a_gate_with_neither_ui_nor_relay_denies() {
     assert!(
         reason.starts_with("Denied by permission gate: Shell needs approval"),
         "{reason}"
+    );
+}
+
+fn request(tool: &str, input: Value) -> RelayRequest {
+    RelayRequest {
+        tool: tool.to_string(),
+        input,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_headless_run_that_does_not_fail_closed_clears_a_subagents_gated_call() {
+    // A json or print run has no UI and runs what needs approval, so its
+    // subagent's gated fetch runs too.
+    let dir = tempfile::tempdir().unwrap();
+    let relay = HeadlessClearanceRelay::new(dir.path().to_path_buf(), false);
+    let fetch = request("WebFetch", json!({"url": "https://example.com/"}));
+    assert_eq!(relay.ask(&fetch), None);
+}
+
+#[test]
+fn a_fail_closed_headless_run_denies_a_subagents_gated_call_with_the_gates_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let relay = HeadlessClearanceRelay::new(dir.path().to_path_buf(), true);
+    let fetch = request("WebFetch", json!({"url": "https://example.com/"}));
+    let reason = relay.ask(&fetch).expect("a fail-closed run denies it");
+    assert!(
+        reason.contains("needs approval") && reason.contains("no client can answer"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn a_subagents_call_the_run_denies_by_its_rules_is_denied_without_fail_closed() {
+    // The run's own deny rule decides the subagent's call, though the run
+    // itself would not prompt. A call the rules allow still runs.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".hoocode")).unwrap();
+    let project = json!({"active_mode": "build", "modes": {"build": {
+        "denied_bash_commands": ["\\brm\\b"],
+    }}});
+    std::fs::write(
+        dir.path().join(".hoocode/hoo-config.json"),
+        project.to_string(),
+    )
+    .unwrap();
+    let relay = HeadlessClearanceRelay::new(dir.path().to_path_buf(), false);
+    let reason = relay
+        .ask(&request("Shell", json!({"command": "rm -rf build"})))
+        .expect("the run's deny rule denies the subagent's call");
+    assert!(reason.contains("denied pattern"), "{reason}");
+    assert_eq!(
+        relay.ask(&request("Shell", json!({"command": "make build"}))),
+        None
     );
 }
