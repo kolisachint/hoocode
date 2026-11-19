@@ -27,8 +27,9 @@ pub fn builtin_tool_definition(name: &str) -> Option<ToolRenderDefinition> {
         "Read" => Some(read::definition()),
         "Write" => Some(write::definition()),
         "CodeSearch" => Some(search::definition()),
-        "WebFetch" | "ext_webtools_fetch" => Some(web::webfetch_definition()),
-        "WebSearch" | "ext_webtools_search" => Some(web::websearch_definition()),
+        // TODO(P4): renderers come from the plugin's `render` hint, not from the tool name.
+        "WebFetch" => Some(web::webfetch_definition()),
+        "WebSearch" => Some(web::websearch_definition()),
         "Shell" => Some(bash::definition()),
         "Edit" => Some(edit::definition()),
         _ => None,

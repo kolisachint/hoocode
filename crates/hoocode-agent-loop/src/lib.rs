@@ -620,11 +620,19 @@ async fn execute_tool_calls(
     }
 }
 
-fn emit_tool_execution_start(tool_call: &AgentToolCall, emit: &mut AgentEventSink) {
+fn emit_tool_execution_start(
+    context: &AgentContext,
+    tool_call: &AgentToolCall,
+    emit: &mut AgentEventSink,
+) {
     emit(AgentEvent::ToolExecutionStart {
         tool_call_id: tool_call.id.clone(),
         tool_name: tool_call.name.clone(),
         args: tool_call.arguments.clone(),
+        origin: context
+            .tools
+            .find(&tool_call.name)
+            .map(|t| t.origin.clone()),
     });
 }
 
@@ -755,7 +763,7 @@ async fn execute_tool_calls_sequential(
     let mut finalized_calls = Vec::new();
     let mut messages = Vec::new();
     for tool_call in tool_calls {
-        emit_tool_execution_start(&tool_call, emit);
+        emit_tool_execution_start(context, &tool_call, emit);
         let started = Instant::now();
         // After an abort the rest of the batch is answered, not run.
         let preparation = if is_aborted(config) {
@@ -889,7 +897,7 @@ async fn execute_tool_calls_parallel(
     let mut waiting: VecDeque<usize> = VecDeque::new();
 
     for (index, tool_call) in tool_calls.iter().enumerate() {
-        emit_tool_execution_start(tool_call, emit);
+        emit_tool_execution_start(context, tool_call, emit);
         if is_aborted(config) {
             // Not prepared, so no permission prompt for a call that won't run.
             let outcome = aborted_outcome(tool_call, config, CutShort::NotRun);
@@ -1225,7 +1233,7 @@ fn dispatch_background_tool_calls(
 ) -> Vec<ToolResultMessage> {
     let mut messages = Vec::new();
     for tool_call in tool_calls {
-        emit_tool_execution_start(&tool_call, emit);
+        emit_tool_execution_start(context, &tool_call, emit);
         if is_aborted(config) {
             // Not prepared, so no permission prompt for a call that won't run.
             let finalized = aborted_outcome(&tool_call, config, CutShort::NotRun);

@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
 
+pub mod tool_origin;
+pub use tool_origin::{collision_notice, ToolOrigin, ToolSelector, ToolSelectorError};
+
 // ---------------------------------------------------------------------------
 // Tool execution mode
 // ---------------------------------------------------------------------------
@@ -135,6 +138,8 @@ pub enum AgentEvent {
         tool_call_id: String,
         tool_name: String,
         args: serde_json::Value,
+        /// The tool's origin; `None` when the call names no tool the session has.
+        origin: Option<ToolOrigin>,
     },
     /// A partial result streamed by a running tool (`onUpdate`).
     ToolExecutionUpdate {
@@ -189,10 +194,12 @@ impl AgentEvent {
                 tool_call_id,
                 tool_name,
                 args,
+                origin,
             } => json!({
                 "type": "tool_execution_start",
                 "toolCallId": tool_call_id,
                 "toolName": tool_name,
+                "origin": origin,
                 "args": args,
             }),
             AgentEvent::ToolExecutionUpdate {
@@ -448,7 +455,10 @@ pub type BackgroundPlaceholder =
 /// clones share them. Use the tool-building helpers to create one.
 #[allow(clippy::type_complexity)]
 pub struct AgentTool {
+    /// The model-facing name.
     pub name: String,
+    /// Where the tool comes from (see [`ToolOrigin`]).
+    pub origin: ToolOrigin,
     pub description: String,
     pub label: String,
     pub parameters: serde_json::Value,
@@ -587,6 +597,7 @@ impl AgentTool {
         Self {
             ordered_start: false,
             abort_grace: None,
+            origin: ToolOrigin::BuiltIn,
             name: name.clone(),
             description: description.into(),
             label: name,
@@ -616,6 +627,7 @@ impl Clone for AgentTool {
             ordered_start: self.ordered_start,
             abort_grace: self.abort_grace,
             name: self.name.clone(),
+            origin: self.origin.clone(),
             description: self.description.clone(),
             label: self.label.clone(),
             parameters: self.parameters.clone(),

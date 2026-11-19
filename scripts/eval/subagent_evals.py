@@ -202,7 +202,7 @@ class Scenario:
     # Files written under the run's ~/.hoocode (path relative to it), e.g. user
     # agent definitions in `agents/`.
     home_files: dict[str, str] = field(default_factory=dict)
-    # Put the echo plugin (`ext_echo_*` tools) in the run's ~/.agents/plugins, as a
+    # Put the echo plugin (its `echo` and `fetch` tools) in the run's ~/.agents/plugins, as a
     # hand-placed plugin: no install record, so it is trusted.
     echo_plugin: bool = False
 
@@ -222,7 +222,7 @@ def _echo_routes(agent: str) -> dict[str, Route]:
     return {
         "child": child_route(
             [
-                {"tool_calls": [{"name": "ext_echo_echo", "arguments": {"marker": "ext-echo-7"}}]},
+                {"tool_calls": [{"name": "echo", "arguments": {"marker": "ext-echo-7"}}]},
                 {"echo_tool_result": True},
             ]
         ),
@@ -246,7 +246,7 @@ def _echo_expect() -> Expect:
         ledger_ok=[True],
         child_requests=2,
         parent_requests=2,
-        route_tools_have={"child": ["ext_echo_echo"]},
+        route_tools_have={"child": ["echo"]},
         route_sees={"parent": ["echoed_marker"]},
         # The echo output is the child's tool result, and the parent gets it back in
         # the Agent result. A denied call returns a refusal instead, which fails here.
@@ -633,7 +633,7 @@ SCENARIOS: list[Scenario] = [
         name="subagent_plugin_tool_reaches_parent",
         kind="parent",
         doc=(
-            "A subagent calls a WASM plugin tool (ext_echo_echo) from a plugin in the run's HOME. "
+            "A subagent calls a WASM plugin tool (echo) from a plugin in the run's HOME. "
             "The agent has no tools: list, so it gets every tool. The tool's result reaches the "
             "child's model, which repeats it as its answer, so the parent's Agent result carries "
             "the echoed value."
@@ -648,7 +648,7 @@ SCENARIOS: list[Scenario] = [
         name="subagent_plugin_tool_general_purpose",
         kind="parent",
         doc=(
-            "The same echo through general-purpose, whose tools: list includes ext_* (every plugin "
+            "The same echo through general-purpose, whose tools: list includes plugin:* (every plugin "
             "WASM tool). The child's --tools allowlist must offer the plugin tool (2026-11-17)."
         ),
         routes=_echo_routes("general-purpose"),

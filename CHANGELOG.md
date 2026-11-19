@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (breaking): tool names and origin (2026-11-19)
+- **Plugin tools keep the name the plugin declares, with no prefix.** A plugin's WASM tool
+  was `ext_<plugin>_<tool>`; it is now its own name, such as `WebFetch`. The name must match
+  `^[A-Za-z][A-Za-z0-9_-]{0,63}$`, or the tool is not loaded and the session says why.
+- **MCP tools are `mcp__<server>__<tool>`** (was `mcp_<server>_<tool>`), for example
+  `mcp__github__create_issue`. Characters outside `[A-Za-z0-9_-]` become `_`.
+- **The webtools plugin's tools are `WebFetch` and `WebSearch`** in the plugin's own
+  release. Until that release is installed, the installed plugin still offers `fetch` and
+  `search`.
+- **Old names are removed, with no aliases.** `ext_*`, `mcp_*`, `ext_webtools_fetch` and
+  `ext_webtools_search` match nothing. Update agent definitions, `--tools` and
+  `--disallowed-tools`, and any permission rule that names them.
+- **Selectors** match a tool's origin: `plugin:<plugin>`, `plugin:<plugin>/<Tool>`, `plugin:*`,
+  `mcp:<server>`, `mcp:<server>/<tool>` and `mcp:*`. `--tools` and `--disallowed-tools` take
+  them, with names. The old `ext_*` wildcard is replaced by `plugin:*`.
+- **A name is never replaced silently.** A plugin or MCP tool that has a built-in's name is not
+  loaded. Two plugin or MCP tools with one name: the first loaded is used and the other is
+  skipped, with a diagnostic that names both origins (for example `mcp github (plugin docs)`).
+- **The JSON `tool_execution_start` event has an `origin` field**: `{"kind": "builtIn"}`,
+  `{"kind": "plugin", "plugin": ..., "tool": ...}` or `{"kind": "mcp", "server": ..., "tool": ...,
+  "plugin": ...}`, or `null` when the session has no tool of that name.
+
 ### Fixed: `/reload` and plugin settings (2026-11-18)
 - **`/reload` now applies changed `pluginConfig` settings to plugin tools.** Before, a plugin's WASM tools kept the settings they were built with until hoocode restarted, so for example a new `pluginConfig.webtools.searchProvider` was ignored after `/reload`. Plugin MCP servers keep running unless their own server list changed.
 

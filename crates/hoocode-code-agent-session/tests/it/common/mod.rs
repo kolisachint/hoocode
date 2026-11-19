@@ -230,6 +230,7 @@ where
     F: Fn(serde_json::Value) -> AgentToolResult + Send + Sync + 'static,
 {
     ToolDefinition {
+        origin: hoocode_code_tool_api::ToolOrigin::BuiltIn,
         ordered_start: false,
         abort_grace: None,
         background_when: None,

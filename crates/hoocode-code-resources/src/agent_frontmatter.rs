@@ -43,9 +43,9 @@ pub const CLAUDE_TOOL_ALIASES: &[(&str, &str)] = &[
     ("grep", "CodeSearch"),
     ("glob", "CodeSearch"),
     ("find", "CodeSearch"),
-    // Web access is the webtools plugin (PL-12).
-    ("webfetch", "ext_webtools_fetch"),
-    ("websearch", "ext_webtools_search"),
+    // Web access is the webtools plugin (PL-12). Its tools are named `WebFetch` and `WebSearch`.
+    ("webfetch", "WebFetch"),
+    ("websearch", "WebSearch"),
 ];
 
 const KNOWN_MODEL_ALIASES: &[&str] = &[
@@ -167,9 +167,10 @@ pub fn normalize_tools(
     }
     let mut resolved: Vec<String> = Vec::new();
     for raw in split_tools_value(value) {
-        // A plugin's WASM tool (`ext_<plugin>_<tool>`) has no alias: it is kept as written, so a
-        // subagent can be given it. Whether it exists is decided when the session starts.
-        if raw.starts_with("ext_") {
+        // A qualified selector (`plugin:<p>`, `mcp:<s>`, ...) has no alias: it is kept as written,
+        // so a subagent can be given those tools. Whether any exists is decided when the session
+        // starts. A malformed one is kept too, and selects nothing.
+        if raw.contains(':') {
             if !resolved.contains(&raw) {
                 resolved.push(raw);
             }

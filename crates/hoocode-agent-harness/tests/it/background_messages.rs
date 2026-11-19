@@ -70,14 +70,14 @@ fn falls_back_to_the_prompts_first_line() {
 }
 
 #[test]
-fn describes_an_mcp_tool_by_its_de_prefixed_name_and_args() {
+fn describes_an_mcp_tool_by_its_server_and_tool_name_and_args() {
     let info = describe_background_tool(&call(
-        "mcp_web_fetch",
+        "mcp__web__fetch",
         json!({"url": "https://example.com", "limit": 5}),
     ));
     assert!(info.is_mcp_tool);
-    assert_eq!(info.subagent_type, "mcp_web_fetch");
-    assert!(info.label.contains("web_fetch") && !info.label.contains("mcp_web_fetch"));
+    assert_eq!(info.subagent_type, "mcp__web__fetch");
+    assert_eq!(info.label, "MCP tool `web/fetch`");
     assert!(info.summary.unwrap().contains("url: https://example.com"));
 }
 
@@ -106,10 +106,10 @@ fn subagent_placeholder_is_one_line_and_finish_passes_the_notification_through()
 #[test]
 fn mcp_placeholder_is_compact_and_finish_keeps_header_and_body() {
     let args = json!({"url": "https://example.com"});
-    let placeholder = create_background_placeholder_text(&call("mcp_web_fetch", args.clone()));
+    let placeholder = create_background_placeholder_text(&call("mcp__web__fetch", args.clone()));
     let finish =
-        create_background_task_message(&bg_result("mcp_web_fetch", args.clone(), "{}", false));
-    let label = describe_background_tool(&call("mcp_web_fetch", args)).label;
+        create_background_task_message(&bg_result("mcp__web__fetch", args.clone(), "{}", false));
+    let label = describe_background_tool(&call("mcp__web__fetch", args)).label;
     assert!(placeholder.contains(&label));
     assert_eq!(placeholder.split('\n').count(), 1);
     let t = texts(&finish);

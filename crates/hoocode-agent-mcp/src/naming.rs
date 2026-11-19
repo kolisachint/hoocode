@@ -1,5 +1,8 @@
-//! Names for tools as the model sees them: `mcp_<server>_<tool>` for MCP tools and
-//! `ext_<plugin>_<tool>` for the tools of a plugin's WASM component.
+//! Model-facing names for MCP tools: `mcp__<server>__<tool>` (`docs/design/plugins.md`,
+//! Naming and identity).
+//!
+//! Plugin WASM tools are not named here: they keep the name their plugin declares. An MCP
+//! server is not written for hoocode, so its tools keep a host prefix.
 
 /// Longest tool name a model API accepts from us.
 pub const MAX_TOOL_NAME_LEN: usize = 64;
@@ -7,36 +10,42 @@ pub const MAX_TOOL_NAME_LEN: usize = 64;
 /// Length of the hash suffix on a shortened name: `_` plus 8 hex digits.
 const HASH_SUFFIX_LEN: usize = 9;
 
-/// The model-facing name of `tool` on `server`.
+/// The model-facing name of `tool` on `server`: `mcp__<server>__<tool>`.
 ///
-/// The result is `mcp_<server>_<tool>`, shaped by [`prefixed_name`].
-pub fn tool_name(server: &str, tool: &str) -> String {
-    prefixed_name("mcp", server, tool)
+/// Each part is sanitised (a character outside `[A-Za-z0-9_-]` becomes `_`, and a run of `_`
+/// becomes one `_`), so `__` only ever separates the parts. `None` when a part is empty: the
+/// tool is then not loaded, and the caller says so.
+pub fn tool_name(server: &str, tool: &str) -> Option<String> {
+    let server = sanitize_part(server);
+    let tool = sanitize_part(tool);
+    if server.is_empty() || tool.is_empty() {
+        return None;
+    }
+    Some(capped(format!("mcp__{server}__{tool}")))
 }
 
-/// The model-facing name of `tool` from the WASM component of `plugin`.
-///
-/// The result is `ext_<plugin>_<tool>`, shaped by [`prefixed_name`].
-pub fn ext_tool_name(plugin: &str, tool: &str) -> String {
-    prefixed_name("ext", plugin, tool)
+/// One part of a name: unsafe characters become `_`, then every run of `_` becomes one `_`.
+fn sanitize_part(part: &str) -> String {
+    let mut out = String::with_capacity(part.len());
+    for c in part.chars() {
+        let c = if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            c
+        } else {
+            '_'
+        };
+        if c == '_' && out.ends_with('_') {
+            continue;
+        }
+        out.push(c);
+    }
+    out
 }
 
-/// `<prefix>_<owner>_<tool>` with every character outside `[A-Za-z0-9_-]` replaced by `_`.
 /// A name longer than [`MAX_TOOL_NAME_LEN`] is cut to 55 characters and given `_` and an
-/// 8-digit hex hash of the full (sanitized) name, so it stays 64 characters and two long
-/// names with the same prefix still differ. The hash is FNV-1a, so the result does not change
-/// between Rust versions.
-fn prefixed_name(prefix: &str, owner: &str, tool: &str) -> String {
-    let full: String = format!("{prefix}_{owner}_{tool}")
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
+/// 8-digit hex hash of the full name, so it stays 64 characters and two long names with the
+/// same prefix still differ. The hash is FNV-1a, so the result does not change between Rust
+/// versions.
+fn capped(full: String) -> String {
     if full.len() <= MAX_TOOL_NAME_LEN {
         return full;
     }
@@ -59,36 +68,48 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn short_names_are_prefixed_and_kept() {
-        assert_eq!(tool_name("fs", "read_file"), "mcp_fs_read_file");
-        assert_eq!(tool_name("my-server", "get-x"), "mcp_my-server_get-x");
+    fn name(server: &str, tool: &str) -> String {
+        tool_name(server, tool).expect("both parts are non-empty")
     }
 
     #[test]
-    fn unsafe_characters_become_underscores() {
+    fn short_names_are_double_underscored_and_kept() {
+        assert_eq!(name("fs", "read_file"), "mcp__fs__read_file");
+        assert_eq!(name("my-server", "get-x"), "mcp__my-server__get-x");
+    }
+
+    #[test]
+    fn unsafe_characters_become_underscores_and_runs_collapse() {
         assert_eq!(
-            tool_name("git hub", "repo.list/all"),
-            "mcp_git_hub_repo_list_all"
+            name("git hub", "repo.list/all"),
+            "mcp__git_hub__repo_list_all"
         );
-        assert_eq!(tool_name("srv", "tool:ü"), "mcp_srv_tool__");
+        assert_eq!(name("srv", "tool:ü"), "mcp__srv__tool_");
+        // A `__` inside a part collapses, so it cannot be mistaken for the separator.
+        assert_eq!(name("a__b", "c___d"), "mcp__a_b__c_d");
+    }
+
+    #[test]
+    fn an_empty_part_is_refused() {
+        assert_eq!(tool_name("", "x"), None);
+        assert_eq!(tool_name("s", ""), None);
     }
 
     #[test]
     fn long_names_are_cut_to_64_with_a_hash_suffix() {
         let tool = "t".repeat(100);
-        let name = tool_name("server", &tool);
-        assert_eq!(name.len(), MAX_TOOL_NAME_LEN);
-        assert!(name.starts_with("mcp_server_ttt"));
-        let suffix = &name[name.len() - 8..];
+        let full = name("server", &tool);
+        assert_eq!(full.len(), MAX_TOOL_NAME_LEN);
+        assert!(full.starts_with("mcp__server__ttt"));
+        let suffix = &full[full.len() - 8..];
         assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(&name[name.len() - 9..name.len() - 8], "_");
+        assert_eq!(&full[full.len() - 9..full.len() - 8], "_");
     }
 
     #[test]
     fn long_names_with_the_same_prefix_differ() {
-        let a = tool_name("server", &format!("{}a", "x".repeat(80)));
-        let b = tool_name("server", &format!("{}b", "x".repeat(80)));
+        let a = name("server", &format!("{}a", "x".repeat(80)));
+        let b = name("server", &format!("{}b", "x".repeat(80)));
         assert_eq!(a.len(), MAX_TOOL_NAME_LEN);
         assert_eq!(b.len(), MAX_TOOL_NAME_LEN);
         assert_ne!(a, b);
@@ -96,31 +117,11 @@ mod tests {
 
     #[test]
     fn names_at_the_limit_are_unchanged() {
-        // 64 characters exactly: "mcp_s_" is 6 characters, so the tool has 58.
-        let tool = "y".repeat(58);
-        let name = tool_name("s", &tool);
-        assert_eq!(name.len(), 64);
-        assert_eq!(name, format!("mcp_s_{tool}"));
-    }
-
-    #[test]
-    fn extension_names_use_the_ext_prefix() {
-        assert_eq!(ext_tool_name("webtools", "fetch"), "ext_webtools_fetch");
-        assert_eq!(ext_tool_name("my-plugin", "get-x"), "ext_my-plugin_get-x");
-        // A plugin name may hold dots; they are sanitized like any other character.
-        assert_eq!(ext_tool_name("a.b", "c"), "ext_a_b_c");
-        assert_ne!(ext_tool_name("a", "b"), tool_name("a", "b"));
-    }
-
-    #[test]
-    fn long_extension_names_are_capped_with_a_hash() {
-        let tool = "t".repeat(100);
-        let name = ext_tool_name("plugin", &tool);
-        assert_eq!(name.len(), MAX_TOOL_NAME_LEN);
-        assert!(name.starts_with("ext_plugin_ttt"));
-        let suffix = &name[name.len() - 8..];
-        assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(name, ext_tool_name("plugin", &"t".repeat(99)));
+        // 64 characters exactly: "mcp__s__" is 8 characters, so the tool has 56.
+        let tool = "y".repeat(56);
+        let full = name("s", &tool);
+        assert_eq!(full.len(), 64);
+        assert_eq!(full, format!("mcp__s__{tool}"));
     }
 
     #[test]
@@ -128,7 +129,9 @@ mod tests {
         // FNV-1a 64-bit reference vectors.
         assert_eq!(fnv1a_64(b""), 0xcbf2_9ce4_8422_2325);
         assert_eq!(fnv1a_64(b"a"), 0xaf63_dc4c_8601_ec8c);
-        let name = tool_name("server", &"z".repeat(100));
-        assert_eq!(name, tool_name("server", &"z".repeat(100)));
+        assert_eq!(
+            name("server", &"z".repeat(100)),
+            name("server", &"z".repeat(100))
+        );
     }
 }

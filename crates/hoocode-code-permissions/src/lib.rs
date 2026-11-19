@@ -32,9 +32,10 @@ pub const PLUGIN_TOOLS: [&str; 5] = [
     "ProposePlugin",
 ];
 
-/// MCP tools are named `mcp_<server>_<tool>` (`hoocode-agent-mcp`'s naming).
+/// MCP tools are named `mcp__<server>__<tool>` (`hoocode-agent-mcp`'s naming). Plugin WASM
+/// tools have no prefix, so they are not recognised here. TODO(P2b): decide by origin, not name.
 fn is_mcp_or_plugin_tool(tool_name: &str) -> bool {
-    tool_name.starts_with("mcp_") || PLUGIN_TOOLS.contains(&tool_name)
+    tool_name.starts_with("mcp__") || PLUGIN_TOOLS.contains(&tool_name)
 }
 
 /// Whether a call to `tool_name` is one an approval-asking client would be

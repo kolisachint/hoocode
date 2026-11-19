@@ -21,9 +21,11 @@ fn maps_claude_tool_names_case_insensitive() {
 }
 
 #[test]
-fn keeps_plugin_extension_tools_as_written() {
-    let (t, d) = tools(json!("Read, ext_webtools_fetch, ext_webtools_fetch, Grep"));
-    assert_eq!(t, ["Read", "ext_webtools_fetch", "CodeSearch"]);
+fn keeps_qualified_selectors_as_written() {
+    let (t, d) = tools(json!(
+        "Read, plugin:webtools/WebFetch, plugin:webtools/WebFetch, Grep"
+    ));
+    assert_eq!(t, ["Read", "plugin:webtools/WebFetch", "CodeSearch"]);
     assert!(d.is_empty());
 }
 
@@ -50,7 +52,7 @@ fn drops_unknown_tools_with_a_diagnostic() {
 #[test]
 fn maps_claude_webfetch_websearch_to_the_webtools_plugin_tools() {
     let (t, d) = tools(json!("WebFetch, WebSearch"));
-    assert_eq!(t, ["ext_webtools_fetch", "ext_webtools_search"]);
+    assert_eq!(t, ["WebFetch", "WebSearch"]);
     assert!(d.is_empty());
 }
 
@@ -78,7 +80,7 @@ fn alias_map_only_targets_known_hoocode_tools() {
     // Web aliases point at the webtools plugin's tools, which are not built-in.
     for (_, target) in CLAUDE_TOOL_ALIASES {
         assert!(
-            HOOCODE_TOOL_NAMES.contains(target) || target.starts_with("ext_webtools_"),
+            HOOCODE_TOOL_NAMES.contains(target) || *target == "WebFetch" || *target == "WebSearch",
             "{target}"
         );
     }
@@ -279,8 +281,8 @@ fn warns_when_tools_is_a_yaml_list() {
 }
 
 #[test]
-fn keeps_the_ext_wildcard_as_written() {
-    let (t, d) = tools(json!("Read, ext_*"));
-    assert_eq!(t, ["Read", "ext_*"]);
+fn keeps_the_plugin_wildcard_as_written() {
+    let (t, d) = tools(json!("Read, plugin:*"));
+    assert_eq!(t, ["Read", "plugin:*"]);
     assert!(d.is_empty());
 }

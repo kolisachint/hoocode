@@ -1,6 +1,6 @@
 # Subagents
 
-Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17; `ext_*` is built until PL-17 P2). Open items are SA-1 to SA-11.
+Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists; rejecting a malformed agent entry is P2b. Open items are SA-1 to SA-11.
 
 Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
 
@@ -71,7 +71,7 @@ Files: `crates/hoocode-code-resources/templates/agents/*.md`. Parser: `crates/ho
 Rules:
 
 - A writer has Edit, Write or Shell. Writers get the worktree instruction. Read-only agents do not.
-- Entries in an agent's `tools` or `disallowedTools` are selectors, matched on tool origin (plugins.md Naming and identity). `WebFetch` and `WebSearch` are the webtools plugin's own tool names. A name does not cover other plugin tools: to keep an agent off the network, deny `plugin:*`. Built until PL-17: `ext_*` and the `WebFetch` alias.
+- Entries in an agent's `tools` or `disallowedTools` are selectors, matched on tool origin (plugins.md Naming and identity). `WebFetch` and `WebSearch` are the webtools plugin's own tool names. A name does not cover other plugin tools: to keep an agent off the network, deny `plugin:*`. Built in P2 (2026-11-19).
 - Built-in tool lists: general-purpose is `Read, Shell, Edit, Write, CodeSearch, plugin:*`. explore, plan, code-review and security-review have no plugin selector (plugin tools may write later).
 - Every body ends with the final-answer rule. Custom bodies get `BASE_GUIDELINES` appended only at depth > 0. `--system-prompt` and `--light` still replace.
 - Child prompt is one wrapper, `Task: <prompt>` (`pool::child_prompt`). Run description is the call's first line, at most 60 characters, `"` replaced by `'`.

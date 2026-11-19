@@ -8,7 +8,7 @@
 //!   a Streamable HTTP server that needs a login), [`list_tools`](McpClient::list_tools),
 //!   [`call_tool`](McpClient::call_tool) with cancellation and progress.
 //! - [`oauth`]: the login flow and the per-issuer token store.
-//! - [`tool_name`]: the model-facing name `mcp_<server>_<tool>`.
+//! - [`tool_name`]: the model-facing name `mcp__<server>__<tool>`.
 //! - [`ToolOutput`]: the result as plain text and image content.
 //!
 //! Caps (`docs/design/concurrency.md` section 3): 8 requests in flight per
@@ -44,7 +44,7 @@ pub use client::{
 pub use config::McpServerConfig;
 pub use elicitation::{DeclineAll, ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use error::McpError;
-pub use naming::{ext_tool_name, tool_name, MAX_TOOL_NAME_LEN};
+pub use naming::{tool_name, MAX_TOOL_NAME_LEN};
 pub use oauth::{begin_login, LoginHandle};
 pub use result::{ToolContent, ToolOutput};
 pub use stdio::MAX_STDIO_LINE_BYTES;

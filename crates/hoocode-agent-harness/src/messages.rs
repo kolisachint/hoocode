@@ -98,7 +98,7 @@ pub fn create_custom_message(
 /// A consistent description of a background tool call (`BackgroundToolInfo`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BackgroundToolInfo {
-    /// MCP server tools are registered as `mcp_<server>_<tool>`.
+    /// MCP server tools are named `mcp__<server>__<tool>`.
     pub is_mcp_tool: bool,
     /// The subagent type of `Task` calls; the tool name otherwise.
     pub subagent_type: String,
@@ -159,7 +159,10 @@ pub fn summarize_args(args: &Value) -> Option<String> {
 /// their `mcp_` prefix.
 pub fn describe_background_tool(tool_call: &AgentToolCall) -> BackgroundToolInfo {
     let args = &tool_call.arguments;
-    if let Some(pretty) = tool_call.name.strip_prefix("mcp_") {
+    // The harness sees only the model-facing name, so an MCP tool is recognised by its shape
+    // (`mcp__<server>__<tool>`). TODO(P2b): read the origin once calls carry it.
+    if let Some(rest) = tool_call.name.strip_prefix("mcp__") {
+        let pretty = rest.replacen("__", "/", 1);
         return BackgroundToolInfo {
             is_mcp_tool: true,
             subagent_type: tool_call.name.clone(),

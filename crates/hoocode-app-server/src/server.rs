@@ -363,6 +363,7 @@ impl LoadedThread {
                 tool_call_id,
                 tool_name,
                 args,
+                ..
             } => {
                 self.with_turn(|t| {
                     t.tools

@@ -1306,7 +1306,8 @@ impl ToolExecutionComponent {
                 )
             }
             // `~8.1k tokens`: the hidden size the collapsed row stands for.
-            "WebFetch" | "WebSearch" | "ext_webtools_fetch" | "ext_webtools_search" if settled => {
+            // TODO(P4): match the renderer hint, not the tool name.
+            "WebFetch" | "WebSearch" if settled => {
                 let tokens = self
                     .result
                     .as_ref()

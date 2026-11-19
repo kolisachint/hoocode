@@ -555,6 +555,7 @@ impl Mode {
                 tool_call_id,
                 tool_name,
                 args,
+                ..
             } => {
                 let block = match self.transcript.pending_tools.get(&tool_call_id) {
                     Some(block) => block.clone(),

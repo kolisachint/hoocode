@@ -160,11 +160,11 @@ fn call(name: &str, arguments: serde_json::Value) -> AgentToolCall {
 #[test]
 fn describes_background_tools_for_mcp_and_subagents() {
     let mcp = describe_background_tool(&call(
-        "mcp_github_search",
+        "mcp__github__search",
         json!({"query": "fix bug\nsecond line", "limit": 5, "empty": "", "none": null, "x": 1, "y": 2}),
     ));
     assert!(mcp.is_mcp_tool);
-    assert_eq!(mcp.label, "MCP tool `github_search`");
+    assert_eq!(mcp.label, "MCP tool `github/search`");
     assert_eq!(
         mcp.summary.as_deref(),
         Some("query: fix bug, limit: 5, x: 1")
@@ -192,8 +192,8 @@ fn describes_background_tools_for_mcp_and_subagents() {
 #[test]
 fn background_placeholders_and_finish_messages() {
     assert_eq!(
-        create_background_placeholder_text(&call("mcp_s_t", json!({"q": "x"}))),
-        "Started MCP tool `s_t` in the background — q: x. Its result arrives as a follow-up; keep working."
+        create_background_placeholder_text(&call("mcp__s__t", json!({"q": "x"}))),
+        "Started MCP tool `s/t` in the background — q: x. Its result arrives as a follow-up; keep working."
     );
     assert_eq!(
         create_background_placeholder_text(&call("Agent", json!({"subagent_type": "a"}))),
@@ -209,18 +209,18 @@ fn background_placeholders_and_finish_messages() {
         },
         is_error,
     };
-    let mcp = create_background_task_message(&result("mcp_s_t", true));
+    let mcp = create_background_task_message(&result("mcp__s__t", true));
     assert_eq!(mcp.custom_type, "backgroundTask");
     assert_eq!(
         mcp.content,
         UserContent::Blocks(vec![
-            Content::text("Background MCP tool `s_t` (q: x) failed:"),
+            Content::text("Background MCP tool `s/t` (q: x) failed:"),
             Content::text("body")
         ])
     );
     assert_eq!(
         mcp.details,
-        Some(json!({"subagentType": "mcp_s_t", "isMcpTool": true, "isError": true}))
+        Some(json!({"subagentType": "mcp__s__t", "isMcpTool": true, "isError": true}))
     );
     let task = create_background_task_message(&result("Agent", false));
     assert_eq!(

@@ -493,7 +493,7 @@ fn todowrite_call_carries_counts_and_no_body() {
 /// The webtools plugin's tools render with the web renderers, by name.
 #[test]
 fn plugin_web_tool_names_use_the_web_renderers() {
-    for name in ["ext_webtools_fetch", "ext_webtools_search"] {
+    for name in ["WebFetch", "WebSearch"] {
         assert!(
             hoocode_code_tui_widgets::tools::builtin_tool_definition(name).is_some(),
             "{name} has no renderer"

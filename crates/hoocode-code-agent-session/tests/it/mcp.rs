@@ -1,5 +1,5 @@
 #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
-//! MCP servers in a session (`docs/design/mcp.md`): a model tool call to `mcp_<server>_echo`
+//! MCP servers in a session (`docs/design/mcp.md`): a model tool call to `mcp__<server>__echo`
 //! round-trips through the agent, and untrusted project servers never start.
 //!
 //! The server is a small stdio MCP server in Python, so the test needs `python3`. Without it the
@@ -137,7 +137,7 @@ async fn model_tool_call_reaches_the_mcp_server_and_back() {
 
     h.set_responses(vec![
         tool_use(vec![faux_tool_call(
-            "mcp_x_echo",
+            "mcp__x__echo",
             serde_json::json!({"text": "hi"}),
             None,
         )]),
@@ -220,7 +220,7 @@ async fn a_granted_project_server_starts_and_the_grant_persists() {
     assert!(generation >= 1);
     assert_eq!(
         tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
-        ["mcp_proj_echo"]
+        ["mcp__proj__echo"]
     );
     hub.shutdown();
 
@@ -313,7 +313,7 @@ async fn a_server_that_connects_mid_run_is_used_from_the_next_turn() {
             }
         }),
         tool_use(vec![faux_tool_call(
-            "mcp_x_echo",
+            "mcp__x__echo",
             serde_json::json!({"text": "late"}),
             None,
         )]),

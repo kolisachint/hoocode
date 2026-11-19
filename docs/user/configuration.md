@@ -70,15 +70,26 @@ The same commands work from the shell, without a session: `hoocode install`,
 [Commands](commands.md).
 
 A plugin may also ship a WASM component at `dev.hoocode/extension.wasm`. Its tools
-appear to the model as `ext_<plugin>_<tool>`. They are live as soon as the plugin is
-installed, updated or removed, with no `/reload`.
+appear to the model under the names the plugin gives them, with no prefix (`WebFetch`,
+for example). They are live as soon as the plugin is installed, updated or removed, with
+no `/reload`.
+
+- Tool names. An MCP server's tool appears as `mcp__<server>__<tool>`, for example
+  `mcp__github__create_issue`. `--tools`, `--disallowed-tools` and an agent's `tools`
+  and `disallowedTools` take a name or a selector: `plugin:<plugin>` (every tool of a
+  plugin), `plugin:<plugin>/<Tool>`, `plugin:*`, `mcp:<server>`, `mcp:<server>/<tool>`
+  and `mcp:*`. An entry that is neither is malformed and selects nothing. The old
+  `ext_*` and `mcp_*` names are gone, with no alias.
+- Two plugin or MCP tools with the same name: the first one loaded is used, and the
+  other is skipped with a diagnostic that names both. A plugin tool never replaces a
+  built-in tool.
 
 - A component runs only when its plugin is trusted, the same trust that lets the
   plugin's MCP servers start without a `/mcp` grant. An untrusted plugin's component
   is skipped, and the session says so under diagnostics.
 - Web access (fetch and search) is the webtools plugin, not a built-in tool: install it
-  with `/plugin install webtools@hoo-plugins`. Its tools are `ext_webtools_fetch` and
-  `ext_webtools_search`. Its settings go under `pluginConfig.webtools.<key>`
+  with `/plugin install webtools@hoo-plugins`. Its tools are `WebFetch` and `WebSearch`.
+  Its settings go under `pluginConfig.webtools.<key>`
   (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`,
   `searchFallback`). A call that reaches the network asks you like `WebFetch`. Later
   requests in the same call (for example redirects) do not ask again.

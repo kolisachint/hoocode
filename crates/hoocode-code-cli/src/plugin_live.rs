@@ -7,7 +7,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use hoocode_agent_types::PermissionGate;
+use hoocode_agent_types::{PermissionGate, ToolOrigin};
 use hoocode_code_agent_session::mcp::McpHub;
 use hoocode_code_agent_session::PluginSource;
 use hoocode_code_mcp::PluginServers;
@@ -22,7 +22,7 @@ pub(crate) struct PluginToolSource {
     pub(crate) cwd: std::path::PathBuf,
     /// Interactive mode answers the MCP servers' questions in the TUI.
     pub(crate) interactive: bool,
-    /// The session's tool list can use `ext_` tools (see `ext_tools_wanted`).
+    /// The session's tool list can use plugin WASM tools (see `ext_tools_wanted`).
     pub(crate) ext: bool,
     /// The session runs MCP (see `mcp_wanted`).
     pub(crate) mcp: bool,
@@ -41,7 +41,7 @@ impl PluginSource for PluginToolSource {
         self.auto_activate
     }
 
-    fn tools(&self, taken: &[String]) -> (Vec<ToolDefinition>, Vec<String>) {
+    fn tools(&self, taken: &[(String, ToolOrigin)]) -> (Vec<ToolDefinition>, Vec<String>) {
         if !self.ext {
             return (Vec::new(), Vec::new());
         }
@@ -155,11 +155,11 @@ mod tests {
         hoocode_code_plugins::set_current(installed);
         let (tools, notices) = source(true).tools(&[]);
         assert!(notices.is_empty(), "{notices:?}");
-        assert!(names(&tools).contains(&"ext_demo_echo".to_owned()));
+        assert!(names(&tools).contains(&"echo".to_owned()));
 
         // A name the session already has is not taken by a plugin.
-        let (tools, notices) = source(true).tools(&["ext_demo_echo".to_owned()]);
-        assert!(!names(&tools).contains(&"ext_demo_echo".to_owned()));
+        let (tools, notices) = source(true).tools(&[("echo".to_owned(), ToolOrigin::BuiltIn)]);
+        assert!(!names(&tools).contains(&"echo".to_owned()));
         assert_eq!(notices.len(), 1, "{notices:?}");
 
         // A session without ext tools builds none.

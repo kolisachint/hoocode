@@ -300,10 +300,10 @@ fn tool_call(channel: ApprovalChannel, config: Value, tool: &str) -> Verdict {
 #[test]
 fn rpc_blocks_an_mcp_tool_unless_it_is_auto_allowed() {
     let config = json!({"active_mode": "build", "modes": {"build": {}}});
-    match tool_call(RPC, config, "mcp_fs_read_file") {
+    match tool_call(RPC, config, "mcp__fs__read_file") {
         Verdict::Block(reason) => {
             assert!(
-                reason.starts_with("Tool \"mcp_fs_read_file\" needs approval"),
+                reason.starts_with("Tool \"mcp__fs__read_file\" needs approval"),
                 "{reason}"
             );
             assert!(reason.contains("auto_allow for mode \"build\""), "{reason}");
@@ -315,8 +315,8 @@ fn rpc_blocks_an_mcp_tool_unless_it_is_auto_allowed() {
 #[test]
 fn rpc_allows_an_auto_allowed_mcp_tool() {
     let config =
-        json!({"active_mode": "build", "modes": {"build": {"auto_allow": ["mcp_fs_read_file"]}}});
-    assert_eq!(tool_call(RPC, config, "mcp_fs_read_file"), Verdict::Allow);
+        json!({"active_mode": "build", "modes": {"build": {"auto_allow": ["mcp__fs__read_file"]}}});
+    assert_eq!(tool_call(RPC, config, "mcp__fs__read_file"), Verdict::Allow);
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn rpc_blocks_a_plugin_lifecycle_tool_unless_it_is_auto_allowed() {
 fn a_ui_does_not_prompt_for_an_mcp_or_plugin_tool() {
     let config = json!({"active_mode": "build", "modes": {"build": {}}});
     assert_eq!(
-        tool_call(UI, config.clone(), "mcp_fs_read_file"),
+        tool_call(UI, config.clone(), "mcp__fs__read_file"),
         Verdict::Allow
     );
     assert_eq!(tool_call(UI, config, "InstallPlugin"), Verdict::Allow);
@@ -353,7 +353,10 @@ fn a_ui_does_not_prompt_for_an_mcp_or_plugin_tool() {
 #[test]
 fn print_allows_an_mcp_tool_without_asking() {
     let config = json!({"active_mode": "build", "modes": {"build": {}}});
-    assert_eq!(tool_call(PRINT, config, "mcp_fs_read_file"), Verdict::Allow);
+    assert_eq!(
+        tool_call(PRINT, config, "mcp__fs__read_file"),
+        Verdict::Allow
+    );
 }
 
 #[test]

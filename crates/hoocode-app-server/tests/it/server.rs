@@ -86,6 +86,7 @@ impl AuthLookup for FauxAuth {
 /// A `bash` tool that doesn't run anything: it echoes its command.
 fn fake_bash() -> ToolDefinition {
     ToolDefinition {
+        origin: hoocode_code_tool_api::ToolOrigin::BuiltIn,
         ordered_start: false,
         abort_grace: None,
         background_when: None,

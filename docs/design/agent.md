@@ -1,6 +1,6 @@
 # Agent
 
-Status (2026-11-19): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (see plugins.md), app-server and rpc approvals. Partly built: web tools (flag only; replaced by the webtools plugin, plugins.md PL-12), semantic index (flag only), MCP schema deferral (setting read by nothing). Tool names change to option D (2026-11-19, plugins.md PL-17); the built names stay `ext_*` and `mcp_*` until PL-17 P2. Open items are at the end.
+Status (2026-11-19): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (see plugins.md), app-server and rpc approvals. Partly built: web tools (flag only; replaced by the webtools plugin, plugins.md PL-12), semantic index (flag only), MCP schema deferral (setting read by nothing). Tool names follow option D (2026-11-19, plugins.md PL-17). Built in P2: origin, names, selectors in `--tools`. Open: P2b (permission rules and agent-list selectors) and P4 (TUI). Open items are at the end.
 
 ## Principles
 
@@ -108,7 +108,7 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 ### Web tools
 
-- Web access is the webtools plugin, not a built-in tool: its tools are `WebFetch` and `WebSearch`, the names the plugin declares (plugins.md Naming and identity, PL-12, PL-17). Built until PL-17: `ext_webtools_fetch` and `ext_webtools_search`.
+- Web access is the webtools plugin, not a built-in tool: its tools are `WebFetch` and `WebSearch`, the names the plugin declares (plugins.md Naming and identity, PL-12, PL-17). Built in P2 (2026-11-19); the webtools plugin's own release renames its tools (P3).
 - hoocode has no web flag, web settings or web helpers. The `Claude` aliases of `WebFetch` and `WebSearch` in agent frontmatter go: the names are the tools' own (PL-17).
 - The permission gate still names a plugin's network calls `WebFetch` (`hoocode-code-permissions`). That is a permission category, not a tool name. The TUI picks a renderer from the plugin's hint (`web-fetch`, `web-search`), not from the name (tui.md External tools).
 
@@ -141,7 +141,7 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 - Server fields: `command`, `args`, `env`, `url`, `headers`. `${VAR}` and `${VAR:-default}` expand at connect time in all of them except the names. An unset variable with no default fails that server. The diagnostic names the variable, never its value. The trust fingerprint hashes the text as written.
 - Trust store: `mcp-trust.json` in the agent dir (`hoocode_code_paths::agent_dir()`). Shared with plugins. Outside the repo.
-- Tool names: `mcp__<server>__<tool>` (plugins.md Naming and identity). A name that is too long keeps 55 characters, then `_` and 8 hex FNV-1a digits (`naming.rs`). Built until PL-17: `mcp_<server>_<tool>`.
+- Tool names: `mcp__<server>__<tool>` (plugins.md Naming and identity). A name that is too long keeps 55 characters, then `_` and 8 hex FNV-1a digits (`naming.rs`). Built in P2 (2026-11-19).
 - Runtime: 60 s request deadline. One reconnect after a drop. Tool progress shows in the TUI. Aborting a turn cancels the call. Tool-list changes apply at the next turn (not verified, AG-11).
 - Elicitation: asked in the TUI. Print and rpc decline it (AG-11).
 - `/mcp` lists servers with state: connected, not trusted, auth needed, failed.
@@ -210,6 +210,8 @@ Approvals:
 | `Shell` | `item/commandExecution/requestApproval` | `commandExecution` |
 | `Edit`, `Write` | `item/fileChange/requestApproval` | `fileChange` |
 | `WebFetch`, `WebSearch` | `item/commandExecution/requestApproval` | `dynamicToolCall` |
+
+The names are model-facing names, so a plugin tool with one of them is gated the same way (2026-11-19).
 
 - Decisions: `accept` runs once. `acceptForSession` runs and skips re-asking that tool on this thread, in memory only. `decline` denies. `cancel` denies and interrupts. Anything else counts as `accept` for that call. "Always" (global config write) is never offered.
 - Policy is `hoocode-code-permissions` `evaluate` with "has UI" set true.

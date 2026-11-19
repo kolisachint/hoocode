@@ -200,8 +200,9 @@ fn tool_execution_events_match_agent_loop() {
             tool_call_id: "call_read_1".into(),
             tool_name: "Read".into(),
             args: json!({"path": "notes.txt", "limit": 2}),
+            origin: Some(hoocode_agent_types::ToolOrigin::BuiltIn),
         }),
-        "{\"type\":\"tool_execution_start\",\"toolCallId\":\"call_read_1\",\"toolName\":\"Read\",\"args\":{\"path\":\"notes.txt\",\"limit\":2}}\n"
+        "{\"type\":\"tool_execution_start\",\"toolCallId\":\"call_read_1\",\"toolName\":\"Read\",\"origin\":{\"kind\":\"builtIn\"},\"args\":{\"path\":\"notes.txt\",\"limit\":2}}\n"
     );
     // `details: undefined` is left out; `terminate` only when set.
     assert_eq!(

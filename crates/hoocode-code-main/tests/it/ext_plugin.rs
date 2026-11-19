@@ -248,9 +248,9 @@ impl LocalServer {
 #[test]
 fn an_installed_plugin_tool_runs_and_its_result_reaches_the_model() {
     let home = Home::with_echo_plugin(true);
-    let printed = print_run(&home, call_then_done("ext_echo_echo", json!({"x": 1})), &[]);
+    let printed = print_run(&home, call_then_done("echo", json!({"x": 1})), &[]);
     assert!(
-        offered(&printed.requests[0]).contains(&"ext_echo_echo"),
+        offered(&printed.requests[0]).contains(&"echo"),
         "the first request must offer the plugin tool: {:?}",
         offered(&printed.requests[0])
     );
@@ -269,7 +269,7 @@ fn a_private_address_is_refused_before_any_approval_is_asked() {
     // WebFetch in the host log.
     let printed = print_run(
         &home,
-        call_then_done("ext_echo_fetch", json!({"url": "http://10.0.0.1/"})),
+        call_then_done("fetch", json!({"url": "http://10.0.0.1/"})),
         &[("HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED", "1")],
     );
     let results = tool_results(&printed.requests[1]);
@@ -304,7 +304,7 @@ fn loopback_is_refused_by_the_gate_and_the_server_gets_nothing() {
     // The test-only switch lets loopback past the SSRF block, so only the gate can refuse it.
     let printed = print_run(
         &home,
-        call_then_done("ext_echo_fetch", json!({"url": server.url()})),
+        call_then_done("fetch", json!({"url": server.url()})),
         &[
             ("HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK", "1"),
             ("HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED", "1"),
@@ -337,7 +337,7 @@ fn loopback_is_fetched_once_webfetch_is_auto_allowed() {
     let server = LocalServer::start();
     let printed = print_run(
         &home,
-        call_then_done("ext_echo_fetch", json!({"url": server.url()})),
+        call_then_done("fetch", json!({"url": server.url()})),
         &[
             ("HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK", "1"),
             ("HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED", "1"),
@@ -360,7 +360,9 @@ fn a_plugin_from_an_untrusted_marketplace_offers_no_tools() {
     let printed = print_run(&home, vec![json!({"text": "done"})], &[]);
     let offered_tools = offered(&printed.requests[0]);
     assert!(
-        offered_tools.iter().all(|name| !name.starts_with("ext_")),
+        offered_tools
+            .iter()
+            .all(|name| *name != "echo" && *name != "fetch"),
         "an untrusted plugin's tools must not be offered: {offered_tools:?}"
     );
     assert!(

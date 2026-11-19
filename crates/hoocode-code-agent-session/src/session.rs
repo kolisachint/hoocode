@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use hoocode_agent_core::{Agent, QueueMode as AgentQueueMode, Subscription};
 use hoocode_agent_types::{
-    AgentContext, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentTool, AgentTools,
-    BashExecutionMessage, CustomMessage,
+    collision_notice, AgentContext, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentTool,
+    AgentTools, BashExecutionMessage, CustomMessage, ToolOrigin, ToolSelector,
 };
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, Content, ImageContent, Model, TextContent, ThinkingLevel,
@@ -1311,16 +1311,30 @@ impl AgentSession {
     // Tools and system prompt
     // ------------------------------------------------------------------
 
-    fn is_allowed_tool(&self, name: &str) -> bool {
+    fn is_allowed_tool(&self, name: &str, origin: &ToolOrigin) -> bool {
         self.inner
             .allowed_tool_names
             .as_ref()
-            .is_none_or(|allowed| tool_listed(allowed, name))
+            .is_none_or(|allowed| tool_listed(allowed, name, origin))
             && !self
                 .inner
                 .disallowed_tool_names
                 .as_ref()
-                .is_some_and(|denied| tool_listed(denied, name))
+                .is_some_and(|denied| tool_listed(denied, name, origin))
+    }
+
+    /// The origin of the session's tool called `name`. A name the session does not know (a
+    /// tool that is gone) has the built-in origin, so no plugin or MCP selector takes it.
+    fn origin_of(&self, name: &str) -> ToolOrigin {
+        let state = lock(&self.inner.state);
+        state
+            .base_tool_definitions
+            .iter()
+            .chain(self.inner.custom_tools.iter())
+            .chain(state.plugin_tools.iter())
+            .chain(state.mcp_tools.iter())
+            .find(|d| d.name == name)
+            .map_or(ToolOrigin::BuiltIn, |d| d.origin.clone())
     }
 
     fn tool_context_factory(&self) -> ToolContextFactory {
@@ -1403,31 +1417,35 @@ impl AgentSession {
             .iter()
             .chain(plugin_tools.iter())
             .chain(mcp_tools.iter())
-            .filter(|d| self.is_allowed_tool(&d.name))
+            .filter(|d| self.is_allowed_tool(&d.name, &d.origin))
             .cloned()
             .collect();
         let builtins: Vec<ToolDefinition> = lock(&self.inner.state)
             .base_tool_definitions
             .iter()
-            .filter(|d| self.is_allowed_tool(&d.name))
+            .filter(|d| self.is_allowed_tool(&d.name, &d.origin))
             .cloned()
             .collect();
 
-        // Definitions keyed by name: built-ins first, custom tools override.
+        // Definitions keyed by name. Built-ins come first and a name is never replaced: the
+        // loaders keep a plugin or MCP tool from taking a taken name and say so (see
+        // `tool_names_taken` and `sync_mcp_tools`), so a later entry here is a duplicate to skip.
         let mut definitions: Vec<(String, DefinitionEntry)> = Vec::new();
         for (definition, source) in builtins
             .iter()
             .map(|d| (d, ToolSource::Builtin))
             .chain(custom.iter().map(|d| (d, ToolSource::Sdk)))
         {
-            let entry = DefinitionEntry {
-                definition: definition.clone(),
-                source,
-            };
-            match definitions.iter_mut().find(|(n, _)| *n == definition.name) {
-                Some(slot) => slot.1 = entry,
-                None => definitions.push((definition.name.clone(), entry)),
+            if definitions.iter().any(|(n, _)| *n == definition.name) {
+                continue;
             }
+            definitions.push((
+                definition.name.clone(),
+                DefinitionEntry {
+                    definition: definition.clone(),
+                    source,
+                },
+            ));
         }
         let snippets: HashMap<String, String> = definitions
             .iter()
@@ -1475,13 +1493,13 @@ impl AgentSession {
             .clone()
             .unwrap_or(previous_active)
             .into_iter()
-            .filter(|name| self.is_allowed_tool(name))
+            .filter(|name| self.is_allowed_tool(name, &self.origin_of(name)))
             .collect();
         if let Some(allowed) = &self.inner.allowed_tool_names {
             next_active.extend(
                 registry
                     .iter()
-                    .filter(|t| tool_listed(allowed, &t.name))
+                    .filter(|t| tool_listed(allowed, &t.name, &self.origin_of(&t.name)))
                     .map(|t| t.name.clone()),
             );
         } else if include_all_custom {
@@ -1641,14 +1659,16 @@ impl AgentSession {
         std::mem::take(&mut lock(&self.inner.state).plugin_notices)
     }
 
-    /// Names a plugin tool must not take: the built-in tools and the session's own tools.
-    fn tool_names_taken(&self) -> Vec<String> {
+    /// Names a plugin tool must not take, with the origin that holds each: the built-in tools,
+    /// the session's own tools and the MCP tools already loaded.
+    fn tool_names_taken(&self) -> Vec<(String, ToolOrigin)> {
         let state = lock(&self.inner.state);
         state
             .base_tool_definitions
             .iter()
-            .map(|t| t.name.clone())
-            .chain(self.inner.custom_tools.iter().map(|t| t.name.clone()))
+            .chain(self.inner.custom_tools.iter())
+            .chain(state.mcp_tools.iter())
+            .map(|t| (t.name.clone(), t.origin.clone()))
             .collect()
     }
 
@@ -1685,6 +1705,17 @@ impl AgentSession {
     fn sync_mcp_tools(&self) {
         let Some(hub) = self.mcp() else { return };
         let (generation, tools) = hub.tool_definitions();
+        let (tools, collisions) = {
+            let state = lock(&self.inner.state);
+            let mut holders: HashMap<String, ToolOrigin> = state
+                .base_tool_definitions
+                .iter()
+                .chain(self.inner.custom_tools.iter())
+                .chain(state.plugin_tools.iter())
+                .map(|t| (t.name.clone(), t.origin.clone()))
+                .collect();
+            admit_new_tools(tools, &mut holders)
+        };
         let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
         let (previous, auto_activate) = {
             let mut state = lock(&self.inner.state);
@@ -1692,6 +1723,7 @@ impl AgentSession {
                 return;
             }
             state.mcp_generation = Some(generation);
+            state.plugin_notices.extend(collisions);
             let previous: Vec<String> = state.mcp_tools.iter().map(|t| t.name.clone()).collect();
             state.mcp_tools = tools;
             (previous, state.mcp_auto_active)
@@ -2547,11 +2579,39 @@ impl AgentSession {
     }
 }
 
-/// Whether a tool list (`--tools` / `--disallowed-tools`) names `name`. An entry is an exact
-/// tool name, or the one wildcard `ext_*`, which covers every plugin WASM tool
-/// (`ext_<plugin>_<tool>`). No other globbing.
-pub(crate) fn tool_listed(list: &HashSet<String>, name: &str) -> bool {
-    list.contains(name) || (list.contains("ext_*") && name.starts_with("ext_"))
+/// Whether a tool list (`--tools` / `--disallowed-tools`) takes a tool. An entry is a
+/// selector (`plugin:<p>`, `mcp:<s>`, ... see `ToolSelector`): a name matches the tool of that
+/// model-facing name, and a qualified form matches by origin. A malformed entry matches nothing.
+pub(crate) fn tool_listed(list: &HashSet<String>, name: &str, origin: &ToolOrigin) -> bool {
+    list.iter().any(|entry| {
+        ToolSelector::parse(entry).is_ok_and(|selector| selector.matches(name, origin))
+    })
+}
+
+/// Keeps the tools whose model-facing name is not in `holders` yet, and adds them to it. The
+/// others are left out, and the second value says why, one line each: a name is never
+/// replaced silently. A tool that is kept is the first of its name in `tools`.
+pub(crate) fn admit_new_tools(
+    tools: Vec<ToolDefinition>,
+    holders: &mut HashMap<String, ToolOrigin>,
+) -> (Vec<ToolDefinition>, Vec<String>) {
+    let mut kept = Vec::new();
+    let mut notices = Vec::new();
+    for tool in tools {
+        match holders.get(&tool.name) {
+            Some(existing) => notices.push(collision_notice(
+                tool.origin.own_name(&tool.name),
+                &tool.name,
+                &tool.origin,
+                existing,
+            )),
+            None => {
+                holders.insert(tool.name.clone(), tool.origin.clone());
+                kept.push(tool);
+            }
+        }
+    }
+    (kept, notices)
 }
 
 #[cfg(test)]
@@ -2636,40 +2696,85 @@ mod unanswered_tests {
 #[cfg(test)]
 mod tool_listed_tests {
     use super::tool_listed;
+    use hoocode_agent_types::ToolOrigin;
     use std::collections::HashSet;
 
     fn list(names: &[&str]) -> HashSet<String> {
         names.iter().map(|s| s.to_string()).collect()
     }
 
-    #[test]
-    fn ext_wildcard_covers_plugin_tools_only() {
-        let allowed = list(&["Read", "ext_*"]);
-        assert!(tool_listed(&allowed, "ext_a_b"));
-        assert!(tool_listed(&allowed, "Read"));
-        assert!(!tool_listed(&allowed, "mcp_x"));
-        assert!(!tool_listed(&allowed, "Shell"));
+    fn plugin(plugin: &str, tool: &str) -> ToolOrigin {
+        ToolOrigin::Plugin {
+            plugin: plugin.into(),
+            tool: tool.into(),
+        }
+    }
+
+    fn mcp(server: &str, tool: &str) -> ToolOrigin {
+        ToolOrigin::Mcp {
+            server: server.into(),
+            tool: tool.into(),
+            plugin: None,
+        }
     }
 
     #[test]
-    fn exact_names_match_without_wildcard() {
-        let allowed = list(&["ext_a_b"]);
-        assert!(tool_listed(&allowed, "ext_a_b"));
-        assert!(!tool_listed(&allowed, "ext_a_c"));
+    fn plugin_selector_covers_that_plugins_tools_only() {
+        let allowed = list(&["Read", "plugin:web"]);
+        assert!(tool_listed(
+            &allowed,
+            "WebFetch",
+            &plugin("web", "WebFetch")
+        ));
+        assert!(tool_listed(&allowed, "Read", &ToolOrigin::BuiltIn));
+        assert!(!tool_listed(
+            &allowed,
+            "WebFetch",
+            &plugin("docs", "WebFetch")
+        ));
+        assert!(!tool_listed(&allowed, "Shell", &ToolOrigin::BuiltIn));
     }
 
     #[test]
-    fn only_the_exact_ext_star_entry_is_a_wildcard() {
-        // No general globbing: `ext_a*` or `*` match nothing.
-        let allowed = list(&["ext_a*", "*"]);
-        assert!(!tool_listed(&allowed, "ext_a_b"));
-        assert!(!tool_listed(&allowed, "mcp_x"));
+    fn name_selector_matches_the_model_name_on_any_origin() {
+        let allowed = list(&["WebFetch"]);
+        assert!(tool_listed(
+            &allowed,
+            "WebFetch",
+            &plugin("web", "WebFetch")
+        ));
+        assert!(!tool_listed(
+            &allowed,
+            "WebSearch",
+            &plugin("web", "WebSearch")
+        ));
     }
 
     #[test]
-    fn wildcard_in_disallowed_list_denies_plugin_tools() {
-        let denied = list(&["ext_*"]);
-        assert!(tool_listed(&denied, "ext_a_b"));
-        assert!(!tool_listed(&denied, "Read"));
+    fn old_names_and_globs_match_nothing() {
+        // No aliases and no globbing: the removed `ext_*` and `mcp_*` forms take no tool.
+        let allowed = list(&["ext_*", "mcp_x_echo", "*", "ext_a*"]);
+        assert!(!tool_listed(&allowed, "a", &plugin("a", "a")));
+        assert!(!tool_listed(&allowed, "mcp__x__echo", &mcp("x", "echo")));
+        assert!(!tool_listed(&allowed, "Shell", &ToolOrigin::BuiltIn));
+    }
+
+    #[test]
+    fn mcp_selector_matches_by_server() {
+        let denied = list(&["mcp:github"]);
+        assert!(tool_listed(
+            &denied,
+            "mcp__github__create_issue",
+            &mcp("github", "create_issue")
+        ));
+        assert!(!tool_listed(&denied, "mcp__gitlab__x", &mcp("gitlab", "x")));
+        assert!(!tool_listed(&denied, "Read", &ToolOrigin::BuiltIn));
+    }
+
+    #[test]
+    fn a_plugin_wildcard_in_the_disallowed_list_denies_plugin_tools() {
+        let denied = list(&["plugin:*"]);
+        assert!(tool_listed(&denied, "WebFetch", &plugin("web", "WebFetch")));
+        assert!(!tool_listed(&denied, "Read", &ToolOrigin::BuiltIn));
     }
 }

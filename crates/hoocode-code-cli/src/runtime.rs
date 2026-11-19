@@ -8,7 +8,7 @@
 use crate::args::Mode;
 use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
-use hoocode_agent_types::{AgentEvent, PermissionGate};
+use hoocode_agent_types::{AgentEvent, PermissionGate, ToolSelector};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
@@ -1059,26 +1059,37 @@ fn assemble_session(
 }
 
 /// MCP servers start in this process only when its tool list can use them: no `--tools` list
-/// (all tools), or a list that names an `mcp_` tool. Light mode and `--no-tools` start none.
+/// (all tools), or a list with an entry that can select an MCP tool. Light mode and `--no-tools`
+/// start none.
 fn mcp_wanted(args: &Args, light: bool) -> bool {
     if light || args.no_tools == Some(true) {
         return false;
     }
-    args.tools
-        .as_ref()
-        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("mcp_")))
+    args.tools.as_ref().is_none_or(|tools| {
+        tools
+            .iter()
+            .any(|t| selects(t, ToolSelector::may_match_mcp))
+    })
+}
+
+/// Whether a `--tools` entry parses as a selector that `may` accepts. A malformed entry selects
+/// nothing (see `tool_listed`).
+fn selects(entry: &str, may: fn(&ToolSelector) -> bool) -> bool {
+    ToolSelector::parse(entry).is_ok_and(|selector| may(&selector))
 }
 
 /// Plugin WASM components are loaded only when the session's tool list can use their tools: as
-/// for MCP, no `--tools` list or a list that names an `ext_` tool. Light mode and `--no-tools`
-/// load none. Subagents follow the same rule, from their own `--tools` list.
+/// for MCP, no `--tools` list or a list with an entry that can select a plugin tool. Light mode
+/// and `--no-tools` load none. Subagents follow the same rule, from their own `--tools` list.
 fn ext_tools_wanted(args: &Args, light: bool) -> bool {
     if light || args.no_tools == Some(true) {
         return false;
     }
-    args.tools
-        .as_ref()
-        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("ext_")))
+    args.tools.as_ref().is_none_or(|tools| {
+        tools
+            .iter()
+            .any(|t| selects(t, ToolSelector::may_match_plugin_wasm))
+    })
 }
 
 /// Load the session's MCP servers and start the trusted ones in the background. Untrusted
@@ -2189,13 +2200,13 @@ mod tests {
 
     #[test]
     fn approval_note_names_only_the_approval_tools_that_ran() {
-        let ran: std::collections::BTreeSet<String> = ["Read", "Write", "mcp_fs_list", "Shell"]
+        let ran: std::collections::BTreeSet<String> = ["Read", "Write", "mcp__fs__list", "Shell"]
             .iter()
             .map(|t| t.to_string())
             .collect();
         assert_eq!(
             ungated_run_note("--print", &ran).as_deref(),
-            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp_fs_list. Its subagents get the same answer from these rules: their tools that need approval run too.")
+            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp__fs__list. Its subagents get the same answer from these rules: their tools that need approval run too.")
         );
         let read_only: std::collections::BTreeSet<String> =
             ["Read", "Grep"].iter().map(|t| t.to_string()).collect();
@@ -2932,7 +2943,7 @@ mod tests {
 
 #[cfg(test)]
 mod mcp_wanted_tests {
-    use super::{mcp_wanted, Args};
+    use super::{ext_tools_wanted, mcp_wanted, Args};
 
     fn args(argv: &[&str]) -> Args {
         crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>())
@@ -2942,12 +2953,30 @@ mod mcp_wanted_tests {
     fn servers_start_only_where_the_tool_list_can_use_them() {
         // No tool list: the process has every tool, MCP included.
         assert!(mcp_wanted(&args(&[]), false));
-        // A list with an mcp_ tool (a subagent that names one).
-        assert!(mcp_wanted(&args(&["--tools", "Read,mcp_x_echo"]), false));
+        // A list with an MCP tool's name, or a selector for MCP (a subagent that names one).
+        assert!(mcp_wanted(&args(&["--tools", "Read,mcp__x__echo"]), false));
+        assert!(mcp_wanted(&args(&["--tools", "Read,mcp:x"]), false));
         // A list without one, `--no-tools`, and light mode start nothing.
         assert!(!mcp_wanted(&args(&["--tools", "Read"]), false));
+        // A plugin selector can take a plugin's MCP tools, so MCP starts for it.
+        assert!(mcp_wanted(&args(&["--tools", "Read,plugin:web"]), false));
         assert!(!mcp_wanted(&args(&["--no-tools"]), false));
         assert!(!mcp_wanted(&args(&[]), true));
+    }
+
+    #[test]
+    fn plugin_components_load_only_where_the_tool_list_can_use_them() {
+        assert!(ext_tools_wanted(&args(&[]), false));
+        // A selector for a plugin, or a bare name (which may be a plugin's tool).
+        assert!(ext_tools_wanted(&args(&["--tools", "plugin:web"]), false));
+        assert!(ext_tools_wanted(&args(&["--tools", "WebFetch"]), false));
+        // Only an MCP tool or MCP selector: no component is needed.
+        assert!(!ext_tools_wanted(
+            &args(&["--tools", "mcp__x__echo,mcp:x"]),
+            false
+        ));
+        assert!(!ext_tools_wanted(&args(&["--tools", "WebFetch"]), true));
+        assert!(!ext_tools_wanted(&args(&["--no-tools"]), false));
     }
 }
 

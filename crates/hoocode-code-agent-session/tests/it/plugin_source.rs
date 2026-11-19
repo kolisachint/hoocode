@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use hoocode_agent_types::ToolOrigin;
 use hoocode_code_agent_session::mcp::McpHub;
 use hoocode_code_agent_session::PluginSource;
 use hoocode_code_mcp::PluginServers;
@@ -59,7 +60,7 @@ impl PluginSource for FakePlugins {
         self.generation.load(Ordering::SeqCst)
     }
 
-    fn tools(&self, taken: &[String]) -> (Vec<ToolDefinition>, Vec<String>) {
+    fn tools(&self, taken: &[(String, ToolOrigin)]) -> (Vec<ToolDefinition>, Vec<String>) {
         self.builds.fetch_add(1, Ordering::SeqCst);
         let mut notices = Vec::new();
         let kept = self
@@ -68,7 +69,7 @@ impl PluginSource for FakePlugins {
             .unwrap()
             .iter()
             .filter(|t| {
-                if taken.contains(&t.name) {
+                if taken.iter().any(|(name, _)| *name == t.name) {
                     notices.push(format!("tool {} not loaded: already a tool", t.name));
                     false
                 } else {
@@ -110,7 +111,12 @@ fn all(h: &Harness) -> Vec<String> {
 }
 
 fn echo() -> ToolDefinition {
-    tool("ext_echo_echo", |_| unimplemented!())
+    let mut echo = tool("echo", |_| unimplemented!());
+    echo.origin = ToolOrigin::Plugin {
+        plugin: "echo".into(),
+        tool: "echo".into(),
+    };
+    echo
 }
 
 #[test]
@@ -119,20 +125,20 @@ fn installed_tools_are_active_at_the_next_refresh_and_removed_tools_leave() {
     let plugins = Arc::new(FakePlugins::default());
     let notices = h.session.attach_plugins(plugins.clone());
     assert!(notices.is_empty(), "{notices:?}");
-    assert!(!all(&h).contains(&"ext_echo_echo".to_owned()));
+    assert!(!all(&h).contains(&"echo".to_owned()));
 
     // The same entry point `/plugin` and the model's plugin tools reach.
     plugins.set(vec![echo()]);
     h.session.refresh_plugins();
-    assert!(all(&h).contains(&"ext_echo_echo".to_owned()));
-    assert!(active(&h).contains(&"ext_echo_echo".to_owned()));
+    assert!(all(&h).contains(&"echo".to_owned()));
+    assert!(active(&h).contains(&"echo".to_owned()));
     // The session's own tools are kept.
     assert!(active(&h).contains(&"AskUserQuestion".to_owned()));
 
     plugins.set(vec![]);
     h.session.refresh_plugins();
-    assert!(!all(&h).contains(&"ext_echo_echo".to_owned()));
-    assert!(!active(&h).contains(&"ext_echo_echo".to_owned()));
+    assert!(!all(&h).contains(&"echo".to_owned()));
+    assert!(!active(&h).contains(&"echo".to_owned()));
     assert!(active(&h).contains(&"AskUserQuestion".to_owned()));
 }
 
@@ -143,7 +149,7 @@ async fn a_reload_picks_up_the_plugins_too() {
     h.session.attach_plugins(plugins.clone());
     plugins.set(vec![echo()]);
     h.session.reload().await;
-    assert!(active(&h).contains(&"ext_echo_echo".to_owned()));
+    assert!(active(&h).contains(&"echo".to_owned()));
 }
 
 /// A reload re-reads the settings, and the plugin tools hold their `pluginConfig` values from
@@ -157,7 +163,7 @@ async fn a_reload_builds_the_plugin_tools_again_for_new_settings() {
     let builds = plugins.builds();
     h.session.reload().await;
     assert_eq!(plugins.builds(), builds + 1);
-    assert!(active(&h).contains(&"ext_echo_echo".to_owned()));
+    assert!(active(&h).contains(&"echo".to_owned()));
     assert_eq!(plugins.hub_builds(), 0);
     assert!(Arc::ptr_eq(&h.session.mcp().unwrap(), &hub));
 }
@@ -189,7 +195,7 @@ fn a_plugin_tool_never_takes_a_name_the_session_has() {
         1,
         "{names:?}"
     );
-    assert!(names.contains(&"ext_echo_echo".to_owned()));
+    assert!(names.contains(&"echo".to_owned()));
     let notices = h.session.take_plugin_notices();
     assert_eq!(notices.len(), 1, "{notices:?}");
     assert!(notices[0].contains("AskUserQuestion"));
@@ -212,7 +218,7 @@ fn a_plugin_tool_change_keeps_the_mcp_hub() {
     let (h, plugins, hub) = session_with_mcp();
     plugins.set(vec![echo()]);
     h.session.refresh_plugins();
-    assert!(all(&h).contains(&"ext_echo_echo".to_owned()));
+    assert!(all(&h).contains(&"echo".to_owned()));
     // The MCP servers did not change, so the running hub stays and is not built again.
     assert_eq!(plugins.hub_builds(), 0);
     assert!(Arc::ptr_eq(&h.session.mcp().unwrap(), &hub));
@@ -235,7 +241,7 @@ fn a_source_that_does_not_say_builds_the_hub_on_every_change() {
         fn generation(&self) -> u64 {
             self.0.generation()
         }
-        fn tools(&self, taken: &[String]) -> (Vec<ToolDefinition>, Vec<String>) {
+        fn tools(&self, taken: &[(String, ToolOrigin)]) -> (Vec<ToolDefinition>, Vec<String>) {
             self.0.tools(taken)
         }
         fn mcp_hub(&self) -> Option<Arc<McpHub>> {
