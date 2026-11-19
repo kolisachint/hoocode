@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: tool name collisions are case-insensitive (2026-11-19)
+- A plugin tool whose name differs from a taken name only in case (`read` next to the built-in
+  `Read`, or `Foo` and `foo` from two plugin tools) is not loaded. Selectors match names
+  case-insensitively, so such a tool was reachable under the built-in's rules before.
+
 ### Changed: subagents never run or expose plugin MCP servers (2026-11-19)
 - A plugin selector (`plugin:*`, `plugin:<p>`) no longer takes an MCP tool. A subagent runs
   no plugin MCP server and exposes no plugin MCP tool, so general-purpose subagents (`plugin:*`)

@@ -88,9 +88,13 @@ fn build_with_cache(
     diagnostics: &mut Diagnostics,
 ) -> Vec<ToolDefinition> {
     let mut out = Vec::new();
-    // Every name the session has, with the origin that holds it. A plugin tool is added here
-    // as it is loaded, so a later plugin cannot take its name either.
-    let mut holders: HashMap<String, ToolOrigin> = taken.iter().cloned().collect();
+    // Every name the session has, with the origin that holds it, keyed by lowercase name: a
+    // selector matches a name case-insensitively, so `Read` and `read` are one name. A plugin
+    // tool is added here as it is loaded, so a later plugin cannot take its name either.
+    let mut holders: HashMap<String, ToolOrigin> = taken
+        .iter()
+        .map(|(name, origin)| (name.to_ascii_lowercase(), origin.clone()))
+        .collect();
     let mut host: Option<WasmHost> = None;
     let trust = hoocode_ai_util::tls::installed_trust();
     for plugin in &plugins.plugins {
@@ -154,7 +158,8 @@ fn build_with_cache(
                 plugin: plugin.name.clone(),
                 tool: info.name.clone(),
             };
-            if let Some(existing) = holders.get(&info.name) {
+            let key = info.name.to_ascii_lowercase();
+            if let Some(existing) = holders.get(&key) {
                 collisions.push(Collision {
                     name: info.name.clone(),
                     origin,
@@ -162,7 +167,7 @@ fn build_with_cache(
                 });
                 continue;
             }
-            holders.insert(info.name.clone(), origin.clone());
+            holders.insert(key, origin.clone());
             out.push(definition(
                 origin,
                 info,
@@ -654,6 +659,32 @@ mod tests {
         );
         assert!(!tools.iter().any(|t| t.name == "echo"));
         assert!(tools.iter().any(|t| t.name == "config"));
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].1,
+            "plugin demo: 1 tool not loaded (echo): name is already taken by built-in tool"
+        );
+    }
+
+    #[test]
+    fn a_taken_name_blocks_a_plugin_tool_that_differs_only_in_case() {
+        // Selectors match names case-insensitively, so the built-in `Read` also holds `read`.
+        let layout = Layout::new();
+        layout.add_plugin("demo", &fixture_bytes());
+        let set = layout.load(&[]);
+        let taken = vec![("ECHO".to_owned(), ToolOrigin::BuiltIn)];
+        let (tools, diagnostics) = build_for(
+            &layout,
+            &set,
+            &settings(json!({})),
+            ScriptedGate::new(vec![]),
+            &taken,
+        );
+        assert!(
+            !tools.iter().any(|t| t.name == "echo"),
+            "{:?}",
+            names(&tools)
+        );
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
         assert_eq!(
             diagnostics[0].1,

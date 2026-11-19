@@ -173,6 +173,7 @@ Collisions. A collision is never silent.
 | Two plugin or MCP tools have the same model-facing name | The first in load order is loaded. The other is not | Names both origins, for example `plugin webtools` and `mcp github (plugin docs)` |
 
 - Load order is the existing one: user before project. The MCP path must not overwrite a tool silently, as it does today.
+- Names are compared case-insensitively, as selectors match them. A plugin tool `read` is not loaded next to the built-in `Read`, and `Foo` and `foo` from two tools give one holder. The notice names each tool as it declares it.
 - Diagnostics show in `/plugin list` and in plugin diagnostics.
 
 Selectors. Permission rules, `auto_allow`, agent `tools` and `disallowedTools`, and the `--tools` and `--disallowed-tools` flags match a selector against the origin, not the name.
@@ -319,6 +320,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-19 | Tool identity is structured (option D). The origin (`BuiltIn`, `Plugin`, `Mcp`) is carried everywhere; the model-facing name is for the model only. Supersedes the 2026-11-17 naming row. |
 | 2026-11-19 | Model-facing names: a plugin's WASM tools use the name the plugin declares (PascalCase, `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). MCP tools are `mcp__<server>__<tool>`, sanitised, 64 cap with an FNV-1a suffix. Old `ext_*` and `mcp_*` names are removed, with no aliases. |
 | 2026-11-19 | Collisions: a built-in is never shadowed. Between plugin and MCP tools the first in load order wins and the other is not loaded. Always a diagnostic that names both origins. The silent MCP overwrite is a bug. |
+| 2026-11-19 | Name collisions are case-insensitive (`Read` and `read` are one name). Holders are keyed by lowercase name in the component loader and in the session's admit step. The notice keeps each tool's own spelling. |
 | 2026-11-19 | Selectors: `Name`, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>`, `mcp:*`. They match origin. A malformed selector fails closed. |
 | 2026-11-19 | Webtools tools are `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The `Claude` aliases and `ext_webtools_*` names go. Supersedes the WebFetch/WebSearch part of the 2026-11-18 row. |
 | 2026-11-19 | Renderer hint: `extensions."dev.hoocode".tools.<Name>.render` in `plugin.json`. The TUI picks a renderer from the hint, never from a plugin or MCP tool name. Absent or unknown: generic. |

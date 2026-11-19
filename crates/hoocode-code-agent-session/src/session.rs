@@ -1482,7 +1482,10 @@ impl AgentSession {
             .map(|d| (d, ToolSource::Builtin))
             .chain(custom.iter().map(|d| (d, ToolSource::Sdk)))
         {
-            if definitions.iter().any(|(n, _)| *n == definition.name) {
+            if definitions
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case(&definition.name))
+            {
                 continue;
             }
             definitions.push((
@@ -1770,7 +1773,7 @@ impl AgentSession {
                 .iter()
                 .chain(self.inner.custom_tools.iter())
                 .chain(state.plugin_tools.iter())
-                .map(|t| (t.name.clone(), t.origin.clone()))
+                .map(|t| (t.name.to_ascii_lowercase(), t.origin.clone()))
                 .collect();
             admit_new_tools(tools, &mut holders)
         };
@@ -2646,10 +2649,11 @@ pub(crate) fn tool_listed(list: &HashSet<String>, name: &str, origin: &ToolOrigi
     })
 }
 
-/// Keeps the tools whose model-facing name is not in `holders` yet, and adds them to it. The
-/// others are left out, and the second value says why, grouped per requesting plugin or server
-/// (`collision_notices`): a name is never replaced silently. A tool that is kept is the first of
-/// its name in `tools`.
+/// Keeps the tools whose model-facing name is not in `holders` yet, and adds them to it. `holders`
+/// is keyed by lowercase name (a selector matches names case-insensitively, so `Read` and `read`
+/// are one name). The others are left out, and the second value says why, grouped per requesting
+/// plugin or server (`collision_notices`), with the names as the tools declare them: a name is
+/// never replaced silently. A tool that is kept is the first of its name in `tools`.
 pub(crate) fn admit_new_tools(
     tools: Vec<ToolDefinition>,
     holders: &mut HashMap<String, ToolOrigin>,
@@ -2657,19 +2661,85 @@ pub(crate) fn admit_new_tools(
     let mut kept = Vec::new();
     let mut collisions = Vec::new();
     for tool in tools {
-        match holders.get(&tool.name) {
+        let key = tool.name.to_ascii_lowercase();
+        match holders.get(&key) {
             Some(existing) => collisions.push(Collision {
                 name: tool.name.clone(),
                 origin: tool.origin.clone(),
                 existing: existing.clone(),
             }),
             None => {
-                holders.insert(tool.name.clone(), tool.origin.clone());
+                holders.insert(key, tool.origin.clone());
                 kept.push(tool);
             }
         }
     }
     (kept, collision_notices(&collisions))
+}
+
+#[cfg(test)]
+mod collision_case_tests {
+    use super::*;
+    use hoocode_code_tool_api::ToolError;
+
+    fn tool(name: &str, origin: ToolOrigin) -> ToolDefinition {
+        ToolDefinition {
+            name: name.into(),
+            origin,
+            render: None,
+            label: name.into(),
+            description: format!("{name} tool"),
+            prompt_snippet: None,
+            prompt_guidelines: vec![],
+            parameters: serde_json::json!({"type": "object", "properties": {}}),
+            prepare_arguments: None,
+            execution_mode: None,
+            background: false,
+            background_when: None,
+            background_placeholder: None,
+            ordered_start: false,
+            abort_grace: None,
+            execute: Arc::new(|_id, _params, _signal, _update, _ctx| {
+                Err::<hoocode_agent_types::AgentToolResult, ToolError>("not run".into())
+            }),
+        }
+    }
+
+    #[test]
+    fn names_that_differ_only_in_case_collide() {
+        // A built-in `Read` holds `read`: a plugin tool of that name is not kept.
+        let mut holders = HashMap::from([("read".to_owned(), ToolOrigin::BuiltIn)]);
+        let plugin = ToolOrigin::Plugin {
+            plugin: "foo".into(),
+            tool: "read".into(),
+        };
+        let (kept, notices) = admit_new_tools(vec![tool("read", plugin)], &mut holders);
+        assert!(kept.is_empty());
+        assert_eq!(
+            notices,
+            ["plugin foo: 1 tool not loaded (read): name is already taken by built-in tool"]
+        );
+    }
+
+    #[test]
+    fn plugin_tools_named_foo_and_upper_foo_give_one_notice() {
+        let mut holders = HashMap::new();
+        let origin = |tool: &str| ToolOrigin::Plugin {
+            plugin: "p".into(),
+            tool: tool.into(),
+        };
+        let (kept, notices) = admit_new_tools(
+            vec![tool("Foo", origin("Foo")), tool("foo", origin("foo"))],
+            &mut holders,
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].name, "Foo", "the first one is kept");
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert_eq!(
+            notices[0],
+            "plugin p: 1 tool not loaded (foo): name is already taken by plugin p"
+        );
+    }
 }
 
 #[cfg(test)]
