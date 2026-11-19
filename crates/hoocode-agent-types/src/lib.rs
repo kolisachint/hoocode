@@ -33,8 +33,13 @@ pub enum ToolExecutionMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentToolCall {
     pub id: String,
+    /// The model-facing name.
     pub name: String,
     pub arguments: serde_json::Value,
+    /// Where the called tool comes from. The loop takes it from the tool the name finds in the
+    /// session's registry; a name the session does not have is `BuiltIn` (such a call never runs).
+    /// Gates and the harness read it here, never from the name.
+    pub origin: ToolOrigin,
 }
 
 // ---------------------------------------------------------------------------

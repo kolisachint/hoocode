@@ -228,6 +228,7 @@ fn project_config_cannot_seed_always() {
             &config,
             dir.path(),
             "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
             &shell("rm x"),
             ApprovalChannel::Ui,
         ),

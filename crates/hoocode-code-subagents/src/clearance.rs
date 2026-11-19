@@ -4,8 +4,8 @@
 //! it cannot ask for approval itself. When its permission gate needs a human,
 //! it asks its parent instead, over the pipes it already has:
 //!
-//! - child stdout: `{"type":"clearance_request","id":7,"tool":"Shell","input":{..}}`,
-//!   plus `"via":"<subagent chain>"` when the call came from a deeper subagent
+//! - child stdout: `{"type":"clearance_request","id":7,"tool":"Shell","origin":{"kind":"builtIn"},
+//!   "input":{..}}`, plus `"via":"<subagent chain>"` when the call came from a deeper subagent
 //!   the child is relaying for;
 //! - child stdin: `{"type":"clearance_response","id":7,"allow":false,"reason":".."}`.
 //!
@@ -22,6 +22,7 @@ use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use hoocode_agent_types::ToolOrigin;
 use hoocode_code_permissions::{ClearanceRelay, RelayRequest};
 use serde_json::{json, Value};
 
@@ -42,9 +43,19 @@ const MAX_REQUEST_LINE: usize = 4 * 1024 * 1024;
 /// How often a waiting request checks whether it was cancelled.
 const POLL: Duration = Duration::from_millis(250);
 
-/// The child's request line (without the newline).
-pub fn request_line(id: u64, tool: &str, input: &Value, via: Option<&str>) -> String {
-    let mut line = json!({"type": REQUEST_TYPE, "id": id, "tool": tool, "input": input});
+/// The child's request line (without the newline). `origin` is where the tool comes from; the
+/// parent gates on it, never on the name.
+pub fn request_line(
+    id: u64,
+    tool: &str,
+    origin: &ToolOrigin,
+    input: &Value,
+    via: Option<&str>,
+) -> String {
+    let mut line = json!({
+        "type": REQUEST_TYPE, "id": id, "tool": tool,
+        "origin": serde_json::to_value(origin).unwrap_or(Value::Null), "input": input,
+    });
     if let (Some(via), Some(map)) = (via, line.as_object_mut()) {
         map.insert("via".into(), Value::String(via.to_string()));
     }
@@ -179,7 +190,13 @@ impl ClearanceRelay for ChildRelay {
             }
             state.pending.insert(id, reply);
         }
-        let line = request_line(id, &request.tool, &request.input, request.via.as_deref());
+        let line = request_line(
+            id,
+            &request.tool,
+            &request.origin,
+            &request.input,
+            request.via.as_deref(),
+        );
         if line.len() > MAX_REQUEST_LINE || !self.write_line(&line) {
             self.state().pending.remove(&id);
             return Some(PARENT_GONE.to_string());

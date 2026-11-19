@@ -78,8 +78,9 @@ no `/reload`.
   `mcp__github__create_issue`. `--tools`, `--disallowed-tools` and an agent's `tools`
   and `disallowedTools` take a name or a selector: `plugin:<plugin>` (every tool of a
   plugin), `plugin:<plugin>/<Tool>`, `plugin:*`, `mcp:<server>`, `mcp:<server>/<tool>`
-  and `mcp:*`. An entry that is neither is malformed and selects nothing. The old
-  `ext_*` and `mcp_*` names are gone, with no alias.
+  and `mcp:*`. An entry that is neither is malformed: `--tools` and `--disallowed-tools`
+  stop with an error, an agent definition with one is rejected, and a permission rule with
+  one stops hoocode from starting. The old `ext_*` and `mcp_*` names are gone, with no alias.
 - Two plugin or MCP tools with the same name: the first one loaded is used, and the
   other is skipped with a diagnostic that names both. A plugin tool never replaces a
   built-in tool.
@@ -192,6 +193,14 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
   `allowed_write_paths` limits Edit and Write to matching paths, `auto_allow` runs
   tools without asking, and `allowed_bash_commands` / `denied_bash_commands` take regexes.
   A key you leave out takes the shipped value above; set it (even to `[]`) to override.
+- **Tool selectors in rules**: `denied_tools`, `enabled_tools` and `auto_allow` take the
+  same selectors as `--tools`. A bare name (`WebFetch`) matches the tool of that name from
+  any source, case-insensitively. `plugin:webtools` is every tool of that plugin,
+  `plugin:webtools/WebFetch` one tool of it, `plugin:*` every plugin tool, `mcp:github`
+  every tool of that MCP server and `mcp:github/create_issue` one of them. Plugin tools
+  are not asked about one by one: their network access is asked as `WebFetch`, once per
+  site. A malformed entry stops hoocode from starting, with a message that names the mode
+  and the entry, until it is fixed.
 - **Approval card** (`Allow Shell?`): press `1` to allow once, `2` to always allow
   (when offered), `3` to refuse and tell the agent why. `e` edits the command first, and
   any other letter starts typing a reply that `enter` sends as the reason. `enter`

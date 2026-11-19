@@ -432,6 +432,7 @@ fn the_task_tool_runs_in_the_background_per_agent_or_argument() {
         id: "c".into(),
         name: "Agent".into(),
         arguments: args,
+        origin: hoocode_agent_types::ToolOrigin::BuiltIn,
     };
     // Every agent is a background agent by default, general-purpose included (card 9, D1).
     assert!(predicate(&call(json!({"subagent_type": "explore"}))));
@@ -464,6 +465,7 @@ fn an_agent_is_background_unless_its_definition_says_background_false() {
         id: "c".into(),
         name: "Agent".into(),
         arguments: args,
+        origin: hoocode_agent_types::ToolOrigin::BuiltIn,
     };
     assert!(predicate(&call(
         json!({"subagent_type": "general-purpose"})
@@ -1062,6 +1064,7 @@ fn a_project_agent_opting_into_background_runs_detached() {
         id: "c".into(),
         name: "Agent".into(),
         arguments: json!({"subagent_type": agent}),
+        origin: hoocode_agent_types::ToolOrigin::BuiltIn,
     };
     assert!(predicate(&call("watcher")));
     assert!(predicate(&call("explore")));
@@ -1816,6 +1819,7 @@ fn agent_call(id: &str, description: &str) -> AgentToolCall {
             "subagent_type": "explore",
             "background": true,
         }),
+        origin: hoocode_agent_types::ToolOrigin::BuiltIn,
     }
 }
 

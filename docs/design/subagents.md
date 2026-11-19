@@ -1,6 +1,6 @@
 # Subagents
 
-Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists; rejecting a malformed agent entry is P2b. Open items are SA-1 to SA-11.
+Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-11.
 
 Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
 

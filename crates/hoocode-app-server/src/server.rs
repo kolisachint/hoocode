@@ -707,6 +707,15 @@ impl LoadedThread {
     }
 }
 
+/// The session-grant key of a call: its name and origin, so a grant covers one tool only.
+fn grant_key(call: &AgentToolCall) -> String {
+    format!(
+        "{}\u{1f}{}",
+        serde_json::to_string(&call.origin).unwrap_or_default(),
+        call.name
+    )
+}
+
 /// The permission gate the server installs in every session: hoocode's policy
 /// decides whether to ask; asking goes to the thread's clients.
 struct ServerGate {
@@ -721,6 +730,7 @@ impl PermissionGate for ServerGate {
             &config,
             &self.cwd,
             &call.name,
+            &call.origin,
             &call.arguments,
             ApprovalChannel::Ui,
         ) {
@@ -730,7 +740,8 @@ impl PermissionGate for ServerGate {
                 let Some(thread) = lock(&self.thread).upgrade() else {
                     return deny();
                 };
-                if lock(&thread.state).session_grants.contains(&call.name) {
+                let grant = grant_key(call);
+                if lock(&thread.state).session_grants.contains(&grant) {
                     return PermissionDecision::Grant;
                 }
                 match thread.ask(call) {
@@ -738,7 +749,7 @@ impl PermissionGate for ServerGate {
                         PermissionDecision::Grant
                     }
                     ApprovalDecision::AcceptForSession => {
-                        lock(&thread.state).session_grants.insert(call.name.clone());
+                        lock(&thread.state).session_grants.insert(grant);
                         PermissionDecision::Grant
                     }
                     ApprovalDecision::Decline => {

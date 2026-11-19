@@ -1,6 +1,6 @@
 # Agent
 
-Status (2026-11-19): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (see plugins.md), app-server and rpc approvals. Partly built: web tools (flag only; replaced by the webtools plugin, plugins.md PL-12), semantic index (flag only), MCP schema deferral (setting read by nothing). Tool names follow option D (2026-11-19, plugins.md PL-17). Built in P2: origin, names, selectors in `--tools`. Open: P2b (permission rules and agent-list selectors) and P4 (TUI). Open items are at the end.
+Status (2026-11-19): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (see plugins.md), app-server and rpc approvals. Partly built: web tools (flag only; replaced by the webtools plugin, plugins.md PL-12), semantic index (flag only), MCP schema deferral (setting read by nothing). Tool names follow option D (2026-11-19, plugins.md PL-17). Built in P2: origin, names, selectors in `--tools`. Built in P2b (2026-11-19): selectors in permission rules, the gate and the approval relays read the origin, malformed selectors refused. Open: P4 (TUI). Open items are at the end.
 
 ## Principles
 
@@ -211,7 +211,7 @@ Approvals:
 | `Edit`, `Write` | `item/fileChange/requestApproval` | `fileChange` |
 | `WebFetch`, `WebSearch` | `item/commandExecution/requestApproval` | `dynamicToolCall` |
 
-The names are model-facing names, so a plugin tool with one of them is gated the same way (2026-11-19).
+Gates read the origin, not the name: a plugin tool with one of these names is not gated (2026-11-19, P2b). The `WebFetch` category is the built-in network permission, which a plugin's network request is asked as, once per site.
 
 - Decisions: `accept` runs once. `acceptForSession` runs and skips re-asking that tool on this thread, in memory only. `decline` denies. `cancel` denies and interrupts. Anything else counts as `accept` for that call. "Always" (global config write) is never offered.
 - Policy is `hoocode-code-permissions` `evaluate` with "has UI" set true.

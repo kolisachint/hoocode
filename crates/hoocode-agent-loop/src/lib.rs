@@ -536,7 +536,7 @@ struct FinalizedOutcome {
     duration: Option<Duration>,
 }
 
-fn tool_calls_of(message: &AssistantMessage) -> Vec<AgentToolCall> {
+fn tool_calls_of(tools: &AgentTools, message: &AssistantMessage) -> Vec<AgentToolCall> {
     message
         .content
         .iter()
@@ -545,6 +545,9 @@ fn tool_calls_of(message: &AssistantMessage) -> Vec<AgentToolCall> {
                 id: tc.id.clone(),
                 name: tc.name.clone(),
                 arguments: tc.arguments.clone(),
+                origin: tools
+                    .find(&tc.name)
+                    .map_or(ToolOrigin::BuiltIn, |t| t.origin.clone()),
             }),
             _ => None,
         })
@@ -561,7 +564,7 @@ async fn execute_tool_calls(
     emit: &mut AgentEventSink,
     background: &BackgroundTaskManager,
 ) -> ExecutedToolCallBatch {
-    let tool_calls = tool_calls_of(assistant_message);
+    let tool_calls = tool_calls_of(&context.tools, assistant_message);
     let (background_calls, foreground_calls): (Vec<_>, Vec<_>) =
         tool_calls.iter().cloned().partition(|tc| {
             context

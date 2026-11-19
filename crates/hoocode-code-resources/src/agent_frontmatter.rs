@@ -1,9 +1,10 @@
 //! `core/agent-frontmatter.ts`: agent definitions (Markdown with YAML
 //! frontmatter, Claude Code compatible) and the Claude tool-name shim.
 
-use crate::diagnostics::ResourceDiagnostic;
+use crate::diagnostics::{DiagnosticType, ResourceDiagnostic};
 use crate::frontmatter::parse_frontmatter;
 use crate::js::js_string;
+use hoocode_agent_types::ToolSelector;
 use serde_json::Value;
 
 const MAX_NAME_LENGTH: usize = 64;
@@ -167,9 +168,20 @@ pub fn normalize_tools(
     }
     let mut resolved: Vec<String> = Vec::new();
     for raw in split_tools_value(value) {
+        // An entry that is neither a name nor a selector (`ext_*`, `plugin:`, `*`) rejects the
+        // definition: it could not select anything, so it is not dropped silently.
+        if ToolSelector::parse(&raw).is_err() {
+            diagnostics.push(ResourceDiagnostic::error(
+                format!(
+                    "tool \"{raw}\" is not a tool name or a selector (plugin:<p>, plugin:<p>/<Tool>, plugin:*, mcp:<s>, mcp:<s>/<tool>, mcp:*); the agent definition is rejected"
+                ),
+                file_path,
+            ));
+            continue;
+        }
         // A qualified selector (`plugin:<p>`, `mcp:<s>`, ...) has no alias: it is kept as written,
         // so a subagent can be given those tools. Whether any exists is decided when the session
-        // starts. A malformed one is kept too, and selects nothing.
+        // starts.
         if raw.contains(':') {
             if !resolved.contains(&raw) {
                 resolved.push(raw);
@@ -351,5 +363,9 @@ pub fn parse_agent_definition(
         delegate_to,
         fork,
     };
+    // A rejected tool entry rejects the definition (its diagnostic says which entry).
+    if diagnostics.iter().any(|d| d.kind == DiagnosticType::Error) {
+        return (None, diagnostics);
+    }
     (Some(agent), diagnostics)
 }

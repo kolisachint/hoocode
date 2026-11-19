@@ -2050,6 +2050,7 @@ version = "0.2.48"
 dependencies = [
  "glob",
  "hoocode-agent-harness",
+ "hoocode-agent-types",
  "hoocode-code-paths",
  "hoocode-code-settings",
  "hoocode-home",

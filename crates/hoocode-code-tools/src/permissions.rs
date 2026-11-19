@@ -215,6 +215,7 @@ mod tests {
             id: "1".into(),
             name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert_eq!(gate.request(&tc), PermissionDecision::Grant);
     }
@@ -226,6 +227,7 @@ mod tests {
             id: "1".into(),
             name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert!(matches!(gate.request(&tc), PermissionDecision::Deny { .. }));
     }
@@ -237,11 +239,13 @@ mod tests {
             id: "1".into(),
             name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         let read = AgentToolCall {
             id: "2".into(),
             name: "Read".into(),
             arguments: serde_json::json!({"path": "x"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert_eq!(gate.request(&bash), PermissionDecision::Grant);
         assert_eq!(gate.request(&read), PermissionDecision::Grant);
@@ -254,6 +258,7 @@ mod tests {
             id: "1".into(),
             name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert!(matches!(
             gate.request(&bash),
@@ -268,11 +273,13 @@ mod tests {
             id: "1".into(),
             name: "Read".into(),
             arguments: serde_json::json!({"path": "x"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         let bash = AgentToolCall {
             id: "2".into(),
             name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert_eq!(gate.request(&read), PermissionDecision::Grant);
         assert_eq!(gate.request(&bash), PermissionDecision::Grant);
@@ -292,6 +299,7 @@ mod tests {
             id: "1".into(),
             name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert_eq!(gate.request(&bash), PermissionDecision::GrantAlways);
         // Second call should be a plain Grant from the cache.
@@ -310,6 +318,7 @@ mod tests {
             id: "1".into(),
             name: name.into(),
             arguments: serde_json::json!({}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         let ask = PolicyPermissionGate::new(PermissionPolicy::Ask, true, None);
         for name in ["SearchPlugins", "ListPlugins", "InstallPlugin"] {
@@ -354,6 +363,7 @@ mod tests {
             id: "1".into(),
             name: name.into(),
             arguments: serde_json::json!({}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert!(is_read_only("ShellOutput"));
         assert!(!is_read_only("ShellKill"));
@@ -379,6 +389,7 @@ mod tests {
             id: "1".into(),
             name: name.into(),
             arguments: serde_json::json!({}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         };
         assert!(is_read_only("CronList"));
         assert!(!is_read_only("CronCreate"));

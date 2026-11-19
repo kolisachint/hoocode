@@ -4,7 +4,8 @@
 //! The project config is `.hoocode/hoo-config.json`; patterns keep hoocode's
 //! `.hoocode/...` text since they are plain strings here.
 
-use hoocode_code_permissions::{describe_tool, evaluate, ApprovalChannel, Verdict};
+use hoocode_agent_types::ToolOrigin;
+use hoocode_code_permissions::{describe_tool, evaluate, rule_errors, ApprovalChannel, Verdict};
 
 const UI: ApprovalChannel = ApprovalChannel::Ui;
 const PRINT: ApprovalChannel = ApprovalChannel::Headless { fail_closed: false };
@@ -15,7 +16,14 @@ use std::path::Path;
 /// `ctx.ui.select` that records the prompt and answers "No (block)".
 fn run(config: Value, cwd: &Path, tool: &str, input: Value) -> (Verdict, Option<String>) {
     let config = config.as_object().unwrap().clone();
-    let verdict = evaluate(&config, cwd, tool, &input, UI);
+    let verdict = evaluate(
+        &config,
+        cwd,
+        tool,
+        &hoocode_agent_types::ToolOrigin::BuiltIn,
+        &input,
+        UI,
+    );
     let prompt =
         (verdict == Verdict::Prompt).then(|| format!("Allow: {}", describe_tool(tool, &input)));
     (verdict, prompt)
@@ -156,7 +164,16 @@ fn hard_rules_apply_without_a_ui_and_everything_else_runs() {
         "allowed_bash_commands": ["^git\\s", "^ls"]
     }}});
     let c = config.as_object().unwrap().clone();
-    let headless = |tool: &str, input: Value| evaluate(&c, d.path(), tool, &input, PRINT);
+    let headless = |tool: &str, input: Value| {
+        evaluate(
+            &c,
+            d.path(),
+            tool,
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &input,
+            PRINT,
+        )
+    };
     assert_eq!(
         headless("Write", json!({"path": "a"})),
         Verdict::Block("Tool \"Write\" is denied in mode \"build\".".into())
@@ -190,6 +207,7 @@ fn hard_rules_apply_without_a_ui_and_everything_else_runs() {
             &c,
             d.path(),
             "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
             &json!({"command": "make build"}),
             PRINT
         ),
@@ -228,6 +246,7 @@ fn gated_call(channel: ApprovalChannel, config: Value) -> Verdict {
         &c,
         d.path(),
         "Shell",
+        &hoocode_agent_types::ToolOrigin::BuiltIn,
         &json!({"command": "make build"}),
         channel,
     )
@@ -255,7 +274,14 @@ fn rpc_still_runs_an_auto_allowed_or_ungated_call() {
     let d = cwd();
     let c = json!({}).as_object().unwrap().clone();
     assert_eq!(
-        evaluate(&c, d.path(), "Read", &json!({"path": "a"}), RPC),
+        evaluate(
+            &c,
+            d.path(),
+            "Read",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &json!({"path": "a"}),
+            RPC
+        ),
         Verdict::Allow
     );
 }
@@ -283,7 +309,14 @@ fn a_ui_still_prompts_for_a_gated_call() {
 fn rpc_still_enforces_allowed_write_paths_on_writes() {
     let d = cwd();
     let c = docs().as_object().unwrap().clone();
-    match evaluate(&c, d.path(), "Write", &json!({"path": "src/app.ts"}), RPC) {
+    match evaluate(
+        &c,
+        d.path(),
+        "Write",
+        &hoocode_agent_types::ToolOrigin::BuiltIn,
+        &json!({"path": "src/app.ts"}),
+        RPC,
+    ) {
         Verdict::Block(reason) => assert!(reason.contains("src/app.ts"), "{reason}"),
         v => panic!("{v:?}"),
     }
@@ -291,10 +324,285 @@ fn rpc_still_enforces_allowed_write_paths_on_writes() {
 
 // Reliability 1.1: MCP and plugin tools are gated in rpc (fail-closed) only.
 
+/// The origin a fixture gives a tool: MCP for an `mcp__<server>__<tool>` name, else built-in.
+fn origin_of(tool: &str) -> ToolOrigin {
+    match tool.strip_prefix("mcp__").and_then(|r| r.split_once("__")) {
+        Some((server, tool)) => ToolOrigin::Mcp {
+            server: server.into(),
+            tool: tool.into(),
+            plugin: None,
+        },
+        None => ToolOrigin::BuiltIn,
+    }
+}
+
 fn tool_call(channel: ApprovalChannel, config: Value, tool: &str) -> Verdict {
     let d = cwd();
     let c = config.as_object().unwrap().clone();
-    evaluate(&c, d.path(), tool, &json!({}), channel)
+    evaluate(&c, d.path(), tool, &origin_of(tool), &json!({}), channel)
+}
+
+fn plugin(plugin: &str, tool: &str) -> ToolOrigin {
+    ToolOrigin::Plugin {
+        plugin: plugin.into(),
+        tool: tool.into(),
+    }
+}
+
+fn mcp(server: &str, tool: &str) -> ToolOrigin {
+    ToolOrigin::Mcp {
+        server: server.into(),
+        tool: tool.into(),
+        plugin: None,
+    }
+}
+
+/// Runs one call with `config` in the config's active mode.
+fn judge(
+    config: Value,
+    tool: &str,
+    origin: &ToolOrigin,
+    input: Value,
+    channel: ApprovalChannel,
+) -> Verdict {
+    let d = cwd();
+    let c = config.as_object().unwrap().clone();
+    evaluate(&c, d.path(), tool, origin, &input, channel)
+}
+
+// Option D (plugins.md, Naming and identity): rules match a tool by name and origin.
+
+#[test]
+fn a_selector_in_denied_tools_takes_tools_by_origin() {
+    let config = json!({"modes": {"build": {
+        "denied_tools": ["plugin:webtools/WebFetch", "mcp:github"]
+    }}});
+    let check =
+        |tool: &str, origin: ToolOrigin| judge(config.clone(), tool, &origin, json!({}), UI);
+    assert!(matches!(
+        check("WebFetch", plugin("webtools", "WebFetch")),
+        Verdict::Block(reason) if reason.contains("denied")
+    ));
+    // Another plugin's tool of the same name is not the webtools one.
+    assert_eq!(
+        check("WebFetch", plugin("docs", "WebFetch")),
+        Verdict::Allow
+    );
+    // Every tool of server `github`, whatever its tool name.
+    assert!(matches!(
+        check("mcp__github__create_issue", mcp("github", "create_issue")),
+        Verdict::Block(_)
+    ));
+    assert_eq!(
+        check("mcp__gitlab__create_issue", mcp("gitlab", "create_issue")),
+        Verdict::Allow
+    );
+}
+
+#[test]
+fn plugin_wildcard_in_denied_tools_covers_plugin_tools_not_mcp() {
+    let config = json!({"modes": {"build": {"denied_tools": ["plugin:*"]}}});
+    assert!(matches!(
+        judge(
+            config.clone(),
+            "Lookup",
+            &plugin("docs", "Lookup"),
+            json!({}),
+            UI
+        ),
+        Verdict::Block(_)
+    ));
+    // An MCP tool with no owning plugin is not a plugin tool.
+    assert_eq!(
+        judge(config, "mcp__x__y", &mcp("x", "y"), json!({}), UI),
+        Verdict::Allow
+    );
+}
+
+#[test]
+fn an_auto_allow_selector_lets_a_gated_mcp_tool_run_in_rpc() {
+    let config = json!({"modes": {"build": {"auto_allow": ["mcp:github"]}}});
+    assert_eq!(
+        judge(
+            config.clone(),
+            "mcp__github__create_issue",
+            &mcp("github", "create_issue"),
+            json!({}),
+            RPC
+        ),
+        Verdict::Allow
+    );
+    assert!(matches!(
+        judge(config, "mcp__gitlab__x", &mcp("gitlab", "x"), json!({}), RPC),
+        Verdict::Block(reason) if reason.contains("needs approval")
+    ));
+}
+
+#[test]
+fn a_plugin_tool_named_like_a_builtin_is_not_held_to_its_rules() {
+    // Shell's command patterns and Write's paths are rules of the built-in tool only.
+    let config = json!({"modes": {"build": {
+        "denied_bash_commands": ["\\brm\\b"],
+        "allowed_write_paths": ["docs/*"]
+    }}});
+    assert_eq!(
+        judge(
+            config.clone(),
+            "Shell",
+            &plugin("ops", "Shell"),
+            json!({"command": "rm -rf x"}),
+            UI
+        ),
+        Verdict::Allow
+    );
+    assert_eq!(
+        judge(
+            config.clone(),
+            "Write",
+            &plugin("ops", "Write"),
+            json!({"path": "src/a.rs"}),
+            UI
+        ),
+        Verdict::Allow
+    );
+    // The built-in is still held to them.
+    assert!(matches!(
+        judge(
+            config,
+            "Shell",
+            &ToolOrigin::BuiltIn,
+            json!({"command": "rm -rf x"}),
+            UI
+        ),
+        Verdict::Block(_)
+    ));
+}
+
+// The double prompt: a plugin's WebFetch tool gets only the network prompt, asked as the
+// WebFetch category (a built-in), once per origin.
+
+#[test]
+fn a_plugin_tool_named_webfetch_is_not_prompted_at_call_level() {
+    let no_rules = json!({"modes": {"build": {}}});
+    let fetch = plugin("webtools", "WebFetch");
+    let input = json!({"url": "https://example.com/a"});
+    assert_eq!(
+        judge(no_rules.clone(), "WebFetch", &fetch, input.clone(), UI),
+        Verdict::Allow
+    );
+    // In rpc a plugin tool is not gated either: its network requests are asked as the category.
+    assert_eq!(
+        judge(no_rules, "WebFetch", &fetch, input, RPC),
+        Verdict::Allow
+    );
+}
+
+#[test]
+fn the_webfetch_category_still_prompts_for_network_access() {
+    let no_rules = json!({"modes": {"build": {}}});
+    let category = ToolOrigin::BuiltIn;
+    let input = json!({"url": "https://example.com/a"});
+    assert_eq!(
+        judge(no_rules.clone(), "WebFetch", &category, input.clone(), UI),
+        Verdict::Prompt
+    );
+    assert!(matches!(
+        judge(no_rules.clone(), "WebFetch", &category, input.clone(), RPC),
+        Verdict::Block(reason) if reason.contains("needs approval")
+    ));
+    assert_eq!(
+        judge(no_rules, "WebFetch", &category, input.clone(), PRINT),
+        Verdict::Allow
+    );
+    // The category is a name rule too: auto_allow WebFetch covers the network prompt.
+    let allowed = json!({"modes": {"build": {"auto_allow": ["WebFetch"]}}});
+    assert_eq!(
+        judge(allowed, "WebFetch", &category, input, UI),
+        Verdict::Allow
+    );
+}
+
+#[test]
+fn web_search_is_not_a_built_in_gated_tool() {
+    // No built-in WebSearch exists: the webtools plugin's tool is a plugin tool, never gated.
+    let no_rules = json!({"modes": {"build": {}}});
+    assert_eq!(
+        judge(
+            no_rules,
+            "WebSearch",
+            &ToolOrigin::BuiltIn,
+            json!({"query": "x"}),
+            UI
+        ),
+        Verdict::Allow
+    );
+}
+
+// Malformed selectors fail closed.
+
+#[test]
+fn rule_errors_name_each_malformed_entry_and_no_others() {
+    let bad = json!({"modes": {
+        "build": {"denied_tools": ["ext_*", "plugin:", "Read"], "auto_allow": ["mcp:"]},
+        "plan": {"enabled_tools": ["plugin:webtools/WebFetch"]}
+    }});
+    let errors = rule_errors(bad.as_object().unwrap());
+    assert_eq!(errors.len(), 3, "{errors:?}");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("build") && e.contains("ext_*")),
+        "{errors:?}"
+    );
+    assert!(errors.iter().any(|e| e.contains("plugin:")), "{errors:?}");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("auto_allow") && e.contains("mcp:")),
+        "{errors:?}"
+    );
+    let good = json!({"modes": {"build": {
+        "denied_tools": ["plugin:*", "mcp:github/create_issue"], "auto_allow": ["Read"]
+    }}});
+    assert!(rule_errors(good.as_object().unwrap()).is_empty());
+}
+
+#[test]
+fn a_malformed_deny_blocks_every_call_of_its_mode() {
+    // `denied_tools` written as a string, and an entry that is not a selector: either way the
+    // deny cannot be read, so nothing in the mode runs. Silently denying nothing is the bug.
+    for config in [
+        json!({"modes": {"build": {"denied_tools": "Shell"}}}),
+        json!({"modes": {"build": {"denied_tools": ["ext_*"]}}}),
+    ] {
+        match judge(
+            config,
+            "Read",
+            &ToolOrigin::BuiltIn,
+            json!({"path": "a"}),
+            UI,
+        ) {
+            Verdict::Block(reason) => {
+                assert!(reason.contains("malformed denied_tools"), "{reason}")
+            }
+            v => panic!("{v:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_malformed_auto_allow_allows_nothing() {
+    let config = json!({"modes": {"build": {"auto_allow": ["ext_*"]}}});
+    assert!(matches!(
+        judge(
+            config,
+            "Shell",
+            &ToolOrigin::BuiltIn,
+            json!({"command": "make"}),
+            RPC
+        ),
+        Verdict::Block(_)
+    ));
 }
 
 #[test]

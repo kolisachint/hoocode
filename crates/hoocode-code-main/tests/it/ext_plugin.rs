@@ -126,6 +126,16 @@ struct Printed {
 
 /// Run `hoocode -p start` in `home` against a scripted mock model, with `env` added.
 fn print_run(home: &Home, script: Vec<Value>, env: &[(&str, &str)]) -> Printed {
+    print_run_with(home, script, env, &[])
+}
+
+/// [`print_run`] with extra CLI arguments (`--tools`, `--disallowed-tools`, ...).
+fn print_run_with(
+    home: &Home,
+    script: Vec<Value>,
+    env: &[(&str, &str)],
+    extra: &[&str],
+) -> Printed {
     let mock = MockLlm::start(script);
     let models = json!({"providers": {"mock": {
         "baseUrl": format!("http://127.0.0.1:{}/v1", mock.port),
@@ -145,6 +155,7 @@ fn print_run(home: &Home, script: Vec<Value>, env: &[(&str, &str)]) -> Printed {
             "-p",
             "start",
         ])
+        .args(extra)
         .current_dir(&home.work)
         .env_clear()
         .env("HOME", &home.home)
@@ -369,5 +380,88 @@ fn a_plugin_from_an_untrusted_marketplace_offers_no_tools() {
         printed.stderr.contains("plugin is not trusted"),
         "{}",
         printed.stderr
+    );
+}
+
+// Option D (plugins.md, Naming and identity): selectors reach the plugin's tools end to end.
+
+#[test]
+fn a_plugin_selector_in_tools_offers_only_the_selected_tool() {
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--tools", "plugin:echo/echo"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(offered.contains(&"echo"), "{offered:?}\n{}", printed.stderr);
+    assert!(!offered.contains(&"fetch"), "{offered:?}");
+}
+
+#[test]
+fn a_plugin_wildcard_in_disallowed_tools_removes_every_plugin_tool() {
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--disallowed-tools", "plugin:*"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(
+        !offered.contains(&"echo") && !offered.contains(&"fetch"),
+        "{offered:?}"
+    );
+}
+
+/// A `hoocode -p start` that must refuse to run: its exit code and stderr.
+fn refused_run(home: &Home, extra: &[&str]) -> (Option<i32>, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hoocode"))
+        .args(["--offline", "-p", "start"])
+        .args(extra)
+        .current_dir(&home.work)
+        .env_clear()
+        .env("HOME", &home.home)
+        .env(
+            "PATH",
+            std::env::var("PATH").unwrap_or("/usr/bin:/bin".into()),
+        )
+        .env("LANG", "C.UTF-8")
+        .env("TZ", "UTC")
+        .stdin(Stdio::null())
+        .output()
+        .expect("run hoocode");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn a_malformed_tools_selector_is_refused_before_the_run_starts() {
+    let home = Home::with_echo_plugin(true);
+    let (code, stderr) = refused_run(&home, &["--tools", "Read,ext_*"]);
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(
+        stderr.contains("--tools") && stderr.contains("ext_*"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_malformed_permission_rule_refuses_to_start() {
+    // A deny that does not parse would deny nothing: hoocode says so and does not run.
+    let home = Home::with_echo_plugin(true);
+    fs::write(
+        home.home.join(".hoocode/hoo-config.json"),
+        json!({"modes": {"build": {"denied_tools": ["ext_*"]}}}).to_string(),
+    )
+    .unwrap();
+    let (code, stderr) = refused_run(&home, &[]);
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(
+        stderr.contains("permission rule") && stderr.contains("ext_*"),
+        "{stderr}"
     );
 }

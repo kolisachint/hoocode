@@ -2,7 +2,7 @@
 
 use hoocode_agent_types::{
     AgentMessage, AgentToolCall, BackgroundToolResult, BashExecutionMessage, BranchSummaryMessage,
-    CompactionSummaryMessage, CustomMessage,
+    CompactionSummaryMessage, CustomMessage, ToolOrigin,
 };
 use hoocode_ai_types::{AssistantMessage, Content, Message, UserContent, UserMessage};
 use serde_json::{json, Value};
@@ -156,17 +156,14 @@ pub fn summarize_args(args: &Value) -> Option<String> {
 }
 
 /// `describeBackgroundTool`: `Task` calls by `subagent_type`, MCP tools by
-/// their `mcp_` prefix.
+/// their origin (`mcp:<server>/<tool>`).
 pub fn describe_background_tool(tool_call: &AgentToolCall) -> BackgroundToolInfo {
     let args = &tool_call.arguments;
-    // The harness sees only the model-facing name, so an MCP tool is recognised by its shape
-    // (`mcp__<server>__<tool>`). TODO(P2b): read the origin once calls carry it.
-    if let Some(rest) = tool_call.name.strip_prefix("mcp__") {
-        let pretty = rest.replacen("__", "/", 1);
+    if let ToolOrigin::Mcp { server, tool, .. } = &tool_call.origin {
         return BackgroundToolInfo {
             is_mcp_tool: true,
             subagent_type: tool_call.name.clone(),
-            label: format!("MCP tool `{pretty}`"),
+            label: format!("MCP tool `{server}/{tool}`"),
             summary: summarize_args(args),
         };
     }

@@ -1,6 +1,6 @@
 # Plugins
 
-Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Not built: the TUI origin label and renderer hints (P4), selectors in permission rules and rejection of malformed agent entries (P2b). See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-17.
+Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Built in P2b (2026-11-19): selectors in permission rules, a gate and clearance relays that read the origin, malformed selectors refused everywhere. Not built: the TUI origin label and renderer hints (P4). See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-17.
 
 ## Principles
 
@@ -209,7 +209,7 @@ Renderer hint. A plugin says how the TUI draws its tools, in `plugin.json`:
 
 Webtools. The plugin `webtools` (`hoo-web-plugin/plugin/`) declares `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The plugin name stays `webtools`. Its MCP server keeps its own tool names, and the MCP rule applies to them.
 
-Built in P2 (2026-11-19): names, origin, selectors in `--tools`, collision diagnostics. P4 (origin label, renderer hints) is not built yet.
+Built in P2 (2026-11-19): names, origin, selectors in `--tools`, collision diagnostics. Built in P2b (2026-11-19): selectors in permission rules and agent lists, the gate by origin, malformed selectors refused. P4 (origin label, renderer hints) is not built yet.
 
 ### Distribution
 
@@ -321,7 +321,9 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-19 | Selectors: `Name`, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>`, `mcp:*`. They match origin. A malformed selector fails closed. |
 | 2026-11-19 | Webtools tools are `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The `Claude` aliases and `ext_webtools_*` names go. Supersedes the WebFetch/WebSearch part of the 2026-11-18 row. |
 | 2026-11-19 | Renderer hint: `extensions."dev.hoocode".tools.<Name>.render` in `plugin.json`. The TUI picks a renderer from the hint, never from a plugin or MCP tool name. Absent or unknown: generic. |
-| 2026-11-19 | Built in P2. `ToolOrigin` lives in `hoocode-agent-types` (`tool_origin.rs`), the lowest crate both the MCP and the plugin paths reach. `ToolDefinition` and `AgentTool` carry it. `AgentEvent::ToolExecutionStart` has `origin` (`null` for a name the session does not have), and the JSON `tool_execution_start` event gets `"origin": {"kind": "builtIn" \| "plugin" \| "mcp", ...}`. A bare name in `--tools` may be a plugin tool, so it loads plugin components; `mcp__` names and `mcp:` selectors start MCP servers. Still open: the harness recognises an MCP call by its `mcp__` shape and the permission gate by the same prefix, until calls carry origin (P2b). |
+| 2026-11-19 | Built in P2. `ToolOrigin` lives in `hoocode-agent-types` (`tool_origin.rs`), the lowest crate both the MCP and the plugin paths reach. `ToolDefinition` and `AgentTool` carry it. `AgentEvent::ToolExecutionStart` has `origin` (`null` for a name the session does not have), and the JSON `tool_execution_start` event gets `"origin": {"kind": "builtIn" \| "plugin" \| "mcp", ...}`. A bare name in `--tools` may be a plugin tool, so it loads plugin components; `mcp__` names and `mcp:` selectors start MCP servers. Closed in P2b: calls carry their origin (`AgentToolCall.origin`, from the registry), and the harness and the permission gate read it, not the `mcp__` shape. |
+| 2026-11-19 | Built in P2b. A plugin's network request is asked as the built-in `WebFetch` permission category (origin `BuiltIn`), not as the plugin's tool. A plugin's WASM tool is never gated at call level, so a plugin tool named `WebFetch` gets one prompt per origin. `WebSearch` is no longer a gated built-in name. |
+| 2026-11-19 | Built in P2b. Malformed selectors fail closed. `--tools` or `--disallowed-tools` with a bad entry is a CLI error. An agent `tools` or `disallowedTools` entry that is not a selector rejects the definition. A bad entry in `auto_allow`, `denied_tools` or `enabled_tools` refuses to start hoocode (every problem is named). Until it is fixed, a malformed `denied_tools` blocks every call in its mode and an unreadable `auto_allow` allows nothing. Rules match names case-insensitively, as `--tools` does. |
 
 ## Open
 
@@ -343,7 +345,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-14 | Revisit hooks | S | Agent Plugins 1.1 final | Read the portable hooks contract. Decide whether to support it. |
 | PL-15 | Second-consumer review | S | Two releases after PL-12 | If only one WASM plugin exists, record it and decide whether to keep the host. |
 | PL-16 | Plugin HTTP through an explicit HTTPS_PROXY (CONNECT) | M | A user behind an explicit proxy | Needs care: the proxy resolves the host, so the SSRF address pin can't apply; opt-in only. |
-| PL-17 | Tool identity separate from the model-facing name (option D) | M | Now (roadmap item 0). Phases: P1 design (2026-11-19); P2 core (built 2026-11-19, not merged); P3 plugin; P4 TUI; P5 live end-to-end; P6 review | See Naming and identity. P2: `ToolOrigin`, names, selectors, collision diagnostics, evals, `docs/user`, `docs/maps`, CHANGELOG. P3: webtools `WebFetch` and `WebSearch`, hint, wasm rebuild. P4: origin label, `toolExternal`, hint dispatch, goldens (tui.md). P5: Tavily rerun, incl. a subagent in json mode. P6: Opus review of the three branches before any PR. |
+| PL-17 | Tool identity separate from the model-facing name (option D) | M | Now (roadmap item 0). Phases: P1 design (2026-11-19); P2 core and P2b (built 2026-11-19, not merged); P3 plugin; P4 TUI; P5 live end-to-end; P6 review | See Naming and identity. P2: `ToolOrigin`, names, selectors, collision diagnostics, evals, `docs/user`, `docs/maps`, CHANGELOG. P3: webtools `WebFetch` and `WebSearch`, hint, wasm rebuild. P4: origin label, `toolExternal`, hint dispatch, goldens (tui.md). P5: Tavily rerun, incl. a subagent in json mode. P6: Opus review of the three branches before any PR. |
 
 ## Not doing
 

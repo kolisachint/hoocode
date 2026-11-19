@@ -31,7 +31,9 @@ use url::Url;
 use crate::args::DiagnosticKind;
 use crate::runtime::Diagnostics;
 
-/// The built-in tool a component's network request is asked as.
+/// The permission category a component's network request is asked as. It is the built-in
+/// `WebFetch` category (`ToolOrigin::BuiltIn`, `GATED_TOOLS`), not a tool: the plugin's own tool
+/// call is never asked, so a plugin tool named `WebFetch` gets only this one prompt per origin.
 const NET_TOOL: &str = "WebFetch";
 
 /// Internal (not in `--help`, tests only): when set to exactly `1`, the WASM host lets loopback
@@ -321,6 +323,7 @@ impl ToolNetGate {
             id: format!("ext-net-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed)),
             name: NET_TOOL.to_owned(),
             arguments: serde_json::json!({ "url": url }),
+            origin: ToolOrigin::BuiltIn,
         };
         match self.gate.request(&call) {
             PermissionDecision::Grant | PermissionDecision::GrantAlways => Ok(()),
@@ -695,6 +698,18 @@ mod tests {
         assert_eq!(asked.len(), 1);
         assert_eq!(asked[0].name, "WebFetch");
         assert_eq!(asked[0].arguments, json!({"url": "https://example.com/a"}));
+    }
+
+    #[test]
+    fn the_net_request_is_asked_as_the_builtin_webfetch_category() {
+        // Never as a plugin tool: the plugin's own call is not asked, so a plugin tool named
+        // WebFetch gets only this per-origin prompt.
+        let gate = ScriptedGate::new(vec![PermissionDecision::Grant]);
+        let net = ToolNetGate::new(gate.clone());
+        assert_eq!(net.check("https://example.com/a"), Ok(()));
+        let asked = gate.asked();
+        assert_eq!(asked[0].name, "WebFetch");
+        assert_eq!(asked[0].origin, ToolOrigin::BuiltIn);
     }
 
     #[test]

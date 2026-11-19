@@ -8,7 +8,7 @@
 use crate::args::Mode;
 use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
-use hoocode_agent_types::{AgentEvent, PermissionGate, ToolSelector};
+use hoocode_agent_types::{AgentEvent, PermissionGate, ToolOrigin, ToolSelector};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
@@ -809,6 +809,15 @@ fn create_runtime(
     }
     let registry = load_registry(auth);
     let mut diagnostics = Diagnostics::new();
+    // A malformed permission rule refuses to start: a deny that does not parse would otherwise
+    // deny nothing, silently. The check is per rule list, in every mode.
+    let rules = hoocode_code_modes::config::read_merged_config(&cwd);
+    for problem in hoocode_code_permissions::rule_errors(&rules) {
+        diagnostics.push((
+            DiagnosticKind::Error,
+            format!("permission rule {problem}. Fix it in hoo-config.json (see docs/user/configuration.md)."),
+        ));
+    }
     // A bad setting value is ignored; say so at startup instead of silently.
     // A subagent child skips it: the parent already warned, and the line
     // would land in the child's stderr tail and its failure text.
@@ -1187,7 +1196,8 @@ pub fn run_print_mode(
     output: &mut dyn Write,
     err: &mut dyn Write,
 ) -> std::io::Result<i32> {
-    let ran = Arc::new(Mutex::new(std::collections::BTreeSet::new()));
+    let ran: Arc<Mutex<std::collections::BTreeMap<String, ToolOrigin>>> =
+        Arc::new(Mutex::new(std::collections::BTreeMap::new()));
     let code = run_print_body(args, mode, stdin_content, color, output, err, &ran);
     // After the run, so the note names only the tools that actually ran.
     // A subagent child asks its parent instead, so the note is not true of it.
@@ -1216,11 +1226,14 @@ fn print_mode_label(mode: PrintMode) -> &'static str {
 /// it names the tools that ran and would have needed approval in rpc, and says
 /// that its subagents, whose such calls this run decides for them, get the
 /// same answer. `None` when no such tool ran.
-fn ungated_run_note(mode_label: &str, ran: &std::collections::BTreeSet<String>) -> Option<String> {
+fn ungated_run_note(
+    mode_label: &str,
+    ran: &std::collections::BTreeMap<String, ToolOrigin>,
+) -> Option<String> {
     let names: Vec<&str> = ran
         .iter()
-        .map(String::as_str)
-        .filter(|name| hoocode_code_permissions::is_approval_tool(name))
+        .filter(|(name, origin)| hoocode_code_permissions::is_approval_tool(name, origin))
+        .map(|(name, _)| name.as_str())
         .collect();
     (!names.is_empty()).then(|| {
         format!(
@@ -1239,7 +1252,7 @@ fn run_print_body(
     color: bool,
     output: &mut dyn Write,
     err: &mut dyn Write,
-    ran: &Arc<Mutex<std::collections::BTreeSet<String>>>,
+    ran: &Arc<Mutex<std::collections::BTreeMap<String, ToolOrigin>>>,
 ) -> std::io::Result<i32> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let home = hoocode_home::home_dir();
@@ -1248,9 +1261,14 @@ fn run_print_body(
     install_headless_clearance_relay(args, session.cwd());
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| match event {
-        AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) => {
+        AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart {
+            tool_name, origin, ..
+        }) => {
             if let Ok(mut set) = ran_tools.lock() {
-                set.insert(tool_name.clone());
+                set.insert(
+                    tool_name.clone(),
+                    origin.clone().unwrap_or(ToolOrigin::BuiltIn),
+                );
             }
         }
         // The auto-picked model was refused and the session switched: say so
@@ -2200,16 +2218,36 @@ mod tests {
 
     #[test]
     fn approval_note_names_only_the_approval_tools_that_ran() {
-        let ran: std::collections::BTreeSet<String> = ["Read", "Write", "mcp__fs__list", "Shell"]
-            .iter()
-            .map(|t| t.to_string())
-            .collect();
+        let mcp = ToolOrigin::Mcp {
+            server: "fs".into(),
+            tool: "list".into(),
+            plugin: None,
+        };
+        let plugin = ToolOrigin::Plugin {
+            plugin: "web".into(),
+            tool: "WebFetch".into(),
+        };
+        // A plugin tool named `Write` is not a built-in approval tool, and an MCP tool needs
+        // approval by its origin, not by its name.
+        let ran: std::collections::BTreeMap<String, ToolOrigin> = [
+            ("Read".to_string(), ToolOrigin::BuiltIn),
+            ("Write".to_string(), ToolOrigin::BuiltIn),
+            ("mcp__fs__list".to_string(), mcp),
+            ("Shell".to_string(), ToolOrigin::BuiltIn),
+            ("Lookup".to_string(), plugin.clone()),
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(
             ungated_run_note("--print", &ran).as_deref(),
             Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp__fs__list. Its subagents get the same answer from these rules: their tools that need approval run too.")
         );
-        let read_only: std::collections::BTreeSet<String> =
-            ["Read", "Grep"].iter().map(|t| t.to_string()).collect();
+        let read_only: std::collections::BTreeMap<String, ToolOrigin> = [
+            ("Read".to_string(), ToolOrigin::BuiltIn),
+            ("Lookup".to_string(), plugin),
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(ungated_run_note("--mode json", &read_only), None);
         assert_eq!(ungated_run_note("--mode json", &Default::default()), None);
     }

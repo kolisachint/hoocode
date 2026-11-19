@@ -88,9 +88,11 @@ fn a_gate_with_neither_ui_nor_relay_denies() {
 
 fn request(tool: &str, input: Value) -> RelayRequest {
     RelayRequest {
+        via: None,
         tool: tool.to_string(),
+        origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         input,
-        ..Default::default()
+        cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     }
 }
 

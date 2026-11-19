@@ -656,6 +656,81 @@ SCENARIOS: list[Scenario] = [
         echo_plugin=True,
         expect=_echo_expect(),
     ),
+    # Option D (plugins.md, Naming and identity): an agent's selectors decide what its child is
+    # offered. An allowlist naming one plugin tool offers it; a plugin:* deny takes every plugin
+    # tool out of the child's list, whatever its allowlist names.
+    Scenario(
+        name="subagent_plugin_selector_allowlist",
+        kind="parent",
+        doc=(
+            "An agent whose tools: is the single selector plugin:echo/echo (one tool of one plugin, "
+            "by origin). The child is offered the echo tool and its result reaches the parent."
+        ),
+        routes=_echo_routes("echo-selected"),
+        prompt="Use a subagent to echo a marker.",
+        echo_plugin=True,
+        home_files={
+            "agents/echo-selected.md": (
+                "---\n"
+                "name: echo-selected\n"
+                "description: Calls the echo plugin tool, selected by plugin:echo/echo.\n"
+                "tools: plugin:echo/echo\n"
+                "---\n"
+                "Call the echo tool with the marker from the task, then report exactly what it returned.\n"
+            )
+        },
+        expect=_echo_expect(),
+    ),
+    Scenario(
+        name="subagent_plugin_wildcard_denied",
+        kind="parent",
+        doc=(
+            "An agent with tools: Read, plugin:webtools/WebFetch, plugin:* and disallowedTools: "
+            "plugin:*. The deny takes every plugin tool out, so the child is not offered echo and "
+            "its call does not run."
+        ),
+        routes={
+            "child": child_route(
+                [
+                    {"tool_calls": [{"name": "echo", "arguments": {"marker": "ext-echo-7"}}]},
+                    {"text": CHILD_SUMMARY},
+                ]
+            ),
+            "parent": parent_route(
+                [
+                    task_call(
+                        background=False,
+                        subagent_type="no-plugins",
+                        description="echo a marker",
+                        prompt="Call the echo tool with ext-echo-7.",
+                    ),
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Use a subagent to echo a marker.",
+        echo_plugin=True,
+        home_files={
+            "agents/no-plugins.md": (
+                "---\n"
+                "name: no-plugins\n"
+                "description: Has no plugin tools, whatever its allowlist names.\n"
+                "tools: Read, plugin:webtools/WebFetch, plugin:*\n"
+                "disallowedTools: plugin:*\n"
+                "---\n"
+                "Call the echo tool with the marker from the task, then report what happened.\n"
+            )
+        },
+        expect=Expect(
+            ledger_statuses=["complete"],
+            ledger_ok=[True],
+            child_requests=2,
+            parent_requests=2,
+            route_tools_have={"child": ["Read"]},
+            route_tools_lack={"child": ["echo", "fetch"]},
+            tool_results_lack={"child": ["ext-echo-7"], "parent": ["ext-echo-7"]},
+        ),
+    ),
     Scenario(
         name="parent_region_error_falls_back",
         kind="parent",

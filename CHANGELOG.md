@@ -28,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The JSON `tool_execution_start` event has an `origin` field**: `{"kind": "builtIn"}`,
   `{"kind": "plugin", "plugin": ..., "tool": ...}` or `{"kind": "mcp", "server": ..., "tool": ...,
   "plugin": ...}`, or `null` when the session has no tool of that name.
+- **Permission rules take selectors.** `auto_allow`, `denied_tools` and `enabled_tools` match a
+  tool by name and origin, with the selector forms of `--tools`. The gate reads the origin
+  from the call, never from the name, so a plugin tool named `Shell` or `Write` is not held to
+  the built-in's rules, and an MCP tool is gated as one by origin in rpc.
+- **A plugin's `WebFetch` tool is no longer prompted twice.** Its own call is not asked; its
+  network request is asked once per site as the built-in `WebFetch` permission category. `WebSearch`
+  is no longer a built-in name in the gate list.
+- **Malformed selectors fail closed.** A bad `--tools` or `--disallowed-tools` entry is a CLI
+  error. A bad agent `tools` or `disallowedTools` entry rejects the agent definition. A bad entry
+  in a permission rule list stops hoocode from starting, naming the mode and the entry. A bad
+  `denied_tools` also blocks every call in its mode, and an unreadable `auto_allow` allows nothing.
+- **Subagent clearance requests carry the tool's origin.** A request without a readable origin
+  is denied, not judged by its name.
+- **Rules match names case-insensitively.** `denied_tools: ["shell"]` now denies `Shell`, as
+  `--tools` already did.
 
 ### Fixed: `/reload` and plugin settings (2026-11-18)
 - **`/reload` now applies changed `pluginConfig` settings to plugin tools.** Before, a plugin's WASM tools kept the settings they were built with until hoocode restarted, so for example a new `pluginConfig.webtools.searchProvider` was ignored after `/reload`. Plugin MCP servers keep running unless their own server list changed.

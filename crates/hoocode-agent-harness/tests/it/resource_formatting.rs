@@ -154,6 +154,14 @@ fn call(name: &str, arguments: serde_json::Value) -> AgentToolCall {
         id: "c1".into(),
         name: name.into(),
         arguments,
+        origin: match name.strip_prefix("mcp__").and_then(|r| r.split_once("__")) {
+            Some((server, tool)) => hoocode_agent_types::ToolOrigin::Mcp {
+                server: server.into(),
+                tool: tool.into(),
+                plugin: None,
+            },
+            None => hoocode_agent_types::ToolOrigin::BuiltIn,
+        },
     }
 }
 

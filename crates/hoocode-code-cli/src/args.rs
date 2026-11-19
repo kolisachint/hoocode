@@ -182,6 +182,19 @@ fn split_trim(s: &str) -> Vec<String> {
 }
 
 /// `split_trim` followed by `.filter((name) => name.length > 0)`.
+/// One error per entry of a tool list (`--tools`, `--disallowed-tools`) that is not a selector.
+/// A malformed entry fails the run: it would otherwise select nothing, or deny nothing.
+fn selector_errors(flag: &str, entries: &[String]) -> Vec<Diagnostic> {
+    entries
+        .iter()
+        .filter_map(|entry| hoocode_agent_types::ToolSelector::parse(entry).err())
+        .map(|error| Diagnostic {
+            kind: DiagnosticKind::Error,
+            message: format!("{flag}: {error}. Use a tool name or plugin:<p>, plugin:<p>/<Tool>, plugin:*, mcp:<s>, mcp:<s>/<tool> or mcp:*."),
+        })
+        .collect()
+}
+
 fn split_trim_nonempty(s: &str) -> Vec<String> {
     split_trim(s)
         .into_iter()
@@ -308,11 +321,19 @@ pub fn parse_args(args: &[String]) -> Args {
             "--use-system-ca" => result.use_system_ca = Some(true),
             "--tools" | "-t" if has_next => {
                 i += 1;
-                result.tools = Some(split_trim_nonempty(&args[i]));
+                let entries = split_trim_nonempty(&args[i]);
+                result
+                    .diagnostics
+                    .extend(selector_errors("--tools", &entries));
+                result.tools = Some(entries);
             }
             "--disallowed-tools" if has_next => {
                 i += 1;
-                result.disallowed_tools = Some(split_trim_nonempty(&args[i]));
+                let entries = split_trim_nonempty(&args[i]);
+                result
+                    .diagnostics
+                    .extend(selector_errors("--disallowed-tools", &entries));
+                result.disallowed_tools = Some(entries);
             }
             "--thinking" if has_next => {
                 i += 1;
@@ -428,6 +449,40 @@ mod tests {
 
     fn parse(args: &[&str]) -> Args {
         parse_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn a_malformed_tools_selector_is_a_cli_error_naming_the_flag() {
+        let r = parse(&["--tools", "Read,ext_*"]);
+        let errors: Vec<&Diagnostic> = r
+            .diagnostics
+            .iter()
+            .filter(|d| d.kind == DiagnosticKind::Error)
+            .collect();
+        assert_eq!(errors.len(), 1, "{:?}", r.diagnostics);
+        assert!(
+            errors[0].message.starts_with("--tools:"),
+            "{}",
+            errors[0].message
+        );
+        assert!(errors[0].message.contains("ext_*"), "{}", errors[0].message);
+        let r = parse(&["--disallowed-tools", "plugin:"]);
+        assert!(
+            r.diagnostics
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::Error
+                    && d.message.starts_with("--disallowed-tools:")),
+            "{:?}",
+            r.diagnostics
+        );
+    }
+
+    #[test]
+    fn selectors_of_every_form_are_accepted_by_both_tool_flags() {
+        let list =
+            "Read,plugin:webtools/WebFetch,plugin:*,mcp:github,mcp:github/create_issue,mcp:*";
+        assert!(parse(&["--tools", list]).diagnostics.is_empty());
+        assert!(parse(&["--disallowed-tools", list]).diagnostics.is_empty());
     }
 
     fn strs(v: &[&str]) -> Option<Vec<String>> {

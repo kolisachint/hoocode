@@ -286,3 +286,41 @@ fn keeps_the_plugin_wildcard_as_written() {
     assert_eq!(t, ["Read", "plugin:*"]);
     assert!(d.is_empty());
 }
+
+// Option D (plugins.md, Naming and identity): an agent's selectors are checked when it is read.
+
+#[test]
+fn a_malformed_tools_entry_rejects_the_definition() {
+    for tools in ["Read, ext_*", "Read, plugin:", "Read, mcp:a/b/c"] {
+        let raw = format!("---\nname: scout\ndescription: Scouts.\ntools: \"{tools}\"\n---\nBody");
+        let (agent, d) = parse(&raw, AgentSource::ClaudeProject);
+        assert!(agent.is_none(), "{tools}");
+        assert!(
+            d.iter()
+                .any(|m| m.contains("is not a tool name or a selector")),
+            "{tools}: {d:?}"
+        );
+    }
+}
+
+#[test]
+fn a_malformed_disallowed_tools_entry_rejects_the_definition() {
+    let raw =
+        "---\nname: scout\ndescription: Scouts.\ndisallowedTools: plugin:*, mcp:*x\n---\nBody";
+    let (agent, d) = parse(raw, AgentSource::ClaudeProject);
+    assert!(agent.is_none());
+    assert!(d.iter().any(|m| m.contains("mcp:*x")), "{d:?}");
+}
+
+#[test]
+fn qualified_selectors_in_an_agent_are_kept_as_written() {
+    let raw = "---\nname: fetcher\ndescription: Fetches.\ntools: Read, plugin:webtools/WebFetch, plugin:*\ndisallowedTools: plugin:*\n---\nBody";
+    let (agent, d) = parse(raw, AgentSource::ClaudeProject);
+    assert!(d.is_empty(), "{d:?}");
+    let agent = agent.unwrap();
+    assert_eq!(
+        agent.tools.unwrap(),
+        ["Read", "plugin:webtools/WebFetch", "plugin:*"]
+    );
+    assert_eq!(agent.disallowed_tools.unwrap(), ["plugin:*"]);
+}

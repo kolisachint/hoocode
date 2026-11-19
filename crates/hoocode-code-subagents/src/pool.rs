@@ -1838,6 +1838,13 @@ impl PoolInner {
         let (Some(relay), false) = (relay, tool.is_empty()) else {
             return deny(NO_UI_REASON);
         };
+        // The origin is read from the child's line, never from the name. A line without a readable
+        // origin is denied: the parent cannot tell which gate rules apply to it.
+        let Some(origin) = request.get("origin").and_then(|o| {
+            serde_json::from_value::<hoocode_agent_types::ToolOrigin>(o.clone()).ok()
+        }) else {
+            return deny("The permission relay request has no readable tool origin.");
+        };
         let input = request.get("input").cloned().unwrap_or(Value::Null);
         let label = agent_type.to_string();
         let via = match request.get("via").and_then(Value::as_str) {
@@ -1862,6 +1869,7 @@ impl PoolInner {
             let verdict = relay.ask(&RelayRequest {
                 via: Some(via),
                 tool: tool.clone(),
+                origin,
                 input,
                 cancelled: link_for_thread.gone.clone(),
             });

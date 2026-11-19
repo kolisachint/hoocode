@@ -13,7 +13,42 @@ fn call(name: &str, arguments: Value) -> AgentToolCall {
         id: "tc-1".into(),
         name: name.into(),
         arguments,
+        origin: origin_of(name),
     }
+}
+
+/// The origin a fixture gives a call: an MCP tool for an `mcp__<server>__<tool>` name.
+fn origin_of(name: &str) -> hoocode_agent_types::ToolOrigin {
+    match name
+        .strip_prefix("mcp__")
+        .and_then(|rest| rest.split_once("__"))
+    {
+        Some((server, tool)) => hoocode_agent_types::ToolOrigin::Mcp {
+            server: server.into(),
+            tool: tool.into(),
+            plugin: None,
+        },
+        None => hoocode_agent_types::ToolOrigin::BuiltIn,
+    }
+}
+
+#[test]
+fn a_plugin_tool_with_an_mcp_shaped_name_is_not_an_mcp_tool() {
+    // The harness reads the origin, not the name: a plugin tool named like an MCP tool is a
+    // subagent-style background call with its own label.
+    let plugin = hoocode_agent_types::ToolOrigin::Plugin {
+        plugin: "docs".into(),
+        tool: "x".into(),
+    };
+    let tool_call = AgentToolCall {
+        id: "tc-2".into(),
+        name: "mcp__s__t".into(),
+        arguments: json!({"q": "x"}),
+        origin: plugin,
+    };
+    let info = describe_background_tool(&tool_call);
+    assert!(!info.is_mcp_tool);
+    assert_eq!(info.label, "subagent `mcp__s__t`");
 }
 
 fn bg_result(name: &str, args: Value, text: &str, is_error: bool) -> BackgroundToolResult {
