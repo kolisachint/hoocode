@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use hoocode_agent_core::{Agent, QueueMode as AgentQueueMode, Subscription};
 use hoocode_agent_types::{
-    collision_notice, AgentContext, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentTool,
-    AgentTools, BashExecutionMessage, CustomMessage, ToolOrigin, ToolSelector,
+    collision_notices, AgentContext, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentTool,
+    AgentTools, BashExecutionMessage, Collision, CustomMessage, ToolOrigin, ToolSelector,
 };
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, Content, ImageContent, Model, TextContent, ThinkingLevel,
@@ -2622,29 +2622,29 @@ pub(crate) fn tool_listed(list: &HashSet<String>, name: &str, origin: &ToolOrigi
 }
 
 /// Keeps the tools whose model-facing name is not in `holders` yet, and adds them to it. The
-/// others are left out, and the second value says why, one line each: a name is never
-/// replaced silently. A tool that is kept is the first of its name in `tools`.
+/// others are left out, and the second value says why, grouped per requesting plugin or server
+/// (`collision_notices`): a name is never replaced silently. A tool that is kept is the first of
+/// its name in `tools`.
 pub(crate) fn admit_new_tools(
     tools: Vec<ToolDefinition>,
     holders: &mut HashMap<String, ToolOrigin>,
 ) -> (Vec<ToolDefinition>, Vec<String>) {
     let mut kept = Vec::new();
-    let mut notices = Vec::new();
+    let mut collisions = Vec::new();
     for tool in tools {
         match holders.get(&tool.name) {
-            Some(existing) => notices.push(collision_notice(
-                tool.origin.own_name(&tool.name),
-                &tool.name,
-                &tool.origin,
-                existing,
-            )),
+            Some(existing) => collisions.push(Collision {
+                name: tool.name.clone(),
+                origin: tool.origin.clone(),
+                existing: existing.clone(),
+            }),
             None => {
                 holders.insert(tool.name.clone(), tool.origin.clone());
                 kept.push(tool);
             }
         }
     }
-    (kept, notices)
+    (kept, collision_notices(&collisions))
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ use hoocode::extension::host::{self, LogLevel};
 use hoocode::extension::types::{ToolError, ToolInfo};
 use serde_json::{Value, json};
 use wasip2::http::outgoing_handler;
-use wasip2::http::types::{Fields, Method, OutgoingBody, OutgoingRequest, Scheme};
+use wasip2::http::types::{ErrorCode, Fields, Method, OutgoingBody, OutgoingRequest, Scheme};
 use wasip2::io::streams::StreamError;
 
 /// The most body text `fetch` returns.
@@ -41,6 +41,11 @@ impl Guest for Echo {
             "properties": {"url": {"type": "string"}},
             "required": ["url"]
         });
+        let text = json!({
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"]
+        });
         let key = json!({
             "type": "object",
             "properties": {"key": {"type": "string"}},
@@ -49,6 +54,8 @@ impl Guest for Echo {
         vec![
             tool("echo", "Returns the arguments unchanged.", any.clone()),
             tool("config", "Returns one of the plugin's settings.", key),
+            // PascalCase, as the webtools plugin names its tools (WebFetch, WebSearch).
+            tool("EchoUpper", "Returns the text upper-cased.", text),
             tool("spin", "Loops forever (timeout test).", any.clone()),
             tool("alloc", "Allocates 100 MiB (memory limit test).", any.clone()),
             tool("fail", "Always fails with a message.", any.clone()),
@@ -75,6 +82,13 @@ impl Guest for Echo {
                     .as_str()
                     .ok_or_else(|| ToolError::InvalidArgs("missing key".to_owned()))?;
                 Ok(json!({ "value": host::config_get(key) }).to_string())
+            }
+            "EchoUpper" => {
+                let args = parse_args(&args_json)?;
+                let text = args["text"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::InvalidArgs("missing text".to_owned()))?;
+                Ok(json!({ "text": text.to_uppercase() }).to_string())
             }
             "spin" => {
                 let mut n: u64 = 0;
@@ -113,6 +127,16 @@ impl Guest for Echo {
     }
 }
 
+/// The text a plugin gives for a host error. A refusal is worded as the webtools plugin wrote it
+/// before it named the code (`denied by host: request denied`), so a test of the host's reason
+/// has the realistic message: the code itself is not in it.
+fn host_error(e: &ErrorCode) -> String {
+    match e {
+        ErrorCode::HttpRequestDenied => "denied by host: request denied".to_owned(),
+        other => format!("{other:?}"),
+    }
+}
+
 /// One GET over `wasi:http`. Returns `{status, body}`; the body is cut at
 /// `FETCH_BODY_CAP` bytes.
 fn fetch(url: &str) -> Result<Value, String> {
@@ -138,13 +162,13 @@ fn fetch(url: &str) -> Result<Value, String> {
     let body = request.body().map_err(|()| "no request body".to_owned())?;
     OutgoingBody::finish(body, None).map_err(|e| format!("{e:?}"))?;
 
-    let future = outgoing_handler::handle(request, None).map_err(|e| format!("{e:?}"))?;
+    let future = outgoing_handler::handle(request, None).map_err(|e| host_error(&e))?;
     future.subscribe().block();
     let response = future
         .get()
         .ok_or("no response")?
         .map_err(|()| "response already taken".to_owned())?
-        .map_err(|e| format!("{e:?}"))?;
+        .map_err(|e| host_error(&e))?;
     let status = response.status();
 
     let incoming = response.consume().map_err(|()| "no response body".to_owned())?;

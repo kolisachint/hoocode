@@ -70,6 +70,7 @@ fn loads_and_lists_tools() {
         [
             "echo",
             "config",
+            "EchoUpper",
             "spin",
             "alloc",
             "fail",

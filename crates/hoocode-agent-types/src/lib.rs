@@ -11,7 +11,10 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 pub mod tool_origin;
-pub use tool_origin::{collision_notice, ToolOrigin, ToolSelector, ToolSelectorError};
+pub use tool_origin::{
+    collision_notices, valid_plugin_tool_name, Collision, ToolOrigin, ToolSelector,
+    ToolSelectorError,
+};
 
 // ---------------------------------------------------------------------------
 // Tool execution mode

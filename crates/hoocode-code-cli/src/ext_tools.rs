@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use hoocode_agent_types::{
-    collision_notice, AgentToolCall, AgentToolResult, PermissionDecision, PermissionGate,
-    ToolOrigin,
+    collision_notices, valid_plugin_tool_name, AgentToolCall, AgentToolResult, Collision,
+    PermissionDecision, PermissionGate, ToolOrigin,
 };
 use hoocode_ai_types::Content;
 use hoocode_code_plugins::PluginSet;
@@ -138,8 +138,9 @@ fn build_with_cache(
         // A plugin reads only `pluginConfig.<its name>`, taken when the session starts.
         let values = configs.get(&plugin.name).cloned().unwrap_or_default();
         let config: ConfigLookup = Arc::new(move |key: &str| values.get(key).cloned());
+        let mut collisions = Vec::new();
         for info in extension.tools() {
-            if !valid_tool_name(&info.name) {
+            if !valid_plugin_tool_name(&info.name) {
                 diagnostics.push((
                     DiagnosticKind::Warning,
                     format!(
@@ -154,10 +155,11 @@ fn build_with_cache(
                 tool: info.name.clone(),
             };
             if let Some(existing) = holders.get(&info.name) {
-                diagnostics.push((
-                    DiagnosticKind::Warning,
-                    collision_notice(&info.name, &info.name, &origin, existing),
-                ));
+                collisions.push(Collision {
+                    name: info.name.clone(),
+                    origin,
+                    existing: existing.clone(),
+                });
                 continue;
             }
             holders.insert(info.name.clone(), origin.clone());
@@ -169,6 +171,9 @@ fn build_with_cache(
                 config.clone(),
                 gate.clone(),
             ));
+        }
+        for message in collision_notices(&collisions) {
+            diagnostics.push((DiagnosticKind::Warning, message));
         }
         let declared: Vec<&str> = extension.tools().iter().map(|i| i.name.as_str()).collect();
         for message in undeclared_render_hints(&label, &plugin.tool_render, &declared) {
@@ -192,14 +197,6 @@ fn undeclared_render_hints(
             format!("{label}: render hint for {tool:?} ignored: the plugin declares no such tool")
         })
         .collect()
-}
-
-/// The model-facing name a plugin tool may declare: `^[A-Za-z][A-Za-z0-9_-]{0,63}$`.
-fn valid_tool_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    name.len() <= 64
-        && chars.next().is_some_and(|c| c.is_ascii_alphabetic())
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 /// A host for `cache_dir`, with the test-only loopback switch applied when its variable is `1`.
@@ -262,16 +259,14 @@ fn definition(
     }
 }
 
-/// The code a refused request shows the guest, for every refusal alike (`http-request-denied`).
-const REFUSED_CODE: &str = "HttpRequestDenied";
-
-/// A failed call's text, with the reason of the call's last refused request added when the
-/// failure is that refusal. The guest sees only the code, so without this the model could not
-/// tell a user's "no", a private address and a missing permission apart.
+/// A failed call's text, with the reason of the call's last refused request added when this call
+/// recorded a refusal. The guest sees the refusal only as its own wording, which a plugin may
+/// phrase any way, so the text is not checked: the call's own record is. Without the reason the
+/// model could not tell a user's "no", a private address and a missing permission apart.
 fn with_refusal(error: String, refusal: Option<String>) -> String {
     match refusal {
-        Some(reason) if error.contains(REFUSED_CODE) => format!("{error}: {reason}"),
-        _ => error,
+        Some(reason) => format!("{error}: {reason}"),
+        None => error,
     }
 }
 
@@ -543,6 +538,7 @@ mod tests {
         assert_eq!(
             names(&tools),
             [
+                "EchoUpper",
                 "alloc",
                 "chatter",
                 "config",
@@ -661,7 +657,34 @@ mod tests {
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
         assert_eq!(
             diagnostics[0].1,
-            "plugin demo tool echo not loaded: echo is already taken by built-in tool"
+            "plugin demo: 1 tool not loaded (echo): name is already taken by built-in tool"
+        );
+    }
+
+    #[test]
+    fn a_plugin_with_several_taken_names_gets_one_line() {
+        let layout = Layout::new();
+        layout.add_plugin("demo", &fixture_bytes());
+        let set = layout.load(&[]);
+        let taken = vec![
+            ("echo".to_owned(), ToolOrigin::BuiltIn),
+            ("config".to_owned(), ToolOrigin::BuiltIn),
+            ("fetch".to_owned(), ToolOrigin::BuiltIn),
+        ];
+        let (tools, diagnostics) = build_for(
+            &layout,
+            &set,
+            &settings(json!({})),
+            ScriptedGate::new(vec![]),
+            &taken,
+        );
+        assert!(!tools
+            .iter()
+            .any(|t| ["echo", "config", "fetch"].contains(&t.name.as_str())));
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].1,
+            "plugin demo: 3 tools not loaded (echo, config, fetch): names are already taken by built-in tool"
         );
     }
 
@@ -684,22 +707,22 @@ mod tests {
         );
         assert!(
             diagnostics.iter().any(|(_, m)| m
-                == "plugin demo tool echo not loaded: echo is already taken by plugin docs"),
+                == "plugin demo: 1 tool not loaded (echo): name is already taken by plugin docs"),
             "{diagnostics:?}"
         );
     }
 
     #[test]
     fn a_plugin_tool_name_must_match_the_model_name_rule() {
-        assert!(valid_tool_name("WebFetch"));
-        assert!(valid_tool_name("write-data"));
-        assert!(valid_tool_name(&format!("A{}", "b".repeat(63))));
-        assert!(!valid_tool_name(""));
-        assert!(!valid_tool_name("1st"));
-        assert!(!valid_tool_name("_x"));
-        assert!(!valid_tool_name("a.b"));
-        assert!(!valid_tool_name("a b"));
-        assert!(!valid_tool_name(&format!("A{}", "b".repeat(64))));
+        assert!(valid_plugin_tool_name("WebFetch"));
+        assert!(valid_plugin_tool_name("write-data"));
+        assert!(valid_plugin_tool_name(&format!("A{}", "b".repeat(63))));
+        assert!(!valid_plugin_tool_name(""));
+        assert!(!valid_plugin_tool_name("1st"));
+        assert!(!valid_plugin_tool_name("_x"));
+        assert!(!valid_plugin_tool_name("a.b"));
+        assert!(!valid_plugin_tool_name("a b"));
+        assert!(!valid_plugin_tool_name(&format!("A{}", "b".repeat(64))));
     }
 
     #[test]
@@ -847,9 +870,9 @@ mod tests {
         let (tools, _) = build_for(&layout, &set, &settings(json!({})), gate.clone(), &[]);
         let fetch = tools.iter().find(|t| t.name == "fetch").unwrap();
         let error = run(fetch, json!({"url": "https://93.184.216.34/"})).unwrap_err();
-        // The component sees the refusal as its HTTP error code, and the gate's reason is added to
-        // the tool error, so the model can tell why.
-        assert!(error.contains("HttpRequestDenied"), "{error}");
+        // The component sees the refusal as its own message, and the gate's reason is added to the
+        // tool error, so the model can tell why.
+        assert!(error.contains("denied by host: request denied"), "{error}");
         assert!(error.contains("refused in test"), "{error}");
         let asked = gate.asked();
         assert_eq!(asked.len(), 1);
@@ -858,7 +881,8 @@ mod tests {
 
     #[test]
     fn fetch_refused_by_the_host_names_the_block_without_asking() {
-        // A private literal IP is refused by the host's own check, before the gate is asked.
+        // A private literal IP is refused by the host's own check, before the gate is asked. The
+        // plugin's message does not carry the code name, so only the recorded reason can say why.
         let layout = Layout::new();
         layout.add_plugin("demo", &fixture_bytes());
         let set = layout.load(&[]);
@@ -866,23 +890,32 @@ mod tests {
         let (tools, _) = build_for(&layout, &set, &settings(json!({})), gate.clone(), &[]);
         let fetch = tools.iter().find(|t| t.name == "fetch").unwrap();
         let error = run(fetch, json!({"url": "http://10.1.2.3/"})).unwrap_err();
-        assert!(error.contains("HttpRequestDenied"), "{error}");
+        assert!(error.contains("denied by host: request denied"), "{error}");
         assert!(error.contains("10.1.2.3 is private"), "{error}");
         assert!(gate.asked().is_empty());
     }
 
     #[test]
-    fn a_refusal_reason_is_added_only_to_a_refusal() {
-        let refused = "HttpRequestDenied".to_owned();
+    fn a_refusal_reason_is_added_to_a_refused_calls_error_whatever_its_text() {
+        // The text a plugin gives a refusal, as the webtools transport wrote it before it named the
+        // code, and as it writes it now.
+        let plugin_text = "denied by host: request denied".to_owned();
         assert_eq!(
-            with_refusal(refused.clone(), Some("user said no".into())),
-            "HttpRequestDenied: user said no"
+            with_refusal(plugin_text.clone(), Some("10.0.0.1 is private".into())),
+            "denied by host: request denied: 10.0.0.1 is private"
+        );
+        assert_eq!(
+            with_refusal(
+                "denied by host (HttpRequestDenied): request denied".into(),
+                Some("user said no".into())
+            ),
+            "denied by host (HttpRequestDenied): request denied: user said no"
         );
         // No refusal in this call: the error is unchanged.
-        assert_eq!(with_refusal(refused.clone(), None), refused);
-        // A failure that is not a refusal keeps its own text.
+        assert_eq!(with_refusal(plugin_text.clone(), None), plugin_text);
+        // A failure with its own text that did not come from a refusal keeps it.
         assert_eq!(
-            with_refusal("plugin crashed".into(), Some("user said no".into())),
+            with_refusal("plugin crashed".into(), None),
             "plugin crashed"
         );
     }

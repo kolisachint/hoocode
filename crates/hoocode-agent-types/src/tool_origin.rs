@@ -74,20 +74,58 @@ impl ToolOrigin {
     }
 }
 
-/// The diagnostic for a tool that is not loaded because its model-facing name is taken.
-/// `tool` is the tool's own name (as its origin declares it), `name` the model-facing name,
+/// Whether `name` may be a plugin WASM tool's model-facing name: `^[A-Za-z][A-Za-z0-9_-]{0,63}$`
+/// (`docs/design/plugins.md`, Naming and identity). The loader of a component and the agent's
+/// tool setup both check a declared name with this one function.
+pub fn valid_plugin_tool_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    name.len() <= 64
+        && chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// A tool that is not loaded because its model-facing name is taken: `name` is that name,
 /// `origin` the tool that is not loaded and `existing` the one that keeps the name.
-pub fn collision_notice(
-    tool: &str,
-    name: &str,
-    origin: &ToolOrigin,
-    existing: &ToolOrigin,
-) -> String {
-    format!(
-        "{} tool {tool} not loaded: {name} is already taken by {}",
-        origin.describe(),
-        existing.describe()
-    )
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Collision {
+    pub name: String,
+    pub origin: ToolOrigin,
+    pub existing: ToolOrigin,
+}
+
+/// The diagnostics for the tools not loaded because their names are taken, one line per
+/// requesting plugin or server and holder, in the order first seen:
+/// `plugin echo-dup: 3 tools not loaded (echo, foo, bar): names already taken by plugin echo`.
+/// Origins are named as [`ToolOrigin::describe`] names them.
+pub fn collision_notices(collisions: &[Collision]) -> Vec<String> {
+    // (requester, holder, names), so each group is one line.
+    let mut groups: Vec<(String, String, Vec<&str>)> = Vec::new();
+    for collision in collisions {
+        let requester = collision.origin.describe();
+        let holder = collision.existing.describe();
+        match groups
+            .iter_mut()
+            .find(|(r, h, _)| *r == requester && *h == holder)
+        {
+            Some((_, _, names)) => names.push(&collision.name),
+            None => groups.push((requester, holder, vec![&collision.name])),
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(requester, holder, names)| {
+            let count = names.len();
+            let (tools, noun) = if count == 1 {
+                ("tool", "name is")
+            } else {
+                ("tools", "names are")
+            };
+            format!(
+                "{requester}: {count} {tools} not loaded ({}): {noun} already taken by {holder}",
+                names.join(", ")
+            )
+        })
+        .collect()
 }
 
 impl fmt::Display for ToolOrigin {
@@ -278,6 +316,42 @@ mod tests {
             mcp("github", "x", Some("docs")).describe(),
             "mcp github (plugin docs)"
         );
+    }
+
+    #[test]
+    fn collisions_are_one_line_per_requester_and_holder() {
+        let echo_dup = wasm("echo-dup", "echo");
+        let collision = |name: &str, origin: &ToolOrigin, existing: &ToolOrigin| Collision {
+            name: name.into(),
+            origin: origin.clone(),
+            existing: existing.clone(),
+        };
+        let lines = collision_notices(&[
+            collision("echo", &echo_dup, &ToolOrigin::BuiltIn),
+            collision("foo", &wasm("echo-dup", "foo"), &ToolOrigin::BuiltIn),
+            collision("bar", &wasm("echo-dup", "bar"), &wasm("echo", "bar")),
+        ]);
+        assert_eq!(
+            lines,
+            [
+                "plugin echo-dup: 2 tools not loaded (echo, foo): names are already taken by built-in tool",
+                "plugin echo-dup: 1 tool not loaded (bar): name is already taken by plugin echo",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_collision_names_mcp_requesters_and_holders_as_they_are() {
+        let lines = collision_notices(&[Collision {
+            name: "mcp__github__create_issue".into(),
+            origin: mcp("github", "create_issue", Some("docs")),
+            existing: mcp("gitlab", "create_issue", None),
+        }]);
+        assert_eq!(
+            lines,
+            ["mcp github (plugin docs): 1 tool not loaded (mcp__github__create_issue): name is already taken by mcp gitlab"]
+        );
+        assert!(collision_notices(&[]).is_empty());
     }
 
     #[test]

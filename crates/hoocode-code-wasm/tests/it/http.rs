@@ -331,7 +331,7 @@ fn gate_wait_does_not_count_toward_the_call_timeout() {
 
 /// The gate comes before DNS, so an unresolvable name is asked about like any
 /// other host. Once allowed, the lookup fails and the guest gets the same
-/// `HttpRequestDenied` a block gets, so it cannot tell the two apart. The
+/// refusal a block gets, so it cannot tell the two apart. The
 /// lookup itself is counted in the unit tests of `http.rs`.
 #[test]
 fn unresolvable_name_is_asked_then_denied_with_the_block_error() {
@@ -346,7 +346,8 @@ fn unresolvable_name_is_asked_then_denied_with_the_block_error() {
             .unwrap_err();
         match &err {
             WasmError::Failed(msg) => {
-                assert!(msg.contains("HttpRequestDenied"), "{msg}");
+                // The fixture words the refusal as the webtools plugin does (no code name).
+                assert!(msg.contains("denied by host: request denied"), "{msg}");
                 assert!(!msg.contains("DnsError"), "{msg}");
             }
             other => panic!("expected Failed, got {other:?}"),
@@ -371,7 +372,8 @@ fn gate_refused_unresolvable_name_gets_the_same_error() {
             .unwrap_err();
         match &err {
             WasmError::Failed(msg) => {
-                assert!(msg.contains("HttpRequestDenied"), "{msg}");
+                // The fixture words the refusal as the webtools plugin does (no code name).
+                assert!(msg.contains("denied by host: request denied"), "{msg}");
                 assert!(!msg.contains("DnsError"), "{msg}");
             }
             other => panic!("expected Failed, got {other:?}"),

@@ -169,7 +169,7 @@ Collisions. A collision is never silent.
 
 | Case | Result | Diagnostic |
 |---|---|---|
-| A plugin or MCP name equals a built-in name | Not loaded. A built-in is never shadowed | Names the tool and the built-in |
+| A plugin or MCP name equals a built-in name | Not loaded. A built-in is never shadowed | Names the tool and the built-in, one line per plugin or server and holder |
 | Two plugin or MCP tools have the same model-facing name | The first in load order is loaded. The other is not | Names both origins, for example `plugin webtools` and `mcp github (plugin docs)` |
 
 - Load order is the existing one: user before project. The MCP path must not overwrite a tool silently, as it does today.
@@ -314,7 +314,8 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-18 | pluginConfig is read from user settings only (a project cannot configure a plugin). The project `.hoocode/settings.json` comes from the working tree, which may be untrusted. In agent definitions, WebFetch/WebSearch name the webtools plugin tools (`ext_webtools_fetch`, `ext_webtools_search`); to keep an agent off the network entirely, deny `ext_*`. (WebFetch/WebSearch part superseded 2026-11-19: they are the tools' own names; deny `plugin:*` to keep an agent off the network) |
 | 2026-11-18 | WASM HTTPS uses hoocode's TLS trust set (same as providers): bundled roots plus `--ca-cert`, `HOOCODE_CA_CERT`, `NODE_EXTRA_CA_CERTS` and `--use-system-ca`, verification always on. The host gets the set from `hoocode_ai_util::tls::installed_trust()`. |
 | 2026-11-18 | `/reload` rebuilds the plugin tools even when the plugin set's generation did not move, because each `ext_` tool holds the `pluginConfig` values it was built with and `/reload` re-reads settings. The plugin MCP hub is still rebuilt only when its servers changed. Per-turn refreshes keep the generation check, so a settings edit reaches plugin tools on `/reload` or a new session, not mid-run. |
-| 2026-11-19 | When a plugin's HTTP request is refused, the tool error adds the refusal's reason (the gate's answer, or the host's own SSRF block such as "10.1.2.3 is private") after the guest's `HttpRequestDenied`. The reason is per call. The guest still sees only the code. |
+| 2026-11-19 | When a plugin's HTTP request is refused, the tool error adds the refusal's reason (the gate's answer, or the host's own SSRF block such as "10.1.2.3 is private") to any failed call that recorded a refusal, whatever the plugin's own text says. The reason is per call. The guest sees only its own refusal message, which may not name the code. |
+| 2026-11-19 | Collisions are reported one line per requesting plugin or server and holder: `plugin echo-dup: 3 tools not loaded (echo, foo, bar): names already taken by plugin echo`. A plugin tool name is checked by one validator (`valid_plugin_tool_name`, `^[A-Za-z][A-Za-z0-9_-]{0,63}$`) in the component loader and the CLI. |
 | 2026-11-19 | Tool identity is structured (option D). The origin (`BuiltIn`, `Plugin`, `Mcp`) is carried everywhere; the model-facing name is for the model only. Supersedes the 2026-11-17 naming row. |
 | 2026-11-19 | Model-facing names: a plugin's WASM tools use the name the plugin declares (PascalCase, `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). MCP tools are `mcp__<server>__<tool>`, sanitised, 64 cap with an FNV-1a suffix. Old `ext_*` and `mcp_*` names are removed, with no aliases. |
 | 2026-11-19 | Collisions: a built-in is never shadowed. Between plugin and MCP tools the first in load order wins and the other is not loaded. Always a diagnostic that names both origins. The silent MCP overwrite is a bug. |

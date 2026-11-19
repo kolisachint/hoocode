@@ -274,6 +274,30 @@ fn an_installed_plugin_tool_runs_and_its_result_reaches_the_model() {
 }
 
 #[test]
+fn a_pascal_case_plugin_tool_is_offered_to_the_model_and_runs() {
+    // The webtools plugin declares `WebFetch` and `WebSearch`: a PascalCase name must load,
+    // be offered to the model under that exact name, and run.
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run(
+        &home,
+        call_then_done("EchoUpper", json!({"text": "hello"})),
+        &[],
+    );
+    assert!(
+        offered(&printed.requests[0]).contains(&"EchoUpper"),
+        "the first request must offer the PascalCase tool: {:?}\n{}",
+        offered(&printed.requests[0]),
+        printed.stderr
+    );
+    let results = tool_results(&printed.requests[1]);
+    assert!(
+        results.iter().any(|text| text.contains("HELLO")),
+        "the PascalCase tool's result must reach the model: {results:?}\n{}",
+        printed.stderr
+    );
+}
+
+#[test]
 fn a_private_address_is_refused_before_any_approval_is_asked() {
     let home = Home::with_echo_plugin(true);
     // A headless channel that cannot prompt: if the gate were asked, its refusal would name
@@ -284,11 +308,12 @@ fn a_private_address_is_refused_before_any_approval_is_asked() {
         &[("HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED", "1")],
     );
     let results = tool_results(&printed.requests[1]);
+    // The plugin words the refusal itself; the host's reason for it must still reach the model.
     assert!(
         results
             .iter()
-            .any(|text| text.contains("HttpRequestDenied")),
-        "the request must be refused: {results:?}\n{}",
+            .any(|text| text.contains("request denied") && text.contains("10.0.0.1 is private")),
+        "the request must be refused, with the reason: {results:?}\n{}",
         printed.stderr
     );
     assert!(
@@ -325,8 +350,8 @@ fn loopback_is_refused_by_the_gate_and_the_server_gets_nothing() {
     assert!(
         results
             .iter()
-            .any(|text| text.contains("HttpRequestDenied")),
-        "the gate must refuse the request: {results:?}\n{}",
+            .any(|text| text.contains("request denied") && text.contains(NEEDS_APPROVAL)),
+        "the gate must refuse the request, with the gate's reason: {results:?}\n{}",
         printed.stderr
     );
     assert!(

@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use hoocode_agent_types::valid_plugin_tool_name;
 use serde_json::Value;
 use wasmtime::Store;
 
@@ -188,18 +189,13 @@ fn map_tool_error(err: ToolError) -> WasmError {
     }
 }
 
-/// Check the guest's tool list: names of `[a-z0-9_-]`, no duplicates, and each
-/// schema is JSON text for an object.
+/// Check the guest's tool list: names that `valid_plugin_tool_name` accepts, no duplicates,
+/// and each schema is JSON text for an object.
 fn validate_tools(raw: Vec<GuestToolInfo>) -> Result<Vec<ToolInfo>, WasmError> {
     let mut seen = HashSet::new();
     let mut tools = Vec::with_capacity(raw.len());
     for tool in raw {
-        let valid_name = !tool.name.is_empty()
-            && tool
-                .name
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
-        if !valid_name {
+        if !valid_plugin_tool_name(&tool.name) {
             return Err(WasmError::InvalidTools(format!(
                 "bad tool name {:?}",
                 tool.name
@@ -246,15 +242,18 @@ mod tests {
         let tools = validate_tools(vec![
             raw("echo", "{}"),
             raw("web-search_2", r#"{"type":"object"}"#),
+            raw("WebFetch", "{}"),
         ])
         .unwrap();
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 3);
+        assert_eq!(tools[2].name, "WebFetch");
         assert_eq!(tools[1].input_schema["type"], "object");
     }
 
     #[test]
     fn rejects_bad_names() {
-        for name in ["", "Echo", "a b", "a.b", "é"] {
+        let long = "a".repeat(65);
+        for name in ["", "1st", "_x", "a b", "a.b", "é", long.as_str()] {
             let err = validate_tools(vec![raw(name, "{}")]).unwrap_err();
             assert!(
                 matches!(err, WasmError::InvalidTools(_)),
