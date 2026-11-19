@@ -719,6 +719,10 @@ impl Mode {
             origin: event
                 .get("origin")
                 .and_then(|origin| serde_json::from_value(origin.clone()).ok()),
+            render: event
+                .get("render")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         });
     }
 

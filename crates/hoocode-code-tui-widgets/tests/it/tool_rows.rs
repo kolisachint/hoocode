@@ -12,7 +12,7 @@ use hoocode_code_subagents::live::apply;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
 use hoocode_code_tui_widgets::tool_chain::{ChainState, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_row::{fit_header, header_spans, Mark};
+use hoocode_code_tui_widgets::tool_row::{fit_header, header_spans, HeaderOrigin, Mark};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_tui_render::golden::render_golden;
@@ -304,6 +304,7 @@ fn shell_failure_at_40_keeps_exit_while_dropping_duration_then_reason() {
     let spans = header_spans(
         Mark::Failed,
         "Shell",
+        &HeaderOrigin::default(),
         target,
         &["exit 1"],
         &["3.1s"],

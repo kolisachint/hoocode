@@ -76,6 +76,9 @@ pub struct ToolDefinition {
     pub name: String,
     /// Where the tool comes from. Permissions, selectors and events read this, never the name.
     pub origin: ToolOrigin,
+    /// The renderer hint the plugin gives this tool (`extensions."dev.hoocode".tools.<Name>.render`,
+    /// plugins.md). Data for the TUI only: an absent or unknown id draws the generic row.
+    pub render: Option<String>,
     pub label: String,
     pub description: String,
     /// One-line summary for the system prompt's tool list (`promptSnippet`).
@@ -123,6 +126,7 @@ pub fn wrap_tool_definition(
         plain_json_schema: false,
         name: definition.name,
         origin: definition.origin,
+        render: definition.render,
         label: definition.label,
         description: definition.description,
         parameters: definition.parameters,
@@ -164,6 +168,7 @@ pub fn tool_definition_from_agent_tool(tool: AgentTool) -> ToolDefinition {
     let execute = tool.execute.clone();
     ToolDefinition {
         origin: ToolOrigin::BuiltIn,
+        render: tool.render,
         name: tool.name,
         label: tool.label,
         description: tool.description,
@@ -195,6 +200,7 @@ mod tests {
     fn echo_definition() -> ToolDefinition {
         ToolDefinition {
             origin: ToolOrigin::BuiltIn,
+            render: None,
             ordered_start: false,
             abort_grace: None,
             background_when: None,

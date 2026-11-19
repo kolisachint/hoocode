@@ -845,7 +845,7 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
     let foreground_agents = Arc::new(collect_foreground_agent_names(cwd));
     let predicate_agents = foreground_agents.clone();
     let default_cwd = cwd.to_path_buf();
-    ToolDefinition { origin: hoocode_code_tool_api::ToolOrigin::BuiltIn, ordered_start: false, abort_grace: Some(TASK_ABORT_GRACE),
+    ToolDefinition { origin: hoocode_code_tool_api::ToolOrigin::BuiltIn, render: None, ordered_start: false, abort_grace: Some(TASK_ABORT_GRACE),
         name: TASK_TOOL_NAME.into(),
         label: TASK_TOOL_NAME.into(),
         description: "Delegate a focused task to a specialized subagent that runs as a separate process with its own, fresh context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer. Every call starts its own run with its own handle (e.g. \"explore#2\"). A background call's result names that handle next to its description at once; a foreground call names it on its `resume_task_id:` line. Two runs of one agent type are different runs, not duplicates. Before dispatching a task again, check AgentOutput(list: true): it shows every background run with its handle, description and status.".into(),
@@ -1486,7 +1486,7 @@ fn task_output_parameters() -> Value {
 
 /// `createTaskOutputToolDefinition`.
 pub fn create_task_output_tool_definition() -> ToolDefinition {
-    ToolDefinition { origin: hoocode_code_tool_api::ToolOrigin::BuiltIn, ordered_start: false, abort_grace: None,
+    ToolDefinition { origin: hoocode_code_tool_api::ToolOrigin::BuiltIn, render: None, ordered_start: false, abort_grace: None,
         name: TASK_OUTPUT_TOOL_NAME.into(),
         label: TASK_OUTPUT_TOOL_NAME.into(),
         description: [

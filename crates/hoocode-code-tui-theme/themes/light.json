@@ -63,6 +63,7 @@
 		"chipWarn": "warnChip",
 		"chipFg": "chipInk",
 		"toolTitle": "ink",
+		"toolExternal": "#9c1f7a",
 		"toolOutput": "mediumGray",
 		"mdHeading": "amber",
 		"mdLink": "blue",

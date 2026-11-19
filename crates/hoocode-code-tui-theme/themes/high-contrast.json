@@ -49,6 +49,7 @@
 		"chipWarn": "#ffe600",
 		"chipFg": "chipInk",
 		"toolTitle": "#ffffff",
+		"toolExternal": "#ff8ad8",
 		"toolOutput": "#d0d0d0",
 		"mdHeading": "#ffe600",
 		"mdLink": "#8dbcff",

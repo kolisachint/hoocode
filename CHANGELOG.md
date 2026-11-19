@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: plugin and MCP tools in the transcript (2026-11-19)
+- A plugin or MCP tool's row shows where it comes from: its name takes a new theme color
+  (`toolExternal`), and the plugin name or `mcp:<server>` follows it dimmed. Built-in rows
+  are unchanged. Every built-in theme sets the color. A custom theme without it shows these
+  names in the tool name color.
+- A plugin picks its tool's renderer in `plugin.json` with
+  `extensions."dev.hoocode".tools.<Name>.render`: `web-fetch` or `web-search`. An absent or
+  unknown id gives the generic row. A hint for a tool the plugin does not declare is ignored,
+  with a warning.
+- The JSON `tool_execution_start` event has a `render` field, written only when a plugin tool
+  has a hint.
+
+### Changed: web tool rows draw by the plugin's hint, not by the tool name (2026-11-19)
+- `WebFetch` and `WebSearch` no longer get the web renderer by name. A tool with those names
+  draws the web renderer only when its plugin declares the matching `render` hint. The
+  webtools plugin's own release declares it. Until that release is installed, its rows draw
+  generically.
+
 ### Changed (breaking): tool names and origin (2026-11-19)
 - **Plugin tools keep the name the plugin declares, with no prefix.** A plugin's WASM tool
   was `ext_<plugin>_<tool>`; it is now its own name, such as `WebFetch`. The name must match

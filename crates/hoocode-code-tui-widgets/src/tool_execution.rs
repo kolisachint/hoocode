@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
 
+use hoocode_agent_types::ToolOrigin;
 use hoocode_ai_types::Content;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{BoxComponent, Image, ImageOptions, ImageTheme, Spacer, Text};
@@ -23,7 +24,7 @@ use hoocode_tui_util::{
 use serde_json::Value;
 
 use crate::fold::{line_budget, more_lines_hint, ELLIPSIS};
-use crate::tool_row::Mark;
+use crate::tool_row::{HeaderOrigin, Mark};
 use crate::tool_signal::{chain_subject, ResultHolder, ResultText, ToolResult};
 use crate::tools::subagent::TaskOutcome;
 
@@ -43,7 +44,7 @@ pub struct ChainEntry {
     /// for calls that report no outcome (a background placeholder, a roster).
     pub outcome: Option<TaskOutcome>,
 }
-use crate::tools::builtin_tool_definition;
+use crate::tools::{renderer_for, RENDER_WEB_FETCH, RENDER_WEB_SEARCH};
 use hoocode_code_agent_session::format::format_tokens;
 use hoocode_tui_ratatui::core::text::Span;
 
@@ -483,6 +484,10 @@ pub struct ToolExecutionComponent {
     renderer_objects: HashMap<String, Rc<dyn Any>>,
     image_handles: Vec<ComponentHandle>,
     tool_name: String,
+    /// Where the tool comes from (the event's origin); `None` when the call names no tool.
+    origin: Option<ToolOrigin>,
+    /// The plugin's renderer hint for the tool (`web-fetch`, say), with the origin.
+    render: Option<String>,
     tool_call_id: String,
     args: Value,
     show_images: bool,
@@ -596,6 +601,32 @@ impl ToolExecutionComponent {
         tool_definition: Option<ToolRenderDefinition>,
         cwd: &str,
     ) -> Self {
+        Self::with_origin(
+            tool_name,
+            tool_call_id,
+            args,
+            options,
+            tool_definition,
+            cwd,
+            None,
+            None,
+        )
+    }
+
+    /// A call with the origin and renderer hint its session reports. The renderer is chosen
+    /// here: by the hint for a plugin or MCP tool, by the name for a built-in ([`renderer_for`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_origin(
+        tool_name: &str,
+        tool_call_id: &str,
+        args: Value,
+        options: ToolExecutionOptions,
+        tool_definition: Option<ToolRenderDefinition>,
+        cwd: &str,
+        origin: Option<ToolOrigin>,
+        render: Option<String>,
+    ) -> Self {
+        let builtin_definition = renderer_for(tool_name, origin.as_ref(), render.as_deref());
         let leading_spacer = Rc::new(RefCell::new(Spacer::new(1)));
         let mut this = Self {
             children: vec![leading_spacer.clone()],
@@ -608,13 +639,15 @@ impl ToolExecutionComponent {
             renderer_objects: HashMap::new(),
             image_handles: Vec::new(),
             tool_name: tool_name.to_string(),
+            origin,
+            render,
             tool_call_id: tool_call_id.to_string(),
             args,
             show_images: options.show_images,
             image_width_cells: options.image_width_cells,
             is_partial: true,
             tool_definition,
-            builtin_definition: builtin_tool_definition(tool_name),
+            builtin_definition,
             cwd: cwd.to_string(),
             execution_started: false,
             waiting_for_clearance: false,
@@ -674,9 +707,72 @@ impl ToolExecutionComponent {
         self.builtin_definition.is_some() || self.tool_definition.is_some()
     }
 
+    /// Gives a call its origin and renderer hint once its session reports them. A call
+    /// streams in before its start event, so it can be built without them. The renderer is
+    /// chosen again as [`Self::with_origin`] chooses it, and the body slot follows it.
+    pub fn set_origin(&mut self, origin: Option<ToolOrigin>, render: Option<String>) {
+        if self.origin == origin && self.render == render {
+            return;
+        }
+        let was_box = self.has_renderer_definition();
+        self.origin = origin;
+        self.render = render;
+        self.builtin_definition = renderer_for(
+            &self.tool_name,
+            self.origin.as_ref(),
+            self.render.as_deref(),
+        );
+        if was_box != self.has_renderer_definition() {
+            let (old, new): (ComponentHandle, ComponentHandle) = if was_box {
+                (self.content_box.clone(), self.content_text.clone())
+            } else {
+                (self.content_text.clone(), self.content_box.clone())
+            };
+            for child in self.children.iter_mut() {
+                if Rc::ptr_eq(child, &old) {
+                    *child = new.clone();
+                }
+            }
+        }
+        self.update_display();
+    }
+
     fn create_call_fallback(&self) -> ComponentHandle {
         let t = theme();
-        handle(Text::new(t.fg("toolTitle", &t.bold(&self.tool_name)), 0, 0))
+        handle(Text::new(
+            t.fg(self.name_token(), &t.bold(&self.tool_name)),
+            0,
+            0,
+        ))
+    }
+
+    /// The token of the tool's name: `toolExternal` for a plugin or MCP tool, else `toolTitle`.
+    fn name_token(&self) -> &'static str {
+        if self.header_origin().external {
+            "toolExternal"
+        } else {
+            "toolTitle"
+        }
+    }
+
+    /// The origin label and the external-tool flag of the row header (`docs/design/tui.md`,
+    /// External tools). A built-in, or an unknown name, has neither.
+    pub fn header_origin(&self) -> HeaderOrigin {
+        match &self.origin {
+            Some(origin @ (ToolOrigin::Plugin { .. } | ToolOrigin::Mcp { .. })) => HeaderOrigin {
+                label: origin.label(),
+                external: true,
+            },
+            _ => HeaderOrigin::default(),
+        }
+    }
+
+    /// Whether the call's renderer hint names the web fetch or web search row.
+    fn renders_web_tokens(&self) -> bool {
+        matches!(
+            self.render.as_deref(),
+            Some(RENDER_WEB_FETCH | RENDER_WEB_SEARCH)
+        )
     }
 
     /// The body for a tool with no result renderer: the same peek budget as
@@ -1306,8 +1402,7 @@ impl ToolExecutionComponent {
                 )
             }
             // `~8.1k tokens`: the hidden size the collapsed row stands for.
-            // TODO(P4): match the renderer hint, not the tool name.
-            "WebFetch" | "WebSearch" if settled => {
+            _ if settled && self.renders_web_tokens() => {
                 let tokens = self
                     .result
                     .as_ref()

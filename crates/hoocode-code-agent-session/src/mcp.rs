@@ -774,6 +774,8 @@ fn definitions(
             };
             Some(ToolDefinition {
                 origin,
+                // MCP tools have no renderer hint in v1 (plugins.md).
+                render: None,
                 label: name.clone(),
                 name,
                 description: tool.description.clone().unwrap_or_default(),

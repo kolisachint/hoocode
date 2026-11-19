@@ -214,16 +214,22 @@ fn load_one(
     };
 
     // The name and the MCP schema version come from the manifest; the rest of the checks follow.
-    let (name, description, schema, warnings) = match format {
+    let (name, description, schema, warnings, tool_render) = match format {
         PluginFormat::AgentPlugins => match parse_agent_plugin_manifest(&text) {
-            Ok(m) => (m.name, m.description, Some(m.schema), m.warnings),
+            Ok(m) => (
+                m.name,
+                m.description,
+                Some(m.schema),
+                m.warnings,
+                m.render_hints,
+            ),
             Err(reason) => {
                 diags.push(reject(&manifest_path, reason));
                 return None;
             }
         },
         PluginFormat::Claude => match parse_claude_manifest(&text) {
-            Ok(m) => (m.name, m.description, None, Vec::new()),
+            Ok(m) => (m.name, m.description, None, Vec::new(), BTreeMap::new()),
             Err(reason) => {
                 diags.push(reject(&manifest_path, reason));
                 return None;
@@ -248,6 +254,7 @@ fn load_one(
         marketplace_trusted,
         skill_dirs: Vec::new(),
         extension_wasm: None,
+        tool_render,
         mcp_path: None,
         mcp_servers: Vec::new(),
     };

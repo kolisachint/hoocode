@@ -145,6 +145,8 @@ pub enum AgentEvent {
         args: serde_json::Value,
         /// The tool's origin; `None` when the call names no tool the session has.
         origin: Option<ToolOrigin>,
+        /// The tool's renderer hint from its plugin, for the TUI; `None` when it has none.
+        render: Option<String>,
     },
     /// A partial result streamed by a running tool (`onUpdate`).
     ToolExecutionUpdate {
@@ -200,13 +202,21 @@ impl AgentEvent {
                 tool_name,
                 args,
                 origin,
-            } => json!({
-                "type": "tool_execution_start",
-                "toolCallId": tool_call_id,
-                "toolName": tool_name,
-                "origin": origin,
-                "args": args,
-            }),
+                render,
+            } => {
+                let mut event = json!({
+                    "type": "tool_execution_start",
+                    "toolCallId": tool_call_id,
+                    "toolName": tool_name,
+                    "origin": origin,
+                    "args": args,
+                });
+                // Only a plugin tool with a hint carries one; built-in events are unchanged.
+                if let Some(render) = render {
+                    event["render"] = json!(render);
+                }
+                event
+            }
             AgentEvent::ToolExecutionUpdate {
                 tool_call_id,
                 tool_name,
@@ -464,6 +474,8 @@ pub struct AgentTool {
     pub name: String,
     /// Where the tool comes from (see [`ToolOrigin`]).
     pub origin: ToolOrigin,
+    /// The renderer hint of a plugin tool (see `ToolDefinition::render`). Data only.
+    pub render: Option<String>,
     pub description: String,
     pub label: String,
     pub parameters: serde_json::Value,
@@ -603,6 +615,7 @@ impl AgentTool {
             ordered_start: false,
             abort_grace: None,
             origin: ToolOrigin::BuiltIn,
+            render: None,
             name: name.clone(),
             description: description.into(),
             label: name,
@@ -633,6 +646,7 @@ impl Clone for AgentTool {
             abort_grace: self.abort_grace,
             name: self.name.clone(),
             origin: self.origin.clone(),
+            render: self.render.clone(),
             description: self.description.clone(),
             label: self.label.clone(),
             parameters: self.parameters.clone(),

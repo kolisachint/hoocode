@@ -223,6 +223,15 @@ fn cut_reason(reason: &str, avail: usize) -> Option<String> {
     Some(format!("{kept}…"))
 }
 
+/// Where a header's tool comes from, for its row: the origin label after the name (the
+/// plugin name, or `mcp:<server>`) and whether the name takes the external-tool colour.
+/// Built-in rows take the default, which has neither (`docs/design/tui.md`, External tools).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HeaderOrigin {
+    pub label: Option<String>,
+    pub external: bool,
+}
+
 /// Plain header text through the cut order: `{mark} {tool} {target}  {facts}`
 /// with ` · ` between the primary facts, the reason and the kept secondary
 /// facts. Fact order is primary, reason, secondary, so Shell reads
@@ -303,15 +312,17 @@ fn mark_char(mark: Mark) -> char {
     }
 }
 
-/// One structured header line as spans: the mark, the tool in bold, the
-/// (possibly shortened) target in plain text, two spaces, then the facts -
-/// the exit red on a failed row, everything else dim. Runs the same cut
-/// order as [`fit_header`]: secondary drops right-to-left, the target
-/// shortens, the reason cuts at 12+ columns or drops, primary never drops.
+/// One structured header line as spans: the mark, the tool in bold, the origin label
+/// (dim, external tools only), the (possibly shortened) target in plain text, two spaces,
+/// then the facts - the exit red on a failed row, everything else dim. Runs the same cut
+/// order as [`fit_header`], with the origin label first: it drops whole before any fact
+/// drops. Then secondary facts drop right-to-left, the target shortens, the reason cuts
+/// at 12+ columns or drops. Primary facts never drop.
 #[allow(clippy::too_many_arguments)]
 pub fn header_spans(
     mark: Mark,
     tool: &str,
+    origin: &HeaderOrigin,
     target: &str,
     primary: &[&str],
     secondary: &[&str],
@@ -319,8 +330,22 @@ pub fn header_spans(
     width: usize,
     palette: &Palette,
 ) -> Vec<Span<'static>> {
-    let head = format!("{} {tool}", mark_char(mark));
     let prim = primary.join(" · ");
+    let head_of = |label: Option<&str>| match label {
+        Some(label) => format!("{} {tool} {label}", mark_char(mark)),
+        None => format!("{} {tool}", mark_char(mark)),
+    };
+    // Step 0: the label stays only when the whole header fits with it.
+    let label = origin.label.as_deref().filter(|label| {
+        header_cells(&render_header_text(
+            &head_of(Some(label)),
+            target,
+            &prim,
+            secondary,
+            reason,
+        )) <= width
+    });
+    let head = head_of(label);
     // Step 1: secondary facts drop whole, right to left.
     let mut kept: Vec<&str> = secondary.to_vec();
     loop {
@@ -348,11 +373,20 @@ pub fn header_spans(
         };
         (short, Vec::new(), cut)
     };
+    let name_style = if origin.external {
+        bold(palette.external())
+    } else {
+        bold(palette.ink())
+    };
     let mut spans = vec![
         mark.span(palette),
         Span::raw(" ".to_string()),
-        Span::styled(tool.to_string(), bold(palette.ink())),
+        Span::styled(tool.to_string(), name_style),
     ];
+    if let Some(label) = label {
+        spans.push(Span::raw(" ".to_string()));
+        spans.push(Span::styled(label.to_string(), palette.dim()));
+    }
     if !short_target.is_empty() {
         spans.push(Span::raw(" ".to_string()));
         spans.push(Span::styled(short_target, palette.ink()));

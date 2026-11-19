@@ -4,6 +4,8 @@
 //! not parsed at run time. An unknown top-level field, or an `extensions` that is not an object,
 //! is a warning. Any other violation rejects the plugin (`docs/design/plugins.md`, Details).
 
+use std::collections::BTreeMap;
+
 use serde_json::{Map, Value};
 
 /// The `$schema` of an Agent Plugins 1.0.0 manifest. The only version this crate supports.
@@ -34,6 +36,9 @@ pub struct AgentPluginManifest {
     pub description: String,
     /// The `$schema` value. The MCP file must target the same version.
     pub schema: String,
+    /// Renderer hints from `extensions."dev.hoocode".tools.<Name>.render`: the plugin-declared
+    /// tool name to the render id (`web-fetch`, say). The id is data; nothing checks it here.
+    pub render_hints: BTreeMap<String, String>,
     /// Unknown top-level fields and a non-object `extensions`. Reported, then ignored.
     pub warnings: Vec<String>,
 }
@@ -128,13 +133,54 @@ pub fn parse_agent_plugin_manifest(text: &str) -> Result<AgentPluginManifest, St
     if root.get("extensions").is_some_and(|v| !v.is_object()) {
         warnings.push("extensions is not an object; ignored".to_owned());
     }
+    let render_hints = render_hints_of(root, &mut warnings);
 
     Ok(AgentPluginManifest {
         name,
         description: description_of(root),
         schema,
+        render_hints,
         warnings,
     })
+}
+
+/// `extensions."dev.hoocode".tools.<Name>.render` (plugins.md, Naming and identity). Entries
+/// that are not a string `render` are ignored with a warning; other keys are ignored silently.
+fn render_hints_of(
+    root: &Map<String, Value>,
+    warnings: &mut Vec<String>,
+) -> BTreeMap<String, String> {
+    let mut hints = BTreeMap::new();
+    let Some(hoo) = root
+        .get("extensions")
+        .and_then(Value::as_object)
+        .and_then(|ext| ext.get("dev.hoocode"))
+    else {
+        return hints;
+    };
+    let Some(hoo) = hoo.as_object() else {
+        warnings.push("extensions.dev.hoocode is not an object; ignored".to_owned());
+        return hints;
+    };
+    let Some(tools) = hoo.get("tools") else {
+        return hints;
+    };
+    let Some(tools) = tools.as_object() else {
+        warnings.push("extensions.dev.hoocode.tools is not an object; ignored".to_owned());
+        return hints;
+    };
+    for (tool, entry) in tools {
+        match entry.as_object().and_then(|e| e.get("render")) {
+            Some(Value::String(render)) => {
+                hints.insert(tool.clone(), render.clone());
+            }
+            Some(_) => warnings.push(format!(
+                "extensions.dev.hoocode.tools.{tool}.render is not a string; ignored"
+            )),
+            None => {}
+        }
+    }
+    hints
 }
 
 /// The `description` text of a manifest object, or empty (the field is checked as a string).
@@ -250,6 +296,58 @@ mod tests {
     fn non_object_extensions_is_a_warning() {
         let m = parse_agent_plugin_manifest(&manifest(r#", "extensions": []"#)).unwrap();
         assert_eq!(m.warnings.len(), 1);
+    }
+
+    #[test]
+    fn render_hints_are_read_from_the_dev_hoocode_tools_block() {
+        let text = manifest(
+            r#", "extensions": {"dev.hoocode": {"tools": {
+                "WebFetch": {"render": "web-fetch", "later": 1},
+                "WebSearch": {"render": "web-search"},
+                "Other": {"speed": 3},
+                "Bad": {"render": 7}
+            }}}"#,
+        );
+        let m = parse_agent_plugin_manifest(&text).unwrap();
+        let hints: Vec<(&str, &str)> = m
+            .render_hints
+            .iter()
+            .map(|(t, r)| (t.as_str(), r.as_str()))
+            .collect();
+        assert_eq!(
+            hints,
+            vec![("WebFetch", "web-fetch"), ("WebSearch", "web-search")]
+        );
+        assert_eq!(
+            m.warnings,
+            vec!["extensions.dev.hoocode.tools.Bad.render is not a string; ignored".to_owned()]
+        );
+    }
+
+    #[test]
+    fn render_hints_absent_or_malformed_blocks_give_none_and_a_warning() {
+        let none = parse_agent_plugin_manifest(&manifest("")).unwrap();
+        assert!(none.render_hints.is_empty() && none.warnings.is_empty());
+
+        let other_namespace = parse_agent_plugin_manifest(&manifest(
+            r#", "extensions": {"com.example.client": {"tools": {"A": {"render": "x"}}}}"#,
+        ))
+        .unwrap();
+        assert!(other_namespace.render_hints.is_empty());
+        assert!(other_namespace.warnings.is_empty());
+
+        let not_object =
+            parse_agent_plugin_manifest(&manifest(r#", "extensions": {"dev.hoocode": []}"#))
+                .unwrap();
+        assert!(not_object.render_hints.is_empty());
+        assert_eq!(not_object.warnings.len(), 1);
+
+        let tools_not_object = parse_agent_plugin_manifest(&manifest(
+            r#", "extensions": {"dev.hoocode": {"tools": "WebFetch"}}"#,
+        ))
+        .unwrap();
+        assert!(tools_not_object.render_hints.is_empty());
+        assert_eq!(tools_not_object.warnings.len(), 1);
     }
 
     #[test]

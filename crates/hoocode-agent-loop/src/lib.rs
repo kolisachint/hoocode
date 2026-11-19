@@ -636,6 +636,10 @@ fn emit_tool_execution_start(
             .tools
             .find(&tool_call.name)
             .map(|t| t.origin.clone()),
+        render: context
+            .tools
+            .find(&tool_call.name)
+            .and_then(|t| t.render.clone()),
     });
 }
 

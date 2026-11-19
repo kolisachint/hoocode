@@ -231,6 +231,7 @@ where
 {
     ToolDefinition {
         origin: hoocode_code_tool_api::ToolOrigin::BuiltIn,
+        render: None,
         ordered_start: false,
         abort_grace: None,
         background_when: None,

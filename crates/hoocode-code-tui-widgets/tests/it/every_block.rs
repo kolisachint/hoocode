@@ -490,13 +490,15 @@ fn todowrite_call_carries_counts_and_no_body() {
     assert!(body.is_empty(), "{body:?}");
 }
 
-/// The webtools plugin's tools render with the web renderers, by name.
+/// The webtools plugin's tools render with the web renderers, by their render hint.
 #[test]
-fn plugin_web_tool_names_use_the_web_renderers() {
-    for name in ["WebFetch", "WebSearch"] {
-        assert!(
-            hoocode_code_tui_widgets::tools::builtin_tool_definition(name).is_some(),
-            "{name} has no renderer"
-        );
-    }
+fn plugin_web_tools_use_the_web_renderers_by_hint() {
+    use hoocode_code_tui_widgets::tools::{renderer_for, RENDER_WEB_FETCH, RENDER_WEB_SEARCH};
+    let origin = hoocode_agent_types::ToolOrigin::Plugin {
+        plugin: "webtools".into(),
+        tool: "WebFetch".into(),
+    };
+    assert!(renderer_for("WebFetch", Some(&origin), Some(RENDER_WEB_FETCH)).is_some());
+    assert!(renderer_for("WebSearch", Some(&origin), Some(RENDER_WEB_SEARCH)).is_some());
+    assert!(renderer_for("WebFetch", Some(&origin), None).is_none());
 }
