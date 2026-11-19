@@ -24,7 +24,9 @@ pub fn tool_name(server: &str, tool: &str) -> Option<String> {
     Some(capped(format!("mcp__{server}__{tool}")))
 }
 
-/// One part of a name: unsafe characters become `_`, then every run of `_` becomes one `_`.
+/// One part of a name: unsafe characters become `_`, every run of `_` becomes one `_`, and the
+/// leading and trailing `_` are dropped. So a part never starts or ends with `_`, and the `__`
+/// separator cannot run into a neighbouring `_` (`a_` + `b` and `a` + `_b` both give `a`, `b`).
 fn sanitize_part(part: &str) -> String {
     let mut out = String::with_capacity(part.len());
     for c in part.chars() {
@@ -38,7 +40,7 @@ fn sanitize_part(part: &str) -> String {
         }
         out.push(c);
     }
-    out
+    out.trim_matches('_').to_owned()
 }
 
 /// A name longer than [`MAX_TOOL_NAME_LEN`] is cut to 55 characters and given `_` and an
@@ -84,7 +86,7 @@ mod tests {
             name("git hub", "repo.list/all"),
             "mcp__git_hub__repo_list_all"
         );
-        assert_eq!(name("srv", "tool:ü"), "mcp__srv__tool_");
+        assert_eq!(name("srv", "tool:ü"), "mcp__srv__tool");
         // A `__` inside a part collapses, so it cannot be mistaken for the separator.
         assert_eq!(name("a__b", "c___d"), "mcp__a_b__c_d");
     }
@@ -93,6 +95,22 @@ mod tests {
     fn an_empty_part_is_refused() {
         assert_eq!(tool_name("", "x"), None);
         assert_eq!(tool_name("s", ""), None);
+        // A part of only `_` is empty once its underscores are dropped.
+        assert_eq!(tool_name("s", "___"), None);
+    }
+
+    #[test]
+    fn a_part_has_no_leading_or_trailing_underscore() {
+        // The two splits of the same characters give the same name, so the collision check
+        // (not the naming) decides which tool keeps it.
+        assert_eq!(name("a_", "b"), "mcp__a__b");
+        assert_eq!(name("a_", "b"), name("a", "_b"));
+        for (server, tool) in [("a_", "_b__"), ("__x", "y_"), ("q", "_")] {
+            if let Some(full) = tool_name(server, tool) {
+                assert!(!full.contains("___"), "{full}");
+                assert!(!full.contains("____"), "{full}");
+            }
+        }
     }
 
     #[test]

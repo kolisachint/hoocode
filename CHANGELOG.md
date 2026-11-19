@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: MCP tool names never contain `___` (2026-11-19)
+- A server or tool name's leading and trailing `_` are dropped from its model-facing name. A
+  name that is only `_` is refused, as an empty one is. Before, `a_` + `b` and `a` + `_b` gave
+  `mcp__a___b`, which is not the `mcp__<server>__<tool>` shape. Now both give `mcp__a__b`, and the
+  collision check keeps one of them.
+
 ### Fixed: plugin network access is the WebFetch category (2026-11-19)
 - The design doc and the user docs said a plugin's network access was covered by `plugin:<p>`.
   It is the `WebFetch` permission category for every plugin. A mode whose `enabled_tools` lists

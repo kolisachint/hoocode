@@ -159,7 +159,7 @@ Model-facing names:
 |---|---|---|---|
 | Built-in | fixed | `Read`, `Agent` | Unchanged |
 | Plugin WASM | the name the plugin declares in `tool-info.name` | `WebFetch` | Matches `^[A-Za-z][A-Za-z0-9_-]{0,63}$` and does not start with `mcp__` (any case), which is the MCP prefix. PascalCase recommended. No match: not loaded, with a diagnostic |
-| MCP, any source | `mcp__<server>__<tool>` | `mcp__github__create_issue` | Each part: a character outside `[A-Za-z0-9_-]` becomes `_`, then every run of `_` in the part becomes one `_`, so `__` only separates parts. An empty part: not loaded, with a diagnostic |
+| MCP, any source | `mcp__<server>__<tool>` | `mcp__github__create_issue` | Each part: a character outside `[A-Za-z0-9_-]` becomes `_`, then every run of `_` in the part becomes one `_`, and leading and trailing `_` are dropped, so `__` only separates parts. An empty part: not loaded, with a diagnostic |
 
 - Length cap: 64 characters. A longer name keeps its first 55 characters, then `_` and 8 hex digits of FNV-1a over the full name, as `naming.rs` does today.
 - Plugins are written for hoocode, so their tools need no prefix. MCP servers are not, so their tools keep one.
@@ -320,6 +320,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-19 | Tool identity is structured (option D). The origin (`BuiltIn`, `Plugin`, `Mcp`) is carried everywhere; the model-facing name is for the model only. Supersedes the 2026-11-17 naming row. |
 | 2026-11-19 | Model-facing names: a plugin's WASM tools use the name the plugin declares (PascalCase, `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). MCP tools are `mcp__<server>__<tool>`, sanitised, 64 cap with an FNV-1a suffix. Old `ext_*` and `mcp_*` names are removed, with no aliases. |
 | 2026-11-19 | Collisions: a built-in is never shadowed. Between plugin and MCP tools the first in load order wins and the other is not loaded. Always a diagnostic that names both origins. The silent MCP overwrite is a bug. |
+| 2026-11-19 | MCP name parts drop leading and trailing `_` as well as collapsing runs, so no name has `___`. `a_` + `b` and `a` + `_b` both name `mcp__a__b`; the collision check then keeps one. |
 | 2026-11-19 | A plugin WASM tool name may not start with `mcp__` (any case). That prefix is the MCP tools' own, so such a name is not loaded, with a diagnostic. |
 | 2026-11-19 | Plugin network is always the `WebFetch` permission category (`ToolNetGate` asks `("WebFetch", BuiltIn)`), for every plugin and tool. A selector for the plugin (`plugin:<p>`) does not cover it. To allow a plugin's network in a mode, `enabled_tools` and `auto_allow` must list `WebFetch`. `enabled_tools: ["Read", "plugin:webtools"]` runs the plugin's call but blocks its request as "not enabled". |
 | 2026-11-19 | Name collisions are case-insensitive (`Read` and `read` are one name). Holders are keyed by lowercase name in the component loader and in the session's admit step. The notice keeps each tool's own spelling. |
