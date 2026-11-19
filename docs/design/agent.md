@@ -232,7 +232,7 @@ Model scope and effort over app-server:
 | Bad effort name | `unknown effort {name}; use one of off, minimal, low, medium, high, xhigh` |
 | Effort not supported | `effort {name} is not supported by {id}; supported efforts: {list}` |
 
-Mapping: session = thread. One agent run = turn. User prompt = `userMessage`. Shell = `commandExecution`. Edit and Write = `fileChange`. Other tools = `dynamicToolCall`. Denied = `declined` (or `failed` for dynamic tools). Neutral values: `approvalPolicy: "on-request"`, `approvalsReviewer: "user"`, `sandbox: {type: "dangerFullAccess"}` (hoocode has no sandbox).
+Mapping: session = thread. One agent run = turn. User prompt = `userMessage`. Shell = `commandExecution`. Edit and Write = `fileChange`. Other tools = `dynamicToolCall`. A plugin or MCP tool is `dynamicToolCall` whatever its name. Tool items carry `origin` (the tool event's origin, as the JSON event gives it) and `render` (the plugin's hint), each written only when present (2026-11-19, PL-17 P5). Denied = `declined` (or `failed` for dynamic tools). Neutral values: `approvalPolicy: "on-request"`, `approvalsReviewer: "user"`, `sandbox: {type: "dangerFullAccess"}` (hoocode has no sandbox).
 
 Tests: protocol serde round trips; faux-provider server tests; `schema_conformance` in `crates/hoocode-app-server/tests/it/server.rs` (ignored; schemas from `scripts/codex-schema.sh` into `target/codex-schema/`, never checked in). That check is not in CI (AG-27).
 
@@ -262,6 +262,7 @@ rpc (`--mode rpc`):
 | 2026-11-07 | `DocSearch` is removed (with single-view decision 7): discovery via the prompt skill/agent listing, `Read`, CLI help and user pages. AG-19 closed as No. Code removal with the robustness matrix is the next session. |
 | 2026-11-11 | Pinned client identity (the table above) stays as source constants. A person refreshes them by hand in a normal PR, when a provider refuses the old value or at each minor release, whichever comes first. No runtime fetch. No new env override. (AU-6) |
 | 2026-11-11 | OAuth `state` is kept as built. Anthropic and Google send the PKCE verifier as `state`; ChatGPT sends a random UUID. Not verified against each provider's own client: the Claude Code login could not be read for how it builds `state` (its authorize endpoints were checked). Code unchanged. Risk: the verifier is in the authorize URL, so it can show in browser history and logs, which weakens PKCE against a leaked code. The redirect goes to a loopback address, and the code is single-use and short-lived. Revisit if a provider rejects it, or when someone can compare with the provider's client. (AU-7) |
+| 2026-11-19 | Tool items carry the tool event's `origin` and `render` (additive, written only when present). The item kind follows the origin: a plugin or MCP tool is `dynamicToolCall` even when its name is `Shell`, `Edit` or `Write`. History replay has no origin, so its items carry none. |
 | 2026-11-19 | Tool names follow plugins.md Naming and identity (option D). The origin is structured. A plugin's WASM tools use the names the plugin declares (`WebFetch`, `WebSearch` for webtools). MCP tools are `mcp__<server>__<tool>`. Old `ext_*` and `mcp_*` names are removed with no aliases. Tool selectors are in plugins.md. PL-17. |
 
 ## Open

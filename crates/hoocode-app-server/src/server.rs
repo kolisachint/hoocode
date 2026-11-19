@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hoocode_agent_types::{
-    AgentEvent, AgentMessage, AgentToolCall, PermissionDecision, PermissionGate,
+    AgentEvent, AgentMessage, AgentToolCall, PermissionDecision, PermissionGate, ToolOrigin,
 };
 use hoocode_ai_models::{clamp_thinking_level, get_supported_thinking_levels};
 use hoocode_ai_types::{
@@ -33,7 +33,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::items::{self, ToolOutcome};
+use crate::items::{self, ToolMeta, ToolOutcome};
 use crate::transport::{ConnectionId, MessageHandler};
 
 /// Builds and finds sessions. The CLI implements this with hoocode's real
@@ -205,14 +205,22 @@ struct ThreadState {
     created: i64,
 }
 
+/// A tool call between its start and its end: the arguments the end event lacks, and the origin
+/// and renderer hint the start event gave.
+struct PendingTool {
+    args: Value,
+    origin: Option<ToolOrigin>,
+    render: Option<String>,
+}
+
 struct ActiveTurn {
     id: String,
     started_ms: i64,
     items: Vec<ThreadItem>,
     /// The agent-message item being streamed, if any.
     message_item: Option<String>,
-    /// Tool call id → (tool name, arguments).
-    tools: HashMap<String, (String, Value)>,
+    /// Tool call id → the call as it started, for its end.
+    tools: HashMap<String, PendingTool>,
     /// Tool calls the user declined.
     declined: HashSet<String>,
     interrupted: bool,
@@ -363,11 +371,18 @@ impl LoadedThread {
                 tool_call_id,
                 tool_name,
                 args,
-                ..
+                origin,
+                render,
             } => {
                 self.with_turn(|t| {
-                    t.tools
-                        .insert(tool_call_id.clone(), (tool_name.clone(), args.clone()))
+                    t.tools.insert(
+                        tool_call_id.clone(),
+                        PendingTool {
+                            args: args.clone(),
+                            origin: origin.clone(),
+                            render: render.clone(),
+                        },
+                    )
                 });
                 let cwd = self.session.cwd().to_string_lossy().into_owned();
                 self.start_item(items::tool_item_started(
@@ -375,6 +390,10 @@ impl LoadedThread {
                     tool_name,
                     args,
                     &cwd,
+                    ToolMeta {
+                        origin: origin.as_ref(),
+                        render: render.as_deref(),
+                    },
                 ));
             }
             AgentEvent::ToolExecutionEnd {
@@ -383,16 +402,18 @@ impl LoadedThread {
                 result,
                 is_error,
             } => {
-                let (args, declined) = self
+                let (pending, declined) = self
                     .with_turn(|t| {
-                        let args = t
-                            .tools
-                            .remove(tool_call_id)
-                            .map(|(_, a)| a)
-                            .unwrap_or(Value::Null);
-                        (args, t.declined.remove(tool_call_id))
+                        (
+                            t.tools.remove(tool_call_id),
+                            t.declined.remove(tool_call_id),
+                        )
                     })
-                    .unwrap_or((Value::Null, false));
+                    .unwrap_or((None, false));
+                let (args, origin, render) = match pending {
+                    Some(p) => (p.args, p.origin, p.render),
+                    None => (Value::Null, None, None),
+                };
                 let cwd = self.session.cwd().to_string_lossy().into_owned();
                 let outcome = if declined {
                     ToolOutcome::Declined
@@ -408,6 +429,10 @@ impl LoadedThread {
                     &args,
                     &cwd,
                     outcome,
+                    ToolMeta {
+                        origin: origin.as_ref(),
+                        render: render.as_deref(),
+                    },
                 ));
             }
             AgentEvent::AgentEnd { messages } => {
@@ -565,7 +590,7 @@ impl LoadedThread {
         let request_id = RequestId::Integer(server.next_request.fetch_add(1, Ordering::SeqCst));
         let started_at_ms = now_ms();
         let cwd = self.session.cwd().to_string_lossy().into_owned();
-        let message = match items::tool_kind(&call.name) {
+        let message = match items::tool_kind(&call.name, Some(&call.origin)) {
             items::ToolKind::FileChange => proto::request(
                 request_id.clone(),
                 methods::FILE_CHANGE_REQUEST_APPROVAL,

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: app-server tool items carry origin and render (2026-11-19)
+- The tool items of `hoocode app-server` (`commandExecution`, `fileChange`, `dynamicToolCall`)
+  have two new fields, written only when present: `origin` (the tool's origin, as the JSON
+  event gives it) and `render` (the plugin's renderer hint). Existing fields are unchanged.
+- A plugin or MCP tool is a `dynamicToolCall` whatever its name. A plugin tool named `Shell`,
+  `Edit` or `Write` was a `commandExecution` or `fileChange` item before, and its approval
+  request took the built-in's shape.
+
 ### Changed: agent tool names are kept, not dropped (2026-11-19)
 - An agent's `tools` and `disallowedTools` keep a bare name with no Claude alias (`tools: Lookup`,
   a plugin tool's model-facing name) as a name selector. It matches case-insensitively. Before,
