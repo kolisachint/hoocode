@@ -420,6 +420,10 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Unfilled remainder of a gauge or progress track (optional; falls back to dim)"
 				},
+				"toolExternal": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Name of a tool that comes from a plugin or an MCP server (optional; falls back to toolTitle)"
+				},
 				"headlineBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Markdown heading chip fill (optional; only honoured when headlineText is also set)"

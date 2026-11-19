@@ -21,9 +21,11 @@ fn maps_claude_tool_names_case_insensitive() {
 }
 
 #[test]
-fn keeps_plugin_extension_tools_as_written() {
-    let (t, d) = tools(json!("Read, ext_webtools_fetch, ext_webtools_fetch, Grep"));
-    assert_eq!(t, ["Read", "ext_webtools_fetch", "CodeSearch"]);
+fn keeps_qualified_selectors_as_written() {
+    let (t, d) = tools(json!(
+        "Read, plugin:webtools/WebFetch, plugin:webtools/WebFetch, Grep"
+    ));
+    assert_eq!(t, ["Read", "plugin:webtools/WebFetch", "CodeSearch"]);
     assert!(d.is_empty());
 }
 
@@ -40,17 +42,17 @@ fn accepts_a_yaml_list_but_emits_a_format_warning() {
 }
 
 #[test]
-fn drops_unknown_tools_with_a_diagnostic() {
+fn keeps_unknown_names_as_selectors_without_a_diagnostic() {
+    // Matching is checked at spawn (a warning there), not here.
     let (t, d) = tools(json!("Read, NotebookEdit, Task, MultiEdit"));
-    assert_eq!(t, ["Read"]);
-    assert_eq!(d.len(), 3);
-    assert!(d.iter().any(|m| m.contains("NotebookEdit")));
+    assert_eq!(t, ["Read", "NotebookEdit", "Task", "MultiEdit"]);
+    assert!(d.is_empty(), "{d:?}");
 }
 
 #[test]
 fn maps_claude_webfetch_websearch_to_the_webtools_plugin_tools() {
     let (t, d) = tools(json!("WebFetch, WebSearch"));
-    assert_eq!(t, ["ext_webtools_fetch", "ext_webtools_search"]);
+    assert_eq!(t, ["WebFetch", "WebSearch"]);
     assert!(d.is_empty());
 }
 
@@ -60,17 +62,17 @@ fn dedupes_resolved_tools() {
 }
 
 #[test]
-fn drops_the_pre_rename_search_name() {
+fn keeps_the_pre_rename_search_name_as_a_selector() {
     let (t, d) = tools(json!("read, search"));
-    assert_eq!(t, ["Read"]);
-    assert!(d.iter().any(|m| m.contains("tool \"search\"")));
+    assert_eq!(t, ["Read", "search"]);
+    assert!(d.is_empty(), "{d:?}");
 }
 
 #[test]
-fn drops_ls_which_has_no_counterpart() {
+fn keeps_ls_as_a_selector_with_no_alias() {
     let (t, d) = tools(json!("Read, LS"));
-    assert_eq!(t, ["Read"]);
-    assert!(d.iter().any(|m| m.contains("LS")));
+    assert_eq!(t, ["Read", "LS"]);
+    assert!(d.is_empty(), "{d:?}");
 }
 
 #[test]
@@ -78,7 +80,7 @@ fn alias_map_only_targets_known_hoocode_tools() {
     // Web aliases point at the webtools plugin's tools, which are not built-in.
     for (_, target) in CLAUDE_TOOL_ALIASES {
         assert!(
-            HOOCODE_TOOL_NAMES.contains(target) || target.starts_with("ext_webtools_"),
+            HOOCODE_TOOL_NAMES.contains(target) || *target == "WebFetch" || *target == "WebSearch",
             "{target}"
         );
     }
@@ -279,8 +281,65 @@ fn warns_when_tools_is_a_yaml_list() {
 }
 
 #[test]
-fn keeps_the_ext_wildcard_as_written() {
-    let (t, d) = tools(json!("Read, ext_*"));
-    assert_eq!(t, ["Read", "ext_*"]);
+fn keeps_the_plugin_wildcard_as_written() {
+    let (t, d) = tools(json!("Read, plugin:*"));
+    assert_eq!(t, ["Read", "plugin:*"]);
     assert!(d.is_empty());
+}
+
+// Option D (plugins.md, Naming and identity): an agent's selectors are checked when it is read.
+
+#[test]
+fn a_bare_name_with_no_alias_is_kept_as_a_selector() {
+    // A plugin or MCP tool's model-facing name is not a Claude alias: it stays a `Name` selector,
+    // checked against the session's tools at spawn, not dropped here (plugins.md, option D).
+    let (t, d) = tools(json!("Read, Lookup, agent"));
+    assert_eq!(t, ["Read", "Lookup", "agent"]);
+    assert!(d.is_empty(), "{d:?}");
+}
+
+#[test]
+fn a_bare_plugin_name_in_an_agent_tools_list_is_kept() {
+    let raw = "---\nname: scout\ndescription: Scouts.\ntools: Read, Lookup\ndisallowedTools: Grep, Other\n---\nBody";
+    let (agent, d) = parse(raw, AgentSource::ClaudeProject);
+    assert!(d.is_empty(), "{d:?}");
+    let agent = agent.unwrap();
+    assert_eq!(agent.tools.unwrap(), ["Read", "Lookup"]);
+    assert_eq!(agent.disallowed_tools.unwrap(), ["CodeSearch", "Other"]);
+}
+
+#[test]
+fn a_malformed_tools_entry_rejects_the_definition() {
+    for tools in ["Read, ext_*", "Read, plugin:", "Read, mcp:a/b/c"] {
+        let raw = format!("---\nname: scout\ndescription: Scouts.\ntools: \"{tools}\"\n---\nBody");
+        let (agent, d) = parse(&raw, AgentSource::ClaudeProject);
+        assert!(agent.is_none(), "{tools}");
+        assert!(
+            d.iter()
+                .any(|m| m.contains("is not a tool name or a selector")),
+            "{tools}: {d:?}"
+        );
+    }
+}
+
+#[test]
+fn a_malformed_disallowed_tools_entry_rejects_the_definition() {
+    let raw =
+        "---\nname: scout\ndescription: Scouts.\ndisallowedTools: plugin:*, mcp:*x\n---\nBody";
+    let (agent, d) = parse(raw, AgentSource::ClaudeProject);
+    assert!(agent.is_none());
+    assert!(d.iter().any(|m| m.contains("mcp:*x")), "{d:?}");
+}
+
+#[test]
+fn qualified_selectors_in_an_agent_are_kept_as_written() {
+    let raw = "---\nname: fetcher\ndescription: Fetches.\ntools: Read, plugin:webtools/WebFetch, plugin:*\ndisallowedTools: plugin:*\n---\nBody";
+    let (agent, d) = parse(raw, AgentSource::ClaudeProject);
+    assert!(d.is_empty(), "{d:?}");
+    let agent = agent.unwrap();
+    assert_eq!(
+        agent.tools.unwrap(),
+        ["Read", "plugin:webtools/WebFetch", "plugin:*"]
+    );
+    assert_eq!(agent.disallowed_tools.unwrap(), ["plugin:*"]);
 }

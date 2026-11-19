@@ -152,6 +152,12 @@ pub struct FileUpdateChange {
 }
 
 /// One item in a turn.
+///
+/// The tool items (`commandExecution`, `fileChange`, `dynamicToolCall`) carry two optional
+/// fields from the agent's tool events, written only when present: `origin`, the tool's origin
+/// as the JSON `tool_execution_start` event gives it (`{"kind": "builtIn" | "plugin" | "mcp",
+/// ...}`), and `render`, the plugin's renderer hint. A plugin or MCP tool is a `dynamicToolCall`
+/// whatever its name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ThreadItem {
@@ -182,12 +188,20 @@ pub enum ThreadItem {
         exit_code: Option<i32>,
         #[serde(default)]
         duration_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        render: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     FileChange {
         id: String,
         changes: Vec<FileUpdateChange>,
         status: ItemStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        render: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     DynamicToolCall {
@@ -201,6 +215,10 @@ pub enum ThreadItem {
         content_items: Option<Vec<Value>>,
         #[serde(default)]
         duration_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        render: Option<String>,
     },
 }
 
@@ -289,6 +307,8 @@ mod tests {
             aggregated_output: None,
             exit_code: None,
             duration_ms: None,
+            origin: None,
+            render: None,
         };
         assert_eq!(
             serde_json::to_value(&item).unwrap(),
@@ -304,6 +324,8 @@ mod tests {
                 diff: "-a\n+b".into(),
             }],
             status: ItemStatus::Declined,
+            origin: None,
+            render: None,
         };
         assert_eq!(
             serde_json::to_value(&fc).unwrap(),
@@ -311,6 +333,40 @@ mod tests {
                    "changes":[{"path":"a.rs","kind":{"type":"update","movePath":null},"diff":"-a\n+b"}]})
         );
         assert_eq!(fc.id(), "f");
+    }
+
+    #[test]
+    fn tool_items_carry_origin_and_render_only_when_present() {
+        let plain = ThreadItem::DynamicToolCall {
+            id: "d".into(),
+            tool: "Lookup".into(),
+            arguments: json!({}),
+            status: DynamicToolCallStatus::InProgress,
+            success: None,
+            content_items: None,
+            duration_ms: None,
+            origin: None,
+            render: None,
+        };
+        let plain_json = serde_json::to_value(&plain).unwrap();
+        assert!(plain_json.get("origin").is_none() && plain_json.get("render").is_none());
+
+        let hinted = ThreadItem::DynamicToolCall {
+            id: "d".into(),
+            tool: "WebFetch".into(),
+            arguments: json!({"url": "https://example.com"}),
+            status: DynamicToolCallStatus::InProgress,
+            success: None,
+            content_items: None,
+            duration_ms: None,
+            origin: Some(json!({"kind": "plugin", "plugin": "webtools", "tool": "WebFetch"})),
+            render: Some("web-fetch".into()),
+        };
+        let value = serde_json::to_value(&hinted).unwrap();
+        assert_eq!(value["origin"]["plugin"], "webtools");
+        assert_eq!(value["render"], "web-fetch");
+        let back: ThreadItem = serde_json::from_value(value).unwrap();
+        assert_eq!(back, hinted);
     }
 
     #[test]

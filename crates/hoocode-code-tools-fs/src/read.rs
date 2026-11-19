@@ -543,6 +543,8 @@ pub fn create_read_tool_definition(
         MAX_DIRECTORY_ENTRIES, options.max_output_lines, kb
     );
     ToolDefinition {
+        origin: hoocode_code_tool_api::ToolOrigin::BuiltIn,
+        render: None,
         ordered_start: false,
         abort_grace: None,
         background_when: None,

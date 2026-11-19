@@ -504,6 +504,7 @@ async fn a_warm_background_run_reports_its_status_and_cancels_truthfully() {
         id: "call_0".into(),
         name: "Agent".into(),
         arguments: json!({"description": "map it", "prompt": "Map it.", "subagent_type": "explore", "background": true}),
+        origin: hoocode_agent_types::ToolOrigin::BuiltIn,
     };
     (tool.background_placeholder.clone().unwrap())(&call, Some(&ctx)).unwrap();
     let running = {

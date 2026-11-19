@@ -479,6 +479,8 @@ impl Mode {
                                     &call.name,
                                     &call.id,
                                     call.arguments.clone(),
+                                    None,
+                                    None,
                                 );
                                 self.attach_tool_block(block.clone());
                                 self.transcript.pending_tools.insert(call.id.clone(), block);
@@ -555,11 +557,17 @@ impl Mode {
                 tool_call_id,
                 tool_name,
                 args,
+                origin,
+                render,
             } => {
                 let block = match self.transcript.pending_tools.get(&tool_call_id) {
-                    Some(block) => block.clone(),
+                    Some(block) => {
+                        block.borrow_mut().set_origin(origin, render);
+                        block.clone()
+                    }
                     None => {
-                        let block = self.new_tool_block(&tool_name, &tool_call_id, args);
+                        let block =
+                            self.new_tool_block(&tool_name, &tool_call_id, args, origin, render);
                         self.attach_tool_block(block.clone());
                         self.transcript
                             .pending_tools

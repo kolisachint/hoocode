@@ -1,6 +1,6 @@
 //! hoocode messages and tool calls → Codex thread items. Pure functions.
 
-use hoocode_agent_types::{AgentMessage, AgentToolResult};
+use hoocode_agent_types::{AgentMessage, AgentToolResult, ToolOrigin};
 use hoocode_ai_types::{Content, UserContent};
 use hoocode_app_server_protocol::{
     DynamicToolCallStatus, FileUpdateChange, ItemStatus, PatchChangeKind, ThreadItem, Turn,
@@ -16,7 +16,17 @@ pub enum ToolKind {
     Dynamic,
 }
 
-pub fn tool_kind(tool_name: &str) -> ToolKind {
+///
+/// A plugin or MCP tool is a dynamic call whatever its name: a plugin tool named `Shell` is not
+/// the built-in command (`docs/design/plugins.md`, Naming and identity). Only a built-in, or a
+/// call with no known origin, takes its kind from the name.
+pub fn tool_kind(tool_name: &str, origin: Option<&ToolOrigin>) -> ToolKind {
+    if matches!(
+        origin,
+        Some(ToolOrigin::Plugin { .. } | ToolOrigin::Mcp { .. })
+    ) {
+        return ToolKind::Dynamic;
+    }
     match tool_name {
         "Shell" => ToolKind::Command,
         "Edit" | "Write" => ToolKind::FileChange,
@@ -36,9 +46,23 @@ pub fn content_text(content: &[Content]) -> String {
         .join("")
 }
 
+/// What the host knows about a tool call besides its name and arguments: its origin and its
+/// renderer hint. Both are written on the item only when present.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ToolMeta<'a> {
+    pub origin: Option<&'a ToolOrigin>,
+    pub render: Option<&'a str>,
+}
+
 /// The item a tool call starts as (status `inProgress`).
-pub fn tool_item_started(id: &str, tool_name: &str, args: &Value, cwd: &str) -> ThreadItem {
-    tool_item(id, tool_name, args, cwd, None)
+pub fn tool_item_started(
+    id: &str,
+    tool_name: &str,
+    args: &Value,
+    cwd: &str,
+    meta: ToolMeta<'_>,
+) -> ThreadItem {
+    tool_item(id, tool_name, args, cwd, None, meta)
 }
 
 /// The finished state of a tool item.
@@ -56,8 +80,9 @@ pub fn tool_item_completed(
     args: &Value,
     cwd: &str,
     outcome: ToolOutcome<'_>,
+    meta: ToolMeta<'_>,
 ) -> ThreadItem {
-    tool_item(id, tool_name, args, cwd, Some(outcome))
+    tool_item(id, tool_name, args, cwd, Some(outcome), meta)
 }
 
 fn tool_item(
@@ -66,7 +91,10 @@ fn tool_item(
     args: &Value,
     cwd: &str,
     outcome: Option<ToolOutcome<'_>>,
+    meta: ToolMeta<'_>,
 ) -> ThreadItem {
+    let origin = meta.origin.and_then(|o| serde_json::to_value(o).ok());
+    let render = meta.render.map(str::to_string);
     let status = match &outcome {
         None => ItemStatus::InProgress,
         Some(ToolOutcome::Declined) => ItemStatus::Declined,
@@ -77,7 +105,7 @@ fn tool_item(
         Some(ToolOutcome::Done { result, .. }) => Some(*result),
         _ => None,
     };
-    match tool_kind(tool_name) {
+    match tool_kind(tool_name, meta.origin) {
         ToolKind::Command => ThreadItem::CommandExecution {
             id: id.into(),
             command: args
@@ -92,11 +120,15 @@ fn tool_item(
             aggregated_output: result.map(|r| content_text(&r.content)),
             exit_code: result.and_then(exit_code),
             duration_ms: None,
+            origin: origin.clone(),
+            render: render.clone(),
         },
         ToolKind::FileChange => ThreadItem::FileChange {
             id: id.into(),
             changes: vec![file_change(tool_name, args, cwd, result)],
             status,
+            origin: origin.clone(),
+            render: render.clone(),
         },
         ToolKind::Dynamic => ThreadItem::DynamicToolCall {
             id: id.into(),
@@ -119,6 +151,8 @@ fn tool_item(
             content_items: result
                 .map(|r| vec![json!({"type": "inputText", "text": content_text(&r.content)})]),
             duration_ms: None,
+            origin,
+            render,
         },
     }
 }
@@ -222,8 +256,13 @@ pub fn turns_from_messages(messages: &[AgentMessage], cwd: &str) -> Vec<Turn> {
                         Content::Thinking(t) => thinking.push(t.thinking.clone()),
                         Content::Text(t) => text.push_str(&t.text),
                         Content::ToolCall(call) => {
-                            let item =
-                                tool_item_started(&call.id, &call.name, &call.arguments, cwd);
+                            let item = tool_item_started(
+                                &call.id,
+                                &call.name,
+                                &call.arguments,
+                                cwd,
+                                ToolMeta::default(),
+                            );
                             pending_tools.push((
                                 call.id.clone(),
                                 call.name.clone(),
@@ -286,6 +325,7 @@ pub fn turns_from_messages(messages: &[AgentMessage], cwd: &str) -> Vec<Turn> {
                         result: &result,
                         is_error: tool_result.is_error,
                     },
+                    ToolMeta::default(),
                 );
             }
             _ => {}
@@ -323,7 +363,7 @@ mod tests {
     #[test]
     fn bash_maps_to_command_execution() {
         let args = json!({"command": "ls -la"});
-        let started = tool_item_started("c1", "Shell", &args, "/w");
+        let started = tool_item_started("c1", "Shell", &args, "/w", ToolMeta::default());
         assert!(matches!(
             &started,
             ThreadItem::CommandExecution { command, status: ItemStatus::InProgress, .. } if command == "ls -la"
@@ -342,12 +382,20 @@ mod tests {
                 result: &result,
                 is_error: false,
             },
+            ToolMeta::default(),
         );
         assert!(matches!(
             done,
             ThreadItem::CommandExecution { status: ItemStatus::Completed, aggregated_output: Some(ref o), .. } if o == "a\nb"
         ));
-        let declined = tool_item_completed("c1", "Shell", &args, "/w", ToolOutcome::Declined);
+        let declined = tool_item_completed(
+            "c1",
+            "Shell",
+            &args,
+            "/w",
+            ToolOutcome::Declined,
+            ToolMeta::default(),
+        );
         assert!(matches!(
             declined,
             ThreadItem::CommandExecution {
@@ -359,7 +407,13 @@ mod tests {
 
     #[test]
     fn edit_maps_to_file_change_with_absolute_path() {
-        let item = tool_item_started("e", "Edit", &json!({"path": "src/a.rs"}), "/w");
+        let item = tool_item_started(
+            "e",
+            "Edit",
+            &json!({"path": "src/a.rs"}),
+            "/w",
+            ToolMeta::default(),
+        );
         let ThreadItem::FileChange { changes, .. } = item else {
             panic!("not a file change")
         };
@@ -369,6 +423,7 @@ mod tests {
             "Write",
             &json!({"path": "/x/b", "content": "hi"}),
             "/w",
+            ToolMeta::default(),
         );
         let ThreadItem::FileChange { changes, .. } = item else {
             panic!("not a file change")
@@ -385,6 +440,7 @@ mod tests {
             &json!({"path": "a"}),
             "/w",
             ToolOutcome::Declined,
+            ToolMeta::default(),
         );
         assert!(matches!(
             item,
@@ -446,5 +502,69 @@ mod tests {
             turns,
             "ids are stable"
         );
+    }
+
+    #[test]
+    fn a_plugin_or_mcp_tool_is_dynamic_whatever_its_name() {
+        // A plugin tool named `Shell` is not the built-in command: its origin decides.
+        let plugin = ToolOrigin::Plugin {
+            plugin: "docs".into(),
+            tool: "Shell".into(),
+        };
+        assert!(matches!(
+            tool_kind("Shell", Some(&plugin)),
+            ToolKind::Dynamic
+        ));
+        assert!(matches!(
+            tool_kind("Shell", Some(&ToolOrigin::BuiltIn)),
+            ToolKind::Command
+        ));
+        assert!(matches!(tool_kind("Shell", None), ToolKind::Command));
+        let args = json!({"command": "ls"});
+        let item = tool_item_started(
+            "p1",
+            "Shell",
+            &args,
+            "/w",
+            ToolMeta {
+                origin: Some(&plugin),
+                render: Some("web-fetch"),
+            },
+        );
+        let value = serde_json::to_value(&item).unwrap();
+        assert_eq!(value["type"], "dynamicToolCall", "{value}");
+        assert_eq!(
+            value["origin"],
+            json!({"kind": "plugin", "plugin": "docs", "tool": "Shell"})
+        );
+        assert_eq!(value["render"], "web-fetch");
+    }
+
+    #[test]
+    fn a_built_in_item_forwards_its_origin_and_no_render_when_it_has_none() {
+        let args = json!({"path": "src/a.rs"});
+        let item = tool_item_started(
+            "e1",
+            "Edit",
+            &args,
+            "/w",
+            ToolMeta {
+                origin: Some(&ToolOrigin::BuiltIn),
+                render: None,
+            },
+        );
+        let value = serde_json::to_value(&item).unwrap();
+        assert_eq!(value["type"], "fileChange", "{value}");
+        assert_eq!(value["origin"], json!({"kind": "builtIn"}));
+        assert!(value.get("render").is_none(), "{value}");
+        let done = tool_item_completed(
+            "e1",
+            "Edit",
+            &args,
+            "/w",
+            ToolOutcome::Declined,
+            ToolMeta::default(),
+        );
+        assert!(serde_json::to_value(&done).unwrap().get("origin").is_none());
     }
 }

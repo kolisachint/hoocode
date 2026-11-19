@@ -99,22 +99,45 @@ fn ask_on_thread(
 
 fn shell(command: &str) -> RelayRequest {
     RelayRequest {
+        via: None,
         tool: "Shell".into(),
+        origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         input: json!({"command": command}),
-        ..Default::default()
+        cancelled: Arc::new(AtomicBool::new(false)),
     }
 }
 
 #[test]
 fn the_wire_format_round_trips() {
-    let line = request_line(7, "Shell", &json!({"command": "ls"}), Some("explore t1"));
+    let builtin = hoocode_agent_types::ToolOrigin::BuiltIn;
+    let line = request_line(
+        7,
+        "Shell",
+        &builtin,
+        &json!({"command": "ls"}),
+        Some("explore t1"),
+    );
     let v: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(
         v,
         json!({"type": "clearance_request", "id": 7, "tool": "Shell",
+               "origin": {"kind": "builtIn"},
                "input": {"command": "ls"}, "via": "explore t1"})
     );
-    let no_via: Value = serde_json::from_str(&request_line(1, "Edit", &json!({}), None)).unwrap();
+    // An MCP tool's origin goes on the wire whole: the parent gates on it, not on the name.
+    let mcp = hoocode_agent_types::ToolOrigin::Mcp {
+        server: "fs".into(),
+        tool: "read".into(),
+        plugin: None,
+    };
+    let wire: Value =
+        serde_json::from_str(&request_line(2, "mcp__fs__read", &mcp, &json!({}), None)).unwrap();
+    assert_eq!(
+        wire["origin"],
+        json!({"kind": "mcp", "server": "fs", "tool": "read", "plugin": null})
+    );
+    let no_via: Value =
+        serde_json::from_str(&request_line(1, "Edit", &builtin, &json!({}), None)).unwrap();
     assert!(no_via.get("via").is_none());
 
     assert_eq!(parse_response(&response_line(7, &None)), Some((7, None)));
@@ -285,7 +308,13 @@ fn pool(runner: ScriptedRunner, cwd: &Path, relay: Option<Arc<Parent>>) -> Subag
 }
 
 fn child_asking(id: u64) -> ScriptedRunner {
-    let line = request_line(id, "Shell", &json!({"command": "rm -rf x"}), None);
+    let line = request_line(
+        id,
+        "Shell",
+        &hoocode_agent_types::ToolOrigin::BuiltIn,
+        &json!({"command": "rm -rf x"}),
+        None,
+    );
     ScriptedRunner::new(vec![ScriptedStep {
         stdout: vec![format!("{line}\n")],
         hang: true,
@@ -346,6 +375,29 @@ async fn the_pool_relays_a_request_and_writes_the_verdict_to_the_childs_stdin() 
     assert_eq!(events[0]["subject"], "rm -rf x");
     assert_eq!(events[1]["held"], false);
     p.dispose();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_request_without_a_readable_origin_is_denied_and_not_relayed() {
+    // The parent gates on the origin, so a line without one cannot be judged: it is denied.
+    let dir = tempfile::tempdir().unwrap();
+    let runner = ScriptedRunner::new(vec![ScriptedStep {
+        stdout: vec![
+            "{\"type\":\"clearance_request\",\"id\":5,\"tool\":\"Shell\",\"input\":{\"command\":\"ls\"}}\n"
+                .to_string(),
+        ],
+        hang: true,
+        ..Default::default()
+    }]);
+    let parent = Parent::new(None, false);
+    let p = pool(runner.clone(), dir.path(), Some(parent.clone()));
+    p.spawn(task()).unwrap();
+
+    let answered = answers(&runner);
+    assert_eq!(answered.len(), 1, "{answered:?}");
+    assert_eq!(answered[0].0, 5);
+    assert!(answered[0].1.is_some(), "{answered:?}");
+    assert!(parent.asked.lock().unwrap().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

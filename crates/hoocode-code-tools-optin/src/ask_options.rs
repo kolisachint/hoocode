@@ -154,7 +154,7 @@ fn text_result(text: String) -> AgentToolResult {
 
 /// The `AskUserQuestion` tool definition.
 pub fn create_ask_options_tool_definition(host: Arc<dyn AskOptionsHost>) -> ToolDefinition {
-    ToolDefinition { ordered_start: false, abort_grace: None, background_when: None,
+    ToolDefinition { origin: hoocode_code_tool_api::ToolOrigin::BuiltIn, render: None, ordered_start: false, abort_grace: None, background_when: None,
         background_placeholder: None,
         name: "AskUserQuestion".into(),
         label: "Ask the user".into(),

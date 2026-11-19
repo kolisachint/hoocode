@@ -716,6 +716,13 @@ impl Mode {
             tool_call_id: str_field(event, "toolCallId"),
             tool_name: str_field(event, "toolName"),
             args: event.get("args").cloned().unwrap_or(Value::Null),
+            origin: event
+                .get("origin")
+                .and_then(|origin| serde_json::from_value(origin.clone()).ok()),
+            render: event
+                .get("render")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         });
     }
 

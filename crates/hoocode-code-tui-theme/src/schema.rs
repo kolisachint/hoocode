@@ -69,7 +69,7 @@ pub const REQUIRED_COLOR_TOKENS: [&str; 45] = [
 /// tokens (spec §2.3) come last; they are optional so older custom themes keep
 /// loading. Unknown keys in a theme file are ignored, so a file that still sets
 /// a removed token loads.
-pub const COLOR_PROPERTIES: [(&str, bool); 80] = [
+pub const COLOR_PROPERTIES: [(&str, bool); 81] = [
     ("accent", false),
     ("border", false),
     ("borderAccent", false),
@@ -128,6 +128,7 @@ pub const COLOR_PROPERTIES: [(&str, bool); 80] = [
     ("brandText", true),
     ("paperShadow", true),
     ("halftone", true),
+    ("toolExternal", true),
     ("headlineBg", true),
     ("headlineText", true),
     ("tapeBg", true),

@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use hoocode_agent_types::ToolOrigin;
 use hoocode_code_tool_api::ToolDefinition;
 
 use crate::mcp::McpHub;
@@ -25,10 +26,11 @@ pub trait PluginSource: Send + Sync {
         true
     }
 
-    /// The plugin tools of the current plugins. `taken` are the names of the built-in and the
-    /// session's own tools: a plugin tool never takes one of them. The second value is the
-    /// problems found, one line each.
-    fn tools(&self, taken: &[String]) -> (Vec<ToolDefinition>, Vec<String>);
+    /// The plugin tools of the current plugins. `taken` are the names the session already has,
+    /// with the origin that holds each: the built-in tools, the session's own tools and the MCP
+    /// tools loaded. A plugin tool never takes one of them. The second value is the problems
+    /// found, one line each.
+    fn tools(&self, taken: &[(String, ToolOrigin)]) -> (Vec<ToolDefinition>, Vec<String>);
 
     /// The MCP servers the current plugins declare. The session builds a new MCP hub only when
     /// this set changed, so a change to plugin tools alone keeps the running servers. `None`

@@ -145,6 +145,7 @@ mod tests {
             data_dir: "/x/data/lint-pack".into(),
             skill_dirs: Vec::new(),
             extension_wasm: None,
+            tool_render: Default::default(),
             mcp_path: None,
             mcp_servers: Vec::new(),
         };

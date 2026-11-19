@@ -1,6 +1,6 @@
 # Subagents
 
-Status (2026-11-17): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Open items are SA-1 to SA-11.
+Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-11.
 
 Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
 
@@ -61,7 +61,7 @@ Files: `crates/hoocode-code-resources/templates/agents/*.md`. Parser: `crates/ho
 |---|---|
 | `name` | Agent id, used as `subagent_type` |
 | `description` | Use-when text for the parent |
-| `tools` | Allowlist. Agent is still offered when delegation is allowed. `ext_*` covers every plugin WASM tool (`ext_<plugin>_<tool>`); no other wildcard |
+| `tools` | Allowlist of selectors: a tool name, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>` or `mcp:*` (plugins.md Naming and identity). Agent is still offered when delegation is allowed. A malformed entry rejects the definition |
 | `model` | Default model. A call's `model` overrides |
 | `background` | `false` = foreground default, kept as `Some(false)` |
 | `delegate` | `true` = may dispatch |
@@ -71,8 +71,8 @@ Files: `crates/hoocode-code-resources/templates/agents/*.md`. Parser: `crates/ho
 Rules:
 
 - A writer has Edit, Write or Shell. Writers get the worktree instruction. Read-only agents do not.
-- Tool names in an agent's `tools` or `disallowedTools` map to built-ins, except `WebFetch` and `WebSearch`, which name the webtools plugin tools (`ext_webtools_fetch`, `ext_webtools_search`). Denying them does not stop other plugin WASM tools from reaching the network: deny `ext_*` for that.
-- Built-in tool lists: general-purpose is `Read, Shell, Edit, Write, CodeSearch, ext_*`. explore, plan, code-review and security-review have no `ext_*` (plugin tools may write later).
+- Entries in an agent's `tools` or `disallowedTools` are selectors, matched on tool origin (plugins.md Naming and identity). `WebFetch` and `WebSearch` are the webtools plugin's own tool names. A name does not cover other plugin tools: to keep an agent off the network, deny `plugin:*`. Built in P2 (2026-11-19).
+- Built-in tool lists: general-purpose is `Read, Shell, Edit, Write, CodeSearch, plugin:*`. explore, plan, code-review and security-review have no plugin selector (plugin tools may write later).
 - Every body ends with the final-answer rule. Custom bodies get `BASE_GUIDELINES` appended only at depth > 0. `--system-prompt` and `--light` still replace.
 - Child prompt is one wrapper, `Task: <prompt>` (`pool::child_prompt`). Run description is the call's first line, at most 60 characters, `"` replaced by `'`.
 - Code review and security review: Shell only for `git diff`, `git log`, `git show` (text rule; SA-3).
@@ -196,7 +196,7 @@ Reports: `target/subagent-evals/` (`report.md`, `report.json`, transcripts, requ
 |---|---|
 | Child | `child_direct_answer`, `child_tool_call_then_answer`, `child_turn_limit_settles_partial`, `child_invalid_tool_arguments`, `child_stream_abort_mid_answer`, `child_deadline_wrapup_partial` (slow), `child_rate_limited_then_answers`, `child_corrupt_jsonl_line`, `child_context_overflow` |
 | Parent dispatch | `parent_dispatch_blocking`, `parent_dispatch_background`, `parent_works_while_background_runs`, `parent_tells_parallel_runs_apart`, `parent_stall_reaped` (slow) |
-| Parent rules | `parent_region_error_falls_back`, `parent_unknown_model_name`, `parent_legacy_alias_rejected`, `subagent_shell_denied_without_a_ui` |
+| Parent rules | `parent_region_error_falls_back`, `parent_unknown_model_name`, `parent_legacy_alias_rejected`, `subagent_shell_runs_under_a_headless_parent` |
 | Saturation | `parent_queue_saturation` (peak must equal root cap), `nested_depth_chain` (depth 3 gets no Agent tool), `nested_fanout_saturation` (peak must equal nested cap) |
 | Writer | `worktree_writer_commits_on_branch` |
 
@@ -230,8 +230,11 @@ The mock tests mechanics only. It does not show that a real model follows the br
 | 2026-10-03 | Fallback retries region errors and `finish_reason: error`. Never retries a user cancel |
 | 2026-10-16 | Root 12, nested 6, queue 8 per slot, depth 4, wait 300 s, Shell default 1200 s |
 | 2026-11-17 | Subagents get WASM plugin tools (gated calls go through clearance). Never MCP plugin tools or plugin-management tools. See [plugins.md](plugins.md) |
-| 2026-11-17 | Agent tool lists accept `ext_*` (all plugin WASM tools). The built-in general-purpose agent has it; read-only built-ins do not. See [plugins.md](plugins.md) |
-| 2026-11-18 | In agent definitions, `WebFetch` and `WebSearch` map to the webtools plugin tools `ext_webtools_fetch` and `ext_webtools_search` only. Other plugin WASM tools with network access are not covered. To keep an agent off the network entirely, deny `ext_*` (see [plugins.md](plugins.md)). |
+| 2026-11-17 | Agent tool lists accept `ext_*` (all plugin WASM tools). The built-in general-purpose agent has it; read-only built-ins do not. See [plugins.md](plugins.md) (superseded 2026-11-19: `plugin:*`) |
+| 2026-11-18 | In agent definitions, `WebFetch` and `WebSearch` map to the webtools plugin tools `ext_webtools_fetch` and `ext_webtools_search` only. Other plugin WASM tools with network access are not covered. To keep an agent off the network entirely, deny `ext_*` (see [plugins.md](plugins.md)). (superseded 2026-11-19: see the row below) |
+| 2026-11-19 | A plugin selector (`plugin:*`, `plugin:<p>`, `plugin:<p>/<Tool>`) takes no MCP tool. A subagent runs no plugin MCP server and exposes no plugin MCP tool, whatever its tool list says, so general-purpose (`plugin:*`) starts no MCP. Plugin WASM tools are unchanged. Never MCP plugin tools (see [plugins.md](plugins.md)). |
+| 2026-11-19 | A json or print run that has subagents answers their clearance requests with its own gate (`HeadlessClearanceRelay`): the same rules, and the same headless default. A fail-closed run denies with the gate's reason; an open run runs the call, as it runs its own. Before, a subagent's gated call was denied with "no UI to ask" whatever the run would have allowed. Tests: `hoocode-code-permissions` `relay`; eval `subagent_shell_runs_under_a_headless_parent`. |
+| 2026-11-19 | Agent `tools` and `disallowedTools` take selectors: a name, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>` or `mcp:*`. `ext_*` is removed, with no alias. A malformed entry rejects the definition. Supersedes the `ext_*` row of 2026-11-17 and the WebFetch row of 2026-11-18. See [plugins.md](plugins.md) Naming and identity. |
 
 Dispatch dirs are pruned (newest 50, older than 24 h dropped), so they are not kept for the whole session. Recover is view or resume on request, never automatic (TUI rule, 2026-10-09).
 

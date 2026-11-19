@@ -248,7 +248,7 @@ pub fn create_edit_tool_definition(
         .operations
         .unwrap_or_else(|| Arc::new(LocalEditOperations));
     let prepare: PrepareArgumentsFn = Arc::new(prepare_edit_arguments);
-    ToolDefinition { background_when: None,
+    ToolDefinition { origin: hoocode_code_tool_api::ToolOrigin::BuiltIn, render: None, background_when: None,
         background_placeholder: None, ordered_start: true, abort_grace: None,
         name: "Edit".into(),
         label: "Edit".into(),

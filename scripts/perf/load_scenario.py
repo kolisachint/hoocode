@@ -94,7 +94,7 @@ PROMPT_BYTES = PROMPT_GLYPH.encode("utf-8")
 CHILD_MARKER = "Task: "
 CHILD_TEXT = "crates/ holds one directory per Rust crate; scripts/ and docs/ hold the rest."
 SUBAGENTS = 5
-MCP_CALL = "mcp_stall_wait"  # naming.rs: mcp_<server>_<tool>, server "stall", tool "wait"
+MCP_CALL = "mcp__stall__wait"  # naming.rs: mcp__<server>__<tool>, server "stall", tool "wait"
 SHED_NOTICE = "Memory above the soft limit"
 # Characters typed during the turn; any printable keys do, one per send-keys.
 TYPED = "abcdefghijklmnopqrstuvwxyz"

@@ -14,7 +14,19 @@ use serde_json::{json, Value};
 const CWD: &str = "/work/project";
 
 fn definition(tool: &str) -> ToolRenderDefinition {
-    builtin_tool_definition(tool).unwrap_or_else(|| registered_tool_definition(tool))
+    // The web tools are the webtools plugin's: they draw by their render hint.
+    match tool {
+        "WebFetch" => hoocode_code_tui_widgets::tools::hinted_definition(
+            hoocode_code_tui_widgets::tools::RENDER_WEB_FETCH,
+        ),
+        "WebSearch" => hoocode_code_tui_widgets::tools::hinted_definition(
+            hoocode_code_tui_widgets::tools::RENDER_WEB_SEARCH,
+        ),
+        _ => {
+            Some(builtin_tool_definition(tool).unwrap_or_else(|| registered_tool_definition(tool)))
+        }
+    }
+    .unwrap_or_default()
 }
 
 fn content(result: &Value) -> Vec<Content> {

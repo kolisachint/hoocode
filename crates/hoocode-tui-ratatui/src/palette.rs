@@ -111,6 +111,11 @@ impl Palette {
         self.style("dim")
     }
 
+    /// The name of a tool from a plugin or an MCP server (`toolExternal`).
+    pub fn external(&self) -> Style {
+        self.style("toolExternal")
+    }
+
     /// Frame lines and faintest text.
     pub fn faint(&self) -> Style {
         self.style("faint")

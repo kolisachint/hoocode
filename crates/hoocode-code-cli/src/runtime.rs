@@ -8,11 +8,11 @@
 use crate::args::Mode;
 use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
-use hoocode_agent_types::{AgentEvent, PermissionGate};
+use hoocode_agent_types::{AgentEvent, PermissionGate, ToolOrigin, ToolSelector};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
-use hoocode_code_permissions::{ApprovalChannel, HooPermissionGate};
+use hoocode_code_permissions::{ApprovalChannel, HeadlessClearanceRelay, HooPermissionGate};
 
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionEvent, AgentSessionRuntime,
@@ -705,6 +705,21 @@ fn install_clearance_relay(args: &Args) {
     hoocode_code_subagents::instance::set_clearance_relay(Some(relay));
 }
 
+/// A json or print run with subagents answers their clearance requests with
+/// its own gate (`HeadlessClearanceRelay`), so a subagent's call gets the same
+/// verdict the run gives its own calls. A subagent child relays upward instead
+/// (`install_clearance_relay`), so it is skipped here.
+fn install_headless_clearance_relay(args: &Args, cwd: &std::path::Path) {
+    if relays_clearance(args) {
+        return;
+    }
+    let ApprovalChannel::Headless { fail_closed } = headless_approval_channel_for(args) else {
+        return;
+    };
+    let relay = HeadlessClearanceRelay::new(cwd.to_path_buf(), fail_closed);
+    hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(relay)));
+}
+
 /// Build the session for a CLI run: the initial session manager, then the
 /// `createRuntime` factory on it. Diagnostics are for the caller to report.
 fn build_session(args: &Args, interactive: bool) -> (AgentSession, Diagnostics) {
@@ -794,6 +809,15 @@ fn create_runtime(
     }
     let registry = load_registry(auth);
     let mut diagnostics = Diagnostics::new();
+    // A malformed permission rule refuses to start: a deny that does not parse would otherwise
+    // deny nothing, silently. The check is per rule list, in every mode.
+    let rules = hoocode_code_modes::config::read_merged_config(&cwd);
+    for problem in hoocode_code_permissions::rule_errors(&rules) {
+        diagnostics.push((
+            DiagnosticKind::Error,
+            format!("permission rule {problem}. Fix it in hoo-config.json (see docs/user/configuration.md)."),
+        ));
+    }
     // A bad setting value is ignored; say so at startup instead of silently.
     // A subagent child skips it: the parent already warned, and the line
     // would land in the child's stderr tail and its failure text.
@@ -1017,6 +1041,11 @@ fn assemble_session(
     // before the MCP hub, which the source's refresh replaces only when one is attached.
     let ext = ext_tools_wanted(args, light);
     let mcp = mcp_wanted(args, light);
+    let subagent = args.task_id.is_some()
+        || hoocode_code_subagents::depth::current_subagent_depth(
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ) > 0;
+    session.set_subagent(subagent);
     if ext || mcp {
         let source = Arc::new(plugin_live::PluginToolSource {
             cwd: services.cwd.clone(),
@@ -1026,10 +1055,31 @@ fn assemble_session(
             auto_activate: !mode_restricted,
             settings: plugin_settings,
             gate: plugin_gate,
+            subagent,
         });
         for notice in session.attach_plugins(source) {
             diagnostics.push((DiagnosticKind::Warning, notice));
         }
+    }
+    // A `--tools` name that matches no tool allows nothing: say so at spawn (plugins.md, Naming
+    // and identity). Checked after the plugin tools attach, so a plugin tool's name matches.
+    for name in session.unmatched_tool_names() {
+        diagnostics.push((
+            DiagnosticKind::Warning,
+            format!("tool \"{name}\" in the tool list matches no tool and is ignored"),
+        ));
+    }
+    // A deny that names no tool denies nothing. The subagent pool adds the plugin lifecycle
+    // tools to every child's deny list, and a child never registers them, so those names are
+    // left out here rather than warning on every spawn.
+    for name in session.unmatched_denied_tool_names() {
+        if hoocode_code_tools_optin::PLUGIN_TOOL_NAMES.contains(&name.as_str()) {
+            continue;
+        }
+        diagnostics.push((
+            DiagnosticKind::Warning,
+            format!("tool \"{name}\" in the disallowed-tools list matches no tool and is ignored"),
+        ));
     }
     if mcp {
         attach_mcp(
@@ -1044,26 +1094,37 @@ fn assemble_session(
 }
 
 /// MCP servers start in this process only when its tool list can use them: no `--tools` list
-/// (all tools), or a list that names an `mcp_` tool. Light mode and `--no-tools` start none.
+/// (all tools), or a list with an entry that can select an MCP tool. Light mode and `--no-tools`
+/// start none.
 fn mcp_wanted(args: &Args, light: bool) -> bool {
     if light || args.no_tools == Some(true) {
         return false;
     }
-    args.tools
-        .as_ref()
-        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("mcp_")))
+    args.tools.as_ref().is_none_or(|tools| {
+        tools
+            .iter()
+            .any(|t| selects(t, ToolSelector::may_match_mcp))
+    })
+}
+
+/// Whether a `--tools` entry parses as a selector that `may` accepts. A malformed entry selects
+/// nothing (see `tool_listed`).
+fn selects(entry: &str, may: fn(&ToolSelector) -> bool) -> bool {
+    ToolSelector::parse(entry).is_ok_and(|selector| may(&selector))
 }
 
 /// Plugin WASM components are loaded only when the session's tool list can use their tools: as
-/// for MCP, no `--tools` list or a list that names an `ext_` tool. Light mode and `--no-tools`
-/// load none. Subagents follow the same rule, from their own `--tools` list.
+/// for MCP, no `--tools` list or a list with an entry that can select a plugin tool. Light mode
+/// and `--no-tools` load none. Subagents follow the same rule, from their own `--tools` list.
 fn ext_tools_wanted(args: &Args, light: bool) -> bool {
     if light || args.no_tools == Some(true) {
         return false;
     }
-    args.tools
-        .as_ref()
-        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("ext_")))
+    args.tools.as_ref().is_none_or(|tools| {
+        tools
+            .iter()
+            .any(|t| selects(t, ToolSelector::may_match_plugin_wasm))
+    })
 }
 
 /// Load the session's MCP servers and start the trusted ones in the background. Untrusted
@@ -1078,13 +1139,10 @@ fn ext_tools_wanted(args: &Args, light: bool) -> bool {
 pub(crate) fn new_mcp_hub(
     cwd: &std::path::Path,
     interactive: bool,
-    plugins: &hoocode_code_plugins::PluginSet,
+    plugin_servers: &[hoocode_code_mcp::PluginServers],
 ) -> std::sync::Arc<hoocode_code_agent_session::mcp::McpHub> {
     let hub = std::sync::Arc::new(
-        hoocode_code_agent_session::mcp::McpHub::for_folder_with_plugins(
-            cwd,
-            &plugins.mcp_servers(),
-        ),
+        hoocode_code_agent_session::mcp::McpHub::for_folder_with_plugins(cwd, plugin_servers),
     );
     // The panel's MCP tab reads the hub's rows from the process-wide task store.
     hub.set_task_rows(hoocode_code_task_store::task_store());
@@ -1117,7 +1175,7 @@ fn attach_mcp(
 ) {
     // A plugin change that builds a new hub later waits for it the same way, in print and rpc.
     session.set_wait_for_mcp_startup(!interactive);
-    let hub = new_mcp_hub(cwd, interactive, plugins);
+    let hub = new_mcp_hub(cwd, interactive, &plugins.mcp_servers());
     hub.start();
     if !interactive {
         // Print and rpc answer their first prompt with the servers that connect in time. This
@@ -1161,7 +1219,8 @@ pub fn run_print_mode(
     output: &mut dyn Write,
     err: &mut dyn Write,
 ) -> std::io::Result<i32> {
-    let ran = Arc::new(Mutex::new(std::collections::BTreeSet::new()));
+    let ran: Arc<Mutex<std::collections::BTreeMap<String, ToolOrigin>>> =
+        Arc::new(Mutex::new(std::collections::BTreeMap::new()));
     let code = run_print_body(args, mode, stdin_content, color, output, err, &ran);
     // After the run, so the note names only the tools that actually ran.
     // A subagent child asks its parent instead, so the note is not true of it.
@@ -1188,18 +1247,21 @@ fn print_mode_label(mode: PrintMode) -> &'static str {
 
 /// The one stderr line for a print or json run that asked nobody for approval:
 /// it names the tools that ran and would have needed approval in rpc, and says
-/// that its subagents, which relay such calls to a parent with no UI to ask,
-/// are denied them. `None` when no such tool ran.
-fn ungated_run_note(mode_label: &str, ran: &std::collections::BTreeSet<String>) -> Option<String> {
+/// that its subagents, whose such calls this run decides for them, get the
+/// same answer. `None` when no such tool ran.
+fn ungated_run_note(
+    mode_label: &str,
+    ran: &std::collections::BTreeMap<String, ToolOrigin>,
+) -> Option<String> {
     let names: Vec<&str> = ran
         .iter()
-        .map(String::as_str)
-        .filter(|name| hoocode_code_permissions::is_approval_tool(name))
+        .filter(|(name, origin)| hoocode_code_permissions::is_approval_tool(name, origin))
+        .map(|(name, _)| name.as_str())
         .collect();
     (!names.is_empty()).then(|| {
         format!(
             "Note: {mode_label} does not ask for tool approval; these tools ran without it: {}. \
-             Its subagents cannot ask either: their tools that need approval are denied.",
+             Its subagents get the same answer from these rules: their tools that need approval run too.",
             names.join(", ")
         )
     })
@@ -1213,17 +1275,23 @@ fn run_print_body(
     color: bool,
     output: &mut dyn Write,
     err: &mut dyn Write,
-    ran: &Arc<Mutex<std::collections::BTreeSet<String>>>,
+    ran: &Arc<Mutex<std::collections::BTreeMap<String, ToolOrigin>>>,
 ) -> std::io::Result<i32> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let home = hoocode_home::home_dir();
     install_clearance_relay(args);
     let (session, diagnostics) = build_session(args, false);
+    install_headless_clearance_relay(args, session.cwd());
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| match event {
-        AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) => {
+        AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart {
+            tool_name, origin, ..
+        }) => {
             if let Ok(mut set) = ran_tools.lock() {
-                set.insert(tool_name.clone());
+                set.insert(
+                    tool_name.clone(),
+                    origin.clone().unwrap_or(ToolOrigin::BuiltIn),
+                );
             }
         }
         // The auto-picked model was refused and the session switched: say so
@@ -2173,16 +2241,36 @@ mod tests {
 
     #[test]
     fn approval_note_names_only_the_approval_tools_that_ran() {
-        let ran: std::collections::BTreeSet<String> = ["Read", "Write", "mcp_fs_list", "Shell"]
-            .iter()
-            .map(|t| t.to_string())
-            .collect();
+        let mcp = ToolOrigin::Mcp {
+            server: "fs".into(),
+            tool: "list".into(),
+            plugin: None,
+        };
+        let plugin = ToolOrigin::Plugin {
+            plugin: "web".into(),
+            tool: "WebFetch".into(),
+        };
+        // A plugin tool named `Write` is not a built-in approval tool, and an MCP tool needs
+        // approval by its origin, not by its name.
+        let ran: std::collections::BTreeMap<String, ToolOrigin> = [
+            ("Read".to_string(), ToolOrigin::BuiltIn),
+            ("Write".to_string(), ToolOrigin::BuiltIn),
+            ("mcp__fs__list".to_string(), mcp),
+            ("Shell".to_string(), ToolOrigin::BuiltIn),
+            ("Lookup".to_string(), plugin.clone()),
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(
             ungated_run_note("--print", &ran).as_deref(),
-            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp_fs_list. Its subagents cannot ask either: their tools that need approval are denied.")
+            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp__fs__list. Its subagents get the same answer from these rules: their tools that need approval run too.")
         );
-        let read_only: std::collections::BTreeSet<String> =
-            ["Read", "Grep"].iter().map(|t| t.to_string()).collect();
+        let read_only: std::collections::BTreeMap<String, ToolOrigin> = [
+            ("Read".to_string(), ToolOrigin::BuiltIn),
+            ("Lookup".to_string(), plugin),
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(ungated_run_note("--mode json", &read_only), None);
         assert_eq!(ungated_run_note("--mode json", &Default::default()), None);
     }
@@ -2916,7 +3004,7 @@ mod tests {
 
 #[cfg(test)]
 mod mcp_wanted_tests {
-    use super::{mcp_wanted, Args};
+    use super::{ext_tools_wanted, mcp_wanted, Args};
 
     fn args(argv: &[&str]) -> Args {
         crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>())
@@ -2926,12 +3014,30 @@ mod mcp_wanted_tests {
     fn servers_start_only_where_the_tool_list_can_use_them() {
         // No tool list: the process has every tool, MCP included.
         assert!(mcp_wanted(&args(&[]), false));
-        // A list with an mcp_ tool (a subagent that names one).
-        assert!(mcp_wanted(&args(&["--tools", "Read,mcp_x_echo"]), false));
+        // A list with an MCP tool's name, or a selector for MCP (a subagent that names one).
+        assert!(mcp_wanted(&args(&["--tools", "Read,mcp__x__echo"]), false));
+        assert!(mcp_wanted(&args(&["--tools", "Read,mcp:x"]), false));
         // A list without one, `--no-tools`, and light mode start nothing.
         assert!(!mcp_wanted(&args(&["--tools", "Read"]), false));
+        // A plugin selector takes no MCP tool: plugin MCP servers are not started for it.
+        assert!(!mcp_wanted(&args(&["--tools", "Read,plugin:web"]), false));
         assert!(!mcp_wanted(&args(&["--no-tools"]), false));
         assert!(!mcp_wanted(&args(&[]), true));
+    }
+
+    #[test]
+    fn plugin_components_load_only_where_the_tool_list_can_use_them() {
+        assert!(ext_tools_wanted(&args(&[]), false));
+        // A selector for a plugin, or a bare name (which may be a plugin's tool).
+        assert!(ext_tools_wanted(&args(&["--tools", "plugin:web"]), false));
+        assert!(ext_tools_wanted(&args(&["--tools", "WebFetch"]), false));
+        // Only an MCP tool or MCP selector: no component is needed.
+        assert!(!ext_tools_wanted(
+            &args(&["--tools", "mcp__x__echo,mcp:x"]),
+            false
+        ));
+        assert!(!ext_tools_wanted(&args(&["--tools", "WebFetch"]), true));
+        assert!(!ext_tools_wanted(&args(&["--no-tools"]), false));
     }
 }
 

@@ -5,7 +5,7 @@
 //! `hoocode-code-tool-bash` and `CodeSearch` from
 //! `hoocode-code-tool-search`. The free functions below (grep, find,
 //! ls, todo) are plain helpers, not tools. Web access is the webtools
-//! plugin (`ext_webtools_fetch`, `ext_webtools_search`), not this crate.
+//! plugin (`WebFetch`, `WebSearch`), not this crate.
 
 use hoocode_agent_types::{AgentTool, AgentToolResult};
 use hoocode_ai_types::{Content, TextContent};

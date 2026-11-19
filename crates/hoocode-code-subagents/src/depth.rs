@@ -208,16 +208,14 @@ pub fn defer_mcp_schemas(env: &impl SubagentEnv) -> bool {
     env.var(DEFER_MCP_SCHEMAS_ENV).as_deref() == Some("1")
 }
 
-/// Whether a child with this tool allowlist needs MCP servers: a tool named
-/// `mcp_<server>_<tool>` (prefix-tolerant) is MCP-sourced, and no allowlist
-/// means "inherit every tool".
+/// Whether a child with this tool allowlist needs MCP servers: an entry that can select an MCP
+/// tool (`mcp__<server>__<tool>` or `mcp:<s>`) makes it so, and no allowlist means "inherit every
+/// tool". A plugin selector does not: a subagent never runs plugin MCP servers.
 pub fn tool_allowlist_needs_mcp(tools: Option<&[String]>) -> bool {
     let Some(tools) = tools else {
         return true;
     };
     tools.iter().any(|t| {
-        t.trim()
-            .get(..3)
-            .is_some_and(|p| p.eq_ignore_ascii_case("mcp"))
+        hoocode_agent_types::ToolSelector::parse(t).is_ok_and(|selector| selector.may_match_mcp())
     })
 }

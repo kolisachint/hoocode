@@ -1,5 +1,5 @@
 #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
-//! MCP servers in a session (`docs/design/mcp.md`): a model tool call to `mcp_<server>_echo`
+//! MCP servers in a session (`docs/design/mcp.md`): a model tool call to `mcp__<server>__echo`
 //! round-trips through the agent, and untrusted project servers never start.
 //!
 //! The server is a small stdio MCP server in Python, so the test needs `python3`. Without it the
@@ -137,7 +137,7 @@ async fn model_tool_call_reaches_the_mcp_server_and_back() {
 
     h.set_responses(vec![
         tool_use(vec![faux_tool_call(
-            "mcp_x_echo",
+            "mcp__x__echo",
             serde_json::json!({"text": "hi"}),
             None,
         )]),
@@ -220,7 +220,7 @@ async fn a_granted_project_server_starts_and_the_grant_persists() {
     assert!(generation >= 1);
     assert_eq!(
         tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
-        ["mcp_proj_echo"]
+        ["mcp__proj__echo"]
     );
     hub.shutdown();
 
@@ -313,7 +313,7 @@ async fn a_server_that_connects_mid_run_is_used_from_the_next_turn() {
             }
         }),
         tool_use(vec![faux_tool_call(
-            "mcp_x_echo",
+            "mcp__x__echo",
             serde_json::json!({"text": "late"}),
             None,
         )]),
@@ -391,4 +391,29 @@ async fn an_unset_variable_marks_the_server_failed_and_names_it() {
     // It never starts, so nothing is sent and there are no tools.
     assert!(hub.wait_for_startup(Duration::from_millis(50)).is_empty());
     assert_eq!(hub.tool_definitions().1.len(), 0);
+}
+
+/// A subagent's MCP tools never include a plugin's, whatever the hub reports (subagents.md).
+#[test]
+fn a_subagent_drops_plugin_mcp_tools_and_keeps_the_others() {
+    use crate::common::tool;
+    use hoocode_agent_types::ToolOrigin;
+    let mut plugin_tool = tool("lookup", |_| unimplemented!());
+    plugin_tool.origin = ToolOrigin::Mcp {
+        server: "search".into(),
+        tool: "lookup".into(),
+        plugin: Some("webtools".into()),
+    };
+    let mut user_tool = tool("echo", |_| unimplemented!());
+    user_tool.origin = ToolOrigin::Mcp {
+        server: "echo".into(),
+        tool: "echo".into(),
+        plugin: None,
+    };
+    let kept: Vec<String> =
+        hoocode_code_agent_session::mcp::without_plugin_mcp_tools(vec![plugin_tool, user_tool])
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+    assert_eq!(kept, ["echo"]);
 }

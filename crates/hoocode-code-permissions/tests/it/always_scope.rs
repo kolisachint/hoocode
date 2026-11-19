@@ -228,6 +228,7 @@ fn project_config_cannot_seed_always() {
             &config,
             dir.path(),
             "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
             &shell("rm x"),
             ApprovalChannel::Ui,
         ),
@@ -242,7 +243,11 @@ fn always_is_session_only_and_scoped() {
     let ui = Arc::new(ScriptedUi::new(vec![ClearanceChoice::Always]));
     // `a` on `make x | sort`: allowed, remembered, nothing written.
     assert_eq!(
-        gate(dir.path(), ui.clone()).check("Shell", &shell("make x | sort -r")),
+        gate(dir.path(), ui.clone()).check_call(
+            "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &shell("make x | sort -r")
+        ),
         None
     );
     assert_eq!(
@@ -259,11 +264,36 @@ fn always_is_session_only_and_scoped() {
         ClearanceChoice::Deny { reason: None },
     ]));
     let gate = gate(dir.path(), ui.clone());
-    assert_eq!(gate.check("Shell", &shell("make y")), None);
+    assert_eq!(
+        gate.check_call(
+            "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &shell("make y")
+        ),
+        None
+    );
     assert_eq!(ui.prompts(), 0);
-    assert!(gate.check("Shell", &shell("rm -rf target")).is_some());
-    assert!(gate.check("Shell", &shell("makeoo x")).is_some());
-    assert!(gate.check("Shell", &shell("make y; rm")).is_some());
+    assert!(gate
+        .check_call(
+            "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &shell("rm -rf target")
+        )
+        .is_some());
+    assert!(gate
+        .check_call(
+            "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &shell("makeoo x")
+        )
+        .is_some());
+    assert!(gate
+        .check_call(
+            "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &shell("make y; rm")
+        )
+        .is_some());
     assert_eq!(ui.prompts(), 3);
 }
 
@@ -274,7 +304,11 @@ fn always_on_a_wrapper_runs_once_without_storing() {
     let ui = Arc::new(ScriptedUi::new(vec![ClearanceChoice::Always]));
     // `a` on a wrapper: allowed once, nothing stored, notice explains.
     assert_eq!(
-        gate(dir.path(), ui.clone()).check("Shell", &shell("sudo rm -rf /tmp/x")),
+        gate(dir.path(), ui.clone()).check_call(
+            "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &shell("sudo rm -rf /tmp/x")
+        ),
         None
     );
     assert!(!_home.path().exists());
@@ -287,7 +321,11 @@ fn always_on_a_wrapper_runs_once_without_storing() {
         reason: None,
     }]));
     assert!(gate(dir.path(), ui.clone())
-        .check("Shell", &shell("sudo rm -rf /tmp/x"))
+        .check_call(
+            "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &shell("sudo rm -rf /tmp/x")
+        )
         .is_some());
     assert_eq!(ui.prompts(), 1);
 }
@@ -298,7 +336,11 @@ fn always_scopes_other_tools_by_name() {
     let dir = fresh_cwd();
     let ui = Arc::new(ScriptedUi::new(vec![ClearanceChoice::Always]));
     assert_eq!(
-        gate(dir.path(), ui.clone()).check("Edit", &json!({"path": "src/a.ts"})),
+        gate(dir.path(), ui.clone()).check_call(
+            "Edit",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &json!({"path": "src/a.ts"})
+        ),
         None
     );
     let stored = std::fs::read_to_string(_home.path()).unwrap();
@@ -307,7 +349,11 @@ fn always_scopes_other_tools_by_name() {
     // A later Edit runs free without prompting.
     let ui = Arc::new(ScriptedUi::new(vec![]));
     assert_eq!(
-        gate(dir.path(), ui.clone()).check("Edit", &json!({"path": "src/b.ts"})),
+        gate(dir.path(), ui.clone()).check_call(
+            "Edit",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
+            &json!({"path": "src/b.ts"})
+        ),
         None
     );
     assert_eq!(ui.prompts(), 0);

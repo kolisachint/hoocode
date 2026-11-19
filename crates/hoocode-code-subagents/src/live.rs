@@ -20,6 +20,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use hoocode_agent_types::ToolOrigin;
 use serde_json::{json, Value};
 
 use crate::events::SUBAGENT_STDOUT_EVENT_TYPES;
@@ -248,6 +249,10 @@ pub struct SubStep {
     pub failure: Option<String>,
     /// The call waits for the parent's clearance (`◉ waiting for permission`).
     pub held: bool,
+    /// Where the tool comes from, as the child's event says. `None` is a built-in.
+    pub origin: Option<ToolOrigin>,
+    /// The renderer hint the child's event carries, if any.
+    pub render: Option<String>,
 }
 
 /// Most of a run's own tool calls kept once it settles.
@@ -266,6 +271,10 @@ pub struct SettledStep {
     pub subject: String,
     /// The first line of the failure's output, when the call failed.
     pub failure: Option<String>,
+    /// Where the tool comes from, as the child's event says. `None` is a built-in.
+    pub origin: Option<ToolOrigin>,
+    /// The renderer hint the child's event carries, if any.
+    pub render: Option<String>,
 }
 
 /// One run's activity: its last rows, the line being streamed, its own tool
@@ -284,7 +293,14 @@ struct RunTail {
 impl RunTail {
     /// Logs a call that started, dropping the oldest clean one (else the
     /// oldest) when the log is full.
-    fn log_call(&mut self, id: String, tool: &str, subject: &str) {
+    fn log_call(
+        &mut self,
+        id: String,
+        tool: &str,
+        subject: &str,
+        origin: Option<ToolOrigin>,
+        render: Option<String>,
+    ) {
         self.calls += 1;
         self.log.push((
             id,
@@ -293,6 +309,8 @@ impl RunTail {
                 tool: tool.to_string(),
                 subject: subject.to_string(),
                 failure: None,
+                origin,
+                render,
             },
         ));
         if self.log.len() > SETTLED_STEPS_KEPT {
@@ -448,8 +466,16 @@ pub fn apply(task_id: &str, event: &Value) {
                 .and_then(Value::as_str)
                 .unwrap_or("tool");
             let subject = tool_subject(event.get("args"));
+            let origin = event_origin(event);
+            let render = event_render(event);
             push_row(run, &format!("→ {tool}{subject}"));
-            run.log_call(str_of(event, "toolCallId"), tool, subject.trim());
+            run.log_call(
+                str_of(event, "toolCallId"),
+                tool,
+                subject.trim(),
+                origin.clone(),
+                render.clone(),
+            );
             run.steps.push(SubStep {
                 id: str_of(event, "toolCallId"),
                 index: run.calls,
@@ -458,6 +484,8 @@ pub fn apply(task_id: &str, event: &Value) {
                 started: Instant::now(),
                 failure: None,
                 held: false,
+                origin,
+                render,
             });
             while run.steps.len() > SUB_STEPS_KEPT {
                 run.steps.remove(0);
@@ -506,6 +534,7 @@ fn hold(run: &mut RunTail, event: &Value) {
     let tool = str_of(event, "tool");
     let subject = str_of(event, "subject");
     let stand_in = format!("clearance:{}", event.get("call").unwrap_or(&Value::Null));
+    let origin = event_origin(event);
     let same =
         |step: &SubStep| step.failure.is_none() && step.tool == tool && step.subject == subject;
     if event.get("held").and_then(Value::as_bool) == Some(true) {
@@ -520,6 +549,8 @@ fn hold(run: &mut RunTail, event: &Value) {
                 started: Instant::now(),
                 failure: None,
                 held: true,
+                origin: origin.clone(),
+                render: None,
             }),
         }
         while run.steps.len() > SUB_STEPS_KEPT {
@@ -531,6 +562,22 @@ fn hold(run: &mut RunTail, event: &Value) {
     } else if let Some(step) = run.steps.iter_mut().find(|step| same(step) && step.held) {
         step.held = false;
     }
+}
+
+/// The tool origin an event carries (`origin`, as the child serialises it). Absent, `null` or
+/// unreadable is `None`: a built-in.
+fn event_origin(event: &Value) -> Option<ToolOrigin> {
+    event
+        .get("origin")
+        .and_then(|origin| serde_json::from_value::<ToolOrigin>(origin.clone()).ok())
+}
+
+/// The renderer hint an event carries (`render`), if any.
+fn event_render(event: &Value) -> Option<String> {
+    event
+        .get("render")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn str_of(event: &Value, key: &str) -> String {

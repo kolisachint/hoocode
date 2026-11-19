@@ -37,9 +37,9 @@ static INSTANCE: LazyLock<Mutex<Instance>> = LazyLock::new(Mutex::default);
 /// Where the UI receives live run events (set by the TUI; `None` elsewhere).
 static LIVE_SINK: LazyLock<Mutex<Option<LiveSink>>> = LazyLock::new(Mutex::default);
 
-/// Who decides the gated calls subagents ask about: the TUI's card, or, in a
-/// subagent that has subagents of its own, its parent (`None` elsewhere, and
-/// then every such call is denied).
+/// Who decides the gated calls subagents ask about: the TUI's card, the gate of
+/// a headless json or print run, or, in a subagent that has subagents of its
+/// own, its parent (`None` elsewhere, and then every such call is denied).
 static CLEARANCE_RELAY: LazyLock<Mutex<Option<Arc<dyn ClearanceRelay>>>> =
     LazyLock::new(Mutex::default);
 

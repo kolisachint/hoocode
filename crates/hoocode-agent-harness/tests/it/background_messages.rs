@@ -13,7 +13,42 @@ fn call(name: &str, arguments: Value) -> AgentToolCall {
         id: "tc-1".into(),
         name: name.into(),
         arguments,
+        origin: origin_of(name),
     }
+}
+
+/// The origin a fixture gives a call: an MCP tool for an `mcp__<server>__<tool>` name.
+fn origin_of(name: &str) -> hoocode_agent_types::ToolOrigin {
+    match name
+        .strip_prefix("mcp__")
+        .and_then(|rest| rest.split_once("__"))
+    {
+        Some((server, tool)) => hoocode_agent_types::ToolOrigin::Mcp {
+            server: server.into(),
+            tool: tool.into(),
+            plugin: None,
+        },
+        None => hoocode_agent_types::ToolOrigin::BuiltIn,
+    }
+}
+
+#[test]
+fn a_plugin_tool_with_an_mcp_shaped_name_is_not_an_mcp_tool() {
+    // The harness reads the origin, not the name: a plugin tool named like an MCP tool is a
+    // subagent-style background call with its own label.
+    let plugin = hoocode_agent_types::ToolOrigin::Plugin {
+        plugin: "docs".into(),
+        tool: "x".into(),
+    };
+    let tool_call = AgentToolCall {
+        id: "tc-2".into(),
+        name: "mcp__s__t".into(),
+        arguments: json!({"q": "x"}),
+        origin: plugin,
+    };
+    let info = describe_background_tool(&tool_call);
+    assert!(!info.is_mcp_tool);
+    assert_eq!(info.label, "subagent `mcp__s__t`");
 }
 
 fn bg_result(name: &str, args: Value, text: &str, is_error: bool) -> BackgroundToolResult {
@@ -70,14 +105,14 @@ fn falls_back_to_the_prompts_first_line() {
 }
 
 #[test]
-fn describes_an_mcp_tool_by_its_de_prefixed_name_and_args() {
+fn describes_an_mcp_tool_by_its_server_and_tool_name_and_args() {
     let info = describe_background_tool(&call(
-        "mcp_web_fetch",
+        "mcp__web__fetch",
         json!({"url": "https://example.com", "limit": 5}),
     ));
     assert!(info.is_mcp_tool);
-    assert_eq!(info.subagent_type, "mcp_web_fetch");
-    assert!(info.label.contains("web_fetch") && !info.label.contains("mcp_web_fetch"));
+    assert_eq!(info.subagent_type, "mcp__web__fetch");
+    assert_eq!(info.label, "MCP tool `web/fetch`");
     assert!(info.summary.unwrap().contains("url: https://example.com"));
 }
 
@@ -106,10 +141,10 @@ fn subagent_placeholder_is_one_line_and_finish_passes_the_notification_through()
 #[test]
 fn mcp_placeholder_is_compact_and_finish_keeps_header_and_body() {
     let args = json!({"url": "https://example.com"});
-    let placeholder = create_background_placeholder_text(&call("mcp_web_fetch", args.clone()));
+    let placeholder = create_background_placeholder_text(&call("mcp__web__fetch", args.clone()));
     let finish =
-        create_background_task_message(&bg_result("mcp_web_fetch", args.clone(), "{}", false));
-    let label = describe_background_tool(&call("mcp_web_fetch", args)).label;
+        create_background_task_message(&bg_result("mcp__web__fetch", args.clone(), "{}", false));
+    let label = describe_background_tool(&call("mcp__web__fetch", args)).label;
     assert!(placeholder.contains(&label));
     assert_eq!(placeholder.split('\n').count(), 1);
     let t = texts(&finish);

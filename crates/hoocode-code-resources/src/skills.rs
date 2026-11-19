@@ -1,6 +1,6 @@
 //! `core/skills.ts`: skill discovery, validation and the system-prompt block.
 
-use crate::agent_frontmatter::normalize_tools;
+use crate::agent_frontmatter::normalize_skill_tools;
 use crate::diagnostics::{DiagnosticType, ResourceCollision, ResourceDiagnostic};
 use crate::frontmatter::parse_frontmatter;
 use crate::js::{js_string, truthy};
@@ -236,7 +236,7 @@ fn load_skill_from_file(file_path: &str, source: &str) -> (Option<Skill>, Vec<Re
     let allowed_tools = match frontmatter.get("allowed-tools") {
         None => None,
         Some(value) => {
-            let (tools, d) = normalize_tools(value, Some(file_path));
+            let (tools, d) = normalize_skill_tools(value, Some(file_path));
             diagnostics.extend(d);
             (!tools.is_empty()).then_some(tools)
         }

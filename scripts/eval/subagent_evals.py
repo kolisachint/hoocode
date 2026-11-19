@@ -67,8 +67,6 @@ CHILD_RESULT_NEEDLE = CHILD_SUMMARY[:30]
 # What a request body is searched for, so a scenario can say what a model was told.
 NEEDLES = {
     "child_result": CHILD_RESULT_NEEDLE,
-    # The subagent's gated Shell call was denied: its parent has no UI to ask.
-    "clearance_denied": "has no UI to ask",
     # Two background runs of one agent type (`parent_tells_parallel_runs_apart`).
     # Request bodies are JSON, so the quotes around a description arrive escaped.
     # Each call's placeholder names the run's handle and description, in call order:
@@ -158,6 +156,9 @@ class Expect:
     branch_commits: int | None = None
     parent_status_unchanged: bool | None = None
     nothing_pushed: bool | None = None
+    # Paths, relative to the run's project folder, that must exist when the run ends: a file a
+    # tool call writes is proof the call ran (a denied or errored call writes nothing).
+    files_exist: list[str] | None = None
     # Per-route checks (route name -> value). `route_requests` is the exact
     # request count; `route_tools_have` / `route_tools_lack` are the tool names
     # the provider offered in that route's requests.
@@ -174,6 +175,11 @@ class Expect:
     # on how many subagents ran together.
     peak_inflight_max: dict[str, int] | None = None
     peak_inflight_min: dict[str, int] | None = None
+    # Words that must (`tool_results_have`) or must not (`tool_results_lack`) appear
+    # in the last tool result a route's model was sent, per request. This is what a
+    # tool returned, not the whole request body (which carries the system prompt).
+    tool_results_have: dict[str, list[str]] | None = None
+    tool_results_lack: dict[str, list[str]] | None = None
 
 
 @dataclass
@@ -187,7 +193,8 @@ class Scenario:
     prompt: str | None = None
     settings: dict[str, Any] = field(default_factory=dict)
     models: list[dict[str, Any]] | None = None
-    timeout_s: int = 120
+    # A first-time WASM compile of the plugin is slow in a debug build (over 120s).
+    timeout_s: int = 300
     slow: bool = False
     known_issue: str | None = None
     # Extra environment for the parent process (the lifeguard runs there).
@@ -198,7 +205,7 @@ class Scenario:
     # Files written under the run's ~/.hoocode (path relative to it), e.g. user
     # agent definitions in `agents/`.
     home_files: dict[str, str] = field(default_factory=dict)
-    # Put the echo plugin (`ext_echo_*` tools) in the run's ~/.agents/plugins, as a
+    # Put the echo plugin (its `echo` and `fetch` tools) in the run's ~/.agents/plugins, as a
     # hand-placed plugin: no install record, so it is trusted.
     echo_plugin: bool = False
 
@@ -218,7 +225,7 @@ def _echo_routes(agent: str) -> dict[str, Route]:
     return {
         "child": child_route(
             [
-                {"tool_calls": [{"name": "ext_echo_echo", "arguments": {"marker": "ext-echo-7"}}]},
+                {"tool_calls": [{"name": "echo", "arguments": {"marker": "ext-echo-7"}}]},
                 {"echo_tool_result": True},
             ]
         ),
@@ -242,8 +249,12 @@ def _echo_expect() -> Expect:
         ledger_ok=[True],
         child_requests=2,
         parent_requests=2,
-        route_tools_have={"child": ["ext_echo_echo"]},
+        route_tools_have={"child": ["echo"]},
         route_sees={"parent": ["echoed_marker"]},
+        # The echo output is the child's tool result, and the parent gets it back in
+        # the Agent result. A denied call returns a refusal instead, which fails here.
+        tool_results_have={"child": ["ext-echo-7"], "parent": ["ext-echo-7"]},
+        tool_results_lack={"child": ["denied", "Denied"], "parent": ["denied", "Denied"]},
     )
 
 
@@ -584,17 +595,19 @@ SCENARIOS: list[Scenario] = [
         ),
     ),
     Scenario(
-        name="subagent_shell_denied_without_a_ui",
+        name="subagent_shell_runs_under_a_headless_parent",
         kind="parent",
         doc=(
             "A subagent's Shell call needs approval and its parent (--mode json) has no UI to "
-            "ask. The call is denied, not silently run: the child is told so, carries on, and "
-            "finishes. Nothing is auto-allowed in the config and `touch` is not a safe_shell command, so the denial is the gate's."
+            "ask. The parent's own gate decides it, as it decides its own calls: the default for "
+            "a headless run is to run it, so the child's call runs and is not denied. Nothing is "
+            "auto-allowed in the config and `touch` is not a safe_shell command, so the answer is "
+            "the parent's headless default, not an auto-allow. (2026-11-19)"
         ),
         routes={
             "child": child_route(
                 [
-                    {"tool_calls": [{"name": "Shell", "arguments": {"command": "touch denied_probe.txt"}}]},
+                    {"tool_calls": [{"name": "Shell", "arguments": {"command": "touch headless_probe.txt"}}]},
                     {"text": CHILD_SUMMARY},
                 ]
             ),
@@ -604,7 +617,7 @@ SCENARIOS: list[Scenario] = [
                         background=False,
                         subagent_type="general-purpose",
                         description="run a command",
-                        prompt="Run touch denied_probe.txt and report.",
+                        prompt="Run touch headless_probe.txt and report.",
                     ),
                     {"text": PARENT_SUMMARY},
                 ]
@@ -616,14 +629,16 @@ SCENARIOS: list[Scenario] = [
             ledger_ok=[True],
             child_requests=2,
             parent_requests=2,
-            route_sees={"child": ["clearance_denied"]},
+            tool_results_lack={"child": ["denied", "Denied", "no UI"]},
+            # The Shell call ran: it wrote its file. A call that errored or was denied writes nothing.
+            files_exist=["headless_probe.txt"],
         ),
     ),
     Scenario(
         name="subagent_plugin_tool_reaches_parent",
         kind="parent",
         doc=(
-            "A subagent calls a WASM plugin tool (ext_echo_echo) from a plugin in the run's HOME. "
+            "A subagent calls a WASM plugin tool (echo) from a plugin in the run's HOME. "
             "The agent has no tools: list, so it gets every tool. The tool's result reaches the "
             "child's model, which repeats it as its answer, so the parent's Agent result carries "
             "the echoed value."
@@ -638,13 +653,88 @@ SCENARIOS: list[Scenario] = [
         name="subagent_plugin_tool_general_purpose",
         kind="parent",
         doc=(
-            "The same echo through general-purpose, whose tools: list includes ext_* (every plugin "
+            "The same echo through general-purpose, whose tools: list includes plugin:* (every plugin "
             "WASM tool). The child's --tools allowlist must offer the plugin tool (2026-11-17)."
         ),
         routes=_echo_routes("general-purpose"),
         prompt="Use a subagent to echo a marker.",
         echo_plugin=True,
         expect=_echo_expect(),
+    ),
+    # Option D (plugins.md, Naming and identity): an agent's selectors decide what its child is
+    # offered. An allowlist naming one plugin tool offers it; a plugin:* deny takes every plugin
+    # tool out of the child's list, whatever its allowlist names.
+    Scenario(
+        name="subagent_plugin_selector_allowlist",
+        kind="parent",
+        doc=(
+            "An agent whose tools: is the single selector plugin:echo/echo (one tool of one plugin, "
+            "by origin). The child is offered the echo tool and its result reaches the parent."
+        ),
+        routes=_echo_routes("echo-selected"),
+        prompt="Use a subagent to echo a marker.",
+        echo_plugin=True,
+        home_files={
+            "agents/echo-selected.md": (
+                "---\n"
+                "name: echo-selected\n"
+                "description: Calls the echo plugin tool, selected by plugin:echo/echo.\n"
+                "tools: plugin:echo/echo\n"
+                "---\n"
+                "Call the echo tool with the marker from the task, then report exactly what it returned.\n"
+            )
+        },
+        expect=_echo_expect(),
+    ),
+    Scenario(
+        name="subagent_plugin_wildcard_denied",
+        kind="parent",
+        doc=(
+            "An agent with tools: Read, plugin:webtools/WebFetch, plugin:* and disallowedTools: "
+            "plugin:*. The deny takes every plugin tool out, so the child is not offered echo and "
+            "its call does not run."
+        ),
+        routes={
+            "child": child_route(
+                [
+                    {"tool_calls": [{"name": "echo", "arguments": {"marker": "ext-echo-7"}}]},
+                    {"text": CHILD_SUMMARY},
+                ]
+            ),
+            "parent": parent_route(
+                [
+                    task_call(
+                        background=False,
+                        subagent_type="no-plugins",
+                        description="echo a marker",
+                        prompt="Call the echo tool with ext-echo-7.",
+                    ),
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Use a subagent to echo a marker.",
+        echo_plugin=True,
+        home_files={
+            "agents/no-plugins.md": (
+                "---\n"
+                "name: no-plugins\n"
+                "description: Has no plugin tools, whatever its allowlist names.\n"
+                "tools: Read, plugin:webtools/WebFetch, plugin:*\n"
+                "disallowedTools: plugin:*\n"
+                "---\n"
+                "Call the echo tool with the marker from the task, then report what happened.\n"
+            )
+        },
+        expect=Expect(
+            ledger_statuses=["complete"],
+            ledger_ok=[True],
+            child_requests=2,
+            parent_requests=2,
+            route_tools_have={"child": ["Read"]},
+            route_tools_lack={"child": ["echo", "fetch"]},
+            tool_results_lack={"child": ["ext-echo-7"], "parent": ["ext-echo-7"]},
+        ),
     ),
     Scenario(
         name="parent_region_error_falls_back",
@@ -1282,6 +1372,9 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
             facts = inspect_writer_repo(work, origin, before)
         facts["peak_inflight"] = dict(provider.peak_inflight)
         facts["route_entries"] = {name: provider.requests(name) for name in routes}
+        facts["files_exist"] = {
+            path: (work / path).is_file() for path in (scenario.expect.files_exist or [])
+        }
         failures += check(
             scenario.expect,
             ledger,
@@ -1445,6 +1538,11 @@ def check(
             facts.get("nothing_pushed") is expect.nothing_pushed,
             "a ref appeared in the origin during the run",
         )
+    for path in expect.files_exist or []:
+        want(
+            facts.get("files_exist", {}).get(path) is True,
+            f"{path} was not written by the run: the tool call that writes it did not succeed",
+        )
     route_entries: dict[str, list[dict[str, Any]]] = facts.get("route_entries", {})
     peaks: dict[str, int] = facts.get("peak_inflight", {})
     if expect.route_requests is not None:
@@ -1466,6 +1564,15 @@ def check(
     for route in expect.results_flow or []:
         received = any("child_result" in e.get("sees", []) for e in route_entries.get(route, []))
         want(received, f"{route} never received a child's result")
+    for route, words in (expect.tool_results_have or {}).items():
+        sent = [e.get("last_tool", "") for e in route_entries.get(route, [])]
+        for word in words:
+            want(any(word in text for text in sent), f"{route} was never sent a tool result with {word!r}")
+    for route, words in (expect.tool_results_lack or {}).items():
+        sent = [e.get("last_tool", "") for e in route_entries.get(route, [])]
+        for word in words:
+            hit = next((text for text in sent if word in text), None)
+            want(hit is None, f"{route} was sent a tool result with {word!r}: {str(hit)[:160]!r}")
     for route, cap in (expect.peak_inflight_max or {}).items():
         got = peaks.get(route, 0)
         want(got <= cap, f"{route} had {got} requests in flight at once, cap {cap}")

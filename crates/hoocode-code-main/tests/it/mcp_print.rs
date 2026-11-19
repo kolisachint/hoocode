@@ -3,7 +3,7 @@
 //!
 //! The stdio server answers `initialize` only after a delay, so it is still connecting when
 //! the process starts. Print mode waits for the trusted servers before its first prompt, so the
-//! model's first request already offers `mcp_slow_echo`, and the tool's answer reaches the
+//! model's first request already offers `mcp__slow__echo`, and the tool's answer reaches the
 //! model on the second request. The model is the in-process mock LLM (`support::mock_llm`),
 //! scripted. The MCP server is Python: needs `python3`; without it the test is skipped.
 
@@ -85,7 +85,7 @@ fn print_mode_offers_a_slow_server_tool_on_the_first_prompt() {
     fs::write(&server, SLOW_ECHO_SERVER).unwrap();
 
     let mock = MockLlm::start(vec![
-        serde_json::json!({"tool_calls": [{"name": "mcp_slow_echo", "arguments": {"text": "hi"}}]}),
+        serde_json::json!({"tool_calls": [{"name": "mcp__slow__echo", "arguments": {"text": "hi"}}]}),
         serde_json::json!({"text": "all done"}),
     ]);
 
@@ -155,7 +155,7 @@ fn print_mode_offers_a_slow_server_tool_on_the_first_prompt() {
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect();
     assert!(
-        offered.contains(&"mcp_slow_echo"),
+        offered.contains(&"mcp__slow__echo"),
         "the first request must offer the MCP tool: {offered:?}"
     );
     let second = sent[1].to_string();

@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: MCP tool names never contain `___` (2026-11-19)
+- A server or tool name's leading and trailing `_` are dropped from its model-facing name. A
+  name that is only `_` is refused, as an empty one is. Before, `a_` + `b` and `a` + `_b` gave
+  `mcp__a___b`, which is not the `mcp__<server>__<tool>` shape. Now both give `mcp__a__b`, and the
+  collision check keeps one of them.
+
+### Fixed: plugin network access is the WebFetch category (2026-11-19)
+- The design doc and the user docs said a plugin's network access was covered by `plugin:<p>`.
+  It is the `WebFetch` permission category for every plugin. A mode whose `enabled_tools` lists
+  the plugin but not `WebFetch` runs the plugin's call and blocks its network request. Add
+  `WebFetch` to `enabled_tools` (and to `auto_allow` to skip the prompt) to allow it.
+
+### Fixed: a plugin tool cannot take the MCP name prefix (2026-11-19)
+- A plugin's WASM tool named `mcp__<x>` (any case) is not loaded, with a diagnostic. The
+  `mcp__` prefix is the MCP tools' own, so such a tool could pass as an MCP tool.
+
+### Fixed: tool name collisions are case-insensitive (2026-11-19)
+- A plugin tool whose name differs from a taken name only in case (`read` next to the built-in
+  `Read`, or `Foo` and `foo` from two plugin tools) is not loaded. Selectors match names
+  case-insensitively, so such a tool was reachable under the built-in's rules before.
+
+### Changed: subagents never run or expose plugin MCP servers (2026-11-19)
+- A plugin selector (`plugin:*`, `plugin:<p>`) no longer takes an MCP tool. A subagent runs
+  no plugin MCP server and exposes no plugin MCP tool, so general-purpose subagents (`plugin:*`)
+  start no MCP. Plugin WASM tools are unchanged. A main session with `--tools plugin:<p>` starts
+  no plugin MCP server either: name `plugin:<p>/<Tool>` only for WASM tools, or `mcp:` selectors.
+
+### Fixed: old tool names are refused, and unmatched deny entries are reported (2026-11-19)
+- A tool list or deny list entry that is an old tool name (`ext_*`, or `mcp_*` without the second
+  underscore) is refused: `--tools`, `--disallowed-tools`, `denied_tools`, `auto_allow`,
+  `enabled_tools` and agent `tools`/`disallowedTools`. It matched no tool, so a deny with it
+  denied nothing silently. The message names the new form to use.
+- A `--disallowed-tools` name that matches no tool warns at start, as a `--tools` name does. An
+  `mcp__` name is not checked (its server may not be up yet).
+
+### Changed: app-server tool items carry origin and render (2026-11-19)
+- The tool items of `hoocode app-server` (`commandExecution`, `fileChange`, `dynamicToolCall`)
+  have two new fields, written only when present: `origin` (the tool's origin, as the JSON
+  event gives it) and `render` (the plugin's renderer hint). Existing fields are unchanged.
+- A plugin or MCP tool is a `dynamicToolCall` whatever its name. A plugin tool named `Shell`,
+  `Edit` or `Write` was a `commandExecution` or `fileChange` item before, and its approval
+  request took the built-in's shape.
+
+### Changed: agent tool names are kept, not dropped (2026-11-19)
+- An agent's `tools` and `disallowedTools` keep a bare name with no Claude alias (`tools: Lookup`,
+  a plugin tool's model-facing name) as a name selector. It matches case-insensitively. Before,
+  it was dropped with a warning. Claude Code names with an alias (`Bash`, `Grep`) map as before.
+- A `--tools` name that matches no tool in the session is ignored with a warning at start, not
+  a rejection. This covers subagents, whose `tools` come from the agent definition. Skills'
+  `allowed-tools` still drop a name with no alias.
+
+### Added: plugin and MCP tools in the transcript (2026-11-19)
+- A plugin or MCP tool's row shows where it comes from: its name takes a new theme color
+  (`toolExternal`), and the plugin name or `mcp:<server>` follows it dimmed. Built-in rows
+  are unchanged. Every built-in theme sets the color. A custom theme without it shows these
+  names in the tool name color.
+- A plugin picks its tool's renderer in `plugin.json` with
+  `extensions."dev.hoocode".tools.<Name>.render`: `web-fetch` or `web-search`. An absent or
+  unknown id gives the generic row. A hint for a tool the plugin does not declare is ignored,
+  with a warning.
+- The JSON `tool_execution_start` event has a `render` field, written only when a plugin tool
+  has a hint.
+- A subagent's own plugin or MCP calls, listed under its Agent row, take the same origin label
+  and colour as top-level rows.
+
+### Changed: web tool rows draw by the plugin's hint, not by the tool name (2026-11-19)
+- `WebFetch` and `WebSearch` no longer get the web renderer by name. A tool with those names
+  draws the web renderer only when its plugin declares the matching `render` hint. The
+  webtools plugin's own release declares it. Until that release is installed, its rows draw
+  generically.
+
+### Changed (breaking): tool names and origin (2026-11-19)
+- **Plugin tools keep the name the plugin declares, with no prefix.** A plugin's WASM tool
+  was `ext_<plugin>_<tool>`; it is now its own name, such as `WebFetch`. The name must match
+  `^[A-Za-z][A-Za-z0-9_-]{0,63}$`, or the tool is not loaded and the session says why.
+- **MCP tools are `mcp__<server>__<tool>`** (was `mcp_<server>_<tool>`), for example
+  `mcp__github__create_issue`. Characters outside `[A-Za-z0-9_-]` become `_`.
+- **The webtools plugin's tools are `WebFetch` and `WebSearch`** in the plugin's own
+  release. Until that release is installed, the installed plugin still offers `fetch` and
+  `search`.
+- **Old names are removed, with no aliases.** `ext_*`, `mcp_*`, `ext_webtools_fetch` and
+  `ext_webtools_search` match nothing. Update agent definitions, `--tools` and
+  `--disallowed-tools`, and any permission rule that names them.
+- **Selectors** match a tool's origin: `plugin:<plugin>`, `plugin:<plugin>/<Tool>`, `plugin:*`,
+  `mcp:<server>`, `mcp:<server>/<tool>` and `mcp:*`. `--tools` and `--disallowed-tools` take
+  them, with names. The old `ext_*` wildcard is replaced by `plugin:*`.
+- **A name is never replaced silently.** A plugin or MCP tool that has a built-in's name is not
+  loaded. Two plugin or MCP tools with one name: the first loaded is used and the other is
+  skipped, with a diagnostic that names both origins (for example `mcp github (plugin docs)`).
+- **The JSON `tool_execution_start` event has an `origin` field**: `{"kind": "builtIn"}`,
+  `{"kind": "plugin", "plugin": ..., "tool": ...}` or `{"kind": "mcp", "server": ..., "tool": ...,
+  "plugin": ...}`, or `null` when the session has no tool of that name.
+- **Permission rules take selectors.** `auto_allow`, `denied_tools` and `enabled_tools` match a
+  tool by name and origin, with the selector forms of `--tools`. The gate reads the origin
+  from the call, never from the name, so a plugin tool named `Shell` or `Write` is not held to
+  the built-in's rules, and an MCP tool is gated as one by origin in rpc.
+- **A plugin's `WebFetch` tool is no longer prompted twice.** Its own call is not asked; its
+  network request is asked once per site as the built-in `WebFetch` permission category. `WebSearch`
+  is no longer a built-in name in the gate list.
+- **Malformed selectors fail closed.** A bad `--tools` or `--disallowed-tools` entry is a CLI
+  error. A bad agent `tools` or `disallowedTools` entry rejects the agent definition. A bad entry
+  in a permission rule list stops hoocode from starting, naming the mode and the entry. A bad
+  `denied_tools` also blocks every call in its mode, and an unreadable `auto_allow` allows nothing.
+- **Subagent clearance requests carry the tool's origin.** A request without a readable origin
+  is denied, not judged by its name.
+- **Rules match names case-insensitively.** `denied_tools: ["shell"]` now denies `Shell`, as
+  `--tools` already did.
+
 ### Fixed: `/reload` and plugin settings (2026-11-18)
 - **`/reload` now applies changed `pluginConfig` settings to plugin tools.** Before, a plugin's WASM tools kept the settings they were built with until hoocode restarted, so for example a new `pluginConfig.webtools.searchProvider` was ignored after `/reload`. Plugin MCP servers keep running unless their own server list changed.
 

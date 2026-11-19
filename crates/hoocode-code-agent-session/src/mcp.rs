@@ -2,7 +2,7 @@
 //!
 //! The hub reads the `mcp.json` sources and the trust store (`hoocode-code-mcp`), starts the
 //! trusted servers in the background on the `hoocode-io` runtime, and turns each connected
-//! server's tools into [`ToolDefinition`]s named `mcp_<server>_<tool>`. Startup never waits for
+//! server's tools into [`ToolDefinition`]s named `mcp__<server>__<tool>`. Startup never waits for
 //! a server: a server that fails becomes `Failed` and its tools are simply absent.
 //!
 //! The hub never prompts. The interactive mode asks about [`McpHub::pending_prompts`] and calls
@@ -24,7 +24,7 @@ use hoocode_agent_mcp::{
     begin_login, oauth, tool_name, CallOptions, ClientOptions, DeclineAll, McpClient, McpError,
     McpServerConfig, McpTool, ToolContent, ToolOutput, ToolProgress,
 };
-use hoocode_agent_types::{AgentToolResult, AgentToolUpdateCallback};
+use hoocode_agent_types::{AgentToolResult, AgentToolUpdateCallback, ToolOrigin};
 use hoocode_ai_types::{AbortSignal, Content, ImageContent};
 use hoocode_code_mcp::{
     discover, load_with_plugin_servers, ConfigSources, McpConfig, PluginServers, ServerState,
@@ -39,6 +39,23 @@ use tokio_util::sync::CancellationToken;
 use crate::mcp_rows::{CallTracker, CALL_KEY_PREFIX, ROW_PREFIX, SERVER_KEY_PREFIX};
 pub use hoocode_agent_mcp::{ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use hoocode_code_mcp::TrustPrompt;
+
+/// The tools of a subagent's MCP hub without the plugin MCP tools. A subagent never exposes
+/// them, whatever its tool list says (`docs/design/subagents.md`, "Never MCP plugin tools").
+pub fn without_plugin_mcp_tools(tools: Vec<ToolDefinition>) -> Vec<ToolDefinition> {
+    tools
+        .into_iter()
+        .filter(|t| {
+            !matches!(
+                t.origin,
+                ToolOrigin::Mcp {
+                    plugin: Some(_),
+                    ..
+                }
+            )
+        })
+        .collect()
+}
 
 /// How long [`McpHub::shutdown`] waits for the servers to close.
 pub const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
@@ -530,7 +547,17 @@ impl McpHub {
                 let mut guard = lock(&state);
                 match outcome {
                     Ok((client, tools)) => {
-                        let definitions = definitions(&client, &name, tools, &tracker);
+                        let plugin = match &guard.entries[index].source {
+                            Source::Plugin { id, .. } => Some(id.clone()),
+                            _ => None,
+                        };
+                        let (definitions, skipped) =
+                            definitions(&client, &name, plugin, tools, &tracker);
+                        if let (false, Some(notify)) = (skipped.is_empty(), &notifier) {
+                            for message in skipped {
+                                notify(message);
+                            }
+                        }
                         let entry = &mut guard.entries[index];
                         entry.status = McpStatus::Connected;
                         entry.tools = definitions;
@@ -724,21 +751,36 @@ fn to_client_config(transport: &Transport) -> McpServerConfig {
 struct CallSite {
     tracker: Arc<CallTracker>,
     server: String,
-    /// The tool's name on the server (not the `mcp_<server>_<tool>` name the model sees).
+    /// The tool's name on the server (not the `mcp__<server>__<tool>` name the model sees).
     tool: String,
 }
 
-/// One [`ToolDefinition`] per listed tool. Calls go to the client on the io runtime.
+/// One [`ToolDefinition`] per listed tool, with its origin (`plugin` owns the server, if a
+/// plugin declares it). Calls go to the client on the io runtime. A tool whose name cannot be
+/// built is left out, and the second value says so for each one.
 fn definitions(
     client: &McpClient,
     server: &str,
+    plugin: Option<String>,
     tools: Vec<McpTool>,
     tracker: &Arc<CallTracker>,
-) -> Vec<ToolDefinition> {
-    tools
+) -> (Vec<ToolDefinition>, Vec<String>) {
+    let mut skipped = Vec::new();
+    let defs = tools
         .into_iter()
-        .map(|tool| {
-            let name = tool_name(server, &tool.name);
+        .filter_map(|tool| {
+            let Some(name) = tool_name(server, &tool.name) else {
+                skipped.push(format!(
+                    "mcp {server} tool {:?} not loaded: its name has no usable characters",
+                    tool.name
+                ));
+                return None;
+            };
+            let origin = ToolOrigin::Mcp {
+                server: server.to_owned(),
+                tool: tool.name.clone(),
+                plugin: plugin.clone(),
+            };
             let remote = tool.name.clone();
             let client = client.clone();
             let handle = io_handle();
@@ -747,7 +789,10 @@ fn definitions(
                 server: server.to_owned(),
                 tool: remote.clone(),
             };
-            ToolDefinition {
+            Some(ToolDefinition {
+                origin,
+                // MCP tools have no renderer hint in v1 (plugins.md).
+                render: None,
                 label: name.clone(),
                 name,
                 description: tool.description.clone().unwrap_or_default(),
@@ -764,9 +809,10 @@ fn definitions(
                 execute: Arc::new(move |_id, params, signal, on_update, _ctx| {
                     call_blocking(&handle, &client, &remote, params, signal, on_update, &site)
                 }),
-            }
+            })
         })
-        .collect()
+        .collect();
+    (defs, skipped)
 }
 
 /// Runs one `tools/call` from a tool's blocking thread. The turn's abort signal cancels the

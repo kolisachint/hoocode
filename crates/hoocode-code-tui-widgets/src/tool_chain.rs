@@ -120,6 +120,8 @@ fn sub_step_rows(
             tool_row::Mark::Done
         },
         &step.tool,
+        // The step's origin, as the child's event gave it: a plugin or MCP call gets its label.
+        &tool_row::HeaderOrigin::for_origin(step.origin.as_ref()),
         target.trim(),
         &primaries,
         &[],
@@ -325,12 +327,13 @@ impl ToolChainComponent {
             if i == 0 || !spaced {
                 ensure_blank(&mut out);
             }
-            let (mark, tool, target, primary, secondary, reason, open, call_id) = {
+            let (mark, tool, origin, target, primary, secondary, reason, open, call_id) = {
                 let b = block.borrow();
                 let (target, primary, secondary, reason) = b.header_parts();
                 (
                     b.mark(),
                     b.tool_name().to_string(),
+                    b.header_origin(),
                     target,
                     primary,
                     secondary,
@@ -364,6 +367,7 @@ impl ToolChainComponent {
                     tool_row::header_spans(
                         mark,
                         &tool,
+                        &origin,
                         &target,
                         &primaries,
                         &secondaries,

@@ -51,6 +51,11 @@ const EPOCH_TICK: Duration = Duration::from_millis(100);
 pub trait NetGate: Send + Sync {
     /// `Ok` to allow the request, or `Err` with the reason it was refused.
     fn check(&self, url: &str) -> Result<(), String>;
+
+    /// Told the reason of each request the host refuses, whether the gate
+    /// refused it or a host check did (SSRF), before the guest sees only the
+    /// generic `http-request-denied` code. The default ignores it.
+    fn refused(&self, _detail: &str) {}
 }
 
 /// Reads one of a plugin's own settings. `None` when the key is not set.

@@ -379,6 +379,68 @@ async fn does_not_trigger_threshold_compaction_below_the_threshold_or_when_disab
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_overflow_without_a_recovery_keeps_its_error_in_the_context() {
+    // The overflow check runs after the prompt returns. With no response left for the summary,
+    // the recovery cannot be applied, so the error must stay: a caller reading the messages after
+    // the prompt (a subagent's result) must still see a failed turn, not an empty one.
+    let h = Harness::new(HarnessOptions {
+        settings: compaction_settings(serde_json::json!({"keepRecentTokens": 1})),
+        ..Default::default()
+    });
+    h.set_responses(vec![text("first answer")]);
+    h.session
+        .prompt("first", PromptOptions::default())
+        .await
+        .unwrap();
+    let model = h.faux.get_model();
+    h.set_responses(vec![FauxResponseStep::factory(move |_, _, _, _| {
+        let mut m = faux_assistant_message(
+            "",
+            FauxMessageOptions {
+                stop_reason: Some(StopReason::Error),
+                error_message: Some("prompt is too long".into()),
+                ..Default::default()
+            },
+        );
+        m.provider = model.provider.clone();
+        m.model = model.id.clone();
+        Ok(m)
+    })]);
+    h.session
+        .prompt("second", PromptOptions::default())
+        .await
+        .unwrap();
+    let overflow_ended = |h: &Harness| {
+        h.events.lock().unwrap().iter().any(|e| {
+            matches!(
+                e,
+                AgentSessionEvent::CompactionEnd {
+                    reason: CompactionReason::Overflow,
+                    will_retry: false,
+                    ..
+                }
+            )
+        })
+    };
+    for _ in 0..300 {
+        if overflow_ended(&h) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(overflow_ended(&h), "{:?}", h.roles());
+    let messages = h.session.messages();
+    assert!(
+        matches!(
+            messages.last(),
+            Some(AgentMessage::Assistant(a)) if a.stop_reason == StopReason::Error
+        ),
+        "the error must stay in the context: {:?}",
+        h.roles()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn overflow_after_a_prompt_compacts_and_retries_the_turn() {
     let h = Harness::new(HarnessOptions {
         settings: compaction_settings(serde_json::json!({"keepRecentTokens": 1})),

@@ -1806,7 +1806,7 @@ impl PoolInner {
     }
 
     /// A child asks for a gated call to be decided. The relay (the TUI's card,
-    /// or this process's own parent) answers on a thread of its own, because a
+    /// a headless run's own gate, or this process's own parent) answers on a thread of its own, because a
     /// person may take minutes; the answer goes back on the child's stdin. With
     /// nobody to ask, the call is denied at once. While the question is open
     /// the child is not stalled: it waits on a human, not on a model.
@@ -1838,6 +1838,13 @@ impl PoolInner {
         let (Some(relay), false) = (relay, tool.is_empty()) else {
             return deny(NO_UI_REASON);
         };
+        // The origin is read from the child's line, never from the name. A line without a readable
+        // origin is denied: the parent cannot tell which gate rules apply to it.
+        let Some(origin) = request.get("origin").and_then(|o| {
+            serde_json::from_value::<hoocode_agent_types::ToolOrigin>(o.clone()).ok()
+        }) else {
+            return deny("The permission relay request has no readable tool origin.");
+        };
         let input = request.get("input").cloned().unwrap_or(Value::Null);
         let label = agent_type.to_string();
         let via = match request.get("via").and_then(Value::as_str) {
@@ -1849,10 +1856,12 @@ impl PoolInner {
         let agent = agent_type.to_string();
         let started = hoocode_runtime::spawn_named_thread("hoocode-clearance", move || {
             let key = format!("clearance:{id}");
+            let origin_value = serde_json::to_value(&origin).unwrap_or(Value::Null);
             let held = |held: bool| {
                 json!({
                     "task_id": task, "agent_type": agent, "call": id,
                     "tool": tool, "subject": subject, "held": held,
+                    "origin": origin_value,
                 })
             };
             inner
@@ -1862,6 +1871,7 @@ impl PoolInner {
             let verdict = relay.ask(&RelayRequest {
                 via: Some(via),
                 tool: tool.clone(),
+                origin,
                 input,
                 cancelled: link_for_thread.gone.clone(),
             });

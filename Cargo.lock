@@ -2050,6 +2050,7 @@ version = "0.2.48"
 dependencies = [
  "glob",
  "hoocode-agent-harness",
+ "hoocode-agent-types",
  "hoocode-code-paths",
  "hoocode-code-settings",
  "hoocode-home",
@@ -2424,6 +2425,7 @@ name = "hoocode-code-wasm"
 version = "0.2.48"
 dependencies = [
  "chrono",
+ "hoocode-agent-types",
  "hoocode-ai-types",
  "hoocode-ai-util",
  "hoocode-code-paths",

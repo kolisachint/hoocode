@@ -39,4 +39,12 @@ impl ResourceDiagnostic {
             collision: None,
         }
     }
+
+    /// A diagnostic that rejects the resource it is about (`DiagnosticType::Error`).
+    pub fn error(message: impl Into<String>, path: Option<&str>) -> Self {
+        Self {
+            kind: DiagnosticType::Error,
+            ..Self::warning(message, path)
+        }
+    }
 }

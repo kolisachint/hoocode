@@ -16,6 +16,7 @@ publish = false
 doctest = false
 
 [dependencies]
+hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-ai-util = { workspace = true }
 hoocode-code-paths = { workspace = true }

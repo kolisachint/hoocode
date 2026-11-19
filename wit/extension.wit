@@ -9,8 +9,8 @@ package hoocode:extension@0.1.0;
 interface types {
     /// One tool a plugin offers.
     record tool-info {
-        /// Short tool name, without prefix. The host prefixes it as
-        /// `ext_<plugin>_<name>`, so use `search`, not `plugin-search-tool`.
+        /// Model-facing tool name, used as is by the host (no prefix). PascalCase
+        /// recommended; must match ^[A-Za-z][A-Za-z0-9_-]{0,63}$.
         name: string,
         /// One sentence the model reads to decide when to call the tool.
         description: string,

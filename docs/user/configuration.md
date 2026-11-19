@@ -12,7 +12,7 @@ to move it.
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
-| `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark`, `dusk`, `high-contrast` (white text on black, for low vision), `light` and `paper`, and your files here (by file name, with the path shown). A theme may set `"inherits": "<name>"` to take the colors it leaves out from a built-in theme or another file here. The `theme` setting also accepts `auto` (follows the terminal background). A file that does not load, or a name that is not a theme, shows a warning under theme diagnostics: a switch keeps the theme on screen, and at startup the built-in `dark` stands in until the setting is fixed. |
+| `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark`, `dusk`, `high-contrast` (white text on black, for low vision), `light` and `paper`, and your files here (by file name, with the path shown). A theme may set `"inherits": "<name>"` to take the colors it leaves out from a built-in theme or another file here. Plugin and MCP tool names take the `toolExternal` color; a theme that leaves it out shows them in the tool name color. The `theme` setting also accepts `auto` (follows the terminal background). A file that does not load, or a name that is not a theme, shows a warning under theme diagnostics: a switch keeps the theme on screen, and at startup the built-in `dark` stands in until the setting is fixed. |
 | `~/.hoocode/themes/defaults/` | Reference copies of the built-in themes (`dark.json`, `dusk.json`, `high-contrast.json`, `light.json`, `paper.json`) and `theme-schema.json`. hoocode writes them again after each upgrade, so they match the version you run; a copy you edit is replaced at the next upgrade. The folder is not a theme list: `/theme` never shows it. To start a custom theme, copy one up a level to `~/.hoocode/themes/`, rename it, and change what you need. A shorter theme can instead set `"inherits": "dark"` (or `"light"`, or another file in `~/.hoocode/themes/`) and keep only its own colors. For editor completion, set a custom theme's `"$schema"` to the local `theme-schema.json` path. |
 | `~/.hoocode/sessions/` | Saved sessions |
 
@@ -70,18 +70,38 @@ The same commands work from the shell, without a session: `hoocode install`,
 [Commands](commands.md).
 
 A plugin may also ship a WASM component at `dev.hoocode/extension.wasm`. Its tools
-appear to the model as `ext_<plugin>_<tool>`. They are live as soon as the plugin is
-installed, updated or removed, with no `/reload`.
+appear to the model under the names the plugin gives them, with no prefix (`WebFetch`,
+for example). They are live as soon as the plugin is installed, updated or removed, with
+no `/reload`.
+
+- Tool names. An MCP server's tool appears as `mcp__<server>__<tool>`, for example
+  `mcp__github__create_issue`. `--tools`, `--disallowed-tools` and an agent's `tools`
+  and `disallowedTools` take a name or a selector: `plugin:<plugin>` (every tool of a
+  plugin), `plugin:<plugin>/<Tool>`, `plugin:*`, `mcp:<server>`, `mcp:<server>/<tool>`
+  and `mcp:*`. An entry that is neither is malformed: `--tools` and `--disallowed-tools`
+  stop with an error, an agent definition with one is rejected, and a permission rule with
+  one stops hoocode from starting. The old `ext_*` and `mcp_*` names are gone, with no alias.
+  A bare name (`echo`, a plugin tool's name) is kept as written, and matches the tool of
+  that name at start, case-insensitively. A name that matches no tool is ignored with a
+  warning. Claude Code names with a hoocode alias (`Bash`, `Grep`) still map to the hoocode tool.
+- Two plugin or MCP tools with the same name: the first one loaded is used, and the
+  other is skipped with a diagnostic that names both. A plugin tool never replaces a
+  built-in tool.
 
 - A component runs only when its plugin is trusted, the same trust that lets the
   plugin's MCP servers start without a `/mcp` grant. An untrusted plugin's component
   is skipped, and the session says so under diagnostics.
 - Web access (fetch and search) is the webtools plugin, not a built-in tool: install it
-  with `/plugin install webtools@hoo-plugins`. Its tools are `ext_webtools_fetch` and
-  `ext_webtools_search`. Its settings go under `pluginConfig.webtools.<key>`
+  with `/plugin install webtools@hoo-plugins`. Its tools are `WebFetch` and `WebSearch`.
+  Its settings go under `pluginConfig.webtools.<key>`
   (`searchProvider`, `braveApiKey`, `tavilyApiKey`, `searxngUrl`, `searxngApiKey`,
   `searchFallback`). A call that reaches the network asks you like `WebFetch`. Later
   requests in the same call (for example redirects) do not ask again.
+- Network access for any plugin's tool, not only webtools, is the `WebFetch` permission
+  category. A mode whose `enabled_tools` does not list `WebFetch` blocks that request
+  ("not enabled") even when the plugin's own call runs, so list `WebFetch` in `enabled_tools`
+  as well as `plugin:<plugin>`. Add `WebFetch` to `auto_allow` to answer the request without
+  asking. `plugin:<plugin>` alone does not allow a plugin's network access.
 - A plugin reads its own settings under `pluginConfig.<plugin>.<key>` in your user
   `settings.json` (`~/.hoocode/settings.json`). It is read from user settings only, never
   from a project's `.hoocode/settings.json`, so a cloned repository cannot point a plugin
@@ -181,6 +201,14 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
   `allowed_write_paths` limits Edit and Write to matching paths, `auto_allow` runs
   tools without asking, and `allowed_bash_commands` / `denied_bash_commands` take regexes.
   A key you leave out takes the shipped value above; set it (even to `[]`) to override.
+- **Tool selectors in rules**: `denied_tools`, `enabled_tools` and `auto_allow` take the
+  same selectors as `--tools`. A bare name (`WebFetch`) matches the tool of that name from
+  any source, case-insensitively. `plugin:webtools` is every tool of that plugin,
+  `plugin:webtools/WebFetch` one tool of it, `plugin:*` every plugin tool, `mcp:github`
+  every tool of that MCP server and `mcp:github/create_issue` one of them. Plugin tools
+  are not asked about one by one: their network access is asked as `WebFetch`, once per
+  site. A malformed entry stops hoocode from starting, with a message that names the mode
+  and the entry, until it is fixed.
 - **Approval card** (`Allow Shell?`): press `1` to allow once, `2` to always allow
   (when offered), `3` to refuse and tell the agent why. `e` edits the command first, and
   any other letter starts typing a reply that `enter` sends as the reason. `enter`

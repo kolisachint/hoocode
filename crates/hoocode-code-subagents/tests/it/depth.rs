@@ -257,12 +257,16 @@ fn mcp_not_needed_for_an_mcp_free_allowlist() {
 fn mcp_needed_when_the_allowlist_references_an_mcp_tool() {
     assert!(tool_allowlist_needs_mcp(Some(&strings(&[
         "Read",
-        "mcp_github_search"
+        "mcp__github__search"
     ]))));
-    assert!(tool_allowlist_needs_mcp(Some(&strings(&[" mcp-foo "]))));
-    assert!(tool_allowlist_needs_mcp(Some(&strings(&[
-        "MCP_Github_Issue"
+    assert!(tool_allowlist_needs_mcp(Some(&strings(&["mcp:github"]))));
+    // A plugin selector takes no MCP tool in a subagent: its plugin MCP servers do not start.
+    assert!(!tool_allowlist_needs_mcp(Some(&strings(&["plugin:web"]))));
+    assert!(!tool_allowlist_needs_mcp(Some(&strings(&[
+        "Read", "plugin:*"
     ]))));
+    // A bare name is an MCP tool only with the `mcp__<server>__<tool>` shape.
+    assert!(!tool_allowlist_needs_mcp(Some(&strings(&["mcp-foo"]))));
 }
 
 #[test]

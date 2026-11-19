@@ -10,6 +10,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
 
+pub mod tool_origin;
+pub use tool_origin::{
+    collision_notices, valid_plugin_tool_name, Collision, ToolOrigin, ToolSelector,
+    ToolSelectorError,
+};
+
 // ---------------------------------------------------------------------------
 // Tool execution mode
 // ---------------------------------------------------------------------------
@@ -30,8 +36,13 @@ pub enum ToolExecutionMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentToolCall {
     pub id: String,
+    /// The model-facing name.
     pub name: String,
     pub arguments: serde_json::Value,
+    /// Where the called tool comes from. The loop takes it from the tool the name finds in the
+    /// session's registry; a name the session does not have is `BuiltIn` (such a call never runs).
+    /// Gates and the harness read it here, never from the name.
+    pub origin: ToolOrigin,
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +146,10 @@ pub enum AgentEvent {
         tool_call_id: String,
         tool_name: String,
         args: serde_json::Value,
+        /// The tool's origin; `None` when the call names no tool the session has.
+        origin: Option<ToolOrigin>,
+        /// The tool's renderer hint from its plugin, for the TUI; `None` when it has none.
+        render: Option<String>,
     },
     /// A partial result streamed by a running tool (`onUpdate`).
     ToolExecutionUpdate {
@@ -189,12 +204,22 @@ impl AgentEvent {
                 tool_call_id,
                 tool_name,
                 args,
-            } => json!({
-                "type": "tool_execution_start",
-                "toolCallId": tool_call_id,
-                "toolName": tool_name,
-                "args": args,
-            }),
+                origin,
+                render,
+            } => {
+                let mut event = json!({
+                    "type": "tool_execution_start",
+                    "toolCallId": tool_call_id,
+                    "toolName": tool_name,
+                    "origin": origin,
+                    "args": args,
+                });
+                // Only a plugin tool with a hint carries one; built-in events are unchanged.
+                if let Some(render) = render {
+                    event["render"] = json!(render);
+                }
+                event
+            }
             AgentEvent::ToolExecutionUpdate {
                 tool_call_id,
                 tool_name,
@@ -448,7 +473,12 @@ pub type BackgroundPlaceholder =
 /// clones share them. Use the tool-building helpers to create one.
 #[allow(clippy::type_complexity)]
 pub struct AgentTool {
+    /// The model-facing name.
     pub name: String,
+    /// Where the tool comes from (see [`ToolOrigin`]).
+    pub origin: ToolOrigin,
+    /// The renderer hint of a plugin tool (see `ToolDefinition::render`). Data only.
+    pub render: Option<String>,
     pub description: String,
     pub label: String,
     pub parameters: serde_json::Value,
@@ -587,6 +617,8 @@ impl AgentTool {
         Self {
             ordered_start: false,
             abort_grace: None,
+            origin: ToolOrigin::BuiltIn,
+            render: None,
             name: name.clone(),
             description: description.into(),
             label: name,
@@ -616,6 +648,8 @@ impl Clone for AgentTool {
             ordered_start: self.ordered_start,
             abort_grace: self.abort_grace,
             name: self.name.clone(),
+            origin: self.origin.clone(),
+            render: self.render.clone(),
             description: self.description.clone(),
             label: self.label.clone(),
             parameters: self.parameters.clone(),

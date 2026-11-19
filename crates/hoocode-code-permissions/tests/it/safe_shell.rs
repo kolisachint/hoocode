@@ -20,7 +20,14 @@ fn shipped(mode: &str) -> HooConfig {
 
 fn verdict(config: &HooConfig, tool: &str, input: Value) -> Verdict {
     let dir = tempfile::tempdir().unwrap();
-    evaluate(config, dir.path(), tool, &input, UI)
+    evaluate(
+        config,
+        dir.path(),
+        tool,
+        &hoocode_agent_types::ToolOrigin::BuiltIn,
+        &input,
+        UI,
+    )
 }
 
 fn shell(config: &HooConfig, command: &str) -> Verdict {
@@ -234,6 +241,7 @@ fn skip_permissions_allows_everything_but_keeps_mode_rules() {
             &config,
             dir.path(),
             "Shell",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
             &json!({"command": "make"}),
             ApprovalChannel::Headless { fail_closed: true },
         ),
@@ -284,6 +292,7 @@ fn plan_writes_through_a_symlink_out_of_dot_hoocode_are_blocked() {
             &config,
             dir.path(),
             "Write",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
             &json!({"path": ".hoocode/link/main.rs"}),
             UI
         ),
@@ -294,6 +303,7 @@ fn plan_writes_through_a_symlink_out_of_dot_hoocode_are_blocked() {
             &config,
             dir.path(),
             "Write",
+            &hoocode_agent_types::ToolOrigin::BuiltIn,
             &json!({"path": ".hoocode/plans/a.md"}),
             UI
         ),

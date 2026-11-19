@@ -1,0 +1,21 @@
+
+ ● WebFetch webtools https://example.com/docs  ~8.1k tokens ▸
+ ● Read src/main.rs  1 line ▸
+ ◉ mcp__github__create_issue mcp:github bug ▸
+   "title": "bug"
+ }
+--- styles ---
+r1 c1 fg=#b5bd68
+r1 c3-10 fg=#e394d8 bold
+r1 c12-19 fg=#a7a7a7
+r1 c21-44 fg=#e5e5e7
+r1 c47-60 fg=#a7a7a7
+r2 c1 fg=#b5bd68
+r2 c3-6 fg=#e5e5e7 bold
+r2 c8-18 fg=#e5e5e7
+r2 c21-28 fg=#a7a7a7
+r3 c1 fg=#5cc8bb
+r3 c3-27 fg=#e394d8 bold
+r3 c29-38 fg=#a7a7a7
+r3 c40-42 fg=#e5e5e7
+r3 c43-44 fg=#a7a7a7

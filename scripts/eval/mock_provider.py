@@ -184,6 +184,8 @@ class MockProvider:
             # Which needles this request's body carried: what the model was told.
             "sees": sorted(name for name, needle in self.needles.items() if needle in serialized),
             "last_user": last_user_text(body)[-120:],
+            # The last tool result the model was sent: what a tool returned to it.
+            "last_tool": last_tool_text(body),
         }
         with self.log_lock:
             with open(self.log_path, "a", encoding="utf-8") as handle:

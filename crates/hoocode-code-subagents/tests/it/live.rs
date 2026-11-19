@@ -601,3 +601,64 @@ fn the_forwarder_passes_a_clearance_hold_through_as_it_is() {
     assert_eq!(out[0].1["held"], true);
     assert_eq!(out[0].1["tool"], "Shell");
 }
+
+#[test]
+fn a_child_calls_origin_and_render_hint_reach_its_steps() {
+    // A plugin call carries its origin and renderer hint, as the child's JSON event does
+    // (plugins.md, Naming and identity). A call with no origin is a built-in. The clearance
+    // stand-in for a held call carries the origin too, so a parked plugin call is labelled.
+    let task = "live-step-origin";
+    apply(task, &json!({"type": "task_started"}));
+    apply(
+        task,
+        &json!({"type": "tool_execution_start", "toolCallId": "c1", "toolName": "WebFetch",
+                "args": {"url": "https://example.com"},
+                "origin": {"kind": "plugin", "plugin": "webtools", "tool": "WebFetch"},
+                "render": "web-fetch"}),
+    );
+    apply(
+        task,
+        &json!({"type": "tool_execution_start", "toolCallId": "c2", "toolName": "Read",
+                "args": {"path": "a.rs"}, "origin": null}),
+    );
+    apply(
+        task,
+        &json!({"type": "task_clearance", "call": 9, "tool": "Shell", "subject": "rm x",
+                "held": true, "origin": {"kind": "mcp", "server": "github", "tool": "Shell", "plugin": null}}),
+    );
+    let live = hoocode_code_subagents::live::sub_steps(task);
+    let held = live.iter().find(|s| s.held).expect("the held stand-in");
+    assert_eq!(
+        held.origin,
+        Some(hoocode_agent_types::ToolOrigin::Mcp {
+            server: "github".into(),
+            tool: "Shell".into(),
+            plugin: None,
+        })
+    );
+    let web = live.iter().find(|s| s.id == "c1").expect("the plugin call");
+    assert_eq!(
+        web.origin.as_ref().and_then(|o| o.label()).as_deref(),
+        Some("webtools")
+    );
+    assert_eq!(web.render.as_deref(), Some("web-fetch"));
+    assert_eq!(
+        live.iter()
+            .find(|s| s.id == "c2")
+            .expect("the built-in")
+            .origin,
+        None
+    );
+
+    apply(task, &json!({"type": "task_done"}));
+    let settled = hoocode_code_subagents::live::settled_steps(task);
+    assert_eq!(settled.len(), 2, "{settled:?}");
+    assert_eq!(settled[0].tool, "WebFetch");
+    assert_eq!(settled[0].render.as_deref(), Some("web-fetch"));
+    assert_eq!(
+        settled[0].origin.as_ref().and_then(|o| o.plugin()),
+        Some("webtools")
+    );
+    assert_eq!(settled[1].origin, None);
+    assert_eq!(settled[1].render, None);
+}

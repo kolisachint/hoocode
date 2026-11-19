@@ -3,7 +3,9 @@
 mod safe_shell;
 pub use safe_shell::is_safe_shell_command;
 
-use hoocode_agent_types::{AgentToolCall, PermissionDecision, PermissionGate};
+use hoocode_agent_types::{
+    AgentToolCall, PermissionDecision, PermissionGate, ToolOrigin, ToolSelector,
+};
 use hoocode_code_modes::config::{self, HooConfig};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -11,16 +13,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-/// `GATED_TOOLS`: prompted in interactive sessions. `ShellKill` stops a background
-/// job, so it asks like `Shell`; `ShellOutput` only reads and is not gated.
-pub const GATED_TOOLS: [&str; 6] = [
-    "Shell",
-    "Write",
-    "Edit",
-    "WebFetch",
-    "WebSearch",
-    "ShellKill",
-];
+/// `GATED_TOOLS`: prompted in interactive sessions, for the built-in tool (or category) of
+/// that name only (`ToolOrigin::BuiltIn`). `ShellKill` stops a background job, so it asks like
+/// `Shell`; `ShellOutput` only reads and is not gated. `WebFetch` is the network category: a
+/// plugin's network request is asked as it (`ext_tools.rs`, once per origin). No built-in tool
+/// has that name, and a plugin tool named `WebFetch` is not gated by name.
+pub const GATED_TOOLS: [&str; 5] = ["Shell", "Write", "Edit", "WebFetch", "ShellKill"];
 
 /// The plugin lifecycle tools. They are not in [`GATED_TOOLS`]; in fail-closed
 /// (rpc) mode they are gated like one, so they need `auto_allow`.
@@ -32,17 +30,91 @@ pub const PLUGIN_TOOLS: [&str; 5] = [
     "ProposePlugin",
 ];
 
-/// MCP tools are named `mcp_<server>_<tool>` (`hoocode-agent-mcp`'s naming).
-fn is_mcp_or_plugin_tool(tool_name: &str) -> bool {
-    tool_name.starts_with("mcp_") || PLUGIN_TOOLS.contains(&tool_name)
+/// Whether a call is to an MCP tool, or to a plugin lifecycle tool (`PLUGIN_TOOLS`, built in).
+/// Decided by origin: a model-facing name says nothing about where a tool comes from. A plugin
+/// WASM tool is not one of these, so it is never gated at call level.
+fn is_mcp_or_plugin_tool(tool_name: &str, origin: &ToolOrigin) -> bool {
+    match origin {
+        ToolOrigin::Mcp { .. } => true,
+        ToolOrigin::BuiltIn => PLUGIN_TOOLS.contains(&tool_name),
+        ToolOrigin::Plugin { .. } => false,
+    }
 }
 
-/// Whether a call to `tool_name` is one an approval-asking client would be
-/// asked about: the interactive gated tools, plus the MCP and plugin tools that
-/// rpc gates. Print and json run these without asking; the CLI names the ones
-/// that ran.
-pub fn is_approval_tool(tool_name: &str) -> bool {
-    GATED_TOOLS.contains(&tool_name) || is_mcp_or_plugin_tool(tool_name)
+/// Whether a call is to a built-in tool or category that the interactive mode prompts for.
+fn is_gated_builtin(tool_name: &str, origin: &ToolOrigin) -> bool {
+    *origin == ToolOrigin::BuiltIn && GATED_TOOLS.contains(&tool_name)
+}
+
+/// Whether a call to `tool_name` from `origin` is one an approval-asking client would be asked
+/// about: the interactive gated tools, plus the MCP and plugin tools that rpc gates. Print and
+/// json run these without asking; the CLI names the ones that ran.
+pub fn is_approval_tool(tool_name: &str, origin: &ToolOrigin) -> bool {
+    is_gated_builtin(tool_name, origin) || is_mcp_or_plugin_tool(tool_name, origin)
+}
+
+/// The mode lists whose entries are tool selectors (`auto_allow`, `denied_tools`,
+/// `enabled_tools`). A malformed entry is refused when hoocode starts (`rule_errors`) and, for
+/// the restrictive lists, blocks the calls of that mode (`evaluate`).
+pub const RULE_LISTS: [&str; 3] = ["auto_allow", "denied_tools", "enabled_tools"];
+
+/// The selectors of mode `mode`'s rule list `key`, and every problem with its entries: a value
+/// that is not a list, an entry that is not a string, or an entry that is not a selector. An
+/// absent or null list has neither.
+fn read_selectors(config: &HooConfig, mode: &str, key: &str) -> (Vec<ToolSelector>, Vec<String>) {
+    let value = config::mode_config(config, mode)
+        .and_then(|m| m.get(key))
+        .filter(|v| !v.is_null());
+    let Some(value) = value else {
+        return (Vec::new(), Vec::new());
+    };
+    let Some(entries) = value.as_array() else {
+        return (Vec::new(), vec![format!("{key} is not a list")]);
+    };
+    let mut selectors = Vec::new();
+    let mut problems = Vec::new();
+    for entry in entries {
+        let parsed = match entry.as_str() {
+            Some(text) => ToolSelector::parse(text).map_err(|e| format!("{key}: {e}")),
+            None => Err(format!("{key} entry {entry} is not a string")),
+        };
+        match parsed {
+            Ok(selector) => selectors.push(selector),
+            Err(problem) => problems.push(problem),
+        }
+    }
+    (selectors, problems)
+}
+
+/// The selectors of mode `mode`'s rule list `key`. `Err` names the first problem: an unreadable
+/// list is never read as empty.
+fn selectors(config: &HooConfig, mode: &str, key: &str) -> Result<Vec<ToolSelector>, String> {
+    match read_selectors(config, mode, key) {
+        (selectors, problems) if problems.is_empty() => Ok(selectors),
+        (_, problems) => Err(problems[0].clone()),
+    }
+}
+
+/// Whether one of `selectors` takes the tool `name` from `origin`.
+fn takes(selectors: &[ToolSelector], name: &str, origin: &ToolOrigin) -> bool {
+    selectors.iter().any(|s| s.matches(name, origin))
+}
+
+/// Every malformed rule of `config`, one line each (`mode "build" denied_tools: ...`). Empty when
+/// every rule list reads. hoocode refuses to start while this is not empty.
+pub fn rule_errors(config: &HooConfig) -> Vec<String> {
+    let Some(modes) = config.get("modes").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let mut errors = Vec::new();
+    for mode in modes.keys() {
+        for key in RULE_LISTS {
+            for problem in read_selectors(config, mode, key).1 {
+                errors.push(format!("mode \"{mode}\" {problem}"));
+            }
+        }
+    }
+    errors
 }
 
 /// The three prompt choices, in order.
@@ -401,12 +473,14 @@ pub trait PermissionUi: Send + Sync {
 
 /// A gated call that a subagent child could not ask about itself and hands to
 /// whoever started it. See [`ClearanceRelay`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RelayRequest {
     /// The subagent the call comes from (`explore`), when it did not
     /// start in the asking process. `None` for the process's own calls.
     pub via: Option<String>,
     pub tool: String,
+    /// Where the tool comes from; the asking process gates on it, not on the name.
+    pub origin: ToolOrigin,
     pub input: Value,
     /// Set once nobody waits for the answer any more (the subagent ended or
     /// was cancelled). The asker then stops waiting and the call stays denied.
@@ -420,6 +494,31 @@ pub trait ClearanceRelay: Send + Sync {
     /// Blocks until the call is decided. `None` lets it run, `Some(reason)`
     /// blocks it. Any failure to ask (no UI, a closed pipe) is a denial.
     fn ask(&self, request: &RelayRequest) -> Option<String>;
+}
+
+/// The relay of a headless json or print run that has subagents. Nobody can
+/// prompt there, so a subagent's call that needs approval is decided by the
+/// run's own gate: the same rules as its own calls, and the same headless
+/// default (`fail_closed` denies with the gate's reason, otherwise it runs).
+/// A call the run's rules would deny is therefore denied for the subagent too.
+pub struct HeadlessClearanceRelay {
+    gate: HooPermissionGate,
+}
+
+impl HeadlessClearanceRelay {
+    /// The relay for a run in `cwd`, failing closed when `fail_closed` is set.
+    pub fn new(cwd: PathBuf, fail_closed: bool) -> Self {
+        Self {
+            gate: HooPermissionGate::new(cwd, ApprovalChannel::Headless { fail_closed }, None),
+        }
+    }
+}
+
+impl ClearanceRelay for HeadlessClearanceRelay {
+    fn ask(&self, request: &RelayRequest) -> Option<String> {
+        self.gate
+            .check_call(&request.tool, &request.origin, &request.input)
+    }
 }
 
 /// `matchesAllowedPath`: exact or `*`-glob match of the path (and, for an
@@ -761,31 +860,52 @@ pub enum Verdict {
     Prompt,
 }
 
-/// The hoocode `tool_call` handler up to the prompt, over a merged config.
+/// The hoocode `tool_call` handler up to the prompt, over a merged config. `origin` says where
+/// the tool comes from; the built-in rules (Shell's command patterns, the write paths) apply to
+/// the built-in tool of that name only.
 pub fn evaluate(
     config: &HooConfig,
     cwd: &Path,
     tool_name: &str,
+    origin: &ToolOrigin,
     input: &Value,
     channel: ApprovalChannel,
 ) -> Verdict {
     let mode = config::active_mode(config).unwrap_or_else(|| "build".into());
+    let builtin = *origin == ToolOrigin::BuiltIn;
+    let shell = builtin && tool_name == "Shell";
+    let writes = builtin && (tool_name == "Write" || tool_name == "Edit");
     let list = |key: &str| config::mode_list(config, &mode, key);
 
-    if list("denied_tools").is_some_and(|d| d.iter().any(|t| t == tool_name)) {
-        return Verdict::Block(format!(
-            "Tool \"{tool_name}\" is denied in mode \"{mode}\"."
-        ));
+    // An unreadable deny or allow-list blocks: a malformed deny would otherwise deny nothing.
+    match selectors(config, &mode, "denied_tools") {
+        Err(problem) => {
+            return Verdict::Block(format!(
+                "Tool \"{tool_name}\" is blocked: mode \"{mode}\" has a malformed denied_tools rule ({problem}). Fix it in hoo-config.json."
+            ))
+        }
+        Ok(denied) if takes(&denied, tool_name, origin) => {
+            return Verdict::Block(format!(
+                "Tool \"{tool_name}\" is denied in mode \"{mode}\"."
+            ))
+        }
+        Ok(_) => {}
     }
-    if let Some(enabled) = list("enabled_tools").filter(|e| !e.is_empty()) {
-        if !enabled.iter().any(|t| t == tool_name) {
+    match selectors(config, &mode, "enabled_tools") {
+        Err(problem) => {
+            return Verdict::Block(format!(
+                "Tool \"{tool_name}\" is blocked: mode \"{mode}\" has a malformed enabled_tools rule ({problem}). Fix it in hoo-config.json."
+            ))
+        }
+        Ok(enabled) if !enabled.is_empty() && !takes(&enabled, tool_name, origin) => {
             return Verdict::Block(format!(
                 "Tool \"{tool_name}\" is not enabled in mode \"{mode}\" (enabled: {}).",
-                enabled.join(", ")
-            ));
+                list("enabled_tools").unwrap_or_default().join(", ")
+            ))
         }
+        Ok(_) => {}
     }
-    if tool_name == "Shell" {
+    if shell {
         let command = input.get("command").and_then(Value::as_str).unwrap_or("");
         for pattern in list("denied_bash_commands").unwrap_or_default() {
             if matches_bash_pattern(&pattern, command) {
@@ -810,14 +930,15 @@ pub fn evaluate(
         ApprovalChannel::Headless { fail_closed: false } => return Verdict::Allow,
         ApprovalChannel::Headless { fail_closed: true } => true,
     };
-    // MCP and plugin tools are gated only where nobody can answer (rpc). A UI
-    // still runs them without a prompt, as before.
-    let gated =
-        GATED_TOOLS.contains(&tool_name) || (fail_closed && is_mcp_or_plugin_tool(tool_name));
+    // MCP and plugin lifecycle tools are gated only where nobody can answer (rpc). A UI still
+    // runs them without a prompt, as before. A plugin WASM tool is never gated here: its network
+    // requests are asked as `WebFetch` by the plugin host.
+    let gated = is_gated_builtin(tool_name, origin)
+        || (fail_closed && is_mcp_or_plugin_tool(tool_name, origin));
     if !gated {
         return Verdict::Allow;
     }
-    if tool_name == "Write" || tool_name == "Edit" {
+    if writes {
         if let Some(allowed) = list("allowed_write_paths") {
             let file_path = mutation_path(input).unwrap_or_default();
             if !matches_allowed_path(&file_path, &allowed, cwd)
@@ -848,20 +969,23 @@ pub fn evaluate(
         return Verdict::Allow;
     }
     // `safe_shell`: a read-only command runs in every mode without asking.
-    if tool_name == "Shell"
+    if shell
         && config::safe_shell(config)
         && is_safe_shell_command(input.get("command").and_then(Value::as_str).unwrap_or(""))
     {
         return Verdict::Allow;
     }
-    if list("auto_allow").is_some_and(|a| a.iter().any(|t| t == tool_name)) {
-        return Verdict::Allow;
+    // An unreadable allow-list allows nothing; the start refusal says why.
+    if let Ok(allow) = selectors(config, &mode, "auto_allow") {
+        if takes(&allow, tool_name, origin) {
+            return Verdict::Allow;
+        }
     }
     // A program the session always-approved (`a` on the clearance card)
     // runs without asking, when the whole command stays inside the
     // approval. Never consulted in PLAN mode. Anything else falls
     // through to a prompt.
-    if tool_name == "Shell"
+    if shell
         && !mode.trim().eq_ignore_ascii_case("plan")
         && always_allows(
             input.get("command").and_then(Value::as_str).unwrap_or(""),
@@ -964,18 +1088,26 @@ impl HooPermissionGate {
         self
     }
 
-    /// The handler: `None` lets the call run, `Some(reason)` blocks it.
-    pub fn check(&self, tool_name: &str, input: &Value) -> Option<String> {
+    /// The handler for a call to `tool_name` from `origin`: `None` lets it run, `Some(reason)`
+    /// blocks it.
+    pub fn check_call(
+        &self,
+        tool_name: &str,
+        origin: &ToolOrigin,
+        input: &Value,
+    ) -> Option<String> {
         let merged = config::read_merged_config(&self.cwd);
-        match evaluate(&merged, &self.cwd, tool_name, input, self.channel) {
+        match evaluate(&merged, &self.cwd, tool_name, origin, input, self.channel) {
             Verdict::Allow => None,
             Verdict::Block(reason) => Some(reason),
             Verdict::Prompt => {
                 if let Some(relay) = self.relay.as_ref() {
                     return relay.ask(&RelayRequest {
+                        via: None,
                         tool: tool_name.to_string(),
+                        origin: origin.clone(),
                         input: input.clone(),
-                        ..Default::default()
+                        cancelled: Arc::new(AtomicBool::new(false)),
                     });
                 }
                 let Some(ui) = self.ui.as_ref() else {
@@ -1011,7 +1143,8 @@ impl HooPermissionGate {
                         // "Always" goes to the global config only.
                         let mut latest = config::read_config();
                         let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
-                        if tool_name == "Shell" && !mode.trim().eq_ignore_ascii_case("plan") {
+                        let shell = *origin == ToolOrigin::BuiltIn && tool_name == "Shell";
+                        if shell && !mode.trim().eq_ignore_ascii_case("plan") {
                             let command =
                                 input.get("command").and_then(Value::as_str).unwrap_or("");
                             match shell_program(command).filter(|p| {
@@ -1029,7 +1162,7 @@ impl HooPermissionGate {
                                     None
                                 }
                             }
-                        } else if tool_name == "Shell" {
+                        } else if shell {
                             // PLAN mode: `a` is not offered, so this only
                             // runs it once.
                             ui.notify("\"always\" isn't offered here; ran once");
@@ -1051,7 +1184,7 @@ impl HooPermissionGate {
 
 impl PermissionGate for HooPermissionGate {
     fn request(&self, tool_call: &AgentToolCall) -> PermissionDecision {
-        match self.check(&tool_call.name, &tool_call.arguments) {
+        match self.check_call(&tool_call.name, &tool_call.origin, &tool_call.arguments) {
             None => PermissionDecision::Grant,
             Some(reason) => PermissionDecision::Deny { reason },
         }
@@ -1088,6 +1221,7 @@ mod tests {
                 &config,
                 dir.path(),
                 "Shell",
+                &ToolOrigin::BuiltIn,
                 &shell(command),
                 ApprovalChannel::Ui,
             )
@@ -1103,6 +1237,7 @@ mod tests {
                 &config,
                 elsewhere.path(),
                 "Shell",
+                &ToolOrigin::BuiltIn,
                 &shell("make y"),
                 ApprovalChannel::Ui,
             ),
@@ -1123,6 +1258,7 @@ mod tests {
                 &config,
                 dir.path(),
                 "Shell",
+                &ToolOrigin::BuiltIn,
                 &shell("make y"),
                 ApprovalChannel::Ui,
             ),

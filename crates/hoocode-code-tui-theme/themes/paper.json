@@ -56,6 +56,7 @@
 		"chipWarn": "#f3d27a",
 		"chipFg": "chipInk",
 		"toolTitle": "ink",
+		"toolExternal": "#9a2a78",
 		"toolOutput": "muted",
 		"mdHeading": "ochre",
 		"mdLink": "indigo",

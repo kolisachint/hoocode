@@ -1323,6 +1323,7 @@ fn finalized_outcome(call_id: &str, name: &str, body: &str, is_error: bool) -> F
             id: call_id.into(),
             name: name.into(),
             arguments: serde_json::json!({}),
+            origin: hoocode_agent_types::ToolOrigin::BuiltIn,
         },
         result: AgentToolResult {
             content: vec![Content::text(body)],

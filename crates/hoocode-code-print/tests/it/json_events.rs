@@ -200,8 +200,24 @@ fn tool_execution_events_match_agent_loop() {
             tool_call_id: "call_read_1".into(),
             tool_name: "Read".into(),
             args: json!({"path": "notes.txt", "limit": 2}),
+            origin: Some(hoocode_agent_types::ToolOrigin::BuiltIn),
+            render: None,
         }),
-        "{\"type\":\"tool_execution_start\",\"toolCallId\":\"call_read_1\",\"toolName\":\"Read\",\"args\":{\"path\":\"notes.txt\",\"limit\":2}}\n"
+        "{\"type\":\"tool_execution_start\",\"toolCallId\":\"call_read_1\",\"toolName\":\"Read\",\"origin\":{\"kind\":\"builtIn\"},\"args\":{\"path\":\"notes.txt\",\"limit\":2}}\n"
+    );
+    // A plugin tool's renderer hint is written after its args, and only when it has one.
+    assert_eq!(
+        line(&AgentEvent::ToolExecutionStart {
+            tool_call_id: "call_web_1".into(),
+            tool_name: "WebFetch".into(),
+            args: json!({}),
+            origin: Some(hoocode_agent_types::ToolOrigin::Plugin {
+                plugin: "webtools".into(),
+                tool: "WebFetch".into(),
+            }),
+            render: Some("web-fetch".into()),
+        }),
+        "{\"type\":\"tool_execution_start\",\"toolCallId\":\"call_web_1\",\"toolName\":\"WebFetch\",\"origin\":{\"kind\":\"plugin\",\"plugin\":\"webtools\",\"tool\":\"WebFetch\"},\"args\":{},\"render\":\"web-fetch\"}\n"
     );
     // `details: undefined` is left out; `terminate` only when set.
     assert_eq!(

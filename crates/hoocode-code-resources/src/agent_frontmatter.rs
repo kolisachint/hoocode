@@ -1,9 +1,10 @@
 //! `core/agent-frontmatter.ts`: agent definitions (Markdown with YAML
 //! frontmatter, Claude Code compatible) and the Claude tool-name shim.
 
-use crate::diagnostics::ResourceDiagnostic;
+use crate::diagnostics::{DiagnosticType, ResourceDiagnostic};
 use crate::frontmatter::parse_frontmatter;
 use crate::js::js_string;
+use hoocode_agent_types::ToolSelector;
 use serde_json::Value;
 
 const MAX_NAME_LENGTH: usize = 64;
@@ -43,9 +44,9 @@ pub const CLAUDE_TOOL_ALIASES: &[(&str, &str)] = &[
     ("grep", "CodeSearch"),
     ("glob", "CodeSearch"),
     ("find", "CodeSearch"),
-    // Web access is the webtools plugin (PL-12).
-    ("webfetch", "ext_webtools_fetch"),
-    ("websearch", "ext_webtools_search"),
+    // Web access is the webtools plugin (PL-12). Its tools are named `WebFetch` and `WebSearch`.
+    ("webfetch", "WebFetch"),
+    ("websearch", "WebSearch"),
 ];
 
 const KNOWN_MODEL_ALIASES: &[&str] = &[
@@ -152,11 +153,30 @@ fn split_tools_value(value: &Value) -> Vec<String> {
         .collect()
 }
 
-/// `normalizeTools`: map Claude Code tool names (case-insensitive) onto hoocode
-/// tools, deduped, with a warning per unmapped name and for YAML lists.
+/// `normalizeTools` for an agent's `tools` and `disallowedTools`: map Claude Code tool names
+/// (case-insensitive) onto hoocode tools, deduped. A bare name with no alias is kept as a `Name`
+/// selector, not dropped: it may be a plugin or MCP tool's model-facing name (option D). Whether
+/// it matches anything is checked when the session starts (`plugins.md`, Naming and identity).
 pub fn normalize_tools(
     value: &Value,
     file_path: Option<&str>,
+) -> (Vec<String>, Vec<ResourceDiagnostic>) {
+    normalize(value, file_path, true)
+}
+
+/// The skills' `allowed-tools`: as [`normalize_tools`], but a name with no alias is dropped with
+/// a warning.
+pub fn normalize_skill_tools(
+    value: &Value,
+    file_path: Option<&str>,
+) -> (Vec<String>, Vec<ResourceDiagnostic>) {
+    normalize(value, file_path, false)
+}
+
+fn normalize(
+    value: &Value,
+    file_path: Option<&str>,
+    keep_unmapped: bool,
 ) -> (Vec<String>, Vec<ResourceDiagnostic>) {
     let mut diagnostics = Vec::new();
     if value.is_array() {
@@ -167,9 +187,21 @@ pub fn normalize_tools(
     }
     let mut resolved: Vec<String> = Vec::new();
     for raw in split_tools_value(value) {
-        // A plugin's WASM tool (`ext_<plugin>_<tool>`) has no alias: it is kept as written, so a
-        // subagent can be given it. Whether it exists is decided when the session starts.
-        if raw.starts_with("ext_") {
+        // An entry that is neither a name nor a selector (`ext_*`, `plugin:`, `*`) rejects the
+        // definition: it could not select anything, so it is not dropped silently.
+        if ToolSelector::parse(&raw).is_err() {
+            diagnostics.push(ResourceDiagnostic::error(
+                format!(
+                    "tool \"{raw}\" is not a tool name or a selector (plugin:<p>, plugin:<p>/<Tool>, plugin:*, mcp:<s>, mcp:<s>/<tool>, mcp:*); the agent definition is rejected"
+                ),
+                file_path,
+            ));
+            continue;
+        }
+        // A qualified selector (`plugin:<p>`, `mcp:<s>`, ...) has no alias: it is kept as written,
+        // so a subagent can be given those tools. Whether any exists is decided when the session
+        // starts.
+        if raw.contains(':') {
             if !resolved.contains(&raw) {
                 resolved.push(raw);
             }
@@ -177,6 +209,12 @@ pub fn normalize_tools(
         }
         let lower = raw.to_lowercase();
         let Some((_, mapped)) = CLAUDE_TOOL_ALIASES.iter().find(|(k, _)| *k == lower) else {
+            if keep_unmapped {
+                if !resolved.contains(&raw) {
+                    resolved.push(raw);
+                }
+                continue;
+            }
             diagnostics.push(ResourceDiagnostic::warning(
                 format!(
                     "tool \"{raw}\" has no hoocode equivalent and was dropped from the allowlist"
@@ -350,5 +388,9 @@ pub fn parse_agent_definition(
         delegate_to,
         fork,
     };
+    // A rejected tool entry rejects the definition (its diagnostic says which entry).
+    if diagnostics.iter().any(|d| d.kind == DiagnosticType::Error) {
+        return (None, diagnostics);
+    }
     (Some(agent), diagnostics)
 }

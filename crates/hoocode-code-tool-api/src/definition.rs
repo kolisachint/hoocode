@@ -7,6 +7,7 @@
 //! turns it into the [`AgentTool`] the agent loop runs. Interactive rendering
 //! (`renderCall`/`renderResult`) arrives with the TUI (phase 11).
 
+pub use hoocode_agent_types::ToolOrigin;
 use hoocode_agent_types::{
     AgentTool, AgentToolCall, AgentToolResult, AgentToolUpdateCallback, BackgroundPlaceholder,
     BackgroundPredicate, PrepareArgumentsFn, ToolExecutionMode,
@@ -71,7 +72,13 @@ pub type DefinitionPlaceholderFn =
 /// `ToolDefinition` (without the TUI renderers).
 #[derive(Clone)]
 pub struct ToolDefinition {
+    /// The model-facing name: what the model calls and what the tool schema says.
     pub name: String,
+    /// Where the tool comes from. Permissions, selectors and events read this, never the name.
+    pub origin: ToolOrigin,
+    /// The renderer hint the plugin gives this tool (`extensions."dev.hoocode".tools.<Name>.render`,
+    /// plugins.md). Data for the TUI only: an absent or unknown id draws the generic row.
+    pub render: Option<String>,
     pub label: String,
     pub description: String,
     /// One-line summary for the system prompt's tool list (`promptSnippet`).
@@ -98,6 +105,7 @@ impl std::fmt::Debug for ToolDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ToolDefinition")
             .field("name", &self.name)
+            .field("origin", &self.origin)
             .field("label", &self.label)
             .field("description", &self.description)
             .field("prompt_snippet", &self.prompt_snippet)
@@ -117,6 +125,8 @@ pub fn wrap_tool_definition(
     AgentTool {
         plain_json_schema: false,
         name: definition.name,
+        origin: definition.origin,
+        render: definition.render,
         label: definition.label,
         description: definition.description,
         parameters: definition.parameters,
@@ -157,6 +167,8 @@ pub fn wrap_tool_definitions(
 pub fn tool_definition_from_agent_tool(tool: AgentTool) -> ToolDefinition {
     let execute = tool.execute.clone();
     ToolDefinition {
+        origin: tool.origin,
+        render: tool.render,
         name: tool.name,
         label: tool.label,
         description: tool.description,
@@ -187,6 +199,8 @@ mod tests {
 
     fn echo_definition() -> ToolDefinition {
         ToolDefinition {
+            origin: ToolOrigin::BuiltIn,
+            render: None,
             ordered_start: false,
             abort_grace: None,
             background_when: None,
@@ -264,9 +278,30 @@ mod tests {
     }
 
     #[test]
+    fn definition_from_agent_tool_keeps_origin_and_render() {
+        // A plugin tool's origin and renderer hint survive the round trip, not a built-in's.
+        let mut plugin = echo_definition();
+        plugin.origin = ToolOrigin::Plugin {
+            plugin: "webtools".into(),
+            tool: "echo".into(),
+        };
+        plugin.render = Some("web-fetch".into());
+        let def = tool_definition_from_agent_tool(wrap_tool_definition(plugin, None));
+        assert_eq!(
+            def.origin,
+            ToolOrigin::Plugin {
+                plugin: "webtools".into(),
+                tool: "echo".into(),
+            }
+        );
+        assert_eq!(def.render.as_deref(), Some("web-fetch"));
+    }
+
+    #[test]
     fn definition_from_agent_tool_round_trips() {
         let tool = wrap_tool_definition(echo_definition(), None);
         let def = tool_definition_from_agent_tool(tool);
+        assert_eq!(def.origin, ToolOrigin::BuiltIn);
         assert_eq!(def.prompt_snippet, None);
         let result = (def.execute)("c3".into(), serde_json::json!({}), None, None, None).unwrap();
         assert_eq!(text(&result), "c3:none");

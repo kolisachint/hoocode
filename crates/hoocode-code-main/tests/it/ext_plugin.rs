@@ -126,6 +126,16 @@ struct Printed {
 
 /// Run `hoocode -p start` in `home` against a scripted mock model, with `env` added.
 fn print_run(home: &Home, script: Vec<Value>, env: &[(&str, &str)]) -> Printed {
+    print_run_with(home, script, env, &[])
+}
+
+/// [`print_run`] with extra CLI arguments (`--tools`, `--disallowed-tools`, ...).
+fn print_run_with(
+    home: &Home,
+    script: Vec<Value>,
+    env: &[(&str, &str)],
+    extra: &[&str],
+) -> Printed {
     let mock = MockLlm::start(script);
     let models = json!({"providers": {"mock": {
         "baseUrl": format!("http://127.0.0.1:{}/v1", mock.port),
@@ -145,6 +155,7 @@ fn print_run(home: &Home, script: Vec<Value>, env: &[(&str, &str)]) -> Printed {
             "-p",
             "start",
         ])
+        .args(extra)
         .current_dir(&home.work)
         .env_clear()
         .env("HOME", &home.home)
@@ -248,9 +259,9 @@ impl LocalServer {
 #[test]
 fn an_installed_plugin_tool_runs_and_its_result_reaches_the_model() {
     let home = Home::with_echo_plugin(true);
-    let printed = print_run(&home, call_then_done("ext_echo_echo", json!({"x": 1})), &[]);
+    let printed = print_run(&home, call_then_done("echo", json!({"x": 1})), &[]);
     assert!(
-        offered(&printed.requests[0]).contains(&"ext_echo_echo"),
+        offered(&printed.requests[0]).contains(&"echo"),
         "the first request must offer the plugin tool: {:?}",
         offered(&printed.requests[0])
     );
@@ -263,21 +274,46 @@ fn an_installed_plugin_tool_runs_and_its_result_reaches_the_model() {
 }
 
 #[test]
+fn a_pascal_case_plugin_tool_is_offered_to_the_model_and_runs() {
+    // The webtools plugin declares `WebFetch` and `WebSearch`: a PascalCase name must load,
+    // be offered to the model under that exact name, and run.
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run(
+        &home,
+        call_then_done("EchoUpper", json!({"text": "hello"})),
+        &[],
+    );
+    assert!(
+        offered(&printed.requests[0]).contains(&"EchoUpper"),
+        "the first request must offer the PascalCase tool: {:?}\n{}",
+        offered(&printed.requests[0]),
+        printed.stderr
+    );
+    let results = tool_results(&printed.requests[1]);
+    assert!(
+        results.iter().any(|text| text.contains("HELLO")),
+        "the PascalCase tool's result must reach the model: {results:?}\n{}",
+        printed.stderr
+    );
+}
+
+#[test]
 fn a_private_address_is_refused_before_any_approval_is_asked() {
     let home = Home::with_echo_plugin(true);
     // A headless channel that cannot prompt: if the gate were asked, its refusal would name
     // WebFetch in the host log.
     let printed = print_run(
         &home,
-        call_then_done("ext_echo_fetch", json!({"url": "http://10.0.0.1/"})),
+        call_then_done("fetch", json!({"url": "http://10.0.0.1/"})),
         &[("HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED", "1")],
     );
     let results = tool_results(&printed.requests[1]);
+    // The plugin words the refusal itself; the host's reason for it must still reach the model.
     assert!(
         results
             .iter()
-            .any(|text| text.contains("HttpRequestDenied")),
-        "the request must be refused: {results:?}\n{}",
+            .any(|text| text.contains("request denied") && text.contains("10.0.0.1 is private")),
+        "the request must be refused, with the reason: {results:?}\n{}",
         printed.stderr
     );
     assert!(
@@ -304,7 +340,7 @@ fn loopback_is_refused_by_the_gate_and_the_server_gets_nothing() {
     // The test-only switch lets loopback past the SSRF block, so only the gate can refuse it.
     let printed = print_run(
         &home,
-        call_then_done("ext_echo_fetch", json!({"url": server.url()})),
+        call_then_done("fetch", json!({"url": server.url()})),
         &[
             ("HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK", "1"),
             ("HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED", "1"),
@@ -314,8 +350,8 @@ fn loopback_is_refused_by_the_gate_and_the_server_gets_nothing() {
     assert!(
         results
             .iter()
-            .any(|text| text.contains("HttpRequestDenied")),
-        "the gate must refuse the request: {results:?}\n{}",
+            .any(|text| text.contains("request denied") && text.contains(NEEDS_APPROVAL)),
+        "the gate must refuse the request, with the gate's reason: {results:?}\n{}",
         printed.stderr
     );
     assert!(
@@ -337,7 +373,7 @@ fn loopback_is_fetched_once_webfetch_is_auto_allowed() {
     let server = LocalServer::start();
     let printed = print_run(
         &home,
-        call_then_done("ext_echo_fetch", json!({"url": server.url()})),
+        call_then_done("fetch", json!({"url": server.url()})),
         &[
             ("HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK", "1"),
             ("HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED", "1"),
@@ -360,12 +396,138 @@ fn a_plugin_from_an_untrusted_marketplace_offers_no_tools() {
     let printed = print_run(&home, vec![json!({"text": "done"})], &[]);
     let offered_tools = offered(&printed.requests[0]);
     assert!(
-        offered_tools.iter().all(|name| !name.starts_with("ext_")),
+        offered_tools
+            .iter()
+            .all(|name| *name != "echo" && *name != "fetch"),
         "an untrusted plugin's tools must not be offered: {offered_tools:?}"
     );
     assert!(
         printed.stderr.contains("plugin is not trusted"),
         "{}",
         printed.stderr
+    );
+}
+
+// Option D (plugins.md, Naming and identity): selectors reach the plugin's tools end to end.
+
+#[test]
+fn a_plugin_selector_in_tools_offers_only_the_selected_tool() {
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--tools", "plugin:echo/echo"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(offered.contains(&"echo"), "{offered:?}\n{}", printed.stderr);
+    assert!(!offered.contains(&"fetch"), "{offered:?}");
+}
+
+#[test]
+fn a_bare_plugin_tool_name_in_tools_offers_that_tool() {
+    // An agent's `tools: echo` reaches the child as `--tools echo`: the bare name is the
+    // plugin tool's model-facing name, so it selects that tool (plugins.md, Naming and identity).
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--tools", "echo"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(offered.contains(&"echo"), "{offered:?}\n{}", printed.stderr);
+    assert!(!offered.contains(&"fetch"), "{offered:?}");
+    assert!(
+        !printed.stderr.contains("matches no tool"),
+        "{}",
+        printed.stderr
+    );
+}
+
+#[test]
+fn a_tools_name_that_matches_nothing_warns_and_is_ignored() {
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--tools", "Lookup,echo"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(offered.contains(&"echo"), "{offered:?}\n{}", printed.stderr);
+    assert!(
+        printed
+            .stderr
+            .contains("tool \"Lookup\" in the tool list matches no tool"),
+        "{}",
+        printed.stderr
+    );
+}
+
+#[test]
+fn a_plugin_wildcard_in_disallowed_tools_removes_every_plugin_tool() {
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--disallowed-tools", "plugin:*"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(
+        !offered.contains(&"echo") && !offered.contains(&"fetch"),
+        "{offered:?}"
+    );
+}
+
+/// A `hoocode -p start` that must refuse to run: its exit code and stderr.
+fn refused_run(home: &Home, extra: &[&str]) -> (Option<i32>, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hoocode"))
+        .args(["--offline", "-p", "start"])
+        .args(extra)
+        .current_dir(&home.work)
+        .env_clear()
+        .env("HOME", &home.home)
+        .env(
+            "PATH",
+            std::env::var("PATH").unwrap_or("/usr/bin:/bin".into()),
+        )
+        .env("LANG", "C.UTF-8")
+        .env("TZ", "UTC")
+        .stdin(Stdio::null())
+        .output()
+        .expect("run hoocode");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn a_malformed_tools_selector_is_refused_before_the_run_starts() {
+    let home = Home::with_echo_plugin(true);
+    let (code, stderr) = refused_run(&home, &["--tools", "Read,ext_*"]);
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(
+        stderr.contains("--tools") && stderr.contains("ext_*"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_malformed_permission_rule_refuses_to_start() {
+    // A deny that does not parse would deny nothing: hoocode says so and does not run.
+    let home = Home::with_echo_plugin(true);
+    fs::write(
+        home.home.join(".hoocode/hoo-config.json"),
+        json!({"modes": {"build": {"denied_tools": ["ext_*"]}}}).to_string(),
+    )
+    .unwrap();
+    let (code, stderr) = refused_run(&home, &[]);
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(
+        stderr.contains("permission rule") && stderr.contains("ext_*"),
+        "{stderr}"
     );
 }

@@ -1,18 +1,21 @@
 //! Plugin WASM components as agent tools (`docs/design/plugins.md`, PL-9).
 //!
-//! Each tool a loaded `dev.hoocode/extension.wasm` lists becomes a model tool named
-//! `ext_<plugin>_<tool>`. A call runs the component in the host (`hoocode-code-wasm`) on a
+//! Each tool a loaded `dev.hoocode/extension.wasm` lists becomes a model tool named as the
+//! plugin declares it (`WebFetch`, say), with the origin `Plugin { plugin, tool }`
+//! (`docs/design/plugins.md`, Naming and identity). A call runs the component in the host (`hoocode-code-wasm`) on a
 //! blocking thread. Its network requests ask the session's permission gate as `WebFetch`, once
 //! per origin (scheme, host, port) per tool call. The call itself is not gated.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use hoocode_agent_mcp::ext_tool_name;
-use hoocode_agent_types::{AgentToolCall, AgentToolResult, PermissionDecision, PermissionGate};
+use hoocode_agent_types::{
+    collision_notices, valid_plugin_tool_name, AgentToolCall, AgentToolResult, Collision,
+    PermissionDecision, PermissionGate, ToolOrigin,
+};
 use hoocode_ai_types::Content;
 use hoocode_code_plugins::PluginSet;
 use hoocode_code_settings::SettingsManager;
@@ -28,7 +31,9 @@ use url::Url;
 use crate::args::DiagnosticKind;
 use crate::runtime::Diagnostics;
 
-/// The built-in tool a component's network request is asked as.
+/// The permission category a component's network request is asked as. It is the built-in
+/// `WebFetch` category (`ToolOrigin::BuiltIn`, `GATED_TOOLS`), not a tool: the plugin's own tool
+/// call is never asked, so a plugin tool named `WebFetch` gets only this one prompt per origin.
 const NET_TOOL: &str = "WebFetch";
 
 /// Internal (not in `--help`, tests only): when set to exactly `1`, the WASM host lets loopback
@@ -66,7 +71,7 @@ pub(crate) fn build(
     plugins: &PluginSet,
     configs: &PluginConfigs,
     gate: Arc<dyn PermissionGate>,
-    taken: &[String],
+    taken: &[(String, ToolOrigin)],
     diagnostics: &mut Diagnostics,
 ) -> Vec<ToolDefinition> {
     let cache_dir = hoocode_code_paths::agent_dir().join("cache").join("wasm");
@@ -78,12 +83,18 @@ fn build_with_cache(
     plugins: &PluginSet,
     configs: &PluginConfigs,
     gate: Arc<dyn PermissionGate>,
-    taken: &[String],
+    taken: &[(String, ToolOrigin)],
     cache_dir: &Path,
     diagnostics: &mut Diagnostics,
 ) -> Vec<ToolDefinition> {
     let mut out = Vec::new();
-    let mut names: HashSet<String> = taken.iter().cloned().collect();
+    // Every name the session has, with the origin that holds it, keyed by lowercase name: a
+    // selector matches a name case-insensitively, so `Read` and `read` are one name. A plugin
+    // tool is added here as it is loaded, so a later plugin cannot take its name either.
+    let mut holders: HashMap<String, ToolOrigin> = taken
+        .iter()
+        .map(|(name, origin)| (name.to_ascii_lowercase(), origin.clone()))
+        .collect();
     let mut host: Option<WasmHost> = None;
     let trust = hoocode_ai_util::tls::installed_trust();
     for plugin in &plugins.plugins {
@@ -131,28 +142,66 @@ fn build_with_cache(
         // A plugin reads only `pluginConfig.<its name>`, taken when the session starts.
         let values = configs.get(&plugin.name).cloned().unwrap_or_default();
         let config: ConfigLookup = Arc::new(move |key: &str| values.get(key).cloned());
+        let mut collisions = Vec::new();
         for info in extension.tools() {
-            let name = ext_tool_name(&plugin.name, &info.name);
-            if !names.insert(name.clone()) {
+            if !valid_plugin_tool_name(&info.name) {
                 diagnostics.push((
                     DiagnosticKind::Warning,
                     format!(
-                        "{label}: tool {} not loaded: {name} is already a tool",
+                        "{label}: tool {:?} not loaded: its name must match ^[A-Za-z][A-Za-z0-9_-]{{0,63}}$ and not start with mcp__",
                         info.name
                     ),
                 ));
                 continue;
             }
+            let origin = ToolOrigin::Plugin {
+                plugin: plugin.name.clone(),
+                tool: info.name.clone(),
+            };
+            let key = info.name.to_ascii_lowercase();
+            if let Some(existing) = holders.get(&key) {
+                collisions.push(Collision {
+                    name: info.name.clone(),
+                    origin,
+                    existing: existing.clone(),
+                });
+                continue;
+            }
+            holders.insert(key, origin.clone());
             out.push(definition(
-                name,
+                origin,
                 info,
+                plugin.tool_render.get(&info.name).cloned(),
                 extension.clone(),
                 config.clone(),
                 gate.clone(),
             ));
         }
+        for message in collision_notices(&collisions) {
+            diagnostics.push((DiagnosticKind::Warning, message));
+        }
+        let declared: Vec<&str> = extension.tools().iter().map(|i| i.name.as_str()).collect();
+        for message in undeclared_render_hints(&label, &plugin.tool_render, &declared) {
+            diagnostics.push((DiagnosticKind::Warning, message));
+        }
     }
     out
+}
+
+/// The warnings for render hints that name no tool the component declares: they are ignored
+/// (plugins.md, Naming and identity).
+fn undeclared_render_hints(
+    label: &str,
+    hints: &std::collections::BTreeMap<String, String>,
+    declared: &[&str],
+) -> Vec<String> {
+    hints
+        .keys()
+        .filter(|tool| !declared.contains(&tool.as_str()))
+        .map(|tool| {
+            format!("{label}: render hint for {tool:?} ignored: the plugin declares no such tool")
+        })
+        .collect()
 }
 
 /// A host for `cache_dir`, with the test-only loopback switch applied when its variable is `1`.
@@ -174,10 +223,12 @@ fn loopback_switch_on(value: Option<&OsStr>) -> bool {
     value.is_some_and(|v| v == "1")
 }
 
-/// One model tool for `info`, run through `extension`.
+/// One model tool for `info`, run through `extension`. Its model-facing name is the name the
+/// plugin declares.
 fn definition(
-    name: String,
+    origin: ToolOrigin,
     info: &ToolInfo,
+    render: Option<String>,
     extension: Arc<Extension>,
     config: ConfigLookup,
     gate: Arc<dyn PermissionGate>,
@@ -185,8 +236,10 @@ fn definition(
     let handle = io_handle();
     let tool = info.name.clone();
     ToolDefinition {
-        label: name.clone(),
-        name,
+        origin,
+        render,
+        label: info.name.clone(),
+        name: info.name.clone(),
         description: info.description.clone(),
         prompt_snippet: None,
         prompt_guidelines: Vec::new(),
@@ -199,28 +252,43 @@ fn definition(
         ordered_start: false,
         abort_grace: None,
         execute: Arc::new(move |_id, params, signal, _on_update, _ctx| {
+            // One net gate per call: its decisions and its last refusal are this call's alone.
+            let net = Arc::new(ToolNetGate::new(gate.clone()));
             let env = CallEnv {
                 config: config.clone(),
-                net: Arc::new(ToolNetGate::new(gate.clone())),
+                net: net.clone(),
                 abort: signal,
             };
-            call_blocking(&handle, &extension, &tool, params, env)
+            call_blocking(&handle, &extension, &tool, params, env, &net)
         }),
     }
 }
 
+/// A failed call's text, with the reason of the call's last refused request added when this call
+/// recorded a refusal. The guest sees the refusal only as its own wording, which a plugin may
+/// phrase any way, so the text is not checked: the call's own record is. Without the reason the
+/// model could not tell a user's "no", a private address and a missing permission apart.
+fn with_refusal(error: String, refusal: Option<String>) -> String {
+    match refusal {
+        Some(reason) => format!("{error}: {reason}"),
+        None => error,
+    }
+}
+
 /// Runs one call from the tool's blocking thread. The result is the component's JSON as text
-/// (pretty-printed for an object). A failure becomes the tool error, with its own message.
+/// (pretty-printed for an object). A failure becomes the tool error, with its own message, and
+/// a refusal with the reason it was refused for (`net`).
 fn call_blocking(
     handle: &Handle,
     extension: &Extension,
     tool: &str,
     params: Value,
     env: CallEnv,
+    net: &ToolNetGate,
 ) -> Result<AgentToolResult, ToolError> {
     let value = handle
         .block_on(extension.call(tool, params, env))
-        .map_err(|error| ToolError::from(error.to_string()))?;
+        .map_err(|error| ToolError::from(with_refusal(error.to_string(), net.last_refusal())))?;
     let text = match &value {
         Value::Object(_) => serde_json::to_string_pretty(&value),
         _ => serde_json::to_string(&value),
@@ -251,6 +319,8 @@ fn origin_of(url: &str) -> Option<Origin> {
 pub(crate) struct ToolNetGate {
     gate: Arc<dyn PermissionGate>,
     decisions: Mutex<HashMap<Origin, Result<(), String>>>,
+    /// The reason of the call's last refused request (the gate's, or a host check's).
+    refusal: Mutex<Option<String>>,
 }
 
 impl ToolNetGate {
@@ -258,7 +328,16 @@ impl ToolNetGate {
         Self {
             gate,
             decisions: Mutex::new(HashMap::new()),
+            refusal: Mutex::new(None),
         }
+    }
+
+    /// The reason of the call's last refused request, if any.
+    fn last_refusal(&self) -> Option<String> {
+        self.refusal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn ask(&self, url: &str) -> Result<(), String> {
@@ -267,6 +346,7 @@ impl ToolNetGate {
             id: format!("ext-net-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed)),
             name: NET_TOOL.to_owned(),
             arguments: serde_json::json!({ "url": url }),
+            origin: ToolOrigin::BuiltIn,
         };
         match self.gate.request(&call) {
             PermissionDecision::Grant | PermissionDecision::GrantAlways => Ok(()),
@@ -276,6 +356,10 @@ impl ToolNetGate {
 }
 
 impl NetGate for ToolNetGate {
+    fn refused(&self, detail: &str) {
+        *self.refusal.lock().unwrap_or_else(|e| e.into_inner()) = Some(detail.to_owned());
+    }
+
     fn check(&self, url: &str) -> Result<(), String> {
         // A URL with no origin is refused without asking.
         let Some(origin) = origin_of(url) else {
@@ -419,7 +503,7 @@ mod tests {
         set: &PluginSet,
         settings: &SettingsManager,
         gate: Arc<dyn PermissionGate>,
-        taken: &[String],
+        taken: &[(String, ToolOrigin)],
     ) -> (Vec<ToolDefinition>, Diagnostics) {
         let mut diagnostics = Diagnostics::new();
         let tools = build_with_cache(
@@ -459,18 +543,19 @@ mod tests {
         assert_eq!(
             names(&tools),
             [
-                "ext_demo_alloc",
-                "ext_demo_chatter",
-                "ext_demo_config",
-                "ext_demo_echo",
-                "ext_demo_fail",
-                "ext_demo_fetch",
-                "ext_demo_spin",
-                "ext_demo_write-data",
+                "EchoUpper",
+                "alloc",
+                "chatter",
+                "config",
+                "echo",
+                "fail",
+                "fetch",
+                "spin",
+                "write-data",
             ]
         );
-        let echo = tools.iter().find(|t| t.name == "ext_demo_echo").unwrap();
-        assert_eq!(echo.label, "ext_demo_echo");
+        let echo = tools.iter().find(|t| t.name == "echo").unwrap();
+        assert_eq!(echo.label, "echo");
         assert_eq!(echo.parameters["type"], "object");
         assert!(!echo.description.is_empty());
     }
@@ -487,7 +572,7 @@ mod tests {
             ScriptedGate::new(vec![]),
             &[],
         );
-        let echo = tools.iter().find(|t| t.name == "ext_demo_echo").unwrap();
+        let echo = tools.iter().find(|t| t.name == "echo").unwrap();
         let text = run(echo, json!({"x": 1, "list": [2, 3]})).unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&text).unwrap(),
@@ -509,7 +594,7 @@ mod tests {
             }
         }));
         let (tools, _) = build_for(&layout, &set, &settings, ScriptedGate::new(vec![]), &[]);
-        let config = tools.iter().find(|t| t.name == "ext_demo_config").unwrap();
+        let config = tools.iter().find(|t| t.name == "config").unwrap();
         let read = |key: &str| -> Value {
             serde_json::from_str(&run(config, json!({ "key": key })).unwrap()).unwrap()
         };
@@ -564,7 +649,7 @@ mod tests {
         let layout = Layout::new();
         layout.add_plugin("demo", &fixture_bytes());
         let set = layout.load(&[]);
-        let taken = vec!["ext_demo_echo".to_owned()];
+        let taken = vec![("echo".to_owned(), ToolOrigin::BuiltIn)];
         let (tools, diagnostics) = build_for(
             &layout,
             &set,
@@ -572,10 +657,107 @@ mod tests {
             ScriptedGate::new(vec![]),
             &taken,
         );
-        assert!(!tools.iter().any(|t| t.name == "ext_demo_echo"));
-        assert!(tools.iter().any(|t| t.name == "ext_demo_config"));
+        assert!(!tools.iter().any(|t| t.name == "echo"));
+        assert!(tools.iter().any(|t| t.name == "config"));
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-        assert!(diagnostics[0].1.contains("tool echo not loaded"));
+        assert_eq!(
+            diagnostics[0].1,
+            "plugin demo: 1 tool not loaded (echo): name is already taken by built-in tool"
+        );
+    }
+
+    #[test]
+    fn a_taken_name_blocks_a_plugin_tool_that_differs_only_in_case() {
+        // Selectors match names case-insensitively, so the built-in `Read` also holds `read`.
+        let layout = Layout::new();
+        layout.add_plugin("demo", &fixture_bytes());
+        let set = layout.load(&[]);
+        let taken = vec![("ECHO".to_owned(), ToolOrigin::BuiltIn)];
+        let (tools, diagnostics) = build_for(
+            &layout,
+            &set,
+            &settings(json!({})),
+            ScriptedGate::new(vec![]),
+            &taken,
+        );
+        assert!(
+            !tools.iter().any(|t| t.name == "echo"),
+            "{:?}",
+            names(&tools)
+        );
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].1,
+            "plugin demo: 1 tool not loaded (echo): name is already taken by built-in tool"
+        );
+    }
+
+    #[test]
+    fn a_plugin_with_several_taken_names_gets_one_line() {
+        let layout = Layout::new();
+        layout.add_plugin("demo", &fixture_bytes());
+        let set = layout.load(&[]);
+        let taken = vec![
+            ("echo".to_owned(), ToolOrigin::BuiltIn),
+            ("config".to_owned(), ToolOrigin::BuiltIn),
+            ("fetch".to_owned(), ToolOrigin::BuiltIn),
+        ];
+        let (tools, diagnostics) = build_for(
+            &layout,
+            &set,
+            &settings(json!({})),
+            ScriptedGate::new(vec![]),
+            &taken,
+        );
+        assert!(!tools
+            .iter()
+            .any(|t| ["echo", "config", "fetch"].contains(&t.name.as_str())));
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].1,
+            "plugin demo: 3 tools not loaded (echo, config, fetch): names are already taken by built-in tool"
+        );
+    }
+
+    #[test]
+    fn a_collision_with_another_plugin_names_both_origins() {
+        let layout = Layout::new();
+        layout.add_plugin("demo", &fixture_bytes());
+        let set = layout.load(&[]);
+        let other = ToolOrigin::Plugin {
+            plugin: "docs".into(),
+            tool: "Echo".into(),
+        };
+        let taken = vec![("echo".to_owned(), other)];
+        let (_, diagnostics) = build_for(
+            &layout,
+            &set,
+            &settings(json!({})),
+            ScriptedGate::new(vec![]),
+            &taken,
+        );
+        assert!(
+            diagnostics.iter().any(|(_, m)| m
+                == "plugin demo: 1 tool not loaded (echo): name is already taken by plugin docs"),
+            "{diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn a_plugin_tool_name_must_match_the_model_name_rule() {
+        assert!(valid_plugin_tool_name("WebFetch"));
+        assert!(valid_plugin_tool_name("write-data"));
+        assert!(valid_plugin_tool_name(&format!("A{}", "b".repeat(63))));
+        assert!(!valid_plugin_tool_name(""));
+        assert!(!valid_plugin_tool_name("1st"));
+        assert!(!valid_plugin_tool_name("_x"));
+        assert!(!valid_plugin_tool_name("a.b"));
+        assert!(!valid_plugin_tool_name("a b"));
+        // An MCP tool's name prefix is not a plugin tool's, in any case.
+        assert!(!valid_plugin_tool_name("mcp__github__x"));
+        assert!(!valid_plugin_tool_name("MCP__x"));
+        assert!(valid_plugin_tool_name("mcp_x"));
+        assert!(!valid_plugin_tool_name(&format!("A{}", "b".repeat(64))));
     }
 
     #[test]
@@ -597,6 +779,18 @@ mod tests {
         assert_eq!(asked.len(), 1);
         assert_eq!(asked[0].name, "WebFetch");
         assert_eq!(asked[0].arguments, json!({"url": "https://example.com/a"}));
+    }
+
+    #[test]
+    fn the_net_request_is_asked_as_the_builtin_webfetch_category() {
+        // Never as a plugin tool: the plugin's own call is not asked, so a plugin tool named
+        // WebFetch gets only this per-origin prompt.
+        let gate = ScriptedGate::new(vec![PermissionDecision::Grant]);
+        let net = ToolNetGate::new(gate.clone());
+        assert_eq!(net.check("https://example.com/a"), Ok(()));
+        let asked = gate.asked();
+        assert_eq!(asked[0].name, "WebFetch");
+        assert_eq!(asked[0].origin, ToolOrigin::BuiltIn);
     }
 
     #[test]
@@ -709,14 +903,80 @@ mod tests {
             reason: "refused in test".into(),
         }]);
         let (tools, _) = build_for(&layout, &set, &settings(json!({})), gate.clone(), &[]);
-        let fetch = tools.iter().find(|t| t.name == "ext_demo_fetch").unwrap();
+        let fetch = tools.iter().find(|t| t.name == "fetch").unwrap();
         let error = run(fetch, json!({"url": "https://93.184.216.34/"})).unwrap_err();
-        // The component sees the refusal as its HTTP error code; the gate's reason goes to the
-        // host log, not into the tool result.
-        assert!(error.contains("HttpRequestDenied"), "{error}");
+        // The component sees the refusal as its own message, and the gate's reason is added to the
+        // tool error, so the model can tell why.
+        assert!(error.contains("denied by host: request denied"), "{error}");
+        assert!(error.contains("refused in test"), "{error}");
         let asked = gate.asked();
         assert_eq!(asked.len(), 1);
         assert_eq!(asked[0].arguments, json!({"url": "https://93.184.216.34/"}));
+    }
+
+    #[test]
+    fn fetch_refused_by_the_host_names_the_block_without_asking() {
+        // A private literal IP is refused by the host's own check, before the gate is asked. The
+        // plugin's message does not carry the code name, so only the recorded reason can say why.
+        let layout = Layout::new();
+        layout.add_plugin("demo", &fixture_bytes());
+        let set = layout.load(&[]);
+        let gate = ScriptedGate::new(vec![]);
+        let (tools, _) = build_for(&layout, &set, &settings(json!({})), gate.clone(), &[]);
+        let fetch = tools.iter().find(|t| t.name == "fetch").unwrap();
+        let error = run(fetch, json!({"url": "http://10.1.2.3/"})).unwrap_err();
+        assert!(error.contains("denied by host: request denied"), "{error}");
+        assert!(error.contains("10.1.2.3 is private"), "{error}");
+        assert!(gate.asked().is_empty());
+    }
+
+    #[test]
+    fn a_refusal_reason_is_added_to_a_refused_calls_error_whatever_its_text() {
+        // The text a plugin gives a refusal, as the webtools transport wrote it before it named the
+        // code, and as it writes it now.
+        let plugin_text = "denied by host: request denied".to_owned();
+        assert_eq!(
+            with_refusal(plugin_text.clone(), Some("10.0.0.1 is private".into())),
+            "denied by host: request denied: 10.0.0.1 is private"
+        );
+        assert_eq!(
+            with_refusal(
+                "denied by host (HttpRequestDenied): request denied".into(),
+                Some("user said no".into())
+            ),
+            "denied by host (HttpRequestDenied): request denied: user said no"
+        );
+        // No refusal in this call: the error is unchanged.
+        assert_eq!(with_refusal(plugin_text.clone(), None), plugin_text);
+        // A failure with its own text that did not come from a refusal keeps it.
+        assert_eq!(
+            with_refusal("plugin crashed".into(), None),
+            "plugin crashed"
+        );
+    }
+
+    #[test]
+    fn a_refusal_reason_stays_with_the_call_that_got_it() {
+        let gate = ScriptedGate::new(vec![]);
+        let first = ToolNetGate::new(gate.clone());
+        let second = ToolNetGate::new(gate.clone());
+        first.refused("https://a.example/: a is private");
+        assert_eq!(
+            first.last_refusal().as_deref(),
+            Some("https://a.example/: a is private")
+        );
+        // A concurrent call has its own: it sees none, and a later refusal replaces the first.
+        assert_eq!(second.last_refusal(), None);
+        second.refused("https://b.example/: no");
+        first.refused("https://a.example/2: second");
+        assert_eq!(
+            first.last_refusal().as_deref(),
+            Some("https://a.example/2: second")
+        );
+        assert_eq!(
+            second.last_refusal().as_deref(),
+            Some("https://b.example/: no")
+        );
     }
 
     /// A PEM CA certificate generated for the test (not an invalid placeholder).
@@ -799,5 +1059,35 @@ mod tests {
             .tls_trust()
             .extra
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod render_hint_tests {
+    use std::collections::BTreeMap;
+
+    use super::undeclared_render_hints;
+
+    #[test]
+    fn a_hint_for_an_undeclared_tool_is_ignored_with_a_warning() {
+        let hints: BTreeMap<String, String> = [
+            ("WebFetch".to_owned(), "web-fetch".to_owned()),
+            ("Ghost".to_owned(), "web-search".to_owned()),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            undeclared_render_hints("plugin webtools", &hints, &["WebFetch", "WebSearch"]),
+            vec!["plugin webtools: render hint for \"Ghost\" ignored: the plugin declares no such tool".to_owned()]
+        );
+    }
+
+    #[test]
+    fn declared_hints_and_no_hints_give_no_warning() {
+        let hints: BTreeMap<String, String> = [("WebFetch".to_owned(), "web-fetch".to_owned())]
+            .into_iter()
+            .collect();
+        assert!(undeclared_render_hints("p", &hints, &["WebFetch"]).is_empty());
+        assert!(undeclared_render_hints("p", &BTreeMap::new(), &[]).is_empty());
     }
 }

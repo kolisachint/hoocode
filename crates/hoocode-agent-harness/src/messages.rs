@@ -2,7 +2,7 @@
 
 use hoocode_agent_types::{
     AgentMessage, AgentToolCall, BackgroundToolResult, BashExecutionMessage, BranchSummaryMessage,
-    CompactionSummaryMessage, CustomMessage,
+    CompactionSummaryMessage, CustomMessage, ToolOrigin,
 };
 use hoocode_ai_types::{AssistantMessage, Content, Message, UserContent, UserMessage};
 use serde_json::{json, Value};
@@ -98,7 +98,7 @@ pub fn create_custom_message(
 /// A consistent description of a background tool call (`BackgroundToolInfo`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BackgroundToolInfo {
-    /// MCP server tools are registered as `mcp_<server>_<tool>`.
+    /// MCP server tools are named `mcp__<server>__<tool>`.
     pub is_mcp_tool: bool,
     /// The subagent type of `Task` calls; the tool name otherwise.
     pub subagent_type: String,
@@ -156,14 +156,14 @@ pub fn summarize_args(args: &Value) -> Option<String> {
 }
 
 /// `describeBackgroundTool`: `Task` calls by `subagent_type`, MCP tools by
-/// their `mcp_` prefix.
+/// their origin (`mcp:<server>/<tool>`).
 pub fn describe_background_tool(tool_call: &AgentToolCall) -> BackgroundToolInfo {
     let args = &tool_call.arguments;
-    if let Some(pretty) = tool_call.name.strip_prefix("mcp_") {
+    if let ToolOrigin::Mcp { server, tool, .. } = &tool_call.origin {
         return BackgroundToolInfo {
             is_mcp_tool: true,
             subagent_type: tool_call.name.clone(),
-            label: format!("MCP tool `{pretty}`"),
+            label: format!("MCP tool `{server}/{tool}`"),
             summary: summarize_args(args),
         };
     }

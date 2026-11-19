@@ -271,8 +271,8 @@ impl AgentSession {
 
     /// The decision half of `checkCompaction`: whether `assistant` calls for
     /// overflow recovery or a threshold compaction. Overflow recovery is
-    /// one-shot (a second overflow emits the give-up `compaction_end`) and
-    /// drops the error message from the context.
+    /// one-shot (a second overflow emits the give-up `compaction_end`). It does not touch the
+    /// context: the error message is dropped only once the recovery is applied.
     pub fn plan_compaction(
         &self,
         assistant: &AssistantMessage,
@@ -320,12 +320,10 @@ impl AgentSession {
                 });
                 return None;
             }
+            // The error message stays in the context until a compaction is applied and the turn
+            // retried (`auto_compaction` drops it then). A recovery that does not happen leaves
+            // the error in place, so the turn still reads as failed.
             self.compaction_state().overflow_recovery_attempted = true;
-            let mut messages = self.messages();
-            if matches!(messages.last(), Some(AgentMessage::Assistant(_))) {
-                messages.pop();
-                self.agent().set_messages(messages);
-            }
             return Some(CompactionPlan::Overflow);
         }
 

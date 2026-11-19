@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-17): one plan for all areas. It replaces the core, TUI, and themes and keybindings plans. 80 open rows in the area docs. This plan lists 43 next, 14 need a user decision, 50 deferred behind a trigger or gate.
+Status (2026-11-19): one plan for all areas. Now starts with PL-17 (tool identity, option D). It replaces the core, TUI, and themes and keybindings plans. 107 open rows in the area docs' Open tables, 12 of them marked Done. This plan lists 34 next, 13 need a user decision, 49 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
@@ -34,6 +34,7 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 
 ### Now
 
+0. [PL-17](plugins.md#open) Tool identity separate from the model-facing name, option D (M). Phases: P2 core (`ToolOrigin`, names, selectors, collision diagnostics, tests, evals, `docs/user`, `docs/maps`, CHANGELOG); P2b (selectors in permission rules, the gate and relays by origin, malformed selectors refused, tests, evals); P3 plugin (`hoo-web-plugin`: `WebFetch` and `WebSearch`, renderer hint, wasm rebuild); P4 TUI (origin label, `toolExternal`, hint dispatch, goldens); P5 live end-to-end rerun (Tavily), incl. a subagent in json mode; P6 Opus review of the three branches before any PR. P1 is the design, 2026-11-19.
 1. [RT-1](runtime.md#open) Responses tool-call routing fix (M). Correctness. First in the approved order.
 2. [AG-11](agent.md#open) Verify the unchecked MCP, plugin and scope rules (S)
 3. [RT-2](runtime.md#open) `--continue` picks the newest valid session (S)
