@@ -392,3 +392,28 @@ async fn an_unset_variable_marks_the_server_failed_and_names_it() {
     assert!(hub.wait_for_startup(Duration::from_millis(50)).is_empty());
     assert_eq!(hub.tool_definitions().1.len(), 0);
 }
+
+/// A subagent's MCP tools never include a plugin's, whatever the hub reports (subagents.md).
+#[test]
+fn a_subagent_drops_plugin_mcp_tools_and_keeps_the_others() {
+    use crate::common::tool;
+    use hoocode_agent_types::ToolOrigin;
+    let mut plugin_tool = tool("lookup", |_| unimplemented!());
+    plugin_tool.origin = ToolOrigin::Mcp {
+        server: "search".into(),
+        tool: "lookup".into(),
+        plugin: Some("webtools".into()),
+    };
+    let mut user_tool = tool("echo", |_| unimplemented!());
+    user_tool.origin = ToolOrigin::Mcp {
+        server: "echo".into(),
+        tool: "echo".into(),
+        plugin: None,
+    };
+    let kept: Vec<String> =
+        hoocode_code_agent_session::mcp::without_plugin_mcp_tools(vec![plugin_tool, user_tool])
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+    assert_eq!(kept, ["echo"]);
+}

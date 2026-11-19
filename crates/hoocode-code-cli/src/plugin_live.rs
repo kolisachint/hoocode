@@ -30,6 +30,8 @@ pub(crate) struct PluginToolSource {
     pub(crate) auto_activate: bool,
     pub(crate) settings: Arc<Mutex<SettingsManager>>,
     pub(crate) gate: Arc<dyn PermissionGate>,
+    /// A subagent runs no plugin MCP server (`docs/design/subagents.md`).
+    pub(crate) subagent: bool,
 }
 
 impl PluginSource for PluginToolSource {
@@ -62,17 +64,27 @@ impl PluginSource for PluginToolSource {
     }
 
     fn mcp_servers(&self) -> Option<Vec<PluginServers>> {
-        Some(hoocode_code_plugins::current().mcp_servers())
+        Some(self.plugin_servers())
     }
 
     fn mcp_hub(&self) -> Option<Arc<McpHub>> {
         if !self.mcp {
             return None;
         }
-        let set = hoocode_code_plugins::current();
-        let hub = new_mcp_hub(&self.cwd, self.interactive, &set);
+        let hub = new_mcp_hub(&self.cwd, self.interactive, &self.plugin_servers());
         hub.start();
         Some(hub)
+    }
+}
+
+impl PluginToolSource {
+    /// The plugins' MCP servers this session runs: none for a subagent.
+    fn plugin_servers(&self) -> Vec<PluginServers> {
+        if self.subagent {
+            Vec::new()
+        } else {
+            hoocode_code_plugins::current().mcp_servers()
+        }
     }
 }
 
@@ -113,11 +125,17 @@ mod tests {
                 json!({}).as_object().unwrap().clone(),
             ))),
             gate: Arc::new(AllowAll),
+            subagent: false,
         }
     }
 
     /// Loads a set with one plugin `demo` (the echo fixture) from a temp folder.
     fn demo_set(dir: &std::path::Path) -> hoocode_code_plugins::PluginSet {
+        demo_set_with(dir, false)
+    }
+
+    /// [`demo_set`], with the plugin's own MCP server when `with_mcp`.
+    fn demo_set_with(dir: &std::path::Path, with_mcp: bool) -> hoocode_code_plugins::PluginSet {
         let root = dir.join("plugins").join("demo");
         std::fs::create_dir_all(root.join("dev.hoocode")).unwrap();
         std::fs::write(
@@ -126,6 +144,14 @@ mod tests {
         )
         .unwrap();
         std::fs::copy(FIXTURE, root.join("dev.hoocode/extension.wasm")).unwrap();
+        if with_mcp {
+            std::fs::write(
+                root.join("mcp.json"),
+                r#"{"$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                  "mcpServers": {"echo": {"type": "stdio", "command": "./bin/echo"}}}"#,
+            )
+            .unwrap();
+        }
         let trust = TrustStore::empty(dir.join("trust.json"));
         load_plugins(&LoadOptions {
             project_folder: dir.join("repo"),
@@ -135,6 +161,26 @@ mod tests {
             untrusted_installs: BTreeSet::new(),
             installs_unreadable: None,
         })
+    }
+
+    #[test]
+    fn a_subagent_runs_no_plugin_mcp_server() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("repo")).unwrap();
+        hoocode_code_plugins::set_current(demo_set_with(dir.path(), true));
+        let main = PluginToolSource {
+            mcp: true,
+            ..source(true)
+        };
+        let child = PluginToolSource {
+            mcp: true,
+            subagent: true,
+            ..source(true)
+        };
+        // The plugin declares a server: the main session gets it, the subagent none.
+        let count = |source: &PluginToolSource| source.mcp_servers().map(|s| s.len());
+        assert_eq!(count(&main), Some(1));
+        assert_eq!(count(&child), Some(0));
     }
 
     #[test]

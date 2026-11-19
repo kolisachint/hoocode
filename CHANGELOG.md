@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: subagents never run or expose plugin MCP servers (2026-11-19)
+- A plugin selector (`plugin:*`, `plugin:<p>`) no longer takes an MCP tool. A subagent runs
+  no plugin MCP server and exposes no plugin MCP tool, so general-purpose subagents (`plugin:*`)
+  start no MCP. Plugin WASM tools are unchanged. A main session with `--tools plugin:<p>` starts
+  no plugin MCP server either: name `plugin:<p>/<Tool>` only for WASM tools, or `mcp:` selectors.
+
 ### Fixed: old tool names are refused, and unmatched deny entries are reported (2026-11-19)
 - A tool list or deny list entry that is an old tool name (`ext_*`, or `mcp_*` without the second
   underscore) is refused: `--tools`, `--disallowed-tools`, `denied_tools`, `auto_allow`,

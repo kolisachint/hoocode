@@ -287,10 +287,12 @@ impl ToolSelector {
 
     /// Whether an MCP server could supply a tool this selector takes. An MCP tool's model
     /// name is `mcp__<server>__<tool>`, so a bare name counts only when it has that shape.
+    /// A plugin selector takes no MCP tool: a plugin's MCP servers are not started for it
+    /// (subagents never run them, `docs/design/subagents.md`).
     pub fn may_match_mcp(&self) -> bool {
         match self {
             Self::Name(name) => name.starts_with("mcp__"),
-            Self::AnyPlugin | Self::Plugin(_) | Self::PluginTool { .. } => true,
+            Self::AnyPlugin | Self::Plugin(_) | Self::PluginTool { .. } => false,
             Self::Mcp(_) | Self::McpTool { .. } | Self::AnyMcp => true,
         }
     }
@@ -532,5 +534,11 @@ mod tests {
         assert!(ToolSelector::parse("plugin:*")
             .unwrap()
             .may_match_plugin_wasm());
+        // A plugin selector never takes an MCP tool, so it starts no MCP server.
+        assert!(!ToolSelector::parse("plugin:*").unwrap().may_match_mcp());
+        assert!(!ToolSelector::parse("plugin:web").unwrap().may_match_mcp());
+        assert!(!ToolSelector::parse("plugin:web/WebFetch")
+            .unwrap()
+            .may_match_mcp());
     }
 }

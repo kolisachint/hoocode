@@ -209,8 +209,8 @@ pub fn defer_mcp_schemas(env: &impl SubagentEnv) -> bool {
 }
 
 /// Whether a child with this tool allowlist needs MCP servers: an entry that can select an MCP
-/// tool (`mcp__<server>__<tool>`, `mcp:<s>`, or a plugin selector, which takes plugin MCP tools
-/// too) makes it so, and no allowlist means "inherit every tool".
+/// tool (`mcp__<server>__<tool>` or `mcp:<s>`) makes it so, and no allowlist means "inherit every
+/// tool". A plugin selector does not: a subagent never runs plugin MCP servers.
 pub fn tool_allowlist_needs_mcp(tools: Option<&[String]>) -> bool {
     let Some(tools) = tools else {
         return true;

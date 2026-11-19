@@ -1041,6 +1041,11 @@ fn assemble_session(
     // before the MCP hub, which the source's refresh replaces only when one is attached.
     let ext = ext_tools_wanted(args, light);
     let mcp = mcp_wanted(args, light);
+    let subagent = args.task_id.is_some()
+        || hoocode_code_subagents::depth::current_subagent_depth(
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ) > 0;
+    session.set_subagent(subagent);
     if ext || mcp {
         let source = Arc::new(plugin_live::PluginToolSource {
             cwd: services.cwd.clone(),
@@ -1050,6 +1055,7 @@ fn assemble_session(
             auto_activate: !mode_restricted,
             settings: plugin_settings,
             gate: plugin_gate,
+            subagent,
         });
         for notice in session.attach_plugins(source) {
             diagnostics.push((DiagnosticKind::Warning, notice));
@@ -1133,13 +1139,10 @@ fn ext_tools_wanted(args: &Args, light: bool) -> bool {
 pub(crate) fn new_mcp_hub(
     cwd: &std::path::Path,
     interactive: bool,
-    plugins: &hoocode_code_plugins::PluginSet,
+    plugin_servers: &[hoocode_code_mcp::PluginServers],
 ) -> std::sync::Arc<hoocode_code_agent_session::mcp::McpHub> {
     let hub = std::sync::Arc::new(
-        hoocode_code_agent_session::mcp::McpHub::for_folder_with_plugins(
-            cwd,
-            &plugins.mcp_servers(),
-        ),
+        hoocode_code_agent_session::mcp::McpHub::for_folder_with_plugins(cwd, plugin_servers),
     );
     // The panel's MCP tab reads the hub's rows from the process-wide task store.
     hub.set_task_rows(hoocode_code_task_store::task_store());
@@ -1172,7 +1175,7 @@ fn attach_mcp(
 ) {
     // A plugin change that builds a new hub later waits for it the same way, in print and rpc.
     session.set_wait_for_mcp_startup(!interactive);
-    let hub = new_mcp_hub(cwd, interactive, plugins);
+    let hub = new_mcp_hub(cwd, interactive, &plugins.mcp_servers());
     hub.start();
     if !interactive {
         // Print and rpc answer their first prompt with the servers that connect in time. This
@@ -3016,8 +3019,8 @@ mod mcp_wanted_tests {
         assert!(mcp_wanted(&args(&["--tools", "Read,mcp:x"]), false));
         // A list without one, `--no-tools`, and light mode start nothing.
         assert!(!mcp_wanted(&args(&["--tools", "Read"]), false));
-        // A plugin selector can take a plugin's MCP tools, so MCP starts for it.
-        assert!(mcp_wanted(&args(&["--tools", "Read,plugin:web"]), false));
+        // A plugin selector takes no MCP tool: plugin MCP servers are not started for it.
+        assert!(!mcp_wanted(&args(&["--tools", "Read,plugin:web"]), false));
         assert!(!mcp_wanted(&args(&["--no-tools"]), false));
         assert!(!mcp_wanted(&args(&[]), true));
     }

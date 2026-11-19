@@ -459,6 +459,8 @@ struct State {
     mcp_tools: Vec<ToolDefinition>,
     mcp_generation: Option<u64>,
     mcp_auto_active: bool,
+    /// A subagent session: its MCP tools never include a plugin's (see `set_subagent`).
+    subagent: bool,
     /// Plugin tools as the attached plugin source last built them (PL-4).
     plugin_tools: Vec<ToolDefinition>,
     /// The plugin generation the tools above were built from.
@@ -1595,6 +1597,13 @@ impl AgentSession {
     /// Attach the session's MCP servers. With `auto_activate`, a tool that appears is
     /// active at once; a mode that restricts the active tools passes `false`. `dispose`
     /// shuts the hub down.
+    /// Marks the session a subagent (`--task-id`, or a depth above 0). A subagent exposes no
+    /// plugin MCP tool, even from a hub that has one (`docs/design/subagents.md`). Set before the
+    /// hub is attached.
+    pub fn set_subagent(&self, subagent: bool) {
+        lock(&self.inner.state).subagent = subagent;
+    }
+
     pub fn attach_mcp(&self, hub: Arc<McpHub>, auto_activate: bool) {
         *lock(&self.inner.mcp) = Some(hub);
         lock(&self.inner.state).mcp_auto_active = auto_activate;
@@ -1749,6 +1758,11 @@ impl AgentSession {
     fn sync_mcp_tools(&self) {
         let Some(hub) = self.mcp() else { return };
         let (generation, tools) = hub.tool_definitions();
+        let tools = if lock(&self.inner.state).subagent {
+            crate::mcp::without_plugin_mcp_tools(tools)
+        } else {
+            tools
+        };
         let (tools, collisions) = {
             let state = lock(&self.inner.state);
             let mut holders: HashMap<String, ToolOrigin> = state

@@ -40,6 +40,23 @@ use crate::mcp_rows::{CallTracker, CALL_KEY_PREFIX, ROW_PREFIX, SERVER_KEY_PREFI
 pub use hoocode_agent_mcp::{ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use hoocode_code_mcp::TrustPrompt;
 
+/// The tools of a subagent's MCP hub without the plugin MCP tools. A subagent never exposes
+/// them, whatever its tool list says (`docs/design/subagents.md`, "Never MCP plugin tools").
+pub fn without_plugin_mcp_tools(tools: Vec<ToolDefinition>) -> Vec<ToolDefinition> {
+    tools
+        .into_iter()
+        .filter(|t| {
+            !matches!(
+                t.origin,
+                ToolOrigin::Mcp {
+                    plugin: Some(_),
+                    ..
+                }
+            )
+        })
+        .collect()
+}
+
 /// How long [`McpHub::shutdown`] waits for the servers to close.
 pub const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 /// How long a login waits for the browser to reach the redirect URI.
