@@ -177,7 +177,7 @@ impl ClearanceRelay for TuiClearanceRelay {
             cancelled: request.cancelled.clone(),
         };
         HooPermissionGate::new(self.cwd.clone(), ApprovalChannel::Ui, Some(Arc::new(ui)))
-            .check(&request.tool, &request.input)
+            .check_call(&request.tool, &request.origin, &request.input)
     }
 }
 

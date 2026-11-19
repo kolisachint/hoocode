@@ -1088,14 +1088,6 @@ impl HooPermissionGate {
         self
     }
 
-    /// [`check_call`] for a built-in tool, by name. Kept for the TUI's clearance relay, which
-    /// does not yet pass the origin of a relayed call. In practice every relayed call is
-    /// built-in: a subagent child prompts only for the built-in gated tools (its MCP and plugin
-    /// calls are not gated while it can relay). Use [`check_call`] wherever the origin is known.
-    pub fn check(&self, tool_name: &str, input: &Value) -> Option<String> {
-        self.check_call(tool_name, &ToolOrigin::BuiltIn, input)
-    }
-
     /// The handler for a call to `tool_name` from `origin`: `None` lets it run, `Some(reason)`
     /// blocks it.
     pub fn check_call(
