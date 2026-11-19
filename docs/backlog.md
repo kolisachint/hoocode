@@ -6,6 +6,8 @@ Plugins v1 (2026-11-18): done and released. PL-1 to PL-12 shipped in hoocode v0.
 
 Plugins design session (2026-11-17, docs only): added [design/plugins.md](design/plugins.md). Decided: Agent Plugins 1.0 format; internal WASM tier (wasmtime 48 LTS, in-process, gate enforced) and external MCP tier; v1 is the webtools plugin, PL-7 to PL-12, gated by PL-7 (measure trimmed wasmtime and the toolchain bump; stop rule in plugins.md). Repos involved: hoocode, `kolisachint/webtools`, `web-plugins` and `hoocode-official-plugins` (the last two do not exist yet). Scratch measurement code is gone with the container; the numbers are in plugins.md.
 
+Browser plugin design session (2026-11-19, docs only): decided the plugin tiers (A static future, B WASM, C native helper, C+ later), the tier C contract (MCP over Streamable HTTP on a Unix socket or Windows named pipe, one helper per session, per-agent tokens, declared tools, per-platform binaries) and the browser plugin (agent-browser as engine, one shared browser, a window and tabs per agent, Chromium headless default). All in [design/plugins.md](design/plugins.md): Tiers, Native tier contract, Browser plugin (with the locked plan B0 to B4), Decisions, PL-18 to PL-22. Next: PL-20 (agent-browser fixes in `kolisachint/agent-browser`) and PL-18 can start in parallel. Scratch measurement scripts are gone with the container; the numbers are in plugins.md.
+
 How to use it: read "Start here", then do "Next session" top to bottom. Delete rows as they land.
 
 ## Start here
