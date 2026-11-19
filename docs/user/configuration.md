@@ -81,6 +81,9 @@ no `/reload`.
   and `mcp:*`. An entry that is neither is malformed: `--tools` and `--disallowed-tools`
   stop with an error, an agent definition with one is rejected, and a permission rule with
   one stops hoocode from starting. The old `ext_*` and `mcp_*` names are gone, with no alias.
+  A bare name (`echo`, a plugin tool's name) is kept as written, and matches the tool of
+  that name at start, case-insensitively. A name that matches no tool is ignored with a
+  warning. Claude Code names with a hoocode alias (`Bash`, `Grep`) still map to the hoocode tool.
 - Two plugin or MCP tools with the same name: the first one loaded is used, and the
   other is skipped with a diagnostic that names both. A plugin tool never replaces a
   built-in tool.

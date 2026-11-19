@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: agent tool names are kept, not dropped (2026-11-19)
+- An agent's `tools` and `disallowedTools` keep a bare name with no Claude alias (`tools: Lookup`,
+  a plugin tool's model-facing name) as a name selector. It matches case-insensitively. Before,
+  it was dropped with a warning. Claude Code names with an alias (`Bash`, `Grep`) map as before.
+- A `--tools` name that matches no tool in the session is ignored with a warning at start, not
+  a rejection. This covers subagents, whose `tools` come from the agent definition. Skills'
+  `allowed-tools` still drop a name with no alias.
+
 ### Added: plugin and MCP tools in the transcript (2026-11-19)
 - A plugin or MCP tool's row shows where it comes from: its name takes a new theme color
   (`toolExternal`), and the plugin name or `mcp:<server>` follows it dimmed. Built-in rows

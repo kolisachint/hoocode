@@ -400,6 +400,47 @@ fn a_plugin_selector_in_tools_offers_only_the_selected_tool() {
 }
 
 #[test]
+fn a_bare_plugin_tool_name_in_tools_offers_that_tool() {
+    // An agent's `tools: echo` reaches the child as `--tools echo`: the bare name is the
+    // plugin tool's model-facing name, so it selects that tool (plugins.md, Naming and identity).
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--tools", "echo"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(offered.contains(&"echo"), "{offered:?}\n{}", printed.stderr);
+    assert!(!offered.contains(&"fetch"), "{offered:?}");
+    assert!(
+        !printed.stderr.contains("matches no tool"),
+        "{}",
+        printed.stderr
+    );
+}
+
+#[test]
+fn a_tools_name_that_matches_nothing_warns_and_is_ignored() {
+    let home = Home::with_echo_plugin(true);
+    let printed = print_run_with(
+        &home,
+        call_then_done("echo", json!({"x": 1})),
+        &[],
+        &["--tools", "Lookup,echo"],
+    );
+    let offered = offered(&printed.requests[0]);
+    assert!(offered.contains(&"echo"), "{offered:?}\n{}", printed.stderr);
+    assert!(
+        printed
+            .stderr
+            .contains("tool \"Lookup\" in the tool list matches no tool"),
+        "{}",
+        printed.stderr
+    );
+}
+
+#[test]
 fn a_plugin_wildcard_in_disallowed_tools_removes_every_plugin_tool() {
     let home = Home::with_echo_plugin(true);
     let printed = print_run_with(

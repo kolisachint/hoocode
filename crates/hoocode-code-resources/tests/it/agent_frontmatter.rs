@@ -42,11 +42,11 @@ fn accepts_a_yaml_list_but_emits_a_format_warning() {
 }
 
 #[test]
-fn drops_unknown_tools_with_a_diagnostic() {
+fn keeps_unknown_names_as_selectors_without_a_diagnostic() {
+    // Matching is checked at spawn (a warning there), not here.
     let (t, d) = tools(json!("Read, NotebookEdit, Task, MultiEdit"));
-    assert_eq!(t, ["Read"]);
-    assert_eq!(d.len(), 3);
-    assert!(d.iter().any(|m| m.contains("NotebookEdit")));
+    assert_eq!(t, ["Read", "NotebookEdit", "Task", "MultiEdit"]);
+    assert!(d.is_empty(), "{d:?}");
 }
 
 #[test]
@@ -62,17 +62,17 @@ fn dedupes_resolved_tools() {
 }
 
 #[test]
-fn drops_the_pre_rename_search_name() {
+fn keeps_the_pre_rename_search_name_as_a_selector() {
     let (t, d) = tools(json!("read, search"));
-    assert_eq!(t, ["Read"]);
-    assert!(d.iter().any(|m| m.contains("tool \"search\"")));
+    assert_eq!(t, ["Read", "search"]);
+    assert!(d.is_empty(), "{d:?}");
 }
 
 #[test]
-fn drops_ls_which_has_no_counterpart() {
+fn keeps_ls_as_a_selector_with_no_alias() {
     let (t, d) = tools(json!("Read, LS"));
-    assert_eq!(t, ["Read"]);
-    assert!(d.iter().any(|m| m.contains("LS")));
+    assert_eq!(t, ["Read", "LS"]);
+    assert!(d.is_empty(), "{d:?}");
 }
 
 #[test]
@@ -288,6 +288,25 @@ fn keeps_the_plugin_wildcard_as_written() {
 }
 
 // Option D (plugins.md, Naming and identity): an agent's selectors are checked when it is read.
+
+#[test]
+fn a_bare_name_with_no_alias_is_kept_as_a_selector() {
+    // A plugin or MCP tool's model-facing name is not a Claude alias: it stays a `Name` selector,
+    // checked against the session's tools at spawn, not dropped here (plugins.md, option D).
+    let (t, d) = tools(json!("Read, Lookup, agent"));
+    assert_eq!(t, ["Read", "Lookup", "agent"]);
+    assert!(d.is_empty(), "{d:?}");
+}
+
+#[test]
+fn a_bare_plugin_name_in_an_agent_tools_list_is_kept() {
+    let raw = "---\nname: scout\ndescription: Scouts.\ntools: Read, Lookup\ndisallowedTools: Grep, Other\n---\nBody";
+    let (agent, d) = parse(raw, AgentSource::ClaudeProject);
+    assert!(d.is_empty(), "{d:?}");
+    let agent = agent.unwrap();
+    assert_eq!(agent.tools.unwrap(), ["Read", "Lookup"]);
+    assert_eq!(agent.disallowed_tools.unwrap(), ["CodeSearch", "Other"]);
+}
 
 #[test]
 fn a_malformed_tools_entry_rejects_the_definition() {

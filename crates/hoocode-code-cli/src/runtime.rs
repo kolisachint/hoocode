@@ -1055,6 +1055,14 @@ fn assemble_session(
             diagnostics.push((DiagnosticKind::Warning, notice));
         }
     }
+    // A `--tools` name that matches no tool allows nothing: say so at spawn (plugins.md, Naming
+    // and identity). Checked after the plugin tools attach, so a plugin tool's name matches.
+    for name in session.unmatched_tool_names() {
+        diagnostics.push((
+            DiagnosticKind::Warning,
+            format!("tool \"{name}\" in the tool list matches no tool and is ignored"),
+        ));
+    }
     if mcp {
         attach_mcp(
             &session,

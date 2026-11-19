@@ -1337,6 +1337,39 @@ impl AgentSession {
             .map_or(ToolOrigin::BuiltIn, |d| d.origin.clone())
     }
 
+    /// The `--tools` entries that are bare names matching no tool this session has, sorted. An
+    /// `mcp__` name is left out: its MCP server may still start. Read it once the session's tools
+    /// are built (plugin tools attach during the build), so a name that matches nothing warns at
+    /// spawn instead of allowing nothing silently.
+    pub fn unmatched_tool_names(&self) -> Vec<String> {
+        let Some(allowed) = &self.inner.allowed_tool_names else {
+            return Vec::new();
+        };
+        let state = lock(&self.inner.state);
+        let known: Vec<&str> = state
+            .base_tool_definitions
+            .iter()
+            .chain(self.inner.custom_tools.iter())
+            .chain(state.plugin_tools.iter())
+            .chain(state.mcp_tools.iter())
+            .map(|d| d.name.as_str())
+            .collect();
+        let mut out: Vec<String> = allowed
+            .iter()
+            .filter_map(|entry| match ToolSelector::parse(entry) {
+                Ok(ToolSelector::Name(name))
+                    if !name.starts_with("mcp__")
+                        && !known.iter().any(|k| k.eq_ignore_ascii_case(&name)) =>
+                {
+                    Some(name)
+                }
+                _ => None,
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
     fn tool_context_factory(&self) -> ToolContextFactory {
         let weak = Arc::downgrade(&self.inner);
         let branch: Arc<dyn SessionBranch> =

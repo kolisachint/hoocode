@@ -153,11 +153,30 @@ fn split_tools_value(value: &Value) -> Vec<String> {
         .collect()
 }
 
-/// `normalizeTools`: map Claude Code tool names (case-insensitive) onto hoocode
-/// tools, deduped, with a warning per unmapped name and for YAML lists.
+/// `normalizeTools` for an agent's `tools` and `disallowedTools`: map Claude Code tool names
+/// (case-insensitive) onto hoocode tools, deduped. A bare name with no alias is kept as a `Name`
+/// selector, not dropped: it may be a plugin or MCP tool's model-facing name (option D). Whether
+/// it matches anything is checked when the session starts (`plugins.md`, Naming and identity).
 pub fn normalize_tools(
     value: &Value,
     file_path: Option<&str>,
+) -> (Vec<String>, Vec<ResourceDiagnostic>) {
+    normalize(value, file_path, true)
+}
+
+/// The skills' `allowed-tools`: as [`normalize_tools`], but a name with no alias is dropped with
+/// a warning.
+pub fn normalize_skill_tools(
+    value: &Value,
+    file_path: Option<&str>,
+) -> (Vec<String>, Vec<ResourceDiagnostic>) {
+    normalize(value, file_path, false)
+}
+
+fn normalize(
+    value: &Value,
+    file_path: Option<&str>,
+    keep_unmapped: bool,
 ) -> (Vec<String>, Vec<ResourceDiagnostic>) {
     let mut diagnostics = Vec::new();
     if value.is_array() {
@@ -190,6 +209,12 @@ pub fn normalize_tools(
         }
         let lower = raw.to_lowercase();
         let Some((_, mapped)) = CLAUDE_TOOL_ALIASES.iter().find(|(k, _)| *k == lower) else {
+            if keep_unmapped {
+                if !resolved.contains(&raw) {
+                    resolved.push(raw);
+                }
+                continue;
+            }
             diagnostics.push(ResourceDiagnostic::warning(
                 format!(
                     "tool \"{raw}\" has no hoocode equivalent and was dropped from the allowlist"
