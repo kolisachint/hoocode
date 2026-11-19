@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: a plugin tool cannot take the MCP name prefix (2026-11-19)
+- A plugin's WASM tool named `mcp__<x>` (any case) is not loaded, with a diagnostic. The
+  `mcp__` prefix is the MCP tools' own, so such a tool could pass as an MCP tool.
+
 ### Fixed: tool name collisions are case-insensitive (2026-11-19)
 - A plugin tool whose name differs from a taken name only in case (`read` next to the built-in
   `Read`, or `Foo` and `foo` from two plugin tools) is not loaded. Selectors match names

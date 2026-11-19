@@ -148,7 +148,7 @@ fn build_with_cache(
                 diagnostics.push((
                     DiagnosticKind::Warning,
                     format!(
-                        "{label}: tool {:?} not loaded: its name must match ^[A-Za-z][A-Za-z0-9_-]{{0,63}}$",
+                        "{label}: tool {:?} not loaded: its name must match ^[A-Za-z][A-Za-z0-9_-]{{0,63}}$ and not start with mcp__",
                         info.name
                     ),
                 ));
@@ -753,6 +753,10 @@ mod tests {
         assert!(!valid_plugin_tool_name("_x"));
         assert!(!valid_plugin_tool_name("a.b"));
         assert!(!valid_plugin_tool_name("a b"));
+        // An MCP tool's name prefix is not a plugin tool's, in any case.
+        assert!(!valid_plugin_tool_name("mcp__github__x"));
+        assert!(!valid_plugin_tool_name("MCP__x"));
+        assert!(valid_plugin_tool_name("mcp_x"));
         assert!(!valid_plugin_tool_name(&format!("A{}", "b".repeat(64))));
     }
 

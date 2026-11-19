@@ -75,11 +75,14 @@ impl ToolOrigin {
 }
 
 /// Whether `name` may be a plugin WASM tool's model-facing name: `^[A-Za-z][A-Za-z0-9_-]{0,63}$`
-/// (`docs/design/plugins.md`, Naming and identity). The loader of a component and the agent's
-/// tool setup both check a declared name with this one function.
+/// and not `mcp__` at the start, in any case (`docs/design/plugins.md`, Naming and identity). An
+/// MCP tool's name is `mcp__<server>__<tool>`, so a plugin tool with that prefix would pass as an
+/// MCP tool in a selector and in the transcript. The loader of a component and the agent's tool
+/// setup both check a declared name with this one function.
 pub fn valid_plugin_tool_name(name: &str) -> bool {
     let mut chars = name.chars();
     name.len() <= 64
+        && !name.to_ascii_lowercase().starts_with("mcp__")
         && chars.next().is_some_and(|c| c.is_ascii_alphabetic())
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
@@ -429,6 +432,14 @@ mod tests {
                 "{bad:?} should be refused"
             );
         }
+    }
+
+    #[test]
+    fn a_plugin_tool_name_never_has_the_mcp_prefix() {
+        assert!(valid_plugin_tool_name("WebFetch"));
+        assert!(!valid_plugin_tool_name("mcp__search__lookup"));
+        assert!(!valid_plugin_tool_name("Mcp__search__lookup"));
+        assert!(!valid_plugin_tool_name("mcp__"));
     }
 
     #[test]

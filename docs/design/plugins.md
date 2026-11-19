@@ -158,7 +158,7 @@ Model-facing names:
 | Origin | Name | Example | Rule |
 |---|---|---|---|
 | Built-in | fixed | `Read`, `Agent` | Unchanged |
-| Plugin WASM | the name the plugin declares in `tool-info.name` | `WebFetch` | Matches `^[A-Za-z][A-Za-z0-9_-]{0,63}$`. PascalCase recommended. No match: not loaded, with a diagnostic |
+| Plugin WASM | the name the plugin declares in `tool-info.name` | `WebFetch` | Matches `^[A-Za-z][A-Za-z0-9_-]{0,63}$` and does not start with `mcp__` (any case), which is the MCP prefix. PascalCase recommended. No match: not loaded, with a diagnostic |
 | MCP, any source | `mcp__<server>__<tool>` | `mcp__github__create_issue` | Each part: a character outside `[A-Za-z0-9_-]` becomes `_`, then every run of `_` in the part becomes one `_`, so `__` only separates parts. An empty part: not loaded, with a diagnostic |
 
 - Length cap: 64 characters. A longer name keeps its first 55 characters, then `_` and 8 hex digits of FNV-1a over the full name, as `naming.rs` does today.
@@ -320,6 +320,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-19 | Tool identity is structured (option D). The origin (`BuiltIn`, `Plugin`, `Mcp`) is carried everywhere; the model-facing name is for the model only. Supersedes the 2026-11-17 naming row. |
 | 2026-11-19 | Model-facing names: a plugin's WASM tools use the name the plugin declares (PascalCase, `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). MCP tools are `mcp__<server>__<tool>`, sanitised, 64 cap with an FNV-1a suffix. Old `ext_*` and `mcp_*` names are removed, with no aliases. |
 | 2026-11-19 | Collisions: a built-in is never shadowed. Between plugin and MCP tools the first in load order wins and the other is not loaded. Always a diagnostic that names both origins. The silent MCP overwrite is a bug. |
+| 2026-11-19 | A plugin WASM tool name may not start with `mcp__` (any case). That prefix is the MCP tools' own, so such a name is not loaded, with a diagnostic. |
 | 2026-11-19 | Name collisions are case-insensitive (`Read` and `read` are one name). Holders are keyed by lowercase name in the component loader and in the session's admit step. The notice keeps each tool's own spelling. |
 | 2026-11-19 | Selectors: `Name`, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>`, `mcp:*`. They match origin. A malformed selector fails closed. |
 | 2026-11-19 | Webtools tools are `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The `Claude` aliases and `ext_webtools_*` names go. Supersedes the WebFetch/WebSearch part of the 2026-11-18 row. |
