@@ -1,19 +1,21 @@
 # Plugins
 
-Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Built in P2b (2026-11-19): selectors in permission rules, a gate and clearance relays that read the origin, malformed selectors refused everywhere. Built in P4 (2026-11-19): the TUI origin label and renderer hints. See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-17.
+Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Built in P2b (2026-11-19): selectors in permission rules, a gate and clearance relays that read the origin, malformed selectors refused everywhere. Built in P4 (2026-11-19): the TUI origin label and renderer hints. See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-22. Designed 2026-11-19 (docs only): a third plugin tier, native helpers (tier C), and the browser plugin built on it (PL-18 to PL-22). See Tiers, Native tier contract and Browser plugin.
 
 ## Principles
 
 - **Standards first.** Agent Plugins 1.0 (agent-plugins.org) is the package format. A plugin's components are `skills/` (Agent Skills) and `mcp.json`. Hooks, commands, prompts and agents are not plugin components. Revisit when Agent Plugins 1.1 (portable hooks, a working draft) is final (PL-14).
 - **hoocode-only parts live in `dev.hoocode/`** (Agent Plugins spec §6.1). Other clients ignore it (§7).
-- **Two tiers.**
-  - Internal: a WASM component run in-process by hoocode's wasmtime host. It reaches the outside only through host functions, so the permission gate is enforced.
-  - External: an MCP server. Any language. Its own process. Trusted, not enforced.
-- **Deployment rule.** A tool that needs its own process, a daemon, or a runtime (Python, Node, a kernel) is external. Everything else may be internal.
+- **Tiers** (2026-11-19). See Tiers.
+  - A, static: a Rust crate compiled into the hoocode binary. Future only.
+  - B, WASM: a WASM component run in-process by hoocode's wasmtime host. It reaches the outside only through host functions, so the permission gate is enforced.
+  - C, native helper: one long-lived process per hoocode session, shipped as a per-platform binary, speaking MCP over Streamable HTTP on a local socket. Trusted, not enforced. Shared by the root agent and its subagents.
+  - External: a plain MCP server (stdio or Streamable HTTP). Any language. Its own process. Trusted, not enforced.
+- **Deployment rule.** A small stateless tool is tier B. A tool that keeps state, owns a process or a daemon, or needs a runtime is tier C (shared by subagents) or a plain MCP server (not shared).
 - **Contract over runtime.** The internal contract mirrors the MCP tool shape (name, description, JSON input schema; JSON in, JSON out). A tool can move between tiers by changing transport, not logic.
 - **Standard WASI where it exists.** hoocode interfaces only where none does.
 - **One trust decision per plugin**, at install or first launch. It covers everything in the plugin (MCP and WASM). The permission gate still applies to every gated action. Only user or project settings bypass the gate. A plugin may suggest permissions; it never grants them. Plugins ship no settings.
-- **Subagents** get internal (WASM) plugin tools, never MCP plugin tools, never plugin-management tools.
+- **Subagents** get tier B tools and the tools of tier C helpers that declare `shared: true`. They never get plain MCP plugin tools or plugin-management tools (narrowed 2026-11-19).
 - **User beats project.** A user plugin wins a name over a project plugin. An untrusted project plugin is not loaded.
 - **Stop rule.** If PL-7 shows that feature trimming does not cut the build and size cost, re-decide before host code. If two releases after PL-12 there is still one WASM plugin, record it as a decision (PL-15).
 
@@ -94,16 +96,106 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 - Adding a marketplace stays human-only.
 - Subagents never get these tools.
 
-### Two tiers
+### Tiers
 
-| Tier | Runs as | Language | Reach | Enforced? | Subagents |
-|---|---|---|---|---|---|
-| Internal | WASM component in hoocode (wasmtime) | any that builds WASI 0.2 components (Rust, also JS, Python, Go) | host functions only | yes, gate on every gated host call | yes, gated calls via clearance |
-| External | MCP server process (stdio or Streamable HTTP) | any | anything the process can do | no, trusted | no |
+| Tier | Runs as | Language | Reach | Enforced? | Subagents | Status |
+|---|---|---|---|---|---|---|
+| A, static | Rust crate compiled into hoocode behind a cargo feature, against a published contract crate | Rust | anything | no | yes | Future |
+| B, WASM | WASM component in hoocode (wasmtime) | any that builds WASI 0.2 components | host functions only | yes, gate on every gated host call | yes, gated calls via clearance | Built |
+| C, native helper | one process per hoocode session, started on first use; MCP over Streamable HTTP on a local socket | any | anything the process can do | no, trusted (one trust decision per plugin) | yes, if `shared: true` | Designed (PL-18) |
+| C+, WASM host | a tier C helper that hosts WIT components and keeps them alive | as tier B | host functions only | yes | yes | Later, on demand (PL-22) |
+| External | plain MCP server process (stdio or Streamable HTTP) | any | anything the process can do | no, trusted | no | Built |
 
 - Webtools fetch and search: internal (network via gated `wasi:http`).
 - Notebook editing: internal (needs `workspace`, interface 0.2).
 - Notebook execution: external or a skill (needs a kernel process).
+- Browser automation: tier C (`hoo-browser`, PL-19).
+
+### Native tier contract (tier C, designed 2026-11-19)
+
+Why: a browser driver needs state, its own processes and access from many subagents at once. Tier B cannot start processes (WASI 0.3, ratified 2026-06-11, has no process interface) and keeps no state between calls. A plain stdio MCP server serves one client process, so subagents would each start their own copy.
+
+Package. Agent Plugins 1.0 `mcp.json` names the server, as for any MCP plugin. hoocode-only fields go in `extensions["dev.hoocode"].native`:
+
+| Field | Meaning |
+|---|---|
+| `shared` | `true`: one helper per hoocode session, reachable by subagents |
+| `binaries` | per platform (`linux-x86_64`, `linux-aarch64`, `darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`): download URL and `sha256`. Shape follows `.mcpb` `platform_overrides` |
+| `tools` | the tool list (name, description, input schema, permission hint: `read`, `act` or `dangerous`). The model sees them before the helper starts |
+| `binaryPath` (user setting) | use an installed binary instead of downloading (offline and IT-approved installs) |
+
+Transport. MCP over Streamable HTTP, carried on a local socket, never TCP. The MCP spec allows custom transports and names Unix sockets.
+
+- Linux and macOS: a Unix socket in a `0700` per-session directory under `$XDG_RUNTIME_DIR`, else the temp directory. Path under 100 bytes (macOS limit 104, Linux 108).
+- Windows: `\\.\pipe\hoocode-<random>`. Explicit DACL for the current logon SID (the default DACL gives Everyone read), `first_pipe_instance`, remote clients rejected.
+- Naming follows vscode-languageclient. Crates: `interprocess` (0BSD OR Apache-2.0) for the socket, hyper for HTTP.
+
+Identity. The root process mints one bearer token per agent (root and each subagent). The supervisor passes the socket path and token in the child's environment (subagents start with `env_clear`, so it adds them explicitly). hoocode's MCP client sends the token as a header the model never sees. The helper maps token to `{agentId, parentId, depth}`. Every call also carries `_meta["dev.hoocode/agent"]`. The socket peer check (peer credentials on Unix, `GetNamedPipeClientProcessId` on Windows) confirms the same user. Shell gets `HOOCODE_AGENT_ID` and the token too, for CLI fallbacks.
+
+Lifecycle.
+
+- Started on first use by the root process, never at session start. The helper signals ready by creating its socket; the supervisor waits up to 10 s.
+- The helper gets `--parent-pid` and exits when the parent dies. On Windows a job object also kills it.
+- Bounded restart: up to 5 restarts in 3 minutes, then the tools report the helper as down.
+- Notifications from hoocode: `hoocode/agentStarted`, `hoocode/agentEnded`, `hoocode/sessionEnding`.
+- Download: once per version into `~/.hoocode/plugin-bin/<plugin>/<version>/`, checksum verified, through the same proxy and CA settings as other plugin HTTP.
+
+Core work (PL-18): manifest fields, supervisor (download, verify, start, watch, restart), local-socket Streamable HTTP in `hoocode-agent-mcp`, per-agent tokens, registration of declared tools, the narrowed subagent rule, `docs/user` and `docs/maps`.
+
+### Browser plugin (designed 2026-11-19)
+
+Requirements (user, 2026-11-19):
+
+- Fast, reliable, parallel: subagents at once, several tabs per agent, root and subagents together.
+- One shared browser and one shared login. Each agent owns its tabs. No agent takes another's tab, focus, element refs, dialogs, popups or downloads.
+- Backends, all configurable: Chromium headless (default), headed Chromium, the user's real Chrome, Lightpanda (opt-in).
+- Reuse agent-browser rather than write a browser driver.
+
+Architecture:
+
+- Engine: Vercel agent-browser (Apache-2.0), run as an external program at a pinned release. Never vendored or copied. Fixes go upstream first (PL-20); the plugin pins a release of `kolisachint/agent-browser` until each fix lands upstream, then returns to upstream releases.
+- Plugin repo: `kolisachint/hoo-browser-plugin` (MIT). The old chromiumoxide driver is deleted; its flow and replay ideas stay as notes for later.
+- Helper: `hoo-browser`, a Rust tier C helper (MIT). It calls the agent-browser CLI with `--json` once per tool call. Revisit only if its own overhead goes over 20 ms at p95.
+- Leases: agent `A` owns sessions `A-1`, `A-2`, and so on (one per tab it drives at once). Every session attaches to the one shared browser (`AGENT_BROWSER_CDP`, pinned tab) and opens its own window (`window new`). Limits: 4 tabs per agent, 24 per session, 10 minutes idle. On `agentEnded` its sessions close, unless the root agent took them with `adopt`.
+- Backends: Chromium headless by default (real screenshots). Headed Chromium shows one window per agent. The real Chrome uses the Chrome 144+ setting at `chrome://inspect/#remote-debugging`; the helper holds one connection, so the user should see one approval. If a managed Chrome forbids remote debugging, the helper says so and offers a separate profile. Lightpanda is opt-in, run as an external program (AGPL-3.0), telemetry off (`LIGHTPANDA_DISABLE_TELEMETRY`), text snapshots first.
+- Tools (declared in the manifest): `browser_open`, `browser_snapshot`, `browser_act` (click, fill, select, check, hover, press, by ref), `browser_screenshot` (returns an image), `browser_tabs`, `browser_wait`, `browser_nav` (back, forward, reload), `browser_eval` (permission hint `dangerous`).
+- Skill: when to use the browser, refs before screenshots, and the CLI fallback.
+- CLI fallback: `hoo-browser <agent-browser command>` through Shell, scoped to the caller's sessions by `HOOCODE_AGENT_ID`. For the long tail (cookies, network, recording).
+- Install: the plugin downloads its pinned `hoo-browser` and agent-browser binaries, checksum verified.
+
+Evidence (2026-11-19, Linux, Chrome for Testing 153, agent-browser 0.43.0 and HEAD 25b5d76, Lightpanda nightly 1.1.0-nightly.12282):
+
+| Finding | Number or source |
+|---|---|
+| agent-browser serializes commands per session (one daemon, one lock) | a second command waited 1305 ms behind `wait 1500`; another session answered in 4 ms (`cli/src/native/daemon.rs:690`) |
+| 8 pinned sessions on one Chrome | cold start 0.5 to 1.1 s each; warm command 3 to 16 ms; 80 snapshots 266 ms parallel, 912 ms serial |
+| A pinned tab that is not in front | clicks 5007 to 5011 ms (visible tab 18 ms); in headed mode clicks were dropped |
+| Focus emulation on a background tab | clicks 6 ms, screenshots time out at 30 s |
+| One window per agent plus focus emulation | headed: 8 of 8 clicks, screenshots 41 to 63 ms. Headless with `window new`: clicks 7 to 17 ms, screenshots 18 to 36 ms |
+| Popups | no opener ownership: another session took a popup |
+| Downloads | browser-wide, last setting wins (`browser.rs:2823`): one client's file landed in another's folder |
+| `tab switch` | calls `Page.bringToFront` (`browser.rs:2274`), which takes focus |
+| `agent-browser mcp` | one request at a time across all sessions (`mcp.rs:593`); warm call 21 ms |
+| Daemon killed | without `AGENT_BROWSER_CDP` the next command started a private Chrome and orphaned the pinned tab |
+| Windows | agent-browser's own daemon uses loopback TCP on Windows (`connection.rs:106`) |
+| Lightpanda | one CDP connection = one browser with one context; connections do not share tabs or cookies; screenshots are rough |
+| Chrome 136+ | remote debugging flags ignored on the default profile (developer.chrome.com/blog/remote-debugging-port). Chrome 144+: user toggle with approval (developer.chrome.com/docs/devtools/agents/use-cases/auto-connect) |
+
+Industry survey (2026-11-19). The de facto agent tool plugin is an MCP server the host starts, over stdio (Claude Code, Codex, Gemini CLI, Goose, Cline, Continue, Cursor, Zed context servers). Servers shared by many processes use a named pipe on Windows and a Unix socket elsewhere (vscode-languageclient, Neovim, Docker); go-plugin uses loopback TCP with mTLS on Windows. Claude Code subagents share the parent's MCP connection. Zed WASM extensions return a command to spawn rather than doing the work. Nobody surveyed uses gRPC for editor or agent tools. Sources: modelcontextprotocol.io spec 2026-07-28 transports; agent-plugins.org/specification; github.com/modelcontextprotocol/mcpb MANIFEST.md; zed.dev/docs/extensions; code.claude.com/docs/en/sub-agents; github.com/hashicorp/go-plugin; learn.microsoft.com named-pipe security.
+
+Not verified: approval prompts per connection on Chrome Stable 144+; macOS, Windows and Wayland; behaviour above 8 agents; Windows firewall behaviour.
+
+Implementation plan (locked 2026-11-19). Each phase ends with its tests passing.
+
+| Phase | Repo | Work | Done when |
+|---|---|---|---|
+| B0 | `kolisachint/agent-browser` | PL-20 fixes AB-1 to AB-4 as upstream PRs; pinned fork release | 8 agents on one headed Chrome pass the no-steal checks |
+| B1 | hoocode | PL-18 tier C core | an echo tier C fixture answers root and 3 subagents at once, identity correct, on Linux and macOS |
+| B2 | `hoo-browser-plugin` | PL-19 helper, tools, leases, backends, skill, CLI fallback | the no-steal suite and the latency targets pass headless and headed (Xvfb) |
+| B3 | `hoo-browser-plugin`, `hoo-plugins` | packaging, pinned downloads, marketplace listing, `docs/user` page | `hoocode install` then a subagent eval drives the browser |
+| B4 | all | real Chrome (144+) manual check; Lightpanda backend; AB-5 and AB-6 | recorded results in this doc |
+
+Checks: 8 parallel subagents on one browser; popups, dialogs and downloads stay with their owner; no focus change; helper overhead under 20 ms at p95; a killed helper or Chrome recovers or fails cleanly; a subagent's windows close when it ends.
 
 ### Contract: `hoocode:extension@0.1.0`
 
@@ -217,7 +309,8 @@ Built in P2 (2026-11-19): names, origin, selectors in `--tools`, collision diagn
 - Official marketplace: repo `hoo-plugins` (planned name `hoocode-official-plugins`), a listing only (`marketplace.json` entries). Pre-trusted alongside the existing official directory (PL-12).
 - `hoo-web-plugin` (the webtools repo, renamed): the webtools libraries, native CLI and MCP server, plus the hoocode plugin package in `plugin/` (`plugin.json`, the skill, the component crate in `plugin/component/` and the built `dev.hoocode/extension.wasm`). A marketplace entry points at the repo with path `plugin`.
 - The webtools libraries stay hoocode-agnostic. They have a `Transport` trait (one hop, no redirects; native reqwest, and `wasi:http` behind the `wasi` feature) and build for `wasm32-wasip2`. The CLI reads its own `~/.config/webtools/config.json` (`WEBTOOLS_CONFIG`), not `~/.hoocode/settings.json`.
-- MCP server binaries are expected on PATH. Plugins do not ship per-platform binaries.
+- Plain MCP server binaries are expected on PATH. Tier C plugins ship per-platform binaries, downloaded and checksum verified (reversed 2026-11-19, see Native tier contract).
+- `hoo-browser-plugin` (MIT): the `hoo-browser` tier C helper and the plugin package. Listed in `hoo-plugins` (PL-19).
 
 ### Measurements (2026-11-17)
 
@@ -331,6 +424,18 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-19 | Built in P2b. A plugin's network request is asked as the built-in `WebFetch` permission category (origin `BuiltIn`), not as the plugin's tool. A plugin's WASM tool is never gated at call level, so a plugin tool named `WebFetch` gets one prompt per origin. `WebSearch` is no longer a gated built-in name. |
 | 2026-11-19 | Built in P2b. Malformed selectors fail closed. `--tools` or `--disallowed-tools` with a bad entry is a CLI error. An agent `tools` or `disallowedTools` entry that is not a selector rejects the definition. A bad entry in `auto_allow`, `denied_tools` or `enabled_tools` refuses to start hoocode (every problem is named). Until it is fixed, a malformed `denied_tools` blocks every call in its mode and an unreadable `auto_allow` allows nothing. Rules match names case-insensitively, as `--tools` does. |
 | 2026-11-19 | An agent's `tools` and `disallowedTools` keep a bare name with no Claude alias as a `Name` selector (`tools: Lookup`), instead of dropping it. It matches case-insensitively at start. A `--tools` name that matches no tool warns at start (subagents too) and is ignored; it does not reject the definition. Mapped Claude names (`Bash`, `Grep`) are unchanged. Skills' `allowed-tools` still drop a name with no alias. |
+| 2026-11-19 | Plugin tiers: A static (future), B WASM (built), C native helper (designed), C+ WASM host on tier C (later), plus plain MCP. Real work that needs state or processes is tier C, as in the industry survey (see Browser plugin). |
+| 2026-11-19 | Tier C transport: MCP over Streamable HTTP on a local socket (Unix socket; Windows named pipe with an explicit DACL). No loopback TCP, no gRPC, no custom protocol. |
+| 2026-11-19 | Tier C scope: one helper per hoocode session, started on first use by the root process. Not shared across sessions. |
+| 2026-11-19 | Tier C identity: host-minted bearer token per agent, sent as a header the model never sees, plus `_meta["dev.hoocode/agent"]`. The model never names its agent. |
+| 2026-11-19 | Subagent rule narrowed: subagents get the tools of tier C helpers that declare `shared: true`. Plain MCP plugin tools stay root-only. |
+| 2026-11-19 | Reversed: tier C plugins ship per-platform binaries (download URL and sha256 per platform, `.mcpb` shape), with a `binaryPath` override for offline and IT-approved installs. Trust stays one decision per plugin. |
+| 2026-11-19 | Tier C tools are declared in the manifest, so discovery needs no process start. |
+| 2026-11-19 | Browser plugin: reuse agent-browser (Apache-2.0) as an external program at a pinned release; fixes upstream first; no own CDP driver; the old chromiumoxide driver in `hoo-browser-plugin` is deleted. |
+| 2026-11-19 | Browser isolation: one shared browser and login; each agent owns sessions pinned to its own tabs, one window per agent, never `bringToFront`. Several tabs per agent means several sessions. Limits 4 per agent, 24 per session, 10 min idle. |
+| 2026-11-19 | Browser backends: Chromium headless default; headed; real Chrome via the Chrome 144+ toggle; Lightpanda opt-in (AGPL, external only, telemetry off). |
+| 2026-11-19 | Browser tools: 8 declared tools plus a Shell CLI fallback (`hoo-browser`) for the long tail. |
+| 2026-11-19 | Browser implementation plan B0 to B4 locked (see Browser plugin). |
 
 ## Open
 
@@ -353,6 +458,11 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-15 | Second-consumer review | S | Two releases after PL-12 | If only one WASM plugin exists, record it and decide whether to keep the host. |
 | PL-16 | Plugin HTTP through an explicit HTTPS_PROXY (CONNECT) | M | A user behind an explicit proxy | Needs care: the proxy resolves the host, so the SSRF address pin can't apply; opt-in only. |
 | PL-17 | Tool identity separate from the model-facing name (option D) | M | Now (roadmap item 0). Phases: P1 design (2026-11-19); P2 core and P2b (built 2026-11-19, not merged); P3 plugin; P4 TUI; P5 live end-to-end; P6 review | See Naming and identity. P2: `ToolOrigin`, names, selectors, collision diagnostics, evals, `docs/user`, `docs/maps`, CHANGELOG. P3: webtools `WebFetch` and `WebSearch`, hint, wasm rebuild. P4: origin label, `toolExternal`, hint dispatch, goldens (tui.md). P5: Tavily rerun, incl. a subagent in json mode. P6: Opus review of the three branches before any PR. |
+| PL-18 | Tier C core: native helpers | L | Next for the browser (B1) | See Native tier contract. Manifest fields, supervisor, local-socket Streamable HTTP in `hoocode-agent-mcp` (`interprocess`, hyper), per-agent tokens, declared tools, narrowed subagent rule, parent-pid exit and Windows job object, bounded restart. Windows is designed for but not shipped (EN-11). |
+| PL-19 | Browser plugin `hoo-browser` (B2, B3) | L | After PL-18 and AB-1 to AB-4 | See Browser plugin. Repo `hoo-browser-plugin`. |
+| PL-20 | agent-browser fixes upstream (B0, B4) | M | Now, independent of PL-18 | In `kolisachint/agent-browser`, as PRs to Vercel. AB-1 window and focus emulation for pinned sessions, never `bringToFront`. AB-2 popups owned by the opener's session (`openerId`). AB-3 per-session download folder, routed by frame. AB-4 a session bound to a CDP target reattaches to it after a crash, never launches a private browser. AB-5 `agent-browser mcp` serves sessions concurrently and takes its default session from the environment. AB-6 named pipe instead of loopback TCP on Windows. |
+| PL-21 | Tier A: static plugin crates | M | A plugin is promoted into core | Published contract crate and cargo features; one static binary. |
+| PL-22 | Tier C+: WASM host helper | M | A tier B plugin needs state across calls | A tier C helper that keeps WIT components alive and shares them across subagents. Not for the browser. |
 
 ## Not doing
 
@@ -363,4 +473,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 - Process spawning or raw sockets from WASM components.
 - A cargo feature that turns the WASM host off.
 - Per-tool approval prompts beyond the gate; settings shipped by plugins.
-- Per-platform binaries inside plugins.
+- Per-platform binaries in plain MCP or tier B plugins (tier C ships them, 2026-11-19).
+- Loopback TCP or gRPC for plugin helpers.
+- A hoocode-owned CDP browser driver; adopting `agent-browser mcp` as the browser plugin.
+- Sharing a tier C helper across hoocode sessions.

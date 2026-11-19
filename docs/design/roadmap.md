@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-19): one plan for all areas. Now starts with PL-17 (tool identity, option D). It replaces the core, TUI, and themes and keybindings plans. 107 open rows in the area docs' Open tables, 12 of them marked Done. This plan lists 34 next, 13 need a user decision, 49 deferred behind a trigger or gate.
+Status (2026-11-19): one plan for all areas. Now starts with PL-17 (tool identity, option D). It replaces the core, TUI, and themes and keybindings plans. 112 open rows in the area docs' Open tables, 12 of them marked Done. This plan lists 37 next, 13 need a user decision, 51 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
@@ -71,6 +71,9 @@ Ordered. Items with no trigger, or a met one. The approved performance order is 
 40. [AG-15](agent.md#open) Cron batch 2: one-shot persistence, busy guards, `/cd` split (M)
 42. [EN-14](README.md#open) Point code comments and `clippy.toml` at the new design docs (S)
 43. [EN-15](README.md#open) Drop dead `archive/` lines from `no_cortex.sh` (S)
+44. [PL-20](plugins.md#open) agent-browser fixes AB-1 to AB-4 upstream, browser plan B0 (M). Independent of core work.
+45. [PL-18](plugins.md#open) Tier C core: native plugin helpers, browser plan B1 (L)
+46. [PL-19](plugins.md#open) Browser plugin `hoo-browser`, browser plan B2 and B3 (L). After 44 and 45.
 
 ## Needs a user decision
 
