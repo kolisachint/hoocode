@@ -1,6 +1,6 @@
 # Roadmap
 
-Status (2026-11-19): one plan for all areas. Now starts with PL-17 (tool identity, option D). It replaces the core, TUI, and themes and keybindings plans. 81 open rows in the area docs. This plan lists 44 next, 14 need a user decision, 50 deferred behind a trigger or gate.
+Status (2026-11-19): one plan for all areas. Now starts with PL-17 (tool identity, option D). It replaces the core, TUI, and themes and keybindings plans. 107 open rows in the area docs' Open tables, 12 of them marked Done. This plan lists 34 next, 13 need a user decision, 49 deferred behind a trigger or gate.
 
 Rule: when the user asks to implement, ask which item first. The top of Next is the recommendation.
 
