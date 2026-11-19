@@ -190,7 +190,8 @@ class Scenario:
     prompt: str | None = None
     settings: dict[str, Any] = field(default_factory=dict)
     models: list[dict[str, Any]] | None = None
-    timeout_s: int = 120
+    # A first-time WASM compile of the plugin is slow in a debug build (over 120s).
+    timeout_s: int = 300
     slow: bool = False
     known_issue: str | None = None
     # Extra environment for the parent process (the lifeguard runs there).
@@ -247,6 +248,10 @@ def _echo_expect() -> Expect:
         parent_requests=2,
         route_tools_have={"child": ["ext_echo_echo"]},
         route_sees={"parent": ["echoed_marker"]},
+        # The echo output is the child's tool result, and the parent gets it back in
+        # the Agent result. A denied call returns a refusal instead, which fails here.
+        tool_results_have={"child": ["ext-echo-7"], "parent": ["ext-echo-7"]},
+        tool_results_lack={"child": ["denied", "Denied"], "parent": ["denied", "Denied"]},
     )
 
 
