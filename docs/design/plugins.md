@@ -1,6 +1,6 @@
 # Plugins
 
-Status (2026-11-17): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`; plugin tools `ext_<plugin>_<tool>`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Open: PL-1 to PL-5, PL-13 to PL-16.
+Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Built names are `ext_<plugin>_<tool>` and `mcp_<server>_<tool>`. Decided 2026-11-19 (option D, not built): tool identity and names, see Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-17.
 
 ## Principles
 
@@ -24,7 +24,7 @@ Numbers a contributor needs:
 | Plugin marketplace cache | refreshed after 1 day | `plugin-marketplace-cache/<name>` |
 | WASM call limits | 30 s per call, 64 MB memory, Esc cancels (epoch interruption) | decided, PL-9 |
 | wasmtime line | 48 LTS, supported to about 2028-11; next LTS 60 | docs.wasmtime.dev stability-release |
-| Tool name cap | 64 chars, FNV-1a hash suffix | `hoocode-agent-mcp/src/naming.rs` |
+| Model-facing tool name cap | 64 chars. Longer names keep 55 characters, then `_` and 8 hex FNV-1a digits of the full name | `hoocode-agent-mcp/src/naming.rs` (PL-17 changes the rule) |
 
 ## How it works
 
@@ -42,7 +42,7 @@ my-plugin/
 ```
 
 - The component path is fixed: `dev.hoocode/extension.wasm`.
-- Keys under `extensions."dev.hoocode"` in `plugin.json` may be added later (for example, suggested permissions). They are additive and override the convention.
+- Keys under `extensions."dev.hoocode"` in `plugin.json` are additive and override the convention. Used today: `tools` (renderer hints, see Naming and identity). Later: suggested permissions.
 - Convention to config is additive. Config to convention would break plugins, so we start with the convention.
 
 ### Formats read
@@ -138,12 +138,78 @@ The `wit/` package holds only hoocode's interfaces; WASI 0.2 interfaces are prov
 - Subagent processes load from the same cache.
 - `HOOCODE_INTERNAL_WASM_ALLOW_LOOPBACK=1` (internal, tests only, not in `--help`) lets loopback through the SSRF block. It is read from the environment only, never from plugin config.
 
-### Naming
+### Naming and identity
 
-- Internal tools: `ext_<plugin>_<tool>`.
-- Plugin MCP tools: `mcp_<plugin>_<server>_<tool>`.
-- Never shadow a built-in.
-- 64-char cap with hash suffix (same as MCP today).
+Each tool has two names. The host keeps the origin as data and never reads it back from a name. The model sees only the model-facing name.
+
+| Part | Set by | Used for |
+|---|---|---|
+| Origin | the host | registry, permission gate, selectors, transcript and events, TUI, subagent tool lists, JSON output |
+| Model-facing name | the rules below | the tool schema and the model's calls |
+
+Origins (`ToolOrigin`):
+
+- `BuiltIn`.
+- `Plugin { plugin, tool }`: a WASM tool. `tool` is the name the plugin declares.
+- `Mcp { server, tool, plugin }`: an MCP tool. `server` is the key in `mcp.json`, `tool` is the server's own name for it, and `plugin` is the owning plugin, or none for user and project config.
+
+Model-facing names:
+
+| Origin | Name | Example | Rule |
+|---|---|---|---|
+| Built-in | fixed | `Read`, `Agent` | Unchanged |
+| Plugin WASM | the name the plugin declares in `tool-info.name` | `WebFetch` | Matches `^[A-Za-z][A-Za-z0-9_-]{0,63}$`. PascalCase recommended. No match: not loaded, with a diagnostic |
+| MCP, any source | `mcp__<server>__<tool>` | `mcp__github__create_issue` | Each part: a character outside `[A-Za-z0-9_-]` becomes `_`, then every run of `_` in the part becomes one `_`, so `__` only separates parts. An empty part: not loaded, with a diagnostic |
+
+- Length cap: 64 characters. A longer name keeps its first 55 characters, then `_` and 8 hex digits of FNV-1a over the full name, as `naming.rs` does today.
+- Plugins are written for hoocode, so their tools need no prefix. MCP servers are not, so their tools keep one.
+- The WIT contract stays `hoocode:extension@0.1.0`. Only the doc comment on `tool-info.name` changes.
+
+Collisions. A collision is never silent.
+
+| Case | Result | Diagnostic |
+|---|---|---|
+| A plugin or MCP name equals a built-in name | Not loaded. A built-in is never shadowed | Names the tool and the built-in |
+| Two plugin or MCP tools have the same model-facing name | The first in load order is loaded. The other is not | Names both origins, for example `plugin webtools` and `mcp github (plugin docs)` |
+
+- Load order is the existing one: user before project. The MCP path must not overwrite a tool silently, as it does today.
+- Diagnostics show in `/plugin list` and in plugin diagnostics.
+
+Selectors. Permission rules, `auto_allow`, agent `tools` and `disallowedTools`, and the `--tools` and `--disallowed-tools` flags match a selector against the origin, not the name.
+
+| Selector | Matches |
+|---|---|
+| `Name` | The tool whose model-facing name is `Name`. Case-insensitive, as built-in names are today |
+| `plugin:<p>` | Every tool of plugin `p`, WASM and MCP |
+| `plugin:<p>/<Tool>` | One tool of plugin `p`. `<Tool>` is the tool's own name: the declared name for WASM, the server's name for MCP |
+| `plugin:*` | Every plugin tool, WASM and MCP |
+| `mcp:<s>` | Every MCP tool of server `s`, from any source. `s` is the key in `mcp.json` |
+| `mcp:<s>/<tool>` | One MCP tool, by the server's name for it |
+| `mcp:*` | Every MCP tool |
+
+- No other form is a selector. `ext_*`, `mcp_*` and other globs are removed, with no alias.
+- A selector names a tool, not a permission category. `WebFetch` as a selector matches the tool of that name. The gate still uses `WebFetch` as the category for a plugin's network calls, so the prompt says what is asked. Network from other plugin tools is covered by `plugin:<p>`.
+- A malformed selector in an agent definition rejects that definition, with a diagnostic. In a permission rule it is refused, with a diagnostic. Fail closed.
+
+Renderer hint. A plugin says how the TUI draws its tools, in `plugin.json`:
+
+```json
+"extensions": {
+  "dev.hoocode": {
+    "tools": {
+      "WebFetch": { "render": "web-fetch" },
+      "WebSearch": { "render": "web-search" }
+    }
+  }
+}
+```
+
+- The key is the plugin-declared tool name. `render` is an id from hoocode's closed list. An absent or unknown id gives the generic renderer. A key for a tool the component does not declare is ignored, with a warning.
+- The hint is data. It runs no code and grants no permission. MCP tools have no hint in v1 and use the generic renderer.
+
+Webtools. The plugin `webtools` (`hoo-web-plugin/plugin/`) declares `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The plugin name stays `webtools`. Its MCP server keeps its own tool names, and the MCP rule applies to them.
+
+Built today: `ext_<plugin>_<tool>` and `mcp_<server>_<tool>`. This section is the target. It is built in PL-17 (P2 to P4).
 
 ### Distribution
 
@@ -226,8 +292,8 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | The internal contract is the WIT world `hoocode:extension@0.1.0`, shaped like an MCP tool. 0.1 has `wasi:http` (gated), plugin-data filesystem, clocks, random, `config-get` and `log`. Workspace access waits for 0.2. |
 | 2026-11-17 | One trust decision per plugin covers MCP and WASM. The gate applies to every gated host call. Only user or project settings bypass it. Plugins suggest permissions, never grant them. |
 | 2026-11-17 | Subagents get WASM plugin tools (gated calls via clearance). Never MCP plugin tools or plugin-management tools. |
-| 2026-11-17 | Agent tool lists accept `ext_*` (all plugin WASM tools). The built-in general-purpose agent has it; read-only built-ins do not, since plugin tools may write in workspace 0.2. |
-| 2026-11-17 | Names: `ext_<plugin>_<tool>` and `mcp_<plugin>_<server>_<tool>`. Built-ins are never shadowed. |
+| 2026-11-17 | Agent tool lists accept `ext_*` (all plugin WASM tools). The built-in general-purpose agent has it; read-only built-ins do not, since plugin tools may write in workspace 0.2. (superseded 2026-11-19: `ext_*` is `plugin:*`) |
+| 2026-11-17 | Names: `ext_<plugin>_<tool>` and `mcp_<plugin>_<server>_<tool>`. Built-ins are never shadowed. (superseded 2026-11-19: option D names) |
 | 2026-11-17 | wasmtime 48 LTS, owned by one crate, always on. Toolchain pin to current stable, `rust-version` at least 1.95. Build and size cost accepted (Measurements). |
 | 2026-11-17 | v1 is the webtools plugin only: `web-plugins` builds the component on the webtools crates; `hoocode-official-plugins` lists it; hoocode deletes its web helpers and `webtools.*` settings. Supersedes the 2026-11-06 web tools row and AG-1 (now PL-12). |
 | 2026-11-17 | Notebooks wait for demand. Editing is internal (own serde_json editor, byte-identical round trips) with workspace 0.2. Execution is a skill using `jupyter execute`; an MCP server only for stateful kernels. |
@@ -240,15 +306,21 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-17 | Network calls from a WASM tool ask once per origin per tool call (changed 2026-11-18), as WebFetch. Origin is scheme, host and port. Later requests to the same origin in the call (redirect hops) do not ask again, but each passes the SSRF block. A request to another origin asks again, and a denial holds only for its own origin. A URL with no origin is refused without asking. |
 | 2026-11-17 | The WASM host sends HTTP itself (hyper, rustls with webpki roots, HTTP/1.1 only) and connects only to the addresses the SSRF check resolved, so DNS rebinding cannot reach a private address. wasmtime-wasi-http's `default-send-request` feature is off. |
 | 2026-11-17 | The 30 s call limit and Esc are wall-clock, not only epoch ticks, so a call blocked in host I/O stops too. Time spent waiting on the permission prompt does not count. Response bodies have a 600 s between-bytes timeout. |
-| 2026-11-17 | Plugin WASM tools load in the main session and subagents, but not in light mode, with `--no-tools`, or when a `--tools` list names no `ext_` tool (same rule as MCP). |
+| 2026-11-17 | Plugin WASM tools load in the main session and subagents, but not in light mode, with `--no-tools`, or when a `--tools` list names no `ext_` tool (same rule as MCP). (2026-11-19: `ext_` reads as a plugin selector) |
 | 2026-11-17 | The webtools repo is renamed `hoo-web-plugin` and also holds the plugin package (`plugin/`); no separate `web-plugins` repo. The official listing is `hoo-plugins`. The webtools CLI reads `~/.config/webtools/config.json` and env vars, never hoocode settings. |
 | 2026-11-17 | Built-in web helpers, `--enable-webtools`, `enableWebTools` and `webtools.*` settings are removed; web access is the webtools plugin (PL-12). |
 | 2026-11-18 | Plugin skills' `allowed-tools` is parsed and warned about, never honoured; the approval record is removed (PL-5). |
 | 2026-11-18 | Plugin tools are live without `/reload` (PL-4). The plugin set's generation counter (`hoocode-code-plugins::generation`) moves on every `set_current`. A session with a `PluginSource` compares it before each prompt, between the turns of a run and on `/reload`, and when it changes it rebuilds the `ext_` tools (same trust rule, gate and cache as at start, names taken by built-ins and its own tools skipped) and its plugin MCP hub (the old hub is shut down, and the new hub's servers keep their trust). `/plugin` refreshes at once and asks for MCP trust; a model install is followed at the next turn, and its MCP trust is asked when the turn ends. Skills still load on `/reload`. A build problem is a warning, shown like the other plugin notices. Chosen over a full `/reload` on every change, which would replay the transcript and reset the editor. |
-| 2026-11-18 | pluginConfig is read from user settings only (a project cannot configure a plugin). The project `.hoocode/settings.json` comes from the working tree, which may be untrusted. In agent definitions, WebFetch/WebSearch name the webtools plugin tools (`ext_webtools_fetch`, `ext_webtools_search`); to keep an agent off the network entirely, deny `ext_*`. |
+| 2026-11-18 | pluginConfig is read from user settings only (a project cannot configure a plugin). The project `.hoocode/settings.json` comes from the working tree, which may be untrusted. In agent definitions, WebFetch/WebSearch name the webtools plugin tools (`ext_webtools_fetch`, `ext_webtools_search`); to keep an agent off the network entirely, deny `ext_*`. (WebFetch/WebSearch part superseded 2026-11-19: they are the tools' own names; deny `plugin:*` to keep an agent off the network) |
 | 2026-11-18 | WASM HTTPS uses hoocode's TLS trust set (same as providers): bundled roots plus `--ca-cert`, `HOOCODE_CA_CERT`, `NODE_EXTRA_CA_CERTS` and `--use-system-ca`, verification always on. The host gets the set from `hoocode_ai_util::tls::installed_trust()`. |
 | 2026-11-18 | `/reload` rebuilds the plugin tools even when the plugin set's generation did not move, because each `ext_` tool holds the `pluginConfig` values it was built with and `/reload` re-reads settings. The plugin MCP hub is still rebuilt only when its servers changed. Per-turn refreshes keep the generation check, so a settings edit reaches plugin tools on `/reload` or a new session, not mid-run. |
 | 2026-11-19 | When a plugin's HTTP request is refused, the tool error adds the refusal's reason (the gate's answer, or the host's own SSRF block such as "10.1.2.3 is private") after the guest's `HttpRequestDenied`. The reason is per call. The guest still sees only the code. |
+| 2026-11-19 | Tool identity is structured (option D). The origin (`BuiltIn`, `Plugin`, `Mcp`) is carried everywhere; the model-facing name is for the model only. Supersedes the 2026-11-17 naming row. |
+| 2026-11-19 | Model-facing names: a plugin's WASM tools use the name the plugin declares (PascalCase, `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). MCP tools are `mcp__<server>__<tool>`, sanitised, 64 cap with an FNV-1a suffix. Old `ext_*` and `mcp_*` names are removed, with no aliases. |
+| 2026-11-19 | Collisions: a built-in is never shadowed. Between plugin and MCP tools the first in load order wins and the other is not loaded. Always a diagnostic that names both origins. The silent MCP overwrite is a bug. |
+| 2026-11-19 | Selectors: `Name`, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>`, `mcp:*`. They match origin. A malformed selector fails closed. |
+| 2026-11-19 | Webtools tools are `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The `Claude` aliases and `ext_webtools_*` names go. Supersedes the WebFetch/WebSearch part of the 2026-11-18 row. |
+| 2026-11-19 | Renderer hint: `extensions."dev.hoocode".tools.<Name>.render` in `plugin.json`. The TUI picks a renderer from the hint, never from a plugin or MCP tool name. Absent or unknown: generic. |
 
 ## Open
 
@@ -270,6 +342,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-14 | Revisit hooks | S | Agent Plugins 1.1 final | Read the portable hooks contract. Decide whether to support it. |
 | PL-15 | Second-consumer review | S | Two releases after PL-12 | If only one WASM plugin exists, record it and decide whether to keep the host. |
 | PL-16 | Plugin HTTP through an explicit HTTPS_PROXY (CONNECT) | M | A user behind an explicit proxy | Needs care: the proxy resolves the host, so the SSRF address pin can't apply; opt-in only. |
+| PL-17 | Tool identity separate from the model-facing name (option D) | M | Now (roadmap item 0). Phases: P1 design (2026-11-19, this change); P2 core; P3 plugin; P4 TUI; P5 live end-to-end; P6 review | See Naming and identity. P2: `ToolOrigin`, names, selectors, collision diagnostics, evals, `docs/user`, `docs/maps`, CHANGELOG. P3: webtools `WebFetch` and `WebSearch`, hint, wasm rebuild. P4: origin label, `toolExternal`, hint dispatch, goldens (tui.md). P5: Tavily rerun, incl. a subagent in json mode. P6: Opus review of the three branches before any PR. |
 
 ## Not doing
 

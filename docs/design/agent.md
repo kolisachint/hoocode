@@ -1,6 +1,6 @@
 # Agent
 
-Status (2026-11-17): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (see plugins.md), app-server and rpc approvals. Partly built: web tools (flag only; replaced by the webtools plugin, plugins.md PL-12), semantic index (flag only), MCP schema deferral (setting read by nothing). Open items are at the end.
+Status (2026-11-19): Built: agent tools, scoped models, scheduler and `/loop`, extras (version check, chime), DocSearch, MCP client, plugins (see plugins.md), app-server and rpc approvals. Partly built: web tools (flag only; replaced by the webtools plugin, plugins.md PL-12), semantic index (flag only), MCP schema deferral (setting read by nothing). Tool names change to option D (2026-11-19, plugins.md PL-17); the built names stay `ext_*` and `mcp_*` until PL-17 P2. Open items are at the end.
 
 ## Principles
 
@@ -11,7 +11,7 @@ Status (2026-11-17): Built: agent tools, scoped models, scheduler and `/loop`, e
 - **Trust before start.** Only trusted MCP servers start. Trust binds to the approved command, args or URL. A change shows a diff and asks again. Trust records live outside the repo.
 - **Subagents never get** plugin-management tools or Cron tools. Their names are passed in `--disallowed-tools` on both spawn paths. Cron tools are not registered outside an interactive run. Plugin-provided tools: see plugins.md.
 - **Schedules fire only in an open interactive session.** No headless daemon: nobody is there to approve tools.
-- **Tool names are final.** No aliases and no old names. The Tools pane sort keys use old TS names, but only for sorting.
+- **Tool names are final.** No aliases and no old names: `ext_*` and `mcp_*` are removed, not aliased (2026-11-19). Identity is structured (origin); the model-facing name is for the model only (plugins.md Naming and identity). The Tools pane sort keys use old TS names, but only for sorting.
 - **Config and env names** are `hoocode` and `HOOCODE_` only. Writes go to a temp file, then rename.
 
 Numbers a contributor needs:
@@ -40,7 +40,7 @@ Numbers a contributor needs:
 | `ShellOutput`, `ShellKill` | `hoocode-code-tool-bash` `job_tools.rs` | on when `enableBackgroundShell` (default true) and interactive | Background shell jobs. |
 | `TodoWrite` | `hoocode-code-tools-optin` `todo.rs` | on (`enableTodoWrite`, default true) | Main session only. |
 | `SearchPlugins`, `ListPlugins`, `InstallPlugin`, `UninstallPlugin`, `ProposePlugin` | `hoocode-code-tools-optin` `plugins.rs` | off (`enablePluginTools`) | Main session only. Takes effect at the next session. |
-| `mcp_<server>_<tool>` | `hoocode-code-mcp` and `hoocode-agent-mcp` | per server | See MCP client. |
+| Plugin and MCP tools | `hoocode-code-wasm` (WASM, name as the plugin declares it); `hoocode-code-mcp` and `hoocode-agent-mcp` (MCP, `mcp__<server>__<tool>`) | per plugin or server | See plugins.md Naming and identity and MCP client. |
 
 - Default active list (`DEFAULT_ACTIVE_TOOL_NAMES`, `hoocode-code-agent-session/src/session.rs`): `Read`, `Shell`, `Edit`, `Write`, `CodeSearch`, `AskUserQuestion`, `CronCreate`, `CronList`, `CronDelete`, `DocSearch`.
 - Tool lookup has no alias table. The old TS names (`Task`, `TaskOutput`, `SearchCodebase`, `SearchHooCode`, `bash`) appear only in `tool_row_sort_key` (`settings_selector.rs`), which sets row order in the Tools pane.
@@ -108,9 +108,9 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 ### Web tools
 
-- Web access is the webtools plugin, not a built-in tool: its tools are `ext_webtools_fetch` and `ext_webtools_search` (see plugins.md PL-12).
-- hoocode has no web flag, web settings or web helpers. `Claude` aliases `WebFetch` and `WebSearch` in agent frontmatter map to the plugin tools (`agent_frontmatter.rs`).
-- The permission gate still names a plugin's network calls `WebFetch` and `WebSearch` (`hoocode-code-permissions`), and the TUI renders those names and the plugin tools with `tools/web.rs`.
+- Web access is the webtools plugin, not a built-in tool: its tools are `WebFetch` and `WebSearch`, the names the plugin declares (plugins.md Naming and identity, PL-12, PL-17). Built until PL-17: `ext_webtools_fetch` and `ext_webtools_search`.
+- hoocode has no web flag, web settings or web helpers. The `Claude` aliases of `WebFetch` and `WebSearch` in agent frontmatter go: the names are the tools' own (PL-17).
+- The permission gate still names a plugin's network calls `WebFetch` (`hoocode-code-permissions`). That is a permission category, not a tool name. The TUI picks a renderer from the plugin's hint (`web-fetch`, `web-search`), not from the name (tui.md External tools).
 
 ### DocSearch and capability index
 
@@ -141,7 +141,7 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 
 - Server fields: `command`, `args`, `env`, `url`, `headers`. `${VAR}` and `${VAR:-default}` expand at connect time in all of them except the names. An unset variable with no default fails that server. The diagnostic names the variable, never its value. The trust fingerprint hashes the text as written.
 - Trust store: `mcp-trust.json` in the agent dir (`hoocode_code_paths::agent_dir()`). Shared with plugins. Outside the repo.
-- Tool names: `mcp_<server>_<tool>`. A name that is too long gets an 8-hex FNV-1a suffix (`naming.rs`).
+- Tool names: `mcp__<server>__<tool>` (plugins.md Naming and identity). A name that is too long keeps 55 characters, then `_` and 8 hex FNV-1a digits (`naming.rs`). Built until PL-17: `mcp_<server>_<tool>`.
 - Runtime: 60 s request deadline. One reconnect after a drop. Tool progress shows in the TUI. Aborting a turn cancels the call. Tool-list changes apply at the next turn (not verified, AG-11).
 - Elicitation: asked in the TUI. Print and rpc decline it (AG-11).
 - `/mcp` lists servers with state: connected, not trusted, auth needed, failed.
@@ -149,7 +149,7 @@ Settings key `scopedModels` in `~/.hoocode/settings.json` (or the project file).
 - Token files: `<data dir>/mcp-auth/`, one per issuer, owner-only (0600 in a 0700 directory). Each file records its issuer, which is checked on load.
 - A server with its own `Authorization` header connects with that header only. No OAuth, no stored tokens.
 - Spec version: the old target `2026-07-28` is not pinned in our code. rmcp negotiates it (AG-10).
-- Subagents get `mcp_` tools only when their tool list names them or inherits all tools.
+- Subagents get MCP tools only when their tool list names them (a selector such as `mcp:<s>` or `mcp:*`) or inherits all tools.
 
 ### Subscription logins: client identity and OAuth state
 
@@ -260,6 +260,7 @@ rpc (`--mode rpc`):
 | 2026-11-07 | `DocSearch` is removed (with single-view decision 7): discovery via the prompt skill/agent listing, `Read`, CLI help and user pages. AG-19 closed as No. Code removal with the robustness matrix is the next session. |
 | 2026-11-11 | Pinned client identity (the table above) stays as source constants. A person refreshes them by hand in a normal PR, when a provider refuses the old value or at each minor release, whichever comes first. No runtime fetch. No new env override. (AU-6) |
 | 2026-11-11 | OAuth `state` is kept as built. Anthropic and Google send the PKCE verifier as `state`; ChatGPT sends a random UUID. Not verified against each provider's own client: the Claude Code login could not be read for how it builds `state` (its authorize endpoints were checked). Code unchanged. Risk: the verifier is in the authorize URL, so it can show in browser history and logs, which weakens PKCE against a leaked code. The redirect goes to a loopback address, and the code is single-use and short-lived. Revisit if a provider rejects it, or when someone can compare with the provider's client. (AU-7) |
+| 2026-11-19 | Tool names follow plugins.md Naming and identity (option D). The origin is structured. A plugin's WASM tools use the names the plugin declares (`WebFetch`, `WebSearch` for webtools). MCP tools are `mcp__<server>__<tool>`. Old `ext_*` and `mcp_*` names are removed with no aliases. Tool selectors are in plugins.md. PL-17. |
 
 ## Open
 

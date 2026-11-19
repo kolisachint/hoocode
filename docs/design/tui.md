@@ -1,6 +1,6 @@
 # TUI
 
-Status (2026-11-11): built and consolidated. The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
+Status (2026-11-19): built and consolidated. External tools (plugin and MCP) get an origin label and their own name colour, and renderers come from the plugin hint (decided 2026-11-19, not built). The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
 
 ## Principles
 
@@ -128,15 +128,24 @@ The rule: at the prompt a bare printable key always types. Transcript letters ac
 | Write | `● Write <path>  +48` | `+n` | The content, head first |
 | Shell | `● Shell <command>  exit 0 · 40 lines · 8.2s` | `exit N` | Output, tail first |
 | CodeSearch | `● CodeSearch "<query>"  14 hits · 3 files` | Hits | The listing |
-| WebFetch, WebSearch | `● WebFetch <url>  ~8.1k tokens · 12 sections` | `~N tokens` | The result text |
+| Plugin `WebFetch`, `WebSearch` (hint `web-fetch`, `web-search`) | `● WebFetch webtools <url>  ~8.1k tokens · 12 sections` | `~N tokens` | The result text |
 | Agent | `● Agent explore · <desc>  3 calls · 1 failed · 12s` | Calls, failed (if any) | One line per child call |
-| MCP, plugin, unrendered | `● mcp__docs__search "<args>"  12 lines` | Lines | The output, head first |
+| MCP and plugin tools with no renderer | `● mcp__docs__search mcp:docs "<args>"  12 lines` | Lines | The output, head first |
 | `!` user shell | `● ! git status  exit 0` | `exit N` | Output, tail first |
 | TodoWrite | `● TodoWrite  5 items · 2 done` | Counts | Not a toggle (the plan is in the task panel) |
 | Background job launch | `● Shell sleep 60  background job-1` | `background <id>` | Output so far |
 
 - A collapsed row that hides output carries the hidden size as a fact (`1451 lines`, `~8.1k tokens`). That is how "there is more" reads on the row.
 - Children of an Agent row are plain lines at indent 3, not buttons. A failed child shows `⊗` and its reason dim. Nested expansion is Later.
+
+### External tools (plugin and MCP)
+
+- Header: `● <name> <label> <target> <facts>`. The label is dim: the plugin name for a plugin tool, `mcp:<server>` for an MCP tool. Built-in rows have no label.
+- Name colour: the name of an external tool uses the token `toolExternal`. Built-in names stay bold ink (`toolTitle`). The mark, facts and body keep their roles.
+- Renderer: chosen by the plugin's `render` hint (plugins.md Naming and identity). No hint, or an unknown id, gives the generic row shown above. Nothing dispatches on a tool's name.
+- Narrow rows: the label is cut first, before any target is shortened. The name is never cut.
+- The label is text, so the state still reads under NO_COLOR.
+- Colour build (P4): add the role `external` and the token `toolExternal` to `color-semantics.json`, with a rule that external names use only this token. Set its value in every built-in theme, dark and light, so it holds the contrast of the other text tokens and differs from accent, done, failed and blocking. No hex value is chosen in this doc.
 
 ### Cut order (tool rows)
 
@@ -281,7 +290,8 @@ The machine-readable source is `crates/hoocode-code-tui-theme/color-semantics.js
 | Done (green) | `success`, `ok` | Done `●`, `+n` on Edit and Write rows |
 | Failed (red) | `error`, `err` | Failed `⊗`, `exit N`, `−n`. Nothing else. The reason is dim |
 | Blocking (yellow) | `warning`, `chipWarn`, `warn` | Title and chip of a permission or question. The only yellow |
-| Ink | `text`, `ink`, `toolTitle` | Names, targets, keys in hints, row names |
+| Ink | `text`, `ink`, `toolTitle` | Built-in tool names and targets, keys in hints, row names |
+| External | `toolExternal` (new, decided 2026-11-19) | Names of tools from a plugin or MCP server. Nothing else |
 | Dim | `dim`, `muted`, `faint`, `toolOutput`, `thinkingText`, `halftone` | Facts, hint action words, block bodies, fold and thinking lines |
 | Backgrounds | `base`, `pane`, `paneSel`, `paneInput`, `paneDetail`, `surface` | Transcript and status line (`base`); dialogs, menus and task panel (`pane`); selected row (`paneSel`); filter row (`paneInput`); split detail (`paneDetail`); prompt and user message (`surface`) |
 
@@ -580,6 +590,9 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-12 | UI-20: the 30 `*_ts*.rs` test files lost the `ts`, a leftover of TypeScript parity. Names changed with `git mv`; `mod` lines and doc comments follow. No test code changed. |
 | 2026-11-12 | Pane ramp lifted in default dark and light so panes stand out from the terminal background. Other built-in colours moved too: text and status tokens to hold 4.5:1 (dark `gray`, `dimGray`, `darkGray`, `red`, `blue`; light `mediumGray`, `dimGray`, `green`, `red`, `amber`); syntax (dark `syntaxComment`, `syntaxKeyword`, `syntaxString`; light `syntaxFunction`, `syntaxNumber`, `syntaxType`); agent colours (dark `agent2`, `agent3`, `agent6`; light `agent1` to `agent4`); dark `mcp`, `mdLink`, `customMessageLabel`, `you`, `vio`. |
 | 2026-11-12 | Settings sub-panes draw on the `/settings` pane grammar, not as a bare list. Three kinds: (1) list panes (each category, and Warnings, Platform, Tools, Tool output, Flags): chip is the category (`Interface`), dim `/settings`, count `8 settings`; rows at indent 3, selected label bold; detail column from 100 columns (`current`, `price`, description), stacked below; filter row on the searchable lists (every category, Tools, Flags; Warnings, Platform and Tool output take no typing, so have none), then the hint `↑↓ move · space toggle · enter change · esc back`, or `enter open` on a row that opens a submenu, or `↑↓ move · esc back` when the filter matches nothing. (2) the Thinking level select pane (Behavior → Thinking level): chip `Thinking level  /settings`, count `6 levels`, each row is the mark and the level name (the in-use row adds `in use`, no description), the level's description and token fact are the detail beside the list (stacked below 100 columns), hint `↑↓ move · enter set · esc back`; it does not preview. (3) the string-flag editor (Flags → a string flag): chip `--name  /settings`, the value as the input row with its caret (a value longer than the row is windowed around the caret, `…` at a cut edge), hint `enter save · esc back`. Keys and behaviour unchanged. Tests: `tests/it/settings_category_pane.rs`, `tests/it/settings_subpanes.rs` (chip row and gutter for list panes). Goldens `settings_interface_80/100/light_100`, `settings_thinking_100`, `settings_flag_100`. |
+| 2026-11-19 | External tools (plugin and MCP) show their origin: a dim label after the name, the plugin name or `mcp:<server>`. Built-in rows are unchanged. |
+| 2026-11-19 | The name of an external tool uses the new token `toolExternal` (new role `external`). Its values are set in P4 for every built-in theme. Built-in names stay bold ink. |
+| 2026-11-19 | A plugin tool's renderer comes from its `render` hint in `plugin.json`. No code dispatches on a plugin or MCP tool name. The `WebFetch` and `WebSearch` rows above name the renderers, not the tools. |
 
 ## Open
 
