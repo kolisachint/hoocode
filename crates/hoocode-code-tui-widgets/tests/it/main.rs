@@ -24,6 +24,7 @@ mod pane;
 mod render_stamps;
 mod selected_row_list;
 mod streaming_segmentation;
+mod sub_step_origin;
 mod subagent_folding;
 mod subagent_live_tail;
 mod support;

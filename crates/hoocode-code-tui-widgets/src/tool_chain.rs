@@ -120,8 +120,8 @@ fn sub_step_rows(
             tool_row::Mark::Done
         },
         &step.tool,
-        // A subagent's step carries no origin (`SettledStep`): it draws as a built-in.
-        &tool_row::HeaderOrigin::default(),
+        // The step's origin, as the child's event gave it: a plugin or MCP call gets its label.
+        &tool_row::HeaderOrigin::for_origin(step.origin.as_ref()),
         target.trim(),
         &primaries,
         &[],

@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a warning.
 - The JSON `tool_execution_start` event has a `render` field, written only when a plugin tool
   has a hint.
+- A subagent's own plugin or MCP calls, listed under its Agent row, take the same origin label
+  and colour as top-level rows.
 
 ### Changed: web tool rows draw by the plugin's hint, not by the tool name (2026-11-19)
 - `WebFetch` and `WebSearch` no longer get the web renderer by name. A tool with those names

@@ -1856,10 +1856,12 @@ impl PoolInner {
         let agent = agent_type.to_string();
         let started = hoocode_runtime::spawn_named_thread("hoocode-clearance", move || {
             let key = format!("clearance:{id}");
+            let origin_value = serde_json::to_value(&origin).unwrap_or(Value::Null);
             let held = |held: bool| {
                 json!({
                     "task_id": task, "agent_type": agent, "call": id,
                     "tool": tool, "subject": subject, "held": held,
+                    "origin": origin_value,
                 })
             };
             inner

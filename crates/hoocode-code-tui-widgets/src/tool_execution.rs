@@ -758,13 +758,7 @@ impl ToolExecutionComponent {
     /// The origin label and the external-tool flag of the row header (`docs/design/tui.md`,
     /// External tools). A built-in, or an unknown name, has neither.
     pub fn header_origin(&self) -> HeaderOrigin {
-        match &self.origin {
-            Some(origin @ (ToolOrigin::Plugin { .. } | ToolOrigin::Mcp { .. })) => HeaderOrigin {
-                label: origin.label(),
-                external: true,
-            },
-            _ => HeaderOrigin::default(),
-        }
+        HeaderOrigin::for_origin(self.origin.as_ref())
     }
 
     /// Whether the call's renderer hint names the web fetch or web search row.

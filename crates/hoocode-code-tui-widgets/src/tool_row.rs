@@ -6,6 +6,7 @@
 //! right-aligned). No step number, no rail. Rows are drawn from spans through
 //! a ratatui buffer, like every other row of the widgets.
 
+use hoocode_agent_types::ToolOrigin;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, bold, row, spans_width, Palette};
@@ -230,6 +231,20 @@ fn cut_reason(reason: &str, avail: usize) -> Option<String> {
 pub struct HeaderOrigin {
     pub label: Option<String>,
     pub external: bool,
+}
+
+impl HeaderOrigin {
+    /// The header origin of a call from `origin`: a plugin or MCP tool gets its label and the
+    /// external colour. A built-in, or a call with no origin, gets the default.
+    pub fn for_origin(origin: Option<&ToolOrigin>) -> Self {
+        match origin {
+            Some(origin @ (ToolOrigin::Plugin { .. } | ToolOrigin::Mcp { .. })) => Self {
+                label: origin.label(),
+                external: true,
+            },
+            _ => Self::default(),
+        }
+    }
 }
 
 /// Plain header text through the cut order: `{mark} {tool} {target}  {facts}`
