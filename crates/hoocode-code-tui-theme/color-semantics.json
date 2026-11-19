@@ -10,6 +10,7 @@
     {"id": "separation-by-background", "rule": "Panes and the prompt are separated by background steps and text weight, not by borders. Borders appear only in monochrome.", "applies_to": ["surface", "pane", "paneSel", "paneInput", "paneDetail"]},
     {"id": "background-sets-foreground", "rule": "Every painted background also sets its foreground.", "applies_to": ["surface", "pane", "paneSel", "paneInput", "paneDetail", "chip", "chipWarn", "selectedBg", "userMessageBg"]},
     {"id": "dim-for-facts", "rule": "Facts, the action words in hints and block bodies are dim. Keys and names are ink.", "applies_to": ["dim", "muted", "text", "ink"]},
+    {"id": "external-name-only", "rule": "The name of a plugin or MCP tool uses only `toolExternal`. Built-in names stay ink bold, and no other row takes this colour.", "applies_to": ["toolExternal"]},
     {"id": "no-new-colours", "rule": "Widget code uses a theme token, never a literal hex or ANSI colour. A new token needs a design decision first.", "applies_to": []}
   ],
   "roles": [
@@ -68,6 +69,15 @@
       "light": "#555763"
     },
     {
+      "role": "external",
+      "meaning": "The name of a tool that comes from a plugin or an MCP server. Its origin label after the name is dim.",
+      "tokens": ["toolExternal"],
+      "use_for": ["the name of a plugin tool or MCP tool in its row"],
+      "never_for": ["built-in tool names (ink bold)", "the origin label (dim)", "done, failed, running or blocking marks"],
+      "dark": "#e394d8",
+      "light": "#9c1f7a"
+    },
+    {
       "role": "surface",
       "meaning": "Background steps: the prompt row and user message (surface), pane fills, and the selected row (paneSel).",
       "tokens": ["surface", "pane", "paneSel", "paneInput", "paneDetail", "selectedBg", "userMessageBg"],
@@ -116,6 +126,7 @@
     "toolErrorBg": {"role": "legacy", "meaning": "Fill of the edit tool's box when the edit failed (tools/edit.rs); the single view's rows otherwise carry no fill.", "required": true},
     "toolBandBg": {"role": "markdown", "meaning": "Background behind markdown code blocks (get_markdown_theme); optional, falls back to toolPendingBg.", "required": false},
     "toolTitle": {"role": "ink", "meaning": "Tool name in a tool row: bold ink.", "required": true},
+    "toolExternal": {"role": "external", "meaning": "Name of a tool that comes from a plugin or an MCP server, in its row. Optional: a theme without it falls back to toolTitle.", "required": false},
     "toolOutput": {"role": "dim", "meaning": "Tool output body text, dim per the block grammar.", "required": true},
     "mdHeading": {"role": "markdown", "meaning": "Markdown heading text.", "required": true},
     "mdLink": {"role": "markdown", "meaning": "Markdown link text.", "required": true},

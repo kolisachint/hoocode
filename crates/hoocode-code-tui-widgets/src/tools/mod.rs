@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use hoocode_agent_types::ToolOrigin;
 use hoocode_tui_components::Text;
 use hoocode_tui_render::ComponentHandle;
 
@@ -19,20 +20,47 @@ pub mod todo;
 pub mod web;
 pub mod write;
 
-/// `createAllToolDefinitions(cwd)[name]`, rendering half. Tools whose
+/// The renderer id of the web fetch row (`plugins.md`, Naming and identity).
+pub const RENDER_WEB_FETCH: &str = "web-fetch";
+/// The renderer id of the web search row.
+pub const RENDER_WEB_SEARCH: &str = "web-search";
+
+/// `createAllToolDefinitions(cwd)[name]`, rendering half, for the built-in tools. Tools whose
 /// renderers are not ported yet still count as built-in (the block uses its
-/// fallbacks), which keeps the shell choice and slot inheritance right.
+/// fallbacks), which keeps the shell choice and slot inheritance right. Plugin and MCP tools
+/// never reach this table: they draw by their render hint ([`renderer_for`]).
 pub fn builtin_tool_definition(name: &str) -> Option<ToolRenderDefinition> {
     match name {
         "Read" => Some(read::definition()),
         "Write" => Some(write::definition()),
         "CodeSearch" => Some(search::definition()),
-        // TODO(P4): renderers come from the plugin's `render` hint, not from the tool name.
-        "WebFetch" => Some(web::webfetch_definition()),
-        "WebSearch" => Some(web::websearch_definition()),
         "Shell" => Some(bash::definition()),
         "Edit" => Some(edit::definition()),
         _ => None,
+    }
+}
+
+/// The renderer a plugin's render hint names. An absent or unknown id is `None`: the generic row.
+pub fn hinted_definition(render: &str) -> Option<ToolRenderDefinition> {
+    match render {
+        RENDER_WEB_FETCH => Some(web::webfetch_definition()),
+        RENDER_WEB_SEARCH => Some(web::websearch_definition()),
+        _ => None,
+    }
+}
+
+/// The renderer of a call. A plugin or MCP tool draws by its render hint and never by its
+/// name. A built-in (or a call whose origin is not known) draws by its built-in name.
+pub fn renderer_for(
+    name: &str,
+    origin: Option<&ToolOrigin>,
+    render: Option<&str>,
+) -> Option<ToolRenderDefinition> {
+    match origin {
+        Some(ToolOrigin::Plugin { .. } | ToolOrigin::Mcp { .. }) => {
+            render.and_then(hinted_definition)
+        }
+        _ => builtin_tool_definition(name),
     }
 }
 

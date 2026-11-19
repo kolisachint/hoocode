@@ -65,6 +65,7 @@ fn meaning_groups() -> Vec<(&'static str, Vec<&'static str>)> {
                 "warning",
                 "border",
                 "customMessageLabel",
+                "toolExternal",
             ],
         ),
         (
@@ -328,7 +329,7 @@ fn fixed(x: f64, digits: usize) -> String {
     format!("{x:.digits$}")
 }
 
-const LIGHT_HUE_TOKENS: [&str; 29] = [
+const LIGHT_HUE_TOKENS: [&str; 30] = [
     "accent",
     "border",
     "borderAccent",
@@ -336,6 +337,7 @@ const LIGHT_HUE_TOKENS: [&str; 29] = [
     "error",
     "warning",
     "customMessageLabel",
+    "toolExternal",
     "mdHeading",
     "mdLink",
     "mdCode",

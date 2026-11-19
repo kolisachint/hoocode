@@ -15,11 +15,20 @@ use hoocode_code_subagents::live::apply;
 use hoocode_code_tui_widgets::tool_chain::{ChainState, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
-use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
+use hoocode_code_tui_widgets::tools::{
+    builtin_tool_definition, registered_tool_definition, RENDER_WEB_FETCH, RENDER_WEB_SEARCH,
+};
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
 const CWD: &str = "/work";
+
+fn webtools(tool: &str) -> hoocode_agent_types::ToolOrigin {
+    hoocode_agent_types::ToolOrigin::Plugin {
+        plugin: "webtools".into(),
+        tool: tool.into(),
+    }
+}
 
 fn block(
     tool: &str,
@@ -28,15 +37,24 @@ fn block(
     details: Value,
     is_error: bool,
 ) -> Rc<RefCell<ToolExecutionComponent>> {
+    // The web tools are the webtools plugin's: they carry its origin and the web-fetch or
+    // web-search render hint (plugins.md, Naming and identity).
+    let (origin, render) = match tool {
+        "WebFetch" => (Some(webtools(tool)), Some(RENDER_WEB_FETCH)),
+        "WebSearch" => (Some(webtools(tool)), Some(RENDER_WEB_SEARCH)),
+        _ => (None, None),
+    };
     let definition =
         builtin_tool_definition(tool).unwrap_or_else(|| registered_tool_definition(tool));
-    let mut b = ToolExecutionComponent::new(
+    let mut b = ToolExecutionComponent::with_origin(
         tool,
         "id",
         args,
         ToolExecutionOptions::default(),
         Some(definition),
         CWD,
+        origin,
+        render.map(str::to_owned),
     );
     b.update_result(
         ToolResult {

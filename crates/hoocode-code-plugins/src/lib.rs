@@ -129,6 +129,9 @@ pub struct LoadedPlugin {
     /// `dev.hoocode/extension.wasm`, when the plugin has one inside its root: the internal-tier
     /// WASM component (PL-9). Nothing runs it yet.
     pub extension_wasm: Option<PathBuf>,
+    /// The renderer hints of `extensions."dev.hoocode".tools` in the manifest: the tool's
+    /// plugin-declared name to its render id (`web-fetch`). Data only; see plugins.md.
+    pub tool_render: std::collections::BTreeMap<String, String>,
     /// The file the MCP servers came from (`mcp.json`, `.mcp.json`, or the manifest).
     pub mcp_path: Option<PathBuf>,
     /// The MCP servers, with placeholders already expanded, for `hoocode-code-mcp`.

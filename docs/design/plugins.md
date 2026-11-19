@@ -1,6 +1,6 @@
 # Plugins
 
-Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Not built: the TUI origin label and renderer hints (P4), selectors in permission rules and rejection of malformed agent entries (P2b). See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-17.
+Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Built in P4 (2026-11-19): the TUI origin label and renderer hints. Not built: selectors in permission rules and rejection of malformed agent entries (P2b). See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-17.
 
 ## Principles
 
@@ -209,7 +209,7 @@ Renderer hint. A plugin says how the TUI draws its tools, in `plugin.json`:
 
 Webtools. The plugin `webtools` (`hoo-web-plugin/plugin/`) declares `WebFetch` and `WebSearch`, renamed from `fetch` and `search`. The plugin name stays `webtools`. Its MCP server keeps its own tool names, and the MCP rule applies to them.
 
-Built in P2 (2026-11-19): names, origin, selectors in `--tools`, collision diagnostics. P4 (origin label, renderer hints) is not built yet.
+Built in P2 (2026-11-19): names, origin, selectors in `--tools`, collision diagnostics. Built in P4 (2026-11-19): the hint is read from the manifest (`manifest.rs`), carried on the tool definition and the start event as `render`, and drawn by the TUI. A hint for a tool the component does not declare is ignored with a warning. The webtools plugin's own release declares its hints: until that release is installed, its `WebFetch` and `WebSearch` rows draw generically.
 
 ### Distribution
 

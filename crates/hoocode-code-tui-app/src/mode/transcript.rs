@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::status_line::{TurnOutcome, TurnResult};
-use hoocode_agent_types::AgentMessage;
+use hoocode_agent_types::{AgentMessage, ToolOrigin};
 use hoocode_ai_types::{
     AssistantMessage, Content, ImageContent, StopReason, UserContent, UserMessage,
 };
@@ -1053,8 +1053,15 @@ impl Mode {
                         let Content::ToolCall(call) = content else {
                             continue;
                         };
-                        let block =
-                            self.new_tool_block(&call.name, &call.id, call.arguments.clone());
+                        // A replayed call takes its origin from the tool the session has now.
+                        let definition = self.session.get_tool_definition(&call.name);
+                        let block = self.new_tool_block(
+                            &call.name,
+                            &call.id,
+                            call.arguments.clone(),
+                            definition.as_ref().map(|d| d.origin.clone()),
+                            definition.and_then(|d| d.render),
+                        );
                         self.attach_tool_block(block.clone());
                         if matches!(
                             assistant.stop_reason,
@@ -1204,11 +1211,16 @@ impl Mode {
         }
     }
 
+    /// A tool block. `origin` and `render` come from the session's report of the call (the
+    /// start event, or the tool definition for a replayed call); `None` for a call that
+    /// streams in before its start.
     pub(super) fn new_tool_block(
         &self,
         name: &str,
         id: &str,
         args: serde_json::Value,
+        origin: Option<ToolOrigin>,
+        render: Option<String>,
     ) -> Rc<RefCell<ToolExecutionComponent>> {
         // A registered tool always has a definition, renderers or not; only an
         // unknown name gets the bare text rendering.
@@ -1216,7 +1228,7 @@ impl Mode {
             .session
             .get_tool_definition(name)
             .map(|_| registered_tool_definition(name));
-        handle(ToolExecutionComponent::new(
+        handle(ToolExecutionComponent::with_origin(
             name,
             id,
             args,
@@ -1228,6 +1240,8 @@ impl Mode {
             },
             definition,
             &self.session.cwd().to_string_lossy(),
+            origin,
+            render,
         ))
     }
 

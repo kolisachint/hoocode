@@ -11,7 +11,7 @@ use crate::color::{
 /// Foreground tokens (`ThemeColor`). A theme may also carry tokens beyond
 /// these (theme JSON is open), so the API takes token names as strings.
 /// The Mission Control chrome tokens (spec §2.3) come last. Each name appears once.
-pub const THEME_COLORS: [&str; 61] = [
+pub const THEME_COLORS: [&str; 62] = [
     "accent",
     "border",
     "borderAccent",
@@ -62,6 +62,7 @@ pub const THEME_COLORS: [&str; 61] = [
     "brandText",
     "paperShadow",
     "halftone",
+    "toolExternal",
     "headlineText",
     "tapeText",
     // Mission Control chrome (spec §2.3).
@@ -201,6 +202,12 @@ impl Theme {
         if let Some(dim) = get(&raw, "dim") {
             if get(&raw, "halftone").is_none() {
                 raw.push(("halftone".to_string(), dim));
+            }
+        }
+        // A theme without `toolExternal` (older user themes) names external tools in ink.
+        if let Some(title) = get(&raw, "toolTitle") {
+            if get(&raw, "toolExternal").is_none() {
+                raw.push(("toolExternal".to_string(), title));
             }
         }
 

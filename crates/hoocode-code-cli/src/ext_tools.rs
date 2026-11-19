@@ -162,13 +162,34 @@ fn build_with_cache(
             out.push(definition(
                 origin,
                 info,
+                plugin.tool_render.get(&info.name).cloned(),
                 extension.clone(),
                 config.clone(),
                 gate.clone(),
             ));
         }
+        let declared: Vec<&str> = extension.tools().iter().map(|i| i.name.as_str()).collect();
+        for message in undeclared_render_hints(&label, &plugin.tool_render, &declared) {
+            diagnostics.push((DiagnosticKind::Warning, message));
+        }
     }
     out
+}
+
+/// The warnings for render hints that name no tool the component declares: they are ignored
+/// (plugins.md, Naming and identity).
+fn undeclared_render_hints(
+    label: &str,
+    hints: &std::collections::BTreeMap<String, String>,
+    declared: &[&str],
+) -> Vec<String> {
+    hints
+        .keys()
+        .filter(|tool| !declared.contains(&tool.as_str()))
+        .map(|tool| {
+            format!("{label}: render hint for {tool:?} ignored: the plugin declares no such tool")
+        })
+        .collect()
 }
 
 /// The model-facing name a plugin tool may declare: `^[A-Za-z][A-Za-z0-9_-]{0,63}$`.
@@ -203,6 +224,7 @@ fn loopback_switch_on(value: Option<&OsStr>) -> bool {
 fn definition(
     origin: ToolOrigin,
     info: &ToolInfo,
+    render: Option<String>,
     extension: Arc<Extension>,
     config: ConfigLookup,
     gate: Arc<dyn PermissionGate>,
@@ -211,6 +233,7 @@ fn definition(
     let tool = info.name.clone();
     ToolDefinition {
         origin,
+        render,
         label: info.name.clone(),
         name: info.name.clone(),
         description: info.description.clone(),
@@ -953,5 +976,35 @@ mod tests {
             .tls_trust()
             .extra
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod render_hint_tests {
+    use std::collections::BTreeMap;
+
+    use super::undeclared_render_hints;
+
+    #[test]
+    fn a_hint_for_an_undeclared_tool_is_ignored_with_a_warning() {
+        let hints: BTreeMap<String, String> = [
+            ("WebFetch".to_owned(), "web-fetch".to_owned()),
+            ("Ghost".to_owned(), "web-search".to_owned()),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            undeclared_render_hints("plugin webtools", &hints, &["WebFetch", "WebSearch"]),
+            vec!["plugin webtools: render hint for \"Ghost\" ignored: the plugin declares no such tool".to_owned()]
+        );
+    }
+
+    #[test]
+    fn declared_hints_and_no_hints_give_no_warning() {
+        let hints: BTreeMap<String, String> = [("WebFetch".to_owned(), "web-fetch".to_owned())]
+            .into_iter()
+            .collect();
+        assert!(undeclared_render_hints("p", &hints, &["WebFetch"]).is_empty());
+        assert!(undeclared_render_hints("p", &BTreeMap::new(), &[]).is_empty());
     }
 }

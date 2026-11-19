@@ -58,6 +58,7 @@ pub fn create_cron_tool_definitions(cwd: &Path) -> Vec<ToolDefinition> {
 pub fn create_cron_create_tool_definition(store: Arc<TaskStore>) -> ToolDefinition {
     ToolDefinition {
         origin: hoocode_code_tool_api::ToolOrigin::BuiltIn,
+        render: None,
         name: CRON_CREATE_TOOL_NAME.into(),
         label: "Schedule Task".into(),
         description: "Schedule a prompt to be re-submitted on a cron schedule (5-field, local time: minute hour day-of-month month day-of-week). recurring=false fires once then deletes.".into(),
@@ -104,6 +105,7 @@ pub fn create_cron_create_tool_definition(store: Arc<TaskStore>) -> ToolDefiniti
 pub fn create_cron_list_tool_definition(store: Arc<TaskStore>) -> ToolDefinition {
     ToolDefinition {
         origin: hoocode_code_tool_api::ToolOrigin::BuiltIn,
+        render: None,
         name: CRON_LIST_TOOL_NAME.into(),
         label: "List Scheduled Tasks".into(),
         description: "List all scheduled tasks (id, cron, recurring, prompt).".into(),
@@ -201,6 +203,7 @@ pub fn format_task_list(
 pub fn create_cron_delete_tool_definition(store: Arc<TaskStore>) -> ToolDefinition {
     ToolDefinition {
         origin: hoocode_code_tool_api::ToolOrigin::BuiltIn,
+        render: None,
         name: CRON_DELETE_TOOL_NAME.into(),
         label: "Delete Scheduled Task".into(),
         description: "Delete a scheduled task by id.".into(),

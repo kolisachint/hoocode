@@ -1,6 +1,6 @@
 # TUI
 
-Status (2026-11-19): built and consolidated. External tools (plugin and MCP) get an origin label and their own name colour, and renderers come from the plugin hint (decided 2026-11-19, not built). The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
+Status (2026-11-19): built and consolidated. External tools (plugin and MCP) get an origin label and their own name colour, and renderers come from the plugin hint (built 2026-11-19, P4). The transcript has one view: one row per tool call, opened in place (built 2026-11-07). Full-screen is the default. Themes and keybindings are built. The task panel has tabs and its own hints. Colour rules have a machine-readable file (`crates/hoocode-code-tui-theme/color-semantics.json`). Screen anatomy, part by part, is in [docs/maps/ui.md](../maps/ui.md). Open work is in the Open table below and in [roadmap.md](roadmap.md). The session handover is [docs/backlog.md](../backlog.md). This page holds the rules as built.
 
 ## Principles
 
@@ -143,9 +143,9 @@ The rule: at the prompt a bare printable key always types. Transcript letters ac
 - Header: `● <name> <label> <target> <facts>`. The label is dim: the plugin name for a plugin tool, `mcp:<server>` for an MCP tool. Built-in rows have no label.
 - Name colour: the name of an external tool uses the token `toolExternal`. Built-in names stay bold ink (`toolTitle`). The mark, facts and body keep their roles.
 - Renderer: chosen by the plugin's `render` hint (plugins.md Naming and identity). No hint, or an unknown id, gives the generic row shown above. Nothing dispatches on a tool's name.
-- Narrow rows: the label is cut first, before any target is shortened. The name is never cut.
+- Narrow rows: the label drops whole, before any fact drops and before the target shortens. The name is never cut.
 - The label is text, so the state still reads under NO_COLOR.
-- Colour build (P4): add the role `external` and the token `toolExternal` to `color-semantics.json`, with a rule that external names use only this token. Set its value in every built-in theme, dark and light, so it holds the contrast of the other text tokens and differs from accent, done, failed and blocking. No hex value is chosen in this doc.
+- Built (P4, 2026-11-19): the role `external` and the token `toolExternal` are in `color-semantics.json`, with the rule that external names use only this token. Every built-in theme sets it, and the contrast and colour-distance tests hold it. A theme that leaves it out falls back to `toolTitle`. The values are in the theme files and the roles table, not here.
 
 ### Cut order (tool rows)
 
@@ -593,6 +593,7 @@ Dialogs and notices are pinned by component goldens in dark, light and monochrom
 | 2026-11-19 | External tools (plugin and MCP) show their origin: a dim label after the name, the plugin name or `mcp:<server>`. Built-in rows are unchanged. |
 | 2026-11-19 | The name of an external tool uses the new token `toolExternal` (new role `external`). Its values are set in P4 for every built-in theme. Built-in names stay bold ink. |
 | 2026-11-19 | A plugin tool's renderer comes from its `render` hint in `plugin.json`. No code dispatches on a plugin or MCP tool name. The `WebFetch` and `WebSearch` rows above name the renderers, not the tools. |
+| 2026-11-19 | P4 built. The start event's `render` key is written only when a plugin tool has a hint, so built-in events keep their shape. In a narrow row the origin label drops before any fact. |
 
 ## Open
 
