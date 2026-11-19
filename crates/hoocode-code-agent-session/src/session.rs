@@ -1528,14 +1528,16 @@ impl AgentSession {
             .collect();
         let wrapped_builtin = wrap_tool_definitions(builtins, Some(ctx));
         let mut registry: Vec<AgentTool> = Vec::new();
+        // Built-ins first; a later tool of a taken name is a duplicate and is skipped, as in the
+        // definitions loop above.
         for tool in wrapped_builtin
             .into_iter()
             .chain(wrapped_custom.iter().cloned())
         {
-            match registry.iter_mut().find(|t| t.name == tool.name) {
-                Some(slot) => *slot = tool,
-                None => registry.push(tool),
+            if registry.iter().any(|t| t.name == tool.name) {
+                continue;
             }
+            registry.push(tool);
         }
 
         let mut next_active: Vec<String> = active_tool_names
