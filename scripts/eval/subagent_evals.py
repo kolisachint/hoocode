@@ -156,6 +156,9 @@ class Expect:
     branch_commits: int | None = None
     parent_status_unchanged: bool | None = None
     nothing_pushed: bool | None = None
+    # Paths, relative to the run's project folder, that must exist when the run ends: a file a
+    # tool call writes is proof the call ran (a denied or errored call writes nothing).
+    files_exist: list[str] | None = None
     # Per-route checks (route name -> value). `route_requests` is the exact
     # request count; `route_tools_have` / `route_tools_lack` are the tool names
     # the provider offered in that route's requests.
@@ -627,6 +630,8 @@ SCENARIOS: list[Scenario] = [
             child_requests=2,
             parent_requests=2,
             tool_results_lack={"child": ["denied", "Denied", "no UI"]},
+            # The Shell call ran: it wrote its file. A call that errored or was denied writes nothing.
+            files_exist=["headless_probe.txt"],
         ),
     ),
     Scenario(
@@ -1367,6 +1372,9 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
             facts = inspect_writer_repo(work, origin, before)
         facts["peak_inflight"] = dict(provider.peak_inflight)
         facts["route_entries"] = {name: provider.requests(name) for name in routes}
+        facts["files_exist"] = {
+            path: (work / path).is_file() for path in (scenario.expect.files_exist or [])
+        }
         failures += check(
             scenario.expect,
             ledger,
@@ -1529,6 +1537,11 @@ def check(
         want(
             facts.get("nothing_pushed") is expect.nothing_pushed,
             "a ref appeared in the origin during the run",
+        )
+    for path in expect.files_exist or []:
+        want(
+            facts.get("files_exist", {}).get(path) is True,
+            f"{path} was not written by the run: the tool call that writes it did not succeed",
         )
     route_entries: dict[str, list[dict[str, Any]]] = facts.get("route_entries", {})
     peaks: dict[str, int] = facts.get("peak_inflight", {})
