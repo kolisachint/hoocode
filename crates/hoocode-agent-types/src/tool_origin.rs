@@ -161,6 +161,9 @@ pub enum ToolSelectorError {
     Empty,
     /// The entry is not a name or one of the selector forms. Holds the entry as written.
     Malformed(String),
+    /// The entry is a tool name from before the rename (`ext_*`, `mcp_*`). It would match no
+    /// tool, so it is refused rather than allowing or denying nothing silently. Holds the entry.
+    OldName(String),
 }
 
 impl fmt::Display for ToolSelectorError {
@@ -168,6 +171,10 @@ impl fmt::Display for ToolSelectorError {
         match self {
             Self::Empty => f.write_str("empty tool selector"),
             Self::Malformed(entry) => write!(f, "malformed tool selector \"{entry}\""),
+            Self::OldName(name) => write!(
+                f,
+                "old tool name `{name}`: use plugin:/mcp: selectors or the new tool name"
+            ),
         }
     }
 }
@@ -188,6 +195,14 @@ fn bare_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// A bare name from before the rename: `ext_<tool>` (plugin tools) or `mcp_<x>` (MCP tools,
+/// now `mcp__<server>__<tool>`). No current tool has such a name, so a deny or allow entry
+/// with one would silently match nothing (case-insensitive, as names match).
+fn old_tool_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("ext_") || (lower.starts_with("mcp_") && !lower.starts_with("mcp__"))
 }
 
 impl ToolSelector {
@@ -225,7 +240,11 @@ impl ToolSelector {
             };
         }
         if bare_name(text) {
-            Ok(Self::Name(text.to_owned()))
+            if old_tool_name(text) {
+                Err(ToolSelectorError::OldName(text.to_owned()))
+            } else {
+                Ok(Self::Name(text.to_owned()))
+            }
         } else {
             Err(malformed())
         }
@@ -408,6 +427,40 @@ mod tests {
                 "{bad:?} should be refused"
             );
         }
+    }
+
+    #[test]
+    fn refuses_old_tool_names_so_they_do_not_match_nothing() {
+        for old in [
+            "ext_read",
+            "EXT_Read",
+            "ext_",
+            "mcp_github",
+            "Mcp_x",
+            "mcp_",
+        ] {
+            assert!(
+                matches!(
+                    ToolSelector::parse(old),
+                    Err(ToolSelectorError::OldName(ref name)) if name == old
+                ),
+                "{old:?} should be refused as an old name"
+            );
+        }
+        let message = ToolSelector::parse("ext_read").unwrap_err().to_string();
+        assert_eq!(
+            message,
+            "old tool name `ext_read`: use plugin:/mcp: selectors or the new tool name"
+        );
+        // The new names are still names.
+        assert_eq!(
+            ToolSelector::parse("mcp__github__x").unwrap(),
+            ToolSelector::Name("mcp__github__x".into())
+        );
+        assert_eq!(
+            ToolSelector::parse("extra").unwrap(),
+            ToolSelector::Name("extra".into())
+        );
     }
 
     #[test]

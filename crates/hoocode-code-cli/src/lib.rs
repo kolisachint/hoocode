@@ -516,6 +516,16 @@ mod tests {
     }
 
     #[test]
+    fn an_old_tool_name_in_a_tool_list_exits_1() {
+        let (code, _, err) = run_with(&["--disallowed-tools", "ext_read", "hi"], TTY);
+        assert_eq!(code, 1);
+        assert!(
+            err.contains("--disallowed-tools: old tool name `ext_read`"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn warnings_are_printed_and_colored() {
         let color = Env {
             stdin_is_tty: true,

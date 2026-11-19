@@ -591,6 +591,29 @@ fn a_malformed_deny_blocks_every_call_of_its_mode() {
 }
 
 #[test]
+fn an_old_tool_name_in_denied_tools_is_refused_not_silently_unmatched() {
+    // `ext_read` was the plugin tool's name before the rename. Read as a name it would deny
+    // nothing, so the rule is malformed: rule_errors names it, and the mode blocks its calls.
+    let config = json!({"modes": {"build": {"denied_tools": ["ext_read"]}}});
+    let errors = rule_errors(config.as_object().unwrap());
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("denied_tools") && errors[0].contains("old tool name `ext_read`"),
+        "{errors:?}"
+    );
+    match judge(
+        config,
+        "Read",
+        &ToolOrigin::BuiltIn,
+        json!({"path": "a"}),
+        UI,
+    ) {
+        Verdict::Block(reason) => assert!(reason.contains("malformed denied_tools"), "{reason}"),
+        v => panic!("{v:?}"),
+    }
+}
+
+#[test]
 fn a_malformed_auto_allow_allows_nothing() {
     let config = json!({"modes": {"build": {"auto_allow": ["ext_*"]}}});
     assert!(matches!(

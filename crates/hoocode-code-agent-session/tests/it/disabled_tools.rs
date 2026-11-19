@@ -53,3 +53,16 @@ fn no_builtin_tools_leaves_the_extension_tools_active() {
     assert_eq!(h.session.get_active_tool_names(), ["AskUserQuestion"]);
     assert!(all_tools(&h).contains(&"Read".to_string()));
 }
+
+/// A deny entry that names no tool is reported (`unmatched_denied_tool_names`), as an allow entry
+/// is. A name that matches a tool case-insensitively, an `mcp__` name (its server may start) and
+/// an entry in the allow list are not.
+#[test]
+fn a_denied_name_matching_no_tool_is_reported() {
+    let h = session(
+        Some(&["Read"]),
+        &["shell", "NoSuchTool", "mcp__x__y", "Read"],
+    );
+    assert_eq!(h.session.unmatched_denied_tool_names(), ["NoSuchTool"]);
+    assert!(h.session.unmatched_tool_names().is_empty());
+}

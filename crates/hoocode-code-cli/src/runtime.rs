@@ -1063,6 +1063,18 @@ fn assemble_session(
             format!("tool \"{name}\" in the tool list matches no tool and is ignored"),
         ));
     }
+    // A deny that names no tool denies nothing. The subagent pool adds the plugin lifecycle
+    // tools to every child's deny list, and a child never registers them, so those names are
+    // left out here rather than warning on every spawn.
+    for name in session.unmatched_denied_tool_names() {
+        if hoocode_code_tools_optin::PLUGIN_TOOL_NAMES.contains(&name.as_str()) {
+            continue;
+        }
+        diagnostics.push((
+            DiagnosticKind::Warning,
+            format!("tool \"{name}\" in the disallowed-tools list matches no tool and is ignored"),
+        ));
+    }
     if mcp {
         attach_mcp(
             &session,

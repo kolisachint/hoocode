@@ -478,6 +478,26 @@ mod tests {
     }
 
     #[test]
+    fn an_old_tool_name_is_a_cli_error_in_either_list() {
+        let r = parse(&["--disallowed-tools", "ext_read,Write"]);
+        assert!(
+            r.diagnostics.iter().any(|d| d.kind == DiagnosticKind::Error
+                && d.message.starts_with("--disallowed-tools:")
+                && d.message.contains("old tool name `ext_read`")),
+            "{:?}",
+            r.diagnostics
+        );
+        let r = parse(&["--tools", "mcp_github"]);
+        assert!(
+            r.diagnostics.iter().any(|d| d.kind == DiagnosticKind::Error
+                && d.message.starts_with("--tools:")
+                && d.message.contains("old tool name `mcp_github`")),
+            "{:?}",
+            r.diagnostics
+        );
+    }
+
+    #[test]
     fn selectors_of_every_form_are_accepted_by_both_tool_flags() {
         let list =
             "Read,plugin:webtools/WebFetch,plugin:*,mcp:github,mcp:github/create_issue,mcp:*";

@@ -1342,7 +1342,18 @@ impl AgentSession {
     /// are built (plugin tools attach during the build), so a name that matches nothing warns at
     /// spawn instead of allowing nothing silently.
     pub fn unmatched_tool_names(&self) -> Vec<String> {
-        let Some(allowed) = &self.inner.allowed_tool_names else {
+        self.unmatched_in(self.inner.allowed_tool_names.as_ref())
+    }
+
+    /// The `--disallowed-tools` entries that are bare names matching no tool this session has,
+    /// sorted: a deny that names nothing denies nothing. Same rules as
+    /// [`unmatched_tool_names`](Self::unmatched_tool_names).
+    pub fn unmatched_denied_tool_names(&self) -> Vec<String> {
+        self.unmatched_in(self.inner.disallowed_tool_names.as_ref())
+    }
+
+    fn unmatched_in(&self, list: Option<&HashSet<String>>) -> Vec<String> {
+        let Some(list) = list else {
             return Vec::new();
         };
         let state = lock(&self.inner.state);
@@ -1354,7 +1365,7 @@ impl AgentSession {
             .chain(state.mcp_tools.iter())
             .map(|d| d.name.as_str())
             .collect();
-        let mut out: Vec<String> = allowed
+        let mut out: Vec<String> = list
             .iter()
             .filter_map(|entry| match ToolSelector::parse(entry) {
                 Ok(ToolSelector::Name(name))

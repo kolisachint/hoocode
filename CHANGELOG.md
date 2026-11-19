@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: old tool names are refused, and unmatched deny entries are reported (2026-11-19)
+- A tool list or deny list entry that is an old tool name (`ext_*`, or `mcp_*` without the second
+  underscore) is refused: `--tools`, `--disallowed-tools`, `denied_tools`, `auto_allow`,
+  `enabled_tools` and agent `tools`/`disallowedTools`. It matched no tool, so a deny with it
+  denied nothing silently. The message names the new form to use.
+- A `--disallowed-tools` name that matches no tool warns at start, as a `--tools` name does. An
+  `mcp__` name is not checked (its server may not be up yet).
+
 ### Changed: app-server tool items carry origin and render (2026-11-19)
 - The tool items of `hoocode app-server` (`commandExecution`, `fileChange`, `dynamicToolCall`)
   have two new fields, written only when present: `origin` (the tool's origin, as the JSON
