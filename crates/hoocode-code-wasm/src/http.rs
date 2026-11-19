@@ -159,11 +159,12 @@ fn ask_gate(alive: &AtomicBool, net: &dyn NetGate, url: &str) -> Result<(), Stri
     net.check(url)
 }
 
-/// Log a refusal and fail the request with `http-request-denied`. The guest gets
-/// the same code for every refusal, so it cannot tell a policy block from a
-/// lookup failure.
-fn refuse(detail: &str) -> Result<(Response<WasiBody>, Outgoing), Error> {
+/// Log a refusal, tell the net gate its reason, and fail the request with
+/// `http-request-denied`. The guest gets the same code for every refusal, so it
+/// cannot tell a policy block from a lookup failure.
+fn refuse(net: &dyn NetGate, detail: &str) -> Result<(Response<WasiBody>, Outgoing), Error> {
     crate::write_host_log(&format!("wasm http request refused: {detail}\n"));
+    net.refused(detail);
     Err(Error::HttpRequestDenied)
 }
 
@@ -190,29 +191,32 @@ impl GatedHooks {
             // 1. Before the gate: scheme, host, and a literal IP host. No DNS.
             let target = match ssrf::parse_target(request.uri()) {
                 Ok(target) => target,
-                Err(reason) => return refuse(&format!("{url}: {reason}")),
+                Err(reason) => return refuse(net.as_ref(), &format!("{url}: {reason}")),
             };
             if let Err(reason) = ssrf::check_literal(&target, allow_loopback) {
-                return refuse(&format!("{url}: {reason}"));
+                return refuse(net.as_ref(), &format!("{url}: {reason}"));
             }
 
             // 2. The gate. The wait may be a user prompt; it does not count
             // against the call timeout (see PauseClock). An aborted call is
             // refused first, so the user is not asked for it.
             if abort.as_ref().is_some_and(AbortSignal::aborted) {
-                return refuse(&format!(
-                    "{url}: the call was aborted before the gate was asked"
-                ));
+                return refuse(
+                    net.as_ref(),
+                    &format!("{url}: the call was aborted before the gate was asked"),
+                );
             }
             let pause = clock.pause();
             let gate_url = url.clone();
-            let verdict =
-                hoocode_runtime::run_blocking(move || ask_gate(&alive, net.as_ref(), &gate_url))
-                    .await;
+            let gate_net = net.clone();
+            let verdict = hoocode_runtime::run_blocking(move || {
+                ask_gate(&alive, gate_net.as_ref(), &gate_url)
+            })
+            .await;
             drop(pause);
             match verdict {
                 Ok(Ok(())) => {}
-                Ok(Err(reason)) => return refuse(&reason),
+                Ok(Err(reason)) => return refuse(net.as_ref(), &reason),
                 Err(e) => return Err(Error::InternalError(Some(format!("net gate: {e}")))),
             }
 
@@ -225,7 +229,7 @@ impl GatedHooks {
             let addrs = match checked {
                 Ok(Ok(addrs)) => addrs,
                 Ok(Err(CheckError::Dns(reason) | CheckError::Blocked(reason))) => {
-                    return refuse(&format!("{url}: {reason}"));
+                    return refuse(net.as_ref(), &format!("{url}: {reason}"));
                 }
                 Err(e) => return Err(Error::InternalError(Some(format!("ssrf check: {e}")))),
             };

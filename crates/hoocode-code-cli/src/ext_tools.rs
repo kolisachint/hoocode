@@ -199,28 +199,45 @@ fn definition(
         ordered_start: false,
         abort_grace: None,
         execute: Arc::new(move |_id, params, signal, _on_update, _ctx| {
+            // One net gate per call: its decisions and its last refusal are this call's alone.
+            let net = Arc::new(ToolNetGate::new(gate.clone()));
             let env = CallEnv {
                 config: config.clone(),
-                net: Arc::new(ToolNetGate::new(gate.clone())),
+                net: net.clone(),
                 abort: signal,
             };
-            call_blocking(&handle, &extension, &tool, params, env)
+            call_blocking(&handle, &extension, &tool, params, env, &net)
         }),
     }
 }
 
+/// The code a refused request shows the guest, for every refusal alike (`http-request-denied`).
+const REFUSED_CODE: &str = "HttpRequestDenied";
+
+/// A failed call's text, with the reason of the call's last refused request added when the
+/// failure is that refusal. The guest sees only the code, so without this the model could not
+/// tell a user's "no", a private address and a missing permission apart.
+fn with_refusal(error: String, refusal: Option<String>) -> String {
+    match refusal {
+        Some(reason) if error.contains(REFUSED_CODE) => format!("{error}: {reason}"),
+        _ => error,
+    }
+}
+
 /// Runs one call from the tool's blocking thread. The result is the component's JSON as text
-/// (pretty-printed for an object). A failure becomes the tool error, with its own message.
+/// (pretty-printed for an object). A failure becomes the tool error, with its own message, and
+/// a refusal with the reason it was refused for (`net`).
 fn call_blocking(
     handle: &Handle,
     extension: &Extension,
     tool: &str,
     params: Value,
     env: CallEnv,
+    net: &ToolNetGate,
 ) -> Result<AgentToolResult, ToolError> {
     let value = handle
         .block_on(extension.call(tool, params, env))
-        .map_err(|error| ToolError::from(error.to_string()))?;
+        .map_err(|error| ToolError::from(with_refusal(error.to_string(), net.last_refusal())))?;
     let text = match &value {
         Value::Object(_) => serde_json::to_string_pretty(&value),
         _ => serde_json::to_string(&value),
@@ -251,6 +268,8 @@ fn origin_of(url: &str) -> Option<Origin> {
 pub(crate) struct ToolNetGate {
     gate: Arc<dyn PermissionGate>,
     decisions: Mutex<HashMap<Origin, Result<(), String>>>,
+    /// The reason of the call's last refused request (the gate's, or a host check's).
+    refusal: Mutex<Option<String>>,
 }
 
 impl ToolNetGate {
@@ -258,7 +277,16 @@ impl ToolNetGate {
         Self {
             gate,
             decisions: Mutex::new(HashMap::new()),
+            refusal: Mutex::new(None),
         }
+    }
+
+    /// The reason of the call's last refused request, if any.
+    fn last_refusal(&self) -> Option<String> {
+        self.refusal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn ask(&self, url: &str) -> Result<(), String> {
@@ -276,6 +304,10 @@ impl ToolNetGate {
 }
 
 impl NetGate for ToolNetGate {
+    fn refused(&self, detail: &str) {
+        *self.refusal.lock().unwrap_or_else(|e| e.into_inner()) = Some(detail.to_owned());
+    }
+
     fn check(&self, url: &str) -> Result<(), String> {
         // A URL with no origin is refused without asking.
         let Some(origin) = origin_of(url) else {
@@ -711,12 +743,68 @@ mod tests {
         let (tools, _) = build_for(&layout, &set, &settings(json!({})), gate.clone(), &[]);
         let fetch = tools.iter().find(|t| t.name == "ext_demo_fetch").unwrap();
         let error = run(fetch, json!({"url": "https://93.184.216.34/"})).unwrap_err();
-        // The component sees the refusal as its HTTP error code; the gate's reason goes to the
-        // host log, not into the tool result.
+        // The component sees the refusal as its HTTP error code, and the gate's reason is added to
+        // the tool error, so the model can tell why.
         assert!(error.contains("HttpRequestDenied"), "{error}");
+        assert!(error.contains("refused in test"), "{error}");
         let asked = gate.asked();
         assert_eq!(asked.len(), 1);
         assert_eq!(asked[0].arguments, json!({"url": "https://93.184.216.34/"}));
+    }
+
+    #[test]
+    fn fetch_refused_by_the_host_names_the_block_without_asking() {
+        // A private literal IP is refused by the host's own check, before the gate is asked.
+        let layout = Layout::new();
+        layout.add_plugin("demo", &fixture_bytes());
+        let set = layout.load(&[]);
+        let gate = ScriptedGate::new(vec![]);
+        let (tools, _) = build_for(&layout, &set, &settings(json!({})), gate.clone(), &[]);
+        let fetch = tools.iter().find(|t| t.name == "ext_demo_fetch").unwrap();
+        let error = run(fetch, json!({"url": "http://10.1.2.3/"})).unwrap_err();
+        assert!(error.contains("HttpRequestDenied"), "{error}");
+        assert!(error.contains("10.1.2.3 is private"), "{error}");
+        assert!(gate.asked().is_empty());
+    }
+
+    #[test]
+    fn a_refusal_reason_is_added_only_to_a_refusal() {
+        let refused = "HttpRequestDenied".to_owned();
+        assert_eq!(
+            with_refusal(refused.clone(), Some("user said no".into())),
+            "HttpRequestDenied: user said no"
+        );
+        // No refusal in this call: the error is unchanged.
+        assert_eq!(with_refusal(refused.clone(), None), refused);
+        // A failure that is not a refusal keeps its own text.
+        assert_eq!(
+            with_refusal("plugin crashed".into(), Some("user said no".into())),
+            "plugin crashed"
+        );
+    }
+
+    #[test]
+    fn a_refusal_reason_stays_with_the_call_that_got_it() {
+        let gate = ScriptedGate::new(vec![]);
+        let first = ToolNetGate::new(gate.clone());
+        let second = ToolNetGate::new(gate.clone());
+        first.refused("https://a.example/: a is private");
+        assert_eq!(
+            first.last_refusal().as_deref(),
+            Some("https://a.example/: a is private")
+        );
+        // A concurrent call has its own: it sees none, and a later refusal replaces the first.
+        assert_eq!(second.last_refusal(), None);
+        second.refused("https://b.example/: no");
+        first.refused("https://a.example/2: second");
+        assert_eq!(
+            first.last_refusal().as_deref(),
+            Some("https://a.example/2: second")
+        );
+        assert_eq!(
+            second.last_refusal().as_deref(),
+            Some("https://b.example/: no")
+        );
     }
 
     /// A PEM CA certificate generated for the test (not an invalid placeholder).
