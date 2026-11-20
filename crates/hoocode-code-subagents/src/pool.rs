@@ -1572,12 +1572,25 @@ impl PoolInner {
         }
         // The child's tier C identity (spec D5): minted by the session's
         // native host, absent when the session has no shared helper. A stale
-        // identity from an ancestor's env is always overwritten.
-        if let Some(host) = self.native_host() {
-            if let Some(vars) = host.child_env(&task.task_id) {
+        // identity from an ancestor's env is always overwritten — or stripped
+        // when none is minted, so the child cannot act as its parent (its
+        // calls would fail: without an identity it gets no shared tools).
+        match self.native_host().and_then(|host| host.child_env(&task.task_id)) {
+            Some(vars) => {
                 for (key, value) in vars {
                     env.insert(key, value);
                 }
+            }
+            None => {
+                for name in [
+                    "HOOCODE_AGENT_ID",
+                    "HOOCODE_AGENT_TOKEN",
+                    "HOOCODE_AGENT_PARENT",
+                    "HOOCODE_AGENT_DEPTH",
+                ] {
+                    env.remove(name);
+                }
+                env.retain(|key, _| !key.starts_with("HOOCODE_HELPER_SOCKET_"));
             }
         }
         env

@@ -604,10 +604,11 @@ impl WarmSubagentPool {
     /// MCP-free allowlist. (hoocode also deletes the deferred-MCP flag, but
     /// its RpcClient spreads the parent environment back over it.)
     ///
-    /// `identity_tag` (spec D5) is the worker boot's unique tier C key: the
-    /// session's native host mints the identity for it. Returns the env and
-    /// whether an identity was minted (the tag is ended with the worker only
-    /// then).
+    /// `identity_tag` (spec D5) is the worker boot's unique tier C key. It is
+    /// always `None` here: a warm rpc worker has no parent channel to ask
+    /// EnsureHelper through (rpc installs no clearance relay), so a minted
+    /// identity would offer shared tools whose every call fails. No identity
+    /// is minted and no tag is ended with the worker.
     fn child_env(
         &self,
         agent_type: &str,
@@ -632,12 +633,7 @@ impl WarmSubagentPool {
         if !tool_allowlist_needs_mcp(tools) {
             env.push((format!("HOOCODE_{SUBAGENT_SKIP_MCP_ENV}"), "1".into()));
         }
-        if let (Some(tag), Some(host)) = (identity_tag, crate::instance::native_child_host()) {
-            if let Some(vars) = host.child_env(tag) {
-                env.extend(vars);
-                return (env, true);
-            }
-        }
+        let _ = identity_tag;
         (env, false)
     }
 
