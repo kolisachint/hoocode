@@ -500,7 +500,9 @@ fn invalid_native_block_still_hides_the_named_server() {
         .expect("the plugin still loads");
     assert!(plugin.native.is_none(), "native stays off");
     assert!(
-        native_errors(&set).iter().any(|d| d.message.contains("tools")),
+        native_errors(&set)
+            .iter()
+            .any(|d| d.message.contains("tools")),
         "an Error says why: {:?}",
         set.diagnostics
     );

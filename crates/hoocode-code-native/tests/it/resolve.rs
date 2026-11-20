@@ -6,9 +6,9 @@
 use std::collections::HashMap;
 
 use hoocode_code_native::{
-    NativeError, binary_path_override, binary_path_overrides, ensure_plugin_binary,
-    file_name_from_url, plugin_bin_dir, resolve_executable, sha256_hex, socket_path_for,
-    validate_path_component, verify_sha256,
+    binary_path_override, binary_path_overrides, ensure_plugin_binary, file_name_from_url,
+    plugin_bin_dir, resolve_executable, sha256_hex, socket_path_for, validate_path_component,
+    verify_sha256, NativeError,
 };
 use hoocode_code_plugins::native::current_platform_key;
 use serde_json::json;
@@ -282,9 +282,7 @@ async fn concurrent_installs_agree_on_one_binary() {
         let task_home = home.clone();
         let task_entry = entry.clone();
         let task_client = client.clone();
-        set.spawn(async move {
-            ensure_plugin_binary(&task_home, &task_entry, &task_client).await
-        });
+        set.spawn(async move { ensure_plugin_binary(&task_home, &task_entry, &task_client).await });
     }
     let mut dest = None;
     while let Some(joined) = set.join_next().await {
@@ -300,11 +298,10 @@ async fn concurrent_installs_agree_on_one_binary() {
     }
     let dest = dest.expect("an install");
     assert_eq!(std::fs::read(&dest).expect("read"), [0xABu8; 64]);
-    let leftovers: Vec<std::path::PathBuf> =
-        std::fs::read_dir(dest.parent().expect("parent"))
-            .expect("read dir")
-            .map(|entry| entry.expect("entry").path())
-            .filter(|path| path != &dest)
-            .collect();
+    let leftovers: Vec<std::path::PathBuf> = std::fs::read_dir(dest.parent().expect("parent"))
+        .expect("read dir")
+        .map(|entry| entry.expect("entry").path())
+        .filter(|path| path != &dest)
+        .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }

@@ -213,19 +213,15 @@ fn install_bytes(
     let (tmp, mut file) = create_tmp(dest)?;
     let installed = (|| {
         use std::io::Write;
-        file.write_all(bytes).map_err(|error| {
-            NativeError::Io(format!("cannot write {}: {error}", tmp.display()))
-        })?;
-        file.sync_all().map_err(|error| {
-            NativeError::Io(format!("cannot sync {}: {error}", tmp.display()))
-        })?;
+        file.write_all(bytes)
+            .map_err(|error| NativeError::Io(format!("cannot write {}: {error}", tmp.display())))?;
+        file.sync_all()
+            .map_err(|error| NativeError::Io(format!("cannot sync {}: {error}", tmp.display())))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).map_err(
-                |error| {
-                    NativeError::Io(format!("cannot chmod {}: {error}", tmp.display()))
-                },
+                |error| NativeError::Io(format!("cannot chmod {}: {error}", tmp.display())),
             )?;
         }
         drop(file);

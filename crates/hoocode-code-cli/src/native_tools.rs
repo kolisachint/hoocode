@@ -20,7 +20,7 @@ use hoocode_agent_mcp::{ToolContent, ToolOutput};
 use hoocode_agent_types::{collision_notices, valid_plugin_tool_name, AgentToolResult, ToolOrigin};
 use hoocode_ai_types::{Content, ImageContent};
 use hoocode_code_native::{
-    NativeCallOptions, binary_path_overrides, default_home_dir, helper_socket_env_name, Supervisor,
+    binary_path_overrides, default_home_dir, helper_socket_env_name, NativeCallOptions, Supervisor,
     SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
 };
 use hoocode_code_permissions::{set_native_hints, NativeToolHint};

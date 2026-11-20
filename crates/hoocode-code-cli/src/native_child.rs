@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use hoocode_agent_mcp::{McpError, ToolOutput};
 use hoocode_agent_types::ToolOrigin;
 use hoocode_code_native::{
-    NativeCallOptions, helper_socket_env_name, mint_agent, AgentIdentity, NativeClient,
+    helper_socket_env_name, mint_agent, AgentIdentity, NativeCallOptions, NativeClient,
     NativeError, Supervisor, AGENT_ID_ENV, AGENT_TOKEN_ENV,
 };
 use hoocode_code_plugins::PluginSet;

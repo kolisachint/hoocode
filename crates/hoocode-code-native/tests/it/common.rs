@@ -32,7 +32,9 @@ fn build_lock_dir(target: &Path) -> PathBuf {
 }
 
 fn mtime(path: &Path) -> Option<std::time::SystemTime> {
-    std::fs::metadata(path).and_then(|meta| meta.modified()).ok()
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
 }
 
 /// The newest modification time under `dir` (recursive), or `None` when it

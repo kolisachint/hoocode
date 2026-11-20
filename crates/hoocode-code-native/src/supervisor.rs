@@ -33,9 +33,9 @@ use hoocode_code_plugins::NativeHelperEntry;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::{mint_agent, AgentIdentity, ROOT_AGENT_ID};
 #[cfg(unix)]
 use crate::agents::AGENT_ID_ENV;
+use crate::agents::{mint_agent, AgentIdentity, ROOT_AGENT_ID};
 use crate::error::{shut_down, NativeError};
 #[cfg(unix)]
 use crate::resolve::resolve_executable;
@@ -990,8 +990,7 @@ impl Supervisor {
                         .collect()
                 };
                 for agent in reregister {
-                    let send =
-                        ready_client.notify("hoocode/agentStarted", agent.started_params());
+                    let send = ready_client.notify("hoocode/agentStarted", agent.started_params());
                     match tokio::time::timeout(LIFECYCLE_NOTIFY_TIMEOUT, send).await {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) => {

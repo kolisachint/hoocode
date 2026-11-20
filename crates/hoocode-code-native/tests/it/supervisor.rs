@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use hoocode_agent_mcp::{McpError, ToolContent};
 use hoocode_code_native::{
-    NativeCallOptions, binary_path_overrides, mint_agent, resolve_executable, NativeClient,
+    binary_path_overrides, mint_agent, resolve_executable, NativeCallOptions, NativeClient,
     NativeError, Supervisor, SupervisorConfig,
 };
 use serde_json::{json, Value};
@@ -25,7 +25,12 @@ async fn root_echo_returns_root_identity() {
     let root = helper.supervisor().root_identity().clone();
     let output = helper
         .supervisor()
-        .call_tool("echo", "echo", json!({"text": "hi"}), NativeCallOptions::default())
+        .call_tool(
+            "echo",
+            "echo",
+            json!({"text": "hi"}),
+            NativeCallOptions::default(),
+        )
         .await
         .expect("echo works");
     let seen = echo_text(&output);
@@ -66,7 +71,12 @@ async fn children_see_their_own_identity() {
             (
                 "root".to_owned(),
                 supervisor
-                    .call_tool("echo", "echo", json!({"text": "root"}), NativeCallOptions::default())
+                    .call_tool(
+                        "echo",
+                        "echo",
+                        json!({"text": "root"}),
+                        NativeCallOptions::default(),
+                    )
                     .await,
             )
         }
@@ -76,7 +86,11 @@ async fn children_see_their_own_identity() {
             (
                 format!("root/{}", ["one", "two", "three"][index]),
                 client
-                    .call_tool("echo", json!({"text": format!("child-{index}")}), NativeCallOptions::default())
+                    .call_tool(
+                        "echo",
+                        json!({"text": format!("child-{index}")}),
+                        NativeCallOptions::default(),
+                    )
                     .await,
             )
         });
@@ -166,7 +180,12 @@ async fn crashing_call_errors_and_next_call_restarts() {
     // Started once for the call, but not restarted: nothing is replayed.
     assert_eq!(supervisor.spawn_count("echo"), before + 1);
     let output = supervisor
-        .call_tool("echo", "echo", json!({"text": "after"}), NativeCallOptions::default())
+        .call_tool(
+            "echo",
+            "echo",
+            json!({"text": "after"}),
+            NativeCallOptions::default(),
+        )
         .await
         .expect("the next call restarts");
     assert_eq!(echo_text(&output)["text"], "after");
@@ -178,7 +197,11 @@ async fn crashing_call_errors_and_next_call_restarts() {
         .expect("child token works after restart");
     let seen = echo_text(
         &client
-            .call_tool("echo", json!({"text": "child"}), NativeCallOptions::default())
+            .call_tool(
+                "echo",
+                json!({"text": "child"}),
+                NativeCallOptions::default(),
+            )
             .await
             .expect("child echo"),
     );
@@ -203,12 +226,7 @@ async fn restart_budget_goes_down() {
     let mut down = None;
     for _ in 0..6 {
         supervisor
-            .call_tool(
-                "echo",
-                "crash",
-                json!({}),
-                NativeCallOptions::default(),
-            )
+            .call_tool("echo", "crash", json!({}), NativeCallOptions::default())
             .await
             .expect_err("crash kills the in-flight call");
         match supervisor
@@ -235,7 +253,12 @@ async fn restart_budget_goes_down() {
         "the reason names the budget: {reason}"
     );
     let error = supervisor
-        .call_tool("echo", "echo", json!({"text": "hi"}), NativeCallOptions::default())
+        .call_tool(
+            "echo",
+            "echo",
+            json!({"text": "hi"}),
+            NativeCallOptions::default(),
+        )
         .await
         .expect_err("down stays down");
     assert!(matches!(error, NativeError::Down { .. }), "{error:?}");
@@ -333,7 +356,12 @@ async fn binary_path_override_is_used() {
     )
     .expect("supervisor");
     let output = supervisor
-        .call_tool("via-setting", "echo", json!({"text": "override"}), NativeCallOptions::default())
+        .call_tool(
+            "via-setting",
+            "echo",
+            json!({"text": "override"}),
+            NativeCallOptions::default(),
+        )
         .await
         .expect("override starts the helper");
     assert_eq!(echo_text(&output)["text"], "override");
@@ -432,11 +460,7 @@ async fn concurrent_register_and_calls_start_one_process() {
     while let Some(joined) = set.join_next().await {
         joined.expect("task");
     }
-    assert_eq!(
-        supervisor.spawn_count("echo"),
-        1,
-        "no spurious restarts"
-    );
+    assert_eq!(supervisor.spawn_count("echo"), 1, "no spurious restarts");
     helper.supervisor().shutdown().await.expect("shutdown");
 }
 
@@ -521,7 +545,12 @@ async fn concurrent_first_calls_start_one_process() {
         let supervisor = supervisor.clone();
         set.spawn(async move {
             supervisor
-                .call_tool("echo", "echo", json!({"text": format!("call-{index}")}), NativeCallOptions::default())
+                .call_tool(
+                    "echo",
+                    "echo",
+                    json!({"text": format!("call-{index}")}),
+                    NativeCallOptions::default(),
+                )
                 .await
         });
     }
@@ -566,7 +595,12 @@ async fn end_agent_forgets_the_agent() {
         .await
         .expect_err("crash");
     supervisor
-        .call_tool("echo", "echo", json!({"text": "back"}), NativeCallOptions::default())
+        .call_tool(
+            "echo",
+            "echo",
+            json!({"text": "back"}),
+            NativeCallOptions::default(),
+        )
         .await
         .expect("restart");
     let socket = supervisor.ensure("echo").await.expect("socket");
@@ -586,7 +620,12 @@ async fn parts_build_a_working_supervisor() {
     let dir = tempfile::tempdir().expect("tempdir");
     let supervisor = start_supervisor(dir.path(), SupervisorConfig::for_tests());
     let output = supervisor
-        .call_tool("echo", "echo", json!({"text": "parts"}), NativeCallOptions::default())
+        .call_tool(
+            "echo",
+            "echo",
+            json!({"text": "parts"}),
+            NativeCallOptions::default(),
+        )
         .await
         .expect("echo");
     assert_eq!(echo_text(&output)["text"], "parts");
@@ -599,7 +638,12 @@ async fn sleep_waits_then_answers() {
     let helper = TestHelper::start();
     let output = helper
         .supervisor()
-        .call_tool("echo", "sleep", json!({"ms": 200}), NativeCallOptions::default())
+        .call_tool(
+            "echo",
+            "sleep",
+            json!({"ms": 200}),
+            NativeCallOptions::default(),
+        )
         .await
         .expect("sleep");
     let [ToolContent::Text(text), ..] = &output.content[..] else {
