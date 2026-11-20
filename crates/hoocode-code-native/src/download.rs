@@ -11,6 +11,7 @@ use hoocode_code_plugins::NativeHelperEntry;
 use sha2::{Digest, Sha256};
 
 use crate::error::{plugin_bin_dir, NativeError};
+use crate::runtime_dir::validate_path_component;
 
 /// Largest download accepted: 256 MiB of binary.
 pub const MAX_DOWNLOAD_BYTES: u64 = 256 * 1024 * 1024;
@@ -134,39 +135,118 @@ pub async fn ensure_plugin_binary(
         return Ok(None);
     };
     reject_archive(&binary.url, &entry.plugin)?;
+    validate_path_component("plugin", &entry.plugin)?;
     let name = file_name_from_url(&binary.url)?;
     let version = entry.version.as_deref().unwrap_or("unversioned");
+    validate_path_component("version", version)?;
     let dest = plugin_bin_dir(home, &entry.plugin, version).join(name);
-    if let Ok(bytes) = std::fs::read(&dest) {
-        if verify_sha256(&entry.plugin, &bytes, &binary.sha256).is_ok() {
-            return Ok(Some(dest));
-        }
+    if dest_matches(&dest, &entry.plugin, &binary.sha256) {
+        return Ok(Some(dest));
     }
     let bytes = fetch_bytes(client, &entry.plugin, &binary.url).await?;
     verify_sha256(&entry.plugin, &bytes, &binary.sha256)?;
-    install_bytes(&dest, &bytes)?;
+    install_bytes(&dest, &bytes, &entry.plugin, &binary.sha256)?;
     Ok(Some(dest))
+}
+
+/// True when `dest` already holds bytes matching `expected_sha`: another
+/// process (or an earlier run) installed it first.
+fn dest_matches(dest: &Path, plugin: &str, expected_sha: &str) -> bool {
+    match std::fs::read(dest) {
+        Ok(bytes) => verify_sha256(plugin, &bytes, expected_sha).is_ok(),
+        Err(_) => false,
+    }
+}
+
+/// A fresh temp sibling of `dest` for one install: the pid plus random hex,
+/// opened with `create_new`, so parallel installers never share a file.
+fn create_tmp(dest: &Path) -> Result<(PathBuf, std::fs::File), NativeError> {
+    let base = dest
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("helper");
+    for _ in 0..8 {
+        let mut random = [0u8; 3];
+        rand::fill(&mut random);
+        let tmp = dest.with_file_name(format!(
+            ".{base}.{}.{}.tmp",
+            std::process::id(),
+            crate::agents::hex_encode(&random)
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(file) => return Ok((tmp, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(NativeError::Io(format!(
+                    "cannot write {}: {error}",
+                    tmp.display()
+                )));
+            }
+        }
+    }
+    Err(NativeError::Io(format!(
+        "cannot pick a temp file for {}",
+        dest.display()
+    )))
 }
 
 /// Write `bytes` to `dest` atomically (temp file plus rename) and make it
 /// executable. A checksum mismatch never reaches here, so a bad file is never
-/// installed.
-fn install_bytes(dest: &Path, bytes: &[u8]) -> Result<(), NativeError> {
+/// installed. The temp name is unique per process (pid plus random), the
+/// bytes are synced before the rename, and when the rename loses to a
+/// concurrent installer holding the right bytes, that winner is accepted.
+fn install_bytes(
+    dest: &Path,
+    bytes: &[u8],
+    plugin: &str,
+    expected_sha: &str,
+) -> Result<(), NativeError> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             NativeError::Io(format!("cannot create {}: {error}", parent.display()))
         })?;
     }
-    let tmp = dest.with_extension("tmp");
-    std::fs::write(&tmp, bytes)
-        .map_err(|error| NativeError::Io(format!("cannot write {}: {error}", tmp.display())))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))
-            .map_err(|error| NativeError::Io(format!("cannot chmod {}: {error}", tmp.display())))?;
+    let (tmp, mut file) = create_tmp(dest)?;
+    let installed = (|| {
+        use std::io::Write;
+        file.write_all(bytes).map_err(|error| {
+            NativeError::Io(format!("cannot write {}: {error}", tmp.display()))
+        })?;
+        file.sync_all().map_err(|error| {
+            NativeError::Io(format!("cannot sync {}: {error}", tmp.display()))
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).map_err(
+                |error| {
+                    NativeError::Io(format!("cannot chmod {}: {error}", tmp.display()))
+                },
+            )?;
+        }
+        drop(file);
+        match std::fs::rename(&tmp, dest) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if dest_matches(dest, plugin, expected_sha) {
+                    // A concurrent installer won: drop our temp copy.
+                    let _ = std::fs::remove_file(&tmp);
+                    Ok(())
+                } else {
+                    Err(NativeError::Io(format!(
+                        "cannot install {}: {error}",
+                        dest.display()
+                    )))
+                }
+            }
+        }
+    })();
+    if installed.is_err() {
+        let _ = std::fs::remove_file(&tmp);
     }
-    std::fs::rename(&tmp, dest)
-        .map_err(|error| NativeError::Io(format!("cannot install {}: {error}", dest.display())))?;
-    Ok(())
+    installed
 }

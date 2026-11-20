@@ -28,32 +28,52 @@
 //!   process without answering (restart tests); `sleep {ms}` waits, then answers.
 //! - Exits when `--parent-pid <pid>` is gone (polled every 500 ms).
 
+#[cfg(unix)]
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::convert::Infallible;
+#[cfg(unix)]
 use std::future::Future;
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::pin::Pin;
+#[cfg(unix)]
 use std::sync::{Arc, Mutex};
 
+#[cfg(unix)]
 use bytes::Bytes;
+#[cfg(unix)]
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
+#[cfg(unix)]
 use hyper::body::Incoming;
+#[cfg(unix)]
 use hyper::server::conn::http1;
+#[cfg(unix)]
 use hyper::{Request, Response, StatusCode};
+#[cfg(unix)]
 use hyper_util::rt::TokioIo;
+#[cfg(unix)]
 use hyper_util::service::TowerToHyperService;
+#[cfg(unix)]
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, CustomNotification,
     ErrorData, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
 };
+#[cfg(unix)]
 use rmcp::service::{NotificationContext, RequestContext};
+#[cfg(unix)]
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+#[cfg(unix)]
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
+#[cfg(unix)]
 use rmcp::{RoleServer, ServerHandler};
+#[cfg(unix)]
 use serde_json::{Map, Value};
 
 /// One registered agent: what the supervisor sent in `hoocode/agentStarted`.
 #[derive(Clone, Debug)]
+#[cfg(unix)]
 struct AgentRecord {
     agent_id: String,
     parent_id: Option<String>,
@@ -63,6 +83,7 @@ struct AgentRecord {
 /// Test receipts: the dir from `HOOCODE_ECHO_RECEIPT_DIR`, when set. Lets
 /// end-to-end tests observe registrations, calls and shutdowns without
 /// racing the runtime-dir removal.
+#[cfg(unix)]
 fn receipt_dir() -> Option<PathBuf> {
     std::env::var("HOOCODE_ECHO_RECEIPT_DIR")
         .ok()
@@ -70,6 +91,7 @@ fn receipt_dir() -> Option<PathBuf> {
 }
 
 /// File-safe agent ids (`root/task-1` becomes `root_task-1`).
+#[cfg(unix)]
 fn sanitize(agent_id: &str) -> String {
     agent_id
         .chars()
@@ -83,6 +105,7 @@ fn sanitize(agent_id: &str) -> String {
         .collect()
 }
 
+#[cfg(unix)]
 fn write_receipt(name: &str, body: &str) {
     if let Some(dir) = receipt_dir() {
         let _ = std::fs::write(dir.join(name), body);
@@ -90,21 +113,26 @@ fn write_receipt(name: &str, body: &str) {
 }
 
 /// Per-call counter, so concurrent calls leave one receipt each.
+#[cfg(unix)]
 static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Helper boot time: call receipts carry start/end offsets from it, so tests
 /// can prove calls overlapped.
+#[cfg(unix)]
 static BOOT: std::sync::LazyLock<std::time::Instant> =
     std::sync::LazyLock::new(std::time::Instant::now);
 
 /// Milliseconds since the helper booted.
+#[cfg(unix)]
 fn now_ms() -> u64 {
     BOOT.elapsed().as_millis().min(u64::MAX as u128) as u64
 }
 
+#[cfg(unix)]
 type Tokens = Arc<Mutex<HashMap<String, AgentRecord>>>;
 
 /// Bearer token of a request, from its `Authorization` header.
+#[cfg(unix)]
 fn bearer_of(parts: &http::request::Parts) -> Option<String> {
     let value = parts.headers.get(http::header::AUTHORIZATION)?;
     let value = value.to_str().ok()?;
@@ -112,6 +140,7 @@ fn bearer_of(parts: &http::request::Parts) -> Option<String> {
 }
 
 /// The token map lookup for an MCP handler context.
+#[cfg(unix)]
 fn sender_of(tokens: &Tokens, parts: &http::request::Parts) -> Option<(String, AgentRecord)> {
     let token = bearer_of(parts)?;
     let map = tokens.lock().expect("tokens");
@@ -119,6 +148,7 @@ fn sender_of(tokens: &Tokens, parts: &http::request::Parts) -> Option<(String, A
 }
 
 /// True when the request carries a known bearer token.
+#[cfg(unix)]
 fn is_authorized<T>(request: &Request<T>, tokens: &Tokens) -> bool {
     let Some(value) = request.headers().get(http::header::AUTHORIZATION) else {
         return false;
@@ -130,6 +160,7 @@ fn is_authorized<T>(request: &Request<T>, tokens: &Tokens) -> bool {
 }
 
 /// HTTP 401 for an unknown or missing token.
+#[cfg(unix)]
 fn unauthorized_response() -> Response<BoxBody<Bytes, Infallible>> {
     Response::builder()
         .status(StatusCode::UNAUTHORIZED)
@@ -144,6 +175,7 @@ fn unauthorized_response() -> Response<BoxBody<Bytes, Infallible>> {
 /// The rmcp service behind an HTTP-401 bearer check. rmcp has no auth layer of
 /// its own, so unknown tokens are rejected here, before rmcp sees them.
 #[derive(Clone)]
+#[cfg(unix)]
 struct AuthService<S> {
     tokens: Tokens,
     inner: S,
@@ -179,11 +211,13 @@ where
 /// The echo MCP server: identity comes from the token map, `metaAgentId` from
 /// `_meta["dev.hoocode/agent"]`.
 #[derive(Clone)]
+#[cfg(unix)]
 struct EchoServer {
     tokens: Tokens,
     receipt_dir: Option<PathBuf>,
 }
 
+#[cfg(unix)]
 impl EchoServer {
     fn agent_response(
         &self,
@@ -235,6 +269,7 @@ impl EchoServer {
     }
 }
 
+#[cfg(unix)]
 fn object_schema(
     properties: &[(&str, &str)],
     required: &[&str],
@@ -269,6 +304,7 @@ fn object_schema(
     )
 }
 
+#[cfg(unix)]
 impl ServerHandler for EchoServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
@@ -431,6 +467,7 @@ impl ServerHandler for EchoServer {
     }
 }
 
+#[cfg(unix)]
 fn env_required(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| {
         eprintln!("echo_helper: {name} is required");
@@ -439,6 +476,7 @@ fn env_required(name: &str) -> String {
 }
 
 /// True while the parent process still exists.
+#[cfg(unix)]
 fn parent_alive(pid: u32) -> bool {
     // SAFETY: kill with signal 0 only checks, it sends nothing.
     let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
@@ -455,6 +493,7 @@ fn parent_alive(pid: u32) -> bool {
 #[cfg(unix)]
 #[allow(clippy::disallowed_methods)]
 #[tokio::main]
+#[cfg(unix)]
 async fn main() {
     let mut args = std::env::args().skip(1);
     let mut parent_pid: Option<u32> = None;

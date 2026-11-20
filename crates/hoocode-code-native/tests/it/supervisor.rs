@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use hoocode_agent_mcp::{McpError, ToolContent};
 use hoocode_code_native::{
-    binary_path_overrides, mint_agent, resolve_executable, NativeClient, NativeError, Supervisor,
-    SupervisorConfig,
+    NativeCallOptions, binary_path_overrides, mint_agent, resolve_executable, NativeClient,
+    NativeError, Supervisor, SupervisorConfig,
 };
 use serde_json::{json, Value};
 
@@ -25,7 +25,7 @@ async fn root_echo_returns_root_identity() {
     let root = helper.supervisor().root_identity().clone();
     let output = helper
         .supervisor()
-        .call_tool("echo", "echo", json!({"text": "hi"}))
+        .call_tool("echo", "echo", json!({"text": "hi"}), NativeCallOptions::default())
         .await
         .expect("echo works");
     let seen = echo_text(&output);
@@ -66,7 +66,7 @@ async fn children_see_their_own_identity() {
             (
                 "root".to_owned(),
                 supervisor
-                    .call_tool("echo", "echo", json!({"text": "root"}))
+                    .call_tool("echo", "echo", json!({"text": "root"}), NativeCallOptions::default())
                     .await,
             )
         }
@@ -76,7 +76,7 @@ async fn children_see_their_own_identity() {
             (
                 format!("root/{}", ["one", "two", "three"][index]),
                 client
-                    .call_tool("echo", json!({"text": format!("child-{index}")}))
+                    .call_tool("echo", json!({"text": format!("child-{index}")}), NativeCallOptions::default())
                     .await,
             )
         });
@@ -141,10 +141,12 @@ async fn agent_started_with_wrong_parent_is_rejected() {
     helper.supervisor().shutdown().await.expect("shutdown");
 }
 
-/// `crash` kills the helper mid-call: the next call restarts it, and the
-/// registered child is re-sent (its token works again).
+/// `crash` kills the helper mid-call: the call fails saying the call may or
+/// may not have run, without restarting or replaying. The next call
+/// restarts the helper once, and the registered child is re-sent (its token
+/// works again).
 #[tokio::test]
-async fn crash_restarts_and_reregisters_children() {
+async fn crashing_call_errors_and_next_call_restarts() {
     let helper = TestHelper::start();
     let supervisor = helper.supervisor();
     let child = supervisor.mint_agent("root", "task").expect("mint");
@@ -154,12 +156,17 @@ async fn crash_restarts_and_reregisters_children() {
         .expect("register");
     let before = supervisor.spawn_count("echo");
     let error = supervisor
-        .call_tool("echo", "crash", json!({}))
+        .call_tool("echo", "crash", json!({}), NativeCallOptions::default())
         .await
         .expect_err("crash kills the in-flight call");
-    assert!(!matches!(error, NativeError::Down { .. }), "{error:?}");
+    assert!(
+        format!("{error:?}").contains("may or may not have run"),
+        "{error:?}"
+    );
+    // Started once for the call, but not restarted: nothing is replayed.
+    assert_eq!(supervisor.spawn_count("echo"), before + 1);
     let output = supervisor
-        .call_tool("echo", "echo", json!({"text": "after"}))
+        .call_tool("echo", "echo", json!({"text": "after"}), NativeCallOptions::default())
         .await
         .expect("the next call restarts");
     assert_eq!(echo_text(&output)["text"], "after");
@@ -171,7 +178,7 @@ async fn crash_restarts_and_reregisters_children() {
         .expect("child token works after restart");
     let seen = echo_text(
         &client
-            .call_tool("echo", json!({"text": "child"}))
+            .call_tool("echo", json!({"text": "child"}), NativeCallOptions::default())
             .await
             .expect("child echo"),
     );
@@ -181,6 +188,8 @@ async fn crash_restarts_and_reregisters_children() {
 }
 
 /// A helper that always crashes exhausts its restart budget and stays down.
+/// Each crashing call fails without restarting; the next call spends one
+/// restart.
 #[tokio::test]
 async fn restart_budget_goes_down() {
     let helper = TestHelper::start_with(SupervisorConfig {
@@ -189,17 +198,34 @@ async fn restart_budget_goes_down() {
         ..SupervisorConfig::for_tests()
     });
     let supervisor = helper.supervisor();
-    // Each crash call burns restarts (the call plus its one retry). After the
-    // budget is spent every call reports the helper as down.
+    // Crash-restart cycles spend the budget. After it is spent every call
+    // reports the helper as down.
     let mut down = None;
-    for _ in 0..4 {
-        match supervisor.call_tool("echo", "crash", json!({})).await {
+    for _ in 0..6 {
+        supervisor
+            .call_tool(
+                "echo",
+                "crash",
+                json!({}),
+                NativeCallOptions::default(),
+            )
+            .await
+            .expect_err("crash kills the in-flight call");
+        match supervisor
+            .call_tool(
+                "echo",
+                "echo",
+                json!({"text": "hi"}),
+                NativeCallOptions::default(),
+            )
+            .await
+        {
             Err(NativeError::Down { plugin, reason }) => {
                 down = Some((plugin, reason));
                 break;
             }
-            Err(_) => {}
-            Ok(_) => panic!("crash never answers"),
+            Err(error) => panic!("echo after a crash restarts: {error:?}"),
+            Ok(_) => {}
         }
     }
     let (plugin, reason) = down.expect("the helper goes down");
@@ -209,7 +235,7 @@ async fn restart_budget_goes_down() {
         "the reason names the budget: {reason}"
     );
     let error = supervisor
-        .call_tool("echo", "echo", json!({"text": "hi"}))
+        .call_tool("echo", "echo", json!({"text": "hi"}), NativeCallOptions::default())
         .await
         .expect_err("down stays down");
     assert!(matches!(error, NativeError::Down { .. }), "{error:?}");
@@ -255,7 +281,7 @@ async fn shutdown_sends_session_ending_and_removes_the_dir() {
     let helper = TestHelper::start();
     let supervisor = helper.supervisor().clone();
     supervisor.ensure("echo").await.expect("start");
-    let runtime = supervisor.runtime_dir().to_path_buf();
+    let runtime = supervisor.runtime_dir().expect("created by ensure");
     assert!(runtime.exists());
     supervisor.shutdown().await.expect("shutdown");
     assert!(!runtime.exists(), "the runtime dir is removed");
@@ -307,7 +333,7 @@ async fn binary_path_override_is_used() {
     )
     .expect("supervisor");
     let output = supervisor
-        .call_tool("via-setting", "echo", json!({"text": "override"}))
+        .call_tool("via-setting", "echo", json!({"text": "override"}), NativeCallOptions::default())
         .await
         .expect("override starts the helper");
     assert_eq!(echo_text(&output)["text"], "override");
@@ -345,19 +371,143 @@ async fn unknown_plugin_fails() {
     helper.supervisor().shutdown().await.expect("shutdown");
 }
 
-/// No helper starts before first use: no socket, no process, no log.
+/// No helper starts before first use: no socket, no process, no runtime dir
+/// at all. The dir is created lazily on first `ensure`.
 #[tokio::test]
 async fn nothing_starts_before_first_use() {
     let helper = TestHelper::start();
     let supervisor = helper.supervisor();
     assert_eq!(supervisor.spawn_count("echo"), 0);
-    let entries: Vec<PathBuf> = std::fs::read_dir(supervisor.runtime_dir())
+    assert!(
+        supervisor.runtime_dir().is_none(),
+        "no runtime dir before first use"
+    );
+    supervisor.ensure("echo").await.expect("start");
+    assert_eq!(supervisor.spawn_count("echo"), 1);
+    let dir = supervisor.runtime_dir().expect("created by ensure");
+    assert!(dir.exists());
+    let entries: Vec<PathBuf> = std::fs::read_dir(&dir)
         .expect("runtime dir exists")
         .map(|entry| entry.expect("entry").path())
         .collect();
-    assert!(entries.is_empty(), "{entries:?}");
+    assert!(!entries.is_empty(), "the socket and log are created");
+    helper.supervisor().shutdown().await.expect("shutdown");
+}
+
+/// Concurrent `register_child`/`notify` traffic while `ensure` and calls run
+/// never kills the healthy helper: only one process ever starts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_register_and_calls_start_one_process() {
+    let helper = TestHelper::start();
+    let supervisor = helper.supervisor().clone();
+    let mut set = tokio::task::JoinSet::new();
+    for index in 0..16 {
+        let supervisor = supervisor.clone();
+        set.spawn(async move {
+            for _ in 0..5 {
+                supervisor.ensure("echo").await.expect("ensure");
+                supervisor
+                    .call_tool(
+                        "echo",
+                        "echo",
+                        json!({"text": "hi"}),
+                        NativeCallOptions::default(),
+                    )
+                    .await
+                    .expect("echo");
+                let child = supervisor
+                    .mint_agent("root", &format!("task-{index}"))
+                    .expect("mint");
+                supervisor
+                    .register_child("echo", &child)
+                    .await
+                    .expect("register");
+            }
+            supervisor
+                .end_agent(&format!("root/task-{index}"))
+                .await
+                .expect("end");
+        });
+    }
+    while let Some(joined) = set.join_next().await {
+        joined.expect("task");
+    }
+    assert_eq!(
+        supervisor.spawn_count("echo"),
+        1,
+        "no spurious restarts"
+    );
+    helper.supervisor().shutdown().await.expect("shutdown");
+}
+
+/// A cancelled call fails at once with a cancellation error, without
+/// starting anything; the supervisor still works afterwards.
+#[tokio::test]
+async fn cancelled_call_fails_fast() {
+    let helper = TestHelper::start();
+    let supervisor = helper.supervisor();
+    let before = supervisor.spawn_count("echo");
+    let error = supervisor
+        .call_tool(
+            "echo",
+            "echo",
+            json!({"text": "hi"}),
+            NativeCallOptions::cancelled(),
+        )
+        .await
+        .expect_err("cancelled");
+    assert!(
+        matches!(error, NativeError::Mcp(McpError::Cancelled)),
+        "{error:?}"
+    );
+    assert_eq!(
+        supervisor.spawn_count("echo"),
+        before,
+        "a cancelled call starts nothing"
+    );
     supervisor.ensure("echo").await.expect("start");
-    assert_eq!(supervisor.spawn_count("echo"), 1);
+    helper.supervisor().shutdown().await.expect("shutdown");
+}
+
+/// Cancelling a call in flight aborts it promptly; the helper survives and
+/// still answers afterwards.
+#[tokio::test]
+async fn cancelling_an_in_flight_call_aborts_it() {
+    let helper = TestHelper::start();
+    let supervisor = helper.supervisor().clone();
+    supervisor.ensure("echo").await.expect("start");
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let worker = tokio::spawn({
+        let supervisor = supervisor.clone();
+        let cancel = cancel.clone();
+        async move {
+            supervisor
+                .call_tool(
+                    "echo",
+                    "sleep",
+                    json!({"ms": 30_000}),
+                    NativeCallOptions { cancel },
+                )
+                .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    cancel.cancel();
+    let error = worker.await.expect("join").expect_err("cancelled");
+    assert!(
+        matches!(error, NativeError::Mcp(McpError::Cancelled)),
+        "{error:?}"
+    );
+    let output = supervisor
+        .call_tool(
+            "echo",
+            "echo",
+            json!({"text": "alive"}),
+            NativeCallOptions::default(),
+        )
+        .await
+        .expect("the helper still answers");
+    assert_eq!(echo_text(&output)["text"], "alive");
     helper.supervisor().shutdown().await.expect("shutdown");
 }
 
@@ -371,7 +521,7 @@ async fn concurrent_first_calls_start_one_process() {
         let supervisor = supervisor.clone();
         set.spawn(async move {
             supervisor
-                .call_tool("echo", "echo", json!({"text": format!("call-{index}")}))
+                .call_tool("echo", "echo", json!({"text": format!("call-{index}")}), NativeCallOptions::default())
                 .await
         });
     }
@@ -389,7 +539,10 @@ async fn helper_output_goes_to_the_log() {
     let helper = TestHelper::start();
     let supervisor = helper.supervisor();
     supervisor.ensure("echo").await.expect("start");
-    let log = supervisor.runtime_dir().join("echo.log");
+    let log = supervisor
+        .runtime_dir()
+        .expect("created by ensure")
+        .join("echo.log");
     let text = std::fs::read_to_string(&log).expect("log");
     assert!(text.contains("echo_helper: listening"), "{text}");
     helper.supervisor().shutdown().await.expect("shutdown");
@@ -409,11 +562,11 @@ async fn end_agent_forgets_the_agent() {
     supervisor.end_agent(&child.agent_id).await.expect("end");
     // Crash the helper: the restart must not re-send the ended agent.
     supervisor
-        .call_tool("echo", "crash", json!({}))
+        .call_tool("echo", "crash", json!({}), NativeCallOptions::default())
         .await
         .expect_err("crash");
     supervisor
-        .call_tool("echo", "echo", json!({"text": "back"}))
+        .call_tool("echo", "echo", json!({"text": "back"}), NativeCallOptions::default())
         .await
         .expect("restart");
     let socket = supervisor.ensure("echo").await.expect("socket");
@@ -433,7 +586,7 @@ async fn parts_build_a_working_supervisor() {
     let dir = tempfile::tempdir().expect("tempdir");
     let supervisor = start_supervisor(dir.path(), SupervisorConfig::for_tests());
     let output = supervisor
-        .call_tool("echo", "echo", json!({"text": "parts"}))
+        .call_tool("echo", "echo", json!({"text": "parts"}), NativeCallOptions::default())
         .await
         .expect("echo");
     assert_eq!(echo_text(&output)["text"], "parts");
@@ -446,7 +599,7 @@ async fn sleep_waits_then_answers() {
     let helper = TestHelper::start();
     let output = helper
         .supervisor()
-        .call_tool("echo", "sleep", json!({"ms": 200}))
+        .call_tool("echo", "sleep", json!({"ms": 200}), NativeCallOptions::default())
         .await
         .expect("sleep");
     let [ToolContent::Text(text), ..] = &output.content[..] else {
@@ -486,7 +639,9 @@ fn shared_helpers_gate_the_child_env() {
     )
     .expect("supervisor");
     assert!(supervisor.has_shared_helpers());
-    let _ = std::fs::remove_dir_all(supervisor.runtime_dir());
+    if let Some(dir) = supervisor.runtime_dir() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
 
 /// The helper exits when its parent pid is gone: spawn it with a fake

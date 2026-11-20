@@ -31,20 +31,45 @@ fn build_lock_dir(target: &Path) -> PathBuf {
         .join(".echo-helper-build.lock")
 }
 
-/// True when `bin` exists and is newer than the fixture source: no rebuild.
+fn mtime(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|meta| meta.modified()).ok()
+}
+
+/// The newest modification time under `dir` (recursive), or `None` when it
+/// cannot be read.
+fn newest_mtime(dir: &Path) -> Option<std::time::SystemTime> {
+    let mut newest = mtime(dir);
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Ok(meta) = entry.metadata() {
+                newest = newest.max(mtime(&path));
+                if meta.is_dir() {
+                    stack.push(path);
+                }
+            }
+        }
+    }
+    newest
+}
+
+/// True when `bin` exists and is newer than every fixture input: the example
+/// source plus the whole `hoocode-agent-mcp` source tree and manifest it
+/// builds from. No rebuild then.
 fn bin_is_fresh(bin: &Path, workspace: &Path) -> bool {
-    let source = workspace
-        .join("crates")
-        .join("hoocode-agent-mcp")
-        .join("examples")
-        .join("echo_helper.rs");
-    let (Ok(bin_meta), Ok(src_meta)) = (std::fs::metadata(bin), std::fs::metadata(&source)) else {
+    let mcp = workspace.join("crates").join("hoocode-agent-mcp");
+    // `Option` orders `None` below any time: a missing input fails fresh.
+    let mut newest = mtime(&mcp.join("examples").join("echo_helper.rs"));
+    newest = newest.max(mtime(&mcp.join("Cargo.toml")));
+    newest = newest.max(newest_mtime(&mcp.join("src")));
+    let (Some(newest), Some(bin_time)) = (newest, mtime(bin)) else {
         return false;
     };
-    let (Ok(bin_time), Ok(src_time)) = (bin_meta.modified(), src_meta.modified()) else {
-        return false;
-    };
-    bin_time >= src_time
+    bin_time >= newest
 }
 
 /// The built echo fixture binary, built once per test process.

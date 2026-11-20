@@ -78,10 +78,29 @@ pub fn create_runtime_dir() -> Result<PathBuf, NativeError> {
     Ok(dir)
 }
 
+/// A plugin name or manifest version used as a path component (socket, log
+/// and plugin-bin folders) must be one safe segment: non-empty, never
+/// absolute, and without `/`, `\`, NUL or dot segments. Anything else could
+/// escape its folder.
+pub fn validate_path_component(kind: &str, value: &str) -> Result<(), NativeError> {
+    let safe = !value.is_empty()
+        && !value.contains(['/', '\\', '\0'])
+        && value != "."
+        && !value.contains("..")
+        && !Path::new(value).is_absolute();
+    if safe {
+        return Ok(());
+    }
+    Err(NativeError::InvalidName(format!(
+        "{kind} {value:?} is not a safe path component"
+    )))
+}
+
 /// The socket path for one helper: `<dir>/<plugin>.sock`. When that is 100
 /// bytes or more, a shorter hash name is used instead; when even that does not
 /// fit, starting the helper fails with a clear error.
 pub fn socket_path_for(dir: &Path, plugin: &str) -> Result<PathBuf, NativeError> {
+    validate_path_component("plugin", plugin)?;
     let direct = dir.join(format!("{plugin}.sock"));
     if path_bytes(&direct) < MAX_SOCKET_PATH_BYTES {
         return Ok(direct);

@@ -113,5 +113,7 @@ fn supervisor_mints_for_known_parents() {
     );
     assert!(supervisor.agent("root").is_some());
     assert!(supervisor.agent("stranger").is_none());
-    let _ = std::fs::remove_dir_all(supervisor.runtime_dir());
+    if let Some(dir) = supervisor.runtime_dir() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

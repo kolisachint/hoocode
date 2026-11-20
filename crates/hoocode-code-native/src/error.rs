@@ -36,6 +36,9 @@ pub enum NativeError {
     Archive(String),
     /// The configured `binaryPath` cannot be used.
     InvalidBinary(String),
+    /// A plugin name or manifest version is not a safe path component (it
+    /// would escape its folder): never used as one.
+    InvalidName(String),
     /// Talking to the running helper failed.
     Mcp(McpError),
     /// A filesystem or OS call failed.
@@ -66,6 +69,7 @@ impl fmt::Display for NativeError {
             ),
             Self::Archive(message) => write!(f, "{message}"),
             Self::InvalidBinary(message) => write!(f, "unusable binaryPath: {message}"),
+            Self::InvalidName(message) => write!(f, "invalid plugin name or version: {message}"),
             Self::Mcp(error) => write!(f, "{error}"),
             Self::Io(message) => write!(f, "native helper I/O failed: {message}"),
         }

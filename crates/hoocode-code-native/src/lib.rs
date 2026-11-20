@@ -30,7 +30,9 @@ pub use resolve::{
 };
 pub use runtime_dir::{
     create_runtime_dir, internal_runtime_dir, random_suffix, socket_path_for,
-    INTERNAL_RUNTIME_DIR_ENV, MAX_SOCKET_PATH_BYTES,
+    validate_path_component, INTERNAL_RUNTIME_DIR_ENV, MAX_SOCKET_PATH_BYTES,
 };
-pub use supervisor::{helper_socket_env_name, NativeClient, Supervisor, SupervisorConfig};
+pub use supervisor::{
+    helper_socket_env_name, NativeCallOptions, NativeClient, Supervisor, SupervisorConfig,
+};
 pub use supervisor::{HELPER_SOCKET_ENV, HELPER_TOKEN_ENV};
