@@ -1,11 +1,16 @@
 //! Shared test support: building the echo fixture, helper entries, a tiny HTTP
 //! server for download tests, and reading echo results.
 //!
-//! The echo fixture is the `echo_helper` example of `hoocode-agent-mcp`. It is
-//! built once per test process with
-//! `cargo build -p hoocode-agent-mcp --example echo_helper`; the binary lands
-//! at `<target>/debug/examples/echo_helper` (`$CARGO_TARGET_DIR` wins when
+//! The echo fixture is the `echo_helper` example of `hoocode-agent-mcp`. A
+//! binary newer than the fixture source is reused as is; otherwise it is
+//! built once with `cargo build -p hoocode-agent-mcp --example echo_helper`
+//! (one builder at a time across test processes) and lands at
+//! `<target>/debug/examples/echo_helper` (`$CARGO_TARGET_DIR` wins when
 //! set). Later end-to-end tests in `hoocode-code-main` use the same recipe.
+//!
+//! Every test that starts a helper awaits `supervisor.shutdown()` at the
+//! end, while its runtime still drives the rmcp transport tasks. `Drop`
+//! only kills what is left synchronously and never blocks.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -16,7 +21,37 @@ use hoocode_code_plugins::native::{NativeBinary, NativeHelper, NativeLaunch, Nat
 use hoocode_code_plugins::NativeHelperEntry;
 use serde_json::Value;
 
+/// A lock dir serializing the fixture build across test processes: parallel
+/// `cargo build` invocations serialize on cargo's own package-cache lock and
+/// slow every test down, so only one test process builds at a time.
+fn build_lock_dir(target: &Path) -> PathBuf {
+    target
+        .join("debug")
+        .join("examples")
+        .join(".echo-helper-build.lock")
+}
+
+/// True when `bin` exists and is newer than the fixture source: no rebuild.
+fn bin_is_fresh(bin: &Path, workspace: &Path) -> bool {
+    let source = workspace
+        .join("crates")
+        .join("hoocode-agent-mcp")
+        .join("examples")
+        .join("echo_helper.rs");
+    let (Ok(bin_meta), Ok(src_meta)) = (std::fs::metadata(bin), std::fs::metadata(&source)) else {
+        return false;
+    };
+    let (Ok(bin_time), Ok(src_time)) = (bin_meta.modified(), src_meta.modified()) else {
+        return false;
+    };
+    bin_time >= src_time
+}
+
 /// The built echo fixture binary, built once per test process.
+///
+/// A fresh binary (newer than the fixture source) is reused as is: rebuilding
+/// from every test process serializes all tests on cargo's file locks.
+/// Otherwise one process builds while the rest wait on a lock dir.
 pub fn fixture_bin() -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT
@@ -27,16 +62,6 @@ pub fn fixture_bin() -> PathBuf {
                 .and_then(|dir| dir.parent())
                 .expect("crate lives in <workspace>/crates/<name>")
                 .to_path_buf();
-            let status = std::process::Command::new("cargo")
-                .arg("build")
-                .arg("-p")
-                .arg("hoocode-agent-mcp")
-                .arg("--example")
-                .arg("echo_helper")
-                .current_dir(&workspace)
-                .status()
-                .expect("cargo builds the echo fixture");
-            assert!(status.success(), "cargo build --example echo_helper");
             let target = std::env::var_os("CARGO_TARGET_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| workspace.join("target"));
@@ -44,6 +69,35 @@ pub fn fixture_bin() -> PathBuf {
                 .join("debug")
                 .join("examples")
                 .join(format!("echo_helper{}", std::env::consts::EXE_SUFFIX));
+            if !bin_is_fresh(&bin, &workspace) {
+                let lock = build_lock_dir(&target);
+                // An atomic claim: exactly one process builds, the rest wait.
+                // A stale lock (a crashed builder) is reaped after a minute.
+                let mut waited = 0;
+                while std::fs::create_dir(&lock).is_err() {
+                    if waited > 60 {
+                        let _ = std::fs::remove_dir_all(&lock);
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    waited += 1;
+                    if bin_is_fresh(&bin, &workspace) {
+                        break;
+                    }
+                }
+                if !bin_is_fresh(&bin, &workspace) {
+                    let status = std::process::Command::new("cargo")
+                        .arg("build")
+                        .arg("-p")
+                        .arg("hoocode-agent-mcp")
+                        .arg("--example")
+                        .arg("echo_helper")
+                        .current_dir(&workspace)
+                        .status()
+                        .expect("cargo builds the echo fixture");
+                    assert!(status.success(), "cargo build --example echo_helper");
+                }
+                let _ = std::fs::remove_dir_all(&lock);
+            }
             assert!(
                 bin.is_file(),
                 "the echo fixture was built: {}",
@@ -146,25 +200,13 @@ impl TestHelper {
 
 impl Drop for TestHelper {
     fn drop(&mut self) {
-        shutdown_blocking(&self.supervisor);
+        // Synchronous only: dropping the supervisor kills the helper
+        // children at once (kill_on_drop) without waiting. Graceful
+        // shutdown is explicit: tests await `supervisor.shutdown()` while
+        // their runtime still drives the rmcp transport tasks. Blocking
+        // here on another runtime would wedge the notification send on the
+        // call timeout.
     }
-}
-
-// Test-only cleanup: Drop is sync with no runtime, so shutdown runs on a
-// fresh thread and runtime (see clippy.toml).
-#[allow(clippy::disallowed_methods)]
-fn shutdown_blocking(supervisor: &Supervisor) {
-    let supervisor = supervisor.clone();
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build();
-        if let Ok(runtime) = runtime {
-            let _ = runtime.block_on(supervisor.shutdown());
-        }
-    })
-    .join()
-    .ok();
 }
 
 /// The parsed JSON of an echo result's text content.

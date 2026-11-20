@@ -36,6 +36,16 @@ pub const HELPER_TOKEN_ENV: &str = "HOOCODE_HELPER_TOKEN";
 /// The agent id the helper process runs as (`root`), in its environment.
 pub const AGENT_ID_ENV: &str = "HOOCODE_AGENT_ID";
 
+/// How long a fire-and-forget lifecycle notification (`agentStarted`,
+/// `agentEnded`) may take before it stops blocking the caller. Helpers
+/// answer these in milliseconds; waiting longer means the connection is
+/// wedged, and the supervisor restarts the helper instead of hanging.
+const LIFECYCLE_NOTIFY_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long `shutdown` waits for the `sessionEnding` notification to go out.
+/// Shutdown must stay fast even when a helper is wedged: afterwards the
+/// child is killed anyway.
+const SHUTDOWN_NOTIFY_TIMEOUT: Duration = Duration::from_millis(500);
+
 /// How long helpers get to become ready, and how their restarts are bounded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SupervisorConfig {
@@ -246,9 +256,6 @@ impl Supervisor {
     /// Call `tool` for the root agent, starting the helper first. When the
     /// child exited or the connection broke, the helper restarts once and the
     /// call is retried once.
-    /// Call `tool` for the root agent, starting the helper first. When the
-    /// child exited or the connection broke, the helper restarts once and the
-    /// call is retried once.
     pub async fn call_tool(
         &self,
         plugin: &str,
@@ -257,7 +264,7 @@ impl Supervisor {
     ) -> Result<ToolOutput, NativeError> {
         self.ensure(plugin).await?;
         let generation = self.generation(plugin);
-        match self.do_call(plugin, tool, args.clone()).await {
+        match self.do_call_bounded(plugin, tool, args.clone()).await {
             Err(error) => {
                 // The error flavor depends on when the helper died: restart
                 // when the transport broke, or when the child is gone.
@@ -265,7 +272,7 @@ impl Supervisor {
                     return Err(error);
                 }
                 self.restart_for_retry(plugin, generation).await?;
-                self.do_call(plugin, tool, args).await
+                self.do_call_bounded(plugin, tool, args).await
             }
             ok => ok,
         }
@@ -298,27 +305,34 @@ impl Supervisor {
     }
 
     /// Send `hoocode/agentEnded` to every helper the agent was registered
-    /// with, and forget it. Helpers that never started get nothing.
+    /// with, and forget it. Helpers that never started, or whose child
+    /// already exited, get nothing. Every send is bounded: ending an agent
+    /// must not hang on the call timeout.
     pub async fn end_agent(&self, agent_id: &str) -> Result<(), NativeError> {
         let plugins = lock(&self.inner.agents)
             .remove(agent_id)
             .map(|record| record.plugins)
             .unwrap_or_default();
         for plugin in plugins {
-            let Some(slot) = self.inner.slots.get(&plugin) else {
-                continue;
-            };
-            let state = slot.state.lock().await;
-            let HelperState::Live { client, .. } = &*state else {
-                continue;
+            let client = {
+                let Some(slot) = self.inner.slots.get(&plugin) else {
+                    continue;
+                };
+                let mut state = slot.state.lock().await;
+                let HelperState::Live { client, child, .. } = &mut *state else {
+                    continue;
+                };
+                match child.try_wait() {
+                    Ok(None) => client.clone(),
+                    _ => continue,
+                }
             };
             // Best effort: teardown must not fail the session.
-            let _ = client
-                .notify(
-                    "hoocode/agentEnded",
-                    serde_json::json!({"agentId": agent_id}),
-                )
-                .await;
+            let send = client.notify(
+                "hoocode/agentEnded",
+                serde_json::json!({"agentId": agent_id}),
+            );
+            let _ = tokio::time::timeout(LIFECYCLE_NOTIFY_TIMEOUT, send).await;
         }
         Ok(())
     }
@@ -339,7 +353,10 @@ impl Supervisor {
                 continue;
             };
             drop(state);
-            let _ = client.notify("hoocode/sessionEnding", Value::Null).await;
+            // Bounded: a wedged helper must not hold shutdown past a beat.
+            // Afterwards the child is killed either way.
+            let send = client.notify("hoocode/sessionEnding", Value::Null);
+            let _ = tokio::time::timeout(SHUTDOWN_NOTIFY_TIMEOUT, send).await;
             let done = tokio::time::timeout(self.inner.config.shutdown_timeout, child.wait())
                 .await
                 .is_ok();
@@ -357,6 +374,48 @@ impl Supervisor {
         Ok(())
     }
 
+    /// Run `do_call`, but stop waiting as soon as the helper child is gone:
+    /// the connection dies with it, so the call can never answer. Without
+    /// this a call in flight while the helper crashes waits out the whole
+    /// call timeout before the supervisor restarts it.
+    async fn do_call_bounded(
+        &self,
+        plugin: &str,
+        tool: &str,
+        args: Value,
+    ) -> Result<ToolOutput, NativeError> {
+        tokio::select! {
+            output = self.do_call(plugin, tool, args) => output,
+            () = self.wait_child_gone(plugin) => Err(child_died(plugin)),
+        }
+    }
+
+    /// Resolves when the helper child for `plugin` is gone: it exited, or
+    /// the slot left `Live` (restart, shutdown). Polls with `try_wait`, so
+    /// it never blocks a start holding the state lock.
+    async fn wait_child_gone(&self, plugin: &str) {
+        loop {
+            let gone = match self.inner.slots.get(plugin) {
+                Some(slot) => match slot.state.try_lock() {
+                    Ok(mut state) => match &mut *state {
+                        HelperState::Live { child, .. } => {
+                            matches!(child.try_wait(), Ok(Some(_)))
+                        }
+                        _ => true,
+                    },
+                    // A start holds the lock: the child is being replaced,
+                    // and the caller's retry path will sort it out.
+                    Err(_) => false,
+                },
+                None => true,
+            };
+            if gone {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
     async fn do_call(
         &self,
         plugin: &str,
@@ -367,9 +426,18 @@ impl Supervisor {
             let Some(slot) = self.inner.slots.get(plugin) else {
                 return Err(NativeError::UnknownPlugin(plugin.to_owned()));
             };
-            let state = slot.state.lock().await;
-            match &*state {
-                HelperState::Live { client, .. } => client.clone(),
+            let mut state = slot.state.lock().await;
+            match &mut *state {
+                // A dead child means the connection is dead too: report it
+                // as not running so the caller restarts immediately instead
+                // of sending a call into the void and waiting out the call
+                // timeout. `try_wait` also reaps the zombie here.
+                HelperState::Live { client, child, .. } => match child.try_wait() {
+                    Ok(None) => client.clone(),
+                    _ => {
+                        return Err(child_died(plugin));
+                    }
+                },
                 HelperState::Down { reason } => {
                     return Err(NativeError::Down {
                         plugin: plugin.to_owned(),
@@ -391,13 +459,13 @@ impl Supervisor {
         let generation = self.generation(plugin);
         match self.try_notify(plugin, method, params.clone()).await {
             Some(Ok(())) => return Ok(()),
-            Some(Err(error)) => {
-                if !is_broken(&error) && self.child_alive(plugin).await {
-                    return Err(error);
-                }
+            // A send failure on a live helper goes out: a second try would
+            // hang the same way when the connection is wedged.
+            Some(Err(error)) if !is_broken(&error) && self.child_alive(plugin).await => {
+                return Err(error);
             }
-            // Not running: restart once, then retry once.
-            None => {}
+            // Broken, dead, or never started: restart once, then retry once.
+            Some(Err(_)) | None => {}
         }
         self.restart_for_retry(plugin, generation).await?;
         match self.try_notify(plugin, method, params).await {
@@ -406,18 +474,25 @@ impl Supervisor {
         }
     }
 
-    /// `None` when no live client exists right now (starting or idle).
+    /// `None` when no live client exists right now (starting, idle, down,
+    /// or its child already exited). The send itself is bounded: a wedged
+    /// connection must not hang the caller on the 60 s call timeout.
     async fn try_notify(
         &self,
         plugin: &str,
         method: &str,
         params: Value,
     ) -> Option<Result<(), NativeError>> {
+        let client = self.live_client(plugin)?;
+        let send = client.notify(method, params);
         Some(
-            self.live_client(plugin)?
-                .notify(method, params)
-                .await
-                .map_err(NativeError::from),
+            match tokio::time::timeout(LIFECYCLE_NOTIFY_TIMEOUT, send).await {
+                Ok(result) => result.map_err(NativeError::from),
+                Err(_) => Err(NativeError::Timeout {
+                    plugin: plugin.to_owned(),
+                    after: LIFECYCLE_NOTIFY_TIMEOUT,
+                }),
+            },
         )
     }
 
@@ -439,8 +514,17 @@ impl Supervisor {
         // try_lock succeeds unless a start holds it (then there is no live
         // client to use anyway).
         match slot.state.try_lock() {
-            Ok(state) => match &*state {
-                HelperState::Live { client, .. } => Some(client.clone()),
+            Ok(mut state) => match &mut *state {
+                // A dead child means the connection is dead too: no client.
+                // The caller restarts instead of sending into the void.
+                HelperState::Live {
+                    socket,
+                    client,
+                    child,
+                } => match child.try_wait() {
+                    Ok(None) if socket.exists() => Some(client.clone()),
+                    _ => None,
+                },
                 _ => None,
             },
             Err(_) => None,
@@ -605,6 +689,14 @@ impl Supervisor {
             }
         }
     }
+}
+
+/// The helper child died under an in-flight call: the transport is gone
+/// with it. Restartable, like any broken connection.
+fn child_died(plugin: &str) -> NativeError {
+    NativeError::Mcp(McpError::Disconnected(format!(
+        "the {plugin} helper exited mid-call"
+    )))
 }
 
 /// A transport-level failure: the helper is gone or unreachable. Tool-level

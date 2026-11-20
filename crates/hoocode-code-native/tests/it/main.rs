@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Integration tests for hoocode-code-native: the tier C helper supervisor.
 //!
 //! `agents` and `resolve` run on any platform. Spawning helpers needs a Unix

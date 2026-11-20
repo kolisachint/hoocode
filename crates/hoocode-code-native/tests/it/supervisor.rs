@@ -34,6 +34,7 @@ async fn root_echo_returns_root_identity() {
     assert_eq!(seen["parentId"], Value::Null);
     assert_eq!(seen["depth"], 0);
     assert_eq!(seen["metaAgentId"], root.agent_id);
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// Three children plus root, all calling at once: each sees its own identity.
@@ -93,6 +94,7 @@ async fn children_see_their_own_identity() {
             assert_eq!(seen["depth"], 1);
         }
     }
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// A token the helper never saw is rejected with 401 (`Unauthorized`).
@@ -113,6 +115,7 @@ async fn unknown_token_is_rejected() {
         matches!(error, NativeError::Mcp(McpError::Unauthorized(_))),
         "{error:?}"
     );
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// `agentStarted` with a parent that is not the sender's id is rejected
@@ -135,6 +138,7 @@ async fn agent_started_with_wrong_parent_is_rejected() {
         matches!(error, NativeError::Mcp(McpError::Unauthorized(_))),
         "{error:?}"
     );
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// `crash` kills the helper mid-call: the next call restarts it, and the
@@ -173,6 +177,7 @@ async fn crash_restarts_and_reregisters_children() {
     );
     assert_eq!(seen["agentId"], "root/task");
     assert_eq!(seen["parentId"], "root");
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// A helper that always crashes exhausts its restart budget and stays down.
@@ -212,6 +217,7 @@ async fn restart_budget_goes_down() {
         format!("{error}").contains("echo helper is down"),
         "{error}"
     );
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// The ready timeout fails cleanly when the process never serves: `/bin/sleep`
@@ -336,6 +342,7 @@ async fn unknown_plugin_fails() {
         .await
         .expect_err("unknown plugin");
     assert!(matches!(error, NativeError::UnknownPlugin(_)), "{error:?}");
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// No helper starts before first use: no socket, no process, no log.
@@ -351,6 +358,7 @@ async fn nothing_starts_before_first_use() {
     assert!(entries.is_empty(), "{entries:?}");
     supervisor.ensure("echo").await.expect("start");
     assert_eq!(supervisor.spawn_count("echo"), 1);
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// Ten concurrent first calls start exactly one process.
@@ -372,6 +380,7 @@ async fn concurrent_first_calls_start_one_process() {
         assert!(!output.is_error);
     }
     assert_eq!(supervisor.spawn_count("echo"), 1);
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// The helper's stderr lands in the plugin log (the fixture logs a startup line).
@@ -383,6 +392,7 @@ async fn helper_output_goes_to_the_log() {
     let log = supervisor.runtime_dir().join("echo.log");
     let text = std::fs::read_to_string(&log).expect("log");
     assert!(text.contains("echo_helper: listening"), "{text}");
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// `end_agent` notifies every helper the agent registered with, then forgets
@@ -414,6 +424,7 @@ async fn end_agent_forgets_the_agent() {
         matches!(error, NativeError::Mcp(McpError::Unauthorized(_))),
         "{error:?}"
     );
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// `start_supervisor` builds a supervisor from parts.
@@ -444,6 +455,7 @@ async fn sleep_waits_then_answers() {
     let seen: Value = serde_json::from_str(text).expect("JSON");
     assert_eq!(seen["sleptMs"], 200);
     assert_eq!(seen["agentId"], "root");
+    helper.supervisor().shutdown().await.expect("shutdown");
 }
 
 /// The helper exits when its parent pid is gone: spawn it with a fake
