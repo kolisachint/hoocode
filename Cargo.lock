@@ -2015,6 +2015,7 @@ dependencies = [
 name = "hoocode-code-plugins"
 version = "0.2.50"
 dependencies = [
+ "hoocode-agent-types",
  "hoocode-code-mcp",
  "hoocode-code-paths",
  "hoocode-code-resources",

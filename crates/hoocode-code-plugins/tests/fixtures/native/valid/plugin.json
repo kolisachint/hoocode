@@ -1,0 +1,41 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "browser",
+  "version": "1.0.0",
+  "description": "Tier C native helper fixture",
+  "extensions": {
+    "dev.hoocode": {
+      "native": {
+        "server": "hoo-browser",
+        "shared": true,
+        "binaries": {
+          "linux-x86_64": {
+            "url": "https://example.com/hoo-browser-linux-x86_64",
+            "sha256": "abababababababababababababababababababababababababababababababab"
+          },
+          "darwin-aarch64": {
+            "url": "https://example.com/hoo-browser-darwin-aarch64",
+            "sha256": "CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD"
+          }
+        },
+        "tools": [
+          {
+            "name": "browser_open",
+            "description": "Open a URL in the shared browser",
+            "inputSchema": {
+              "type": "object",
+              "properties": {"url": {"type": "string"}},
+              "required": ["url"]
+            },
+            "permission": "read"
+          },
+          {
+            "name": "browser_snapshot",
+            "description": "Snapshot the current tab",
+            "inputSchema": {"type": "object"}
+          }
+        ]
+      }
+    }
+  }
+}

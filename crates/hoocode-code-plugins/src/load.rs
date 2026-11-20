@@ -10,6 +10,7 @@ use hoocode_code_mcp::{
 
 use crate::agent_mcp::{parse_mcp, resolve_command, McpContext};
 use crate::manifest::{parse_agent_plugin_manifest, parse_claude_manifest};
+use crate::native::{parse_native, NativeContext};
 use crate::paths::{plugin_relative, within};
 use crate::trust::{fingerprint, plugin_roots};
 use crate::{
@@ -214,14 +215,16 @@ fn load_one(
     };
 
     // The name and the MCP schema version come from the manifest; the rest of the checks follow.
-    let (name, description, schema, warnings, tool_render) = match format {
+    let (name, description, version, schema, warnings, tool_render, dev_hoocode) = match format {
         PluginFormat::AgentPlugins => match parse_agent_plugin_manifest(&text) {
             Ok(m) => (
                 m.name,
                 m.description,
+                m.version,
                 Some(m.schema),
                 m.warnings,
                 m.render_hints,
+                m.dev_hoocode,
             ),
             Err(reason) => {
                 diags.push(reject(&manifest_path, reason));
@@ -229,7 +232,15 @@ fn load_one(
             }
         },
         PluginFormat::Claude => match parse_claude_manifest(&text) {
-            Ok(m) => (m.name, m.description, None, Vec::new(), BTreeMap::new()),
+            Ok(m) => (
+                m.name,
+                m.description,
+                None,
+                None,
+                Vec::new(),
+                BTreeMap::new(),
+                None,
+            ),
             Err(reason) => {
                 diags.push(reject(&manifest_path, reason));
                 return None;
@@ -248,6 +259,7 @@ fn load_one(
         data_dir: options.data_root.join(&name),
         name,
         description,
+        version,
         format,
         scope,
         root: root.clone(),
@@ -255,6 +267,7 @@ fn load_one(
         skill_dirs: Vec::new(),
         extension_wasm: None,
         tool_render,
+        native: None,
         mcp_path: None,
         mcp_servers: Vec::new(),
     };
@@ -263,6 +276,9 @@ fn load_one(
     match schema {
         Some(schema) => load_agent_plugins_mcp(&mut plugin, &schema, diags),
         None => load_claude_mcp(&mut plugin, &manifest_path, &text, diags),
+    }
+    if let Some(dev) = dev_hoocode {
+        load_native_helper(&mut plugin, &dev, &manifest_path, diags);
     }
     for dir in UNSUPPORTED_DIRS {
         if root.join(dir).is_dir() {
@@ -341,6 +357,37 @@ fn sorted_children(dir: &Path) -> Vec<PathBuf> {
         .collect();
     paths.sort();
     paths
+}
+
+/// The tier C `native` block of an Agent Plugins manifest, read after its MCP servers loaded
+/// so `server` resolves against them. A bad block turns the native part off with an [`Error`]
+/// diagnostic; the rest of the plugin still loads. The named server is removed from the
+/// plugin's plain MCP server list, so it never starts as a plain MCP server.
+///
+/// [`Error`]: crate::Severity::Error
+fn load_native_helper(
+    plugin: &mut LoadedPlugin,
+    dev_hoocode: &serde_json::Map<String, serde_json::Value>,
+    manifest_path: &Path,
+    diags: &mut Vec<PluginDiagnostic>,
+) {
+    let ctx = NativeContext {
+        plugin: &plugin.name,
+        path: manifest_path,
+        servers: &plugin.mcp_servers,
+    };
+    let parsed = parse_native(Some(dev_hoocode), &ctx);
+    if let Some(helper) = parsed.helper {
+        if let Some(position) = plugin
+            .mcp_servers
+            .iter()
+            .position(|server| server.name == helper.spec.server)
+        {
+            plugin.mcp_servers.remove(position);
+        }
+        plugin.native = Some(helper);
+    }
+    diags.extend(parsed.diagnostics);
 }
 
 /// Agent Plugins `mcp.json`. A missing file is no MCP (§6.2). A file that is not a regular file
