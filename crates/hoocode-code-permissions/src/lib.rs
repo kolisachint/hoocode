@@ -950,19 +950,21 @@ pub fn evaluate(
     let list = |key: &str| config::mode_list(config, &mode, key);
 
     // An unreadable deny or allow-list blocks: a malformed deny would otherwise deny nothing.
-    match selectors(config, &mode, "denied_tools") {
+    let denied = match selectors(config, &mode, "denied_tools") {
         Err(problem) => {
             return Verdict::Block(format!(
                 "Tool \"{tool_name}\" is blocked: mode \"{mode}\" has a malformed denied_tools rule ({problem}). Fix it in hoo-config.json."
             ))
         }
-        Ok(denied) if takes(&denied, tool_name, origin) => {
-            return Verdict::Block(format!(
-                "Tool \"{tool_name}\" is denied in mode \"{mode}\"."
-            ))
+        Ok(denied) => {
+            if takes(&denied, tool_name, origin) {
+                return Verdict::Block(format!(
+                    "Tool \"{tool_name}\" is denied in mode \"{mode}\"."
+                ));
+            }
+            denied
         }
-        Ok(_) => {}
-    }
+    };
     match selectors(config, &mode, "enabled_tools") {
         Err(problem) => {
             return Verdict::Block(format!(
@@ -1000,6 +1002,18 @@ pub fn evaluate(
     // name-keyed): `read` runs like `Read`, `act` asks like an edit/write built-in under the
     // current mode, `dangerous` always asks unless `auto_allow` names the tool.
     let native_hint = native_hint_for_origin(origin);
+    // A native `act` tool writes the way Write/Edit do: where the mode's
+    // denied_tools denies Write or Edit, the `act` tool is denied the same
+    // way (ask/debug modes deny both by default). Elsewhere it behaves as
+    // now: asked, like an edit/write built-in.
+    if native_hint == Some(NativeToolHint::Act)
+        && (takes(&denied, "Write", &ToolOrigin::BuiltIn)
+            || takes(&denied, "Edit", &ToolOrigin::BuiltIn))
+    {
+        return Verdict::Block(format!(
+            "Tool \"{tool_name}\" is denied in mode \"{mode}\" (it acts, and the mode denies Write/Edit)."
+        ));
+    }
     let dangerous = native_hint == Some(NativeToolHint::Dangerous);
     let fail_closed = match channel {
         ApprovalChannel::Ui => false,
@@ -1048,8 +1062,10 @@ pub fn evaluate(
         }
     }
     // `skip_permissions` (config or `--skip-permissions`): nothing is
-    // asked. The mode rules above still hold.
-    if config::skip_permissions(config) {
+    // asked. The mode rules above still hold — except a `dangerous`
+    // native tool, which always asks (or is blocked where nobody can
+    // answer) unless `auto_allow` names it.
+    if config::skip_permissions(config) && native_hint != Some(NativeToolHint::Dangerous) {
         return Verdict::Allow;
     }
     // `safe_shell`: a read-only command runs in every mode without asking.
@@ -1527,6 +1543,116 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn native_dangerous_ignores_skip_permissions_unless_auto_allow() {
+        let _guard = native_guard(vec![
+            (("ndgr", "Wipe"), NativeToolHint::Dangerous),
+            (("nact", "Apply"), NativeToolHint::Act),
+        ]);
+        let dir = fresh_cwd();
+        let origin = plugin_origin("ndgr", "Wipe");
+        let skipped = json!({
+            "active_mode": "build",
+            "modes": {"build": {}},
+            "skip_permissions": true,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        // Interactive: asked, not allowed.
+        assert_eq!(
+            evaluate(&skipped, dir.path(), "Wipe", &origin, &json!({}), ApprovalChannel::Ui),
+            Verdict::Prompt
+        );
+        // Headless fail-open (print/json): blocked, not allowed.
+        assert!(matches!(
+            evaluate(
+                &skipped,
+                dir.path(),
+                "Wipe",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Headless { fail_closed: false },
+            ),
+            Verdict::Block(_)
+        ));
+        // A non-dangerous tool still passes via `skip_permissions`.
+        assert_eq!(
+            evaluate(
+                &skipped,
+                dir.path(),
+                "Apply",
+                &plugin_origin("nact", "Apply"),
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Allow
+        );
+        // `auto_allow` naming the dangerous tool allows it again, everywhere.
+        let allowed = json!({
+            "active_mode": "build",
+            "modes": {"build": {"auto_allow": ["Wipe"]}},
+            "skip_permissions": true,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        for channel in [
+            ApprovalChannel::Ui,
+            ApprovalChannel::Headless { fail_closed: false },
+            ApprovalChannel::Headless { fail_closed: true },
+        ] {
+            assert_eq!(
+                evaluate(&allowed, dir.path(), "Wipe", &origin, &json!({}), channel),
+                Verdict::Allow,
+                "auto_allow should allow the dangerous tool under skip_permissions"
+            );
+        }
+    }
+
+    #[test]
+    fn native_act_follows_write_edit_denials() {
+        let _guard = native_guard(vec![(("nact", "Apply"), NativeToolHint::Act)]);
+        let dir = fresh_cwd();
+        let origin = plugin_origin("nact", "Apply");
+        // A mode denying Write denies the act tool the same way.
+        let denied_write = json!({
+            "active_mode": "ask",
+            "modes": {"ask": {"denied_tools": ["Write"]}},
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            evaluate(&denied_write, dir.path(), "Apply", &origin, &json!({}), ApprovalChannel::Ui),
+            Verdict::Block(_)
+        ));
+        // Same for Edit.
+        let denied_edit = json!({
+            "active_mode": "ask",
+            "modes": {"ask": {"denied_tools": ["Edit"]}},
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            evaluate(&denied_edit, dir.path(), "Apply", &origin, &json!({}), ApprovalChannel::Ui),
+            Verdict::Block(_)
+        ));
+        // A mode denying neither still asks, like an edit/write built-in.
+        assert_eq!(
+            evaluate(
+                &build_config(),
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Prompt
+        );
     }
 
     #[test]
