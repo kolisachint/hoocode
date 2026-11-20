@@ -6,6 +6,7 @@
 //! actual LLM-backed sessions.
 
 use crate::args::Mode;
+use crate::native_tools::{self, NativeHolder};
 use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
 use hoocode_agent_types::{AgentEvent, PermissionGate, ToolOrigin, ToolSelector};
@@ -16,8 +17,8 @@ use hoocode_code_permissions::{ApprovalChannel, HeadlessClearanceRelay, HooPermi
 
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionEvent, AgentSessionRuntime,
-    AgentSessionRuntimeDiagnostic, AgentSessionServices, BaseTools, CreateAgentSessionOptions,
-    CreatedRuntime, DefaultResources, PromptOptions, SessionStartEvent,
+    AgentSessionRuntimeDiagnostic, AgentSessionServices, BaseTools, BaseToolsFactory,
+    CreateAgentSessionOptions, CreatedRuntime, DefaultResources, PromptOptions, SessionStartEvent,
 };
 use hoocode_code_models::{
     clamp_effort, match_scoped_model, parse_thinking_level, resolve_cli_model, resolve_model_scope,
@@ -885,6 +886,16 @@ pub(crate) fn last_resources() -> Option<Arc<hoocode_code_agent_session::Default
         .clone()
 }
 
+/// Shut the session's tier C supervisor down (bounded): `hoocode/sessionEnding` to every
+/// running helper, then kill. Called on every root session end (TUI, print, json, rpc),
+/// after the session's own abort/dispose and before process exit. Without helpers (or with
+/// the supervisor already shut down) this does nothing; `Drop` stays the fallback.
+pub(crate) fn shutdown_native_blocking() {
+    if let Some(holder) = native_tools::current() {
+        async_runtime().block_on(holder.shutdown());
+    }
+}
+
 /// The session over resolved parts. Light preset (`--light`, else the
 /// `light` setting): the four light tools and the terse prompt.
 #[allow(clippy::too_many_arguments)]
@@ -907,6 +918,16 @@ fn assemble_session(
     // The gate is built here, not at `create_agent_session`, so the plugin tools' network
     // calls can ask the same one (see `ext_tools`).
     let gate = gate.unwrap_or_else(|| build_permission_gate(args, interactive, &cwd));
+    // Tier C native helpers (PL-18): one supervisor per root session, created here without
+    // starting any process. The plugin source and the Shell env share it (see `native_tools`);
+    // it is rebuilt when the plugin set changes and shut down when the session ends.
+    let native_holder = NativeHolder::new();
+    if ext_tools_wanted(args, light) {
+        for warning in native_holder.sync(plugins, &settings) {
+            diagnostics.push((DiagnosticKind::Warning, warning));
+        }
+    }
+    native_tools::set_current(native_holder.clone());
     // Background shell jobs (`enableBackgroundShell`, on by default) in the
     // interactive TUI only, which shows them and asks about them on quit.
     // Print, json, rpc and app-server runs, the light preset and subagents
@@ -937,7 +958,19 @@ fn assemble_session(
         // The plugin tools (`ext_`) are attached after the session exists, from its plugin
         // source, so they can follow the plugins (see `plugin_live`).
         let custom = custom_tools(args, &settings, &cwd, interactive, jobs.as_ref());
-        (None, custom, None)
+        // Shell commands get `HOOCODE_AGENT_ID`/`HOOCODE_AGENT_TOKEN` plus the started
+        // helpers' sockets (spec D5) through the spawn hook; a session with no helper gets no
+        // extra variable, so these match the default tools exactly until a helper exists.
+        let hook_holder = native_holder.clone();
+        let hook_jobs = jobs.clone();
+        let factory: BaseToolsFactory = Arc::new(move |ctx| {
+            hoocode_code_agent_session::services::default_base_tools_with_jobs_and_hook(
+                ctx,
+                hook_jobs.clone(),
+                Some(native_tools::shell_spawn_hook(hook_holder.clone())),
+            )
+        });
+        (Some(BaseTools::Factory(factory)), custom, None)
     };
     // main.ts: explicit tool flags win over the light preset's allowlist.
     let explicit =
@@ -1056,6 +1089,7 @@ fn assemble_session(
             settings: plugin_settings,
             gate: plugin_gate,
             subagent,
+            native: native_holder.clone(),
         });
         for notice in session.attach_plugins(source) {
             diagnostics.push((DiagnosticKind::Warning, notice));
@@ -1448,6 +1482,7 @@ fn run_print_body(
         if let Err(e) = result {
             writeln!(err, "{e}")?;
             session.dispose();
+            shutdown_native_blocking();
             return Ok(1);
         }
     }
@@ -1504,6 +1539,8 @@ fn run_print_body(
     }
     drop(_turn_limit);
     session.dispose();
+    // Root session end: the helpers get `hoocode/sessionEnding` before process exit.
+    shutdown_native_blocking();
     drop(_sub);
     write_lines(&mut rx, output)?;
 
@@ -1599,11 +1636,14 @@ pub fn run_rpc_mode(args: &Args, color: bool, err: &mut dyn Write) -> std::io::R
         let _ = stdout.flush();
     });
     let host = Arc::new(hoocode_code_rpc::RuntimeHost::new(runtime));
-    Ok(async_runtime().block_on(hoocode_code_rpc::run_rpc_mode(
+    let code = async_runtime().block_on(hoocode_code_rpc::run_rpc_mode(
         host,
         tokio::io::stdin(),
         output,
-    )))
+    ));
+    // Root session end: the helpers get `hoocode/sessionEnding` before process exit.
+    shutdown_native_blocking();
+    Ok(code)
 }
 
 /// `hoocode app-server`: builds sessions for the server the same way the
@@ -2187,7 +2227,7 @@ pub fn run_interactive_mode(
         ),
     );
 
-    hoocode_code_tui_app::mode::run_interactive(hoocode_code_tui_app::mode::InteractiveOptions {
+    let result = hoocode_code_tui_app::mode::run_interactive(hoocode_code_tui_app::mode::InteractiveOptions {
         session,
         session_runtime: Some(session_runtime),
         runtime: async_runtime(),
@@ -2211,7 +2251,10 @@ pub fn run_interactive_mode(
         update_notice,
     })
     .map(|()| 0)
-    .map_err(RuntimeError::Setup)
+    .map_err(RuntimeError::Setup);
+    // Root session end (TUI quit): the helpers get `hoocode/sessionEnding` before exit.
+    shutdown_native_blocking();
+    result
 }
 
 #[cfg(test)]

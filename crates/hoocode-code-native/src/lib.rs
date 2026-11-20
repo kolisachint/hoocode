@@ -25,7 +25,11 @@ pub use error::{plugin_bin_dir, NativeError};
 pub use resolve::{
     binary_path_override, binary_path_overrides, default_home_dir, resolve_executable,
 };
-pub use runtime_dir::{create_runtime_dir, random_suffix, socket_path_for, MAX_SOCKET_PATH_BYTES};
+pub use runtime_dir::{
+    create_runtime_dir, internal_runtime_dir, random_suffix, socket_path_for,
+    INTERNAL_RUNTIME_DIR_ENV, MAX_SOCKET_PATH_BYTES,
+};
 pub use supervisor::{
-    NativeClient, Supervisor, SupervisorConfig, AGENT_ID_ENV, HELPER_SOCKET_ENV, HELPER_TOKEN_ENV,
+    helper_socket_env_name, NativeClient, Supervisor, SupervisorConfig, AGENT_ID_ENV,
+    AGENT_TOKEN_ENV, HELPER_SOCKET_ENV, HELPER_TOKEN_ENV,
 };

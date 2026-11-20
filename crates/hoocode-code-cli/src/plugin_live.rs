@@ -15,6 +15,7 @@ use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::ToolDefinition;
 
 use crate::ext_tools;
+use crate::native_tools::{self, NativeHolder};
 use crate::runtime::{new_mcp_hub, Diagnostics};
 
 /// The plugin tools and MCP servers of one session.
@@ -32,6 +33,9 @@ pub(crate) struct PluginToolSource {
     pub(crate) gate: Arc<dyn PermissionGate>,
     /// A subagent runs no plugin MCP server (`docs/design/subagents.md`).
     pub(crate) subagent: bool,
+    /// The session's tier C supervisor state (PL-18 slice 4a). One per root session, shared
+    /// with the Shell env; subagents never use it (slice 4b wires subagent helpers).
+    pub(crate) native: Arc<NativeHolder>,
 }
 
 impl PluginSource for PluginToolSource {
@@ -56,6 +60,30 @@ impl PluginSource for PluginToolSource {
             ext_tools::plugin_configs(&set, &settings)
         };
         let tools = ext_tools::build(&set, &configs, self.gate.clone(), taken, &mut diagnostics);
+        // Tier C native helpers (PL-18): the same path, bare names, the same collision rules
+        // (built-ins never shadowed, first in load order wins, case-insensitive, no `mcp__`
+        // prefix; trusted-only). A subagent registers no tier C tool: slice 4b wires subagent
+        // helpers (EnsureHelper relay, child tokens) on top of this; until then the tools stay
+        // root-only, like the plugin MCP servers. TODO(pl18-4b): register shared helpers in
+        // subagent sessions too.
+        let mut tools = tools;
+        if !self.subagent {
+            let holder = self.native.clone();
+            {
+                let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
+                for warning in holder.sync(&set, &settings) {
+                    diagnostics.push((crate::args::DiagnosticKind::Warning, warning));
+                }
+            }
+            let mut taken_with_wasm: Vec<(String, ToolOrigin)> = taken.to_vec();
+            taken_with_wasm.extend(tools.iter().map(|t| (t.name.clone(), t.origin.clone())));
+            tools.extend(native_tools::build(
+                &set,
+                &holder,
+                &taken_with_wasm,
+                &mut diagnostics,
+            ));
+        }
         let notices = diagnostics
             .into_iter()
             .map(|(_, message)| message)
@@ -126,6 +154,7 @@ mod tests {
             ))),
             gate: Arc::new(AllowAll),
             subagent: false,
+            native: crate::native_tools::NativeHolder::new(),
         }
     }
 

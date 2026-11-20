@@ -35,6 +35,23 @@ pub const HELPER_SOCKET_ENV: &str = "HOOCODE_HELPER_SOCKET";
 pub const HELPER_TOKEN_ENV: &str = "HOOCODE_HELPER_TOKEN";
 /// The agent id the helper process runs as (`root`), in its environment.
 pub const AGENT_ID_ENV: &str = "HOOCODE_AGENT_ID";
+/// The root bearer token, in the Shell tool's environment (spec D5).
+pub const AGENT_TOKEN_ENV: &str = "HOOCODE_AGENT_TOKEN";
+
+/// The Shell environment variable carrying one started helper's socket (spec D5):
+/// `HOOCODE_HELPER_SOCKET_<PLUGIN>`, with the plugin name uppercased and every
+/// non-alphanumeric character replaced by `_`.
+pub fn helper_socket_env_name(plugin: &str) -> String {
+    let mut name = String::from("HOOCODE_HELPER_SOCKET_");
+    for c in plugin.chars() {
+        if c.is_ascii_alphanumeric() {
+            name.push(c.to_ascii_uppercase());
+        } else {
+            name.push('_');
+        }
+    }
+    name
+}
 
 /// How long a fire-and-forget lifecycle notification (`agentStarted`,
 /// `agentEnded`) may take before it stops blocking the caller. Helpers
@@ -169,7 +186,8 @@ impl Supervisor {
         overrides: HashMap<String, PathBuf>,
         config: SupervisorConfig,
     ) -> Result<Self, NativeError> {
-        let runtime_dir = create_runtime_dir()?;
+        let runtime_dir =
+            crate::runtime_dir::internal_runtime_dir().unwrap_or(create_runtime_dir()?);
         let root_identity = AgentIdentity::root(crate::agents::new_token());
         let slots = helpers
             .iter()
@@ -235,6 +253,30 @@ impl Supervisor {
             return Err(NativeError::UnknownAgent(parent_agent_id.to_owned()));
         };
         Ok(mint_agent(&parent, task_id))
+    }
+
+    /// Whether this supervisor manages at least one helper.
+    pub fn has_helpers(&self) -> bool {
+        !self.inner.entries.is_empty()
+    }
+
+    /// The socket paths of the helpers currently running (started and not yet
+    /// shut down), without starting anything. Used for the Shell tool's
+    /// environment (spec D5): a socket appears once its helper has started.
+    pub fn live_sockets(&self) -> HashMap<String, PathBuf> {
+        let mut out = HashMap::new();
+        for plugin in self.inner.entries.keys() {
+            let Some(slot) = self.inner.slots.get(plugin) else {
+                continue;
+            };
+            let Ok(state) = slot.state.try_lock() else {
+                continue;
+            };
+            if let HelperState::Live { socket, .. } = &*state {
+                out.insert(plugin.clone(), socket.clone());
+            }
+        }
+        out
     }
 
     /// Start the helper for `plugin` on first use and return its socket path.

@@ -11,6 +11,32 @@ use crate::error::NativeError;
 /// Sockets must fit the OS sun_path limit (macOS 104, Linux 108): stay under 100.
 pub const MAX_SOCKET_PATH_BYTES: usize = 100;
 
+/// Internal (not in `--help`, tests only): when set to an absolute path, the supervisor uses
+/// it as the session runtime dir (created when missing) instead of a fresh random folder, so
+/// an integration test can watch for the helpers' sockets and logs. It is read from the
+/// process environment only, never from plugin config, so a plugin cannot switch it on. Never
+/// set it anywhere else.
+pub const INTERNAL_RUNTIME_DIR_ENV: &str = "HOOCODE_INTERNAL_NATIVE_RUNTIME_DIR";
+
+/// The test override dir, when [`INTERNAL_RUNTIME_DIR_ENV`] names an absolute path. The dir is
+/// created (mode 0700) when missing; like the random dir, it is removed at session end.
+pub fn internal_runtime_dir() -> Option<PathBuf> {
+    let dir = std::env::var_os(INTERNAL_RUNTIME_DIR_ENV).map(PathBuf::from)?;
+    if !dir.is_absolute() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        let _ = std::fs::DirBuilder::new().mode(0o700).create(&dir);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = std::fs::create_dir_all(&dir);
+    }
+    dir.is_dir().then_some(dir)
+}
+
 /// The random suffix of the runtime dir: 8 hex characters.
 pub fn random_suffix() -> String {
     let mut bytes = [0u8; 4];

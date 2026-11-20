@@ -31,6 +31,7 @@ hoocode-code-auth = { workspace = true }
 hoocode-code-resources = { workspace = true }
 hoocode-code-plugins = { workspace = true }
 hoocode-code-wasm = { workspace = true }
+hoocode-code-native = { workspace = true }
 hoocode-agent-mcp = { workspace = true }
 hoocode-code-modes = { workspace = true }
 hoocode-code-permissions = { workspace = true }

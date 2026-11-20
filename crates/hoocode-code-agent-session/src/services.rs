@@ -131,6 +131,17 @@ pub fn default_base_tools_with_jobs(
     ctx: &BaseToolsContext<'_>,
     jobs: Option<JobRegistry>,
 ) -> Vec<ToolDefinition> {
+    default_base_tools_with_jobs_and_hook(ctx, jobs, None)
+}
+
+/// [`default_base_tools_with_jobs`], with a spawn hook for every Shell command (tier C, spec
+/// D5): the hook adds the session's agent and helper-socket variables to the command's
+/// environment. `None` leaves Shell commands unchanged.
+pub fn default_base_tools_with_jobs_and_hook(
+    ctx: &BaseToolsContext<'_>,
+    jobs: Option<JobRegistry>,
+    shell_spawn_hook: Option<hoocode_code_tool_bash::BashSpawnHook>,
+) -> Vec<ToolDefinition> {
     let settings = ctx.settings;
     let read = ReadToolOptions {
         auto_resize_images: settings.image_auto_resize(),
@@ -142,6 +153,7 @@ pub fn default_base_tools_with_jobs(
     let bash = BashToolOptions {
         command_prefix: settings.shell_command_prefix(),
         shell_path: settings.shell_path(),
+        spawn_hook: shell_spawn_hook,
         max_output_bytes: Some(settings.tool_output_max_bytes() as usize),
         max_output_lines: Some(settings.tool_output_max_lines() as usize),
         nice: settings.performance_bash_nice(),
