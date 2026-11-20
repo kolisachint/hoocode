@@ -334,6 +334,16 @@ impl Supervisor {
             .any(|entry| entry.helper.spec.shared)
     }
 
+    /// Whether `plugin` is a shared helper (spec D6): subagents get its
+    /// tools. Unknown plugins and `shared: false` helpers are not shared:
+    /// asking for their socket is refused before anything starts.
+    pub fn is_shared(&self, plugin: &str) -> bool {
+        self.inner
+            .entries
+            .get(plugin)
+            .is_some_and(|entry| entry.helper.spec.shared)
+    }
+
     /// The socket paths of the helpers currently running (started and not yet
     /// shut down), without starting anything. Used for the Shell tool's
     /// environment (spec D5): a socket appears once its helper has started.

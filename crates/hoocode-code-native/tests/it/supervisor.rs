@@ -159,6 +159,10 @@ async fn agent_started_with_wrong_parent_is_rejected() {
 /// may not have run, without restarting or replaying. The next call
 /// restarts the helper once, and the registered child is re-sent (its token
 /// works again).
+///
+/// `register_child` above already started the helper, so `before` counts
+/// that start: the crash itself must not restart (no replay), and the next
+/// echo call restarts exactly once.
 #[tokio::test]
 async fn crashing_call_errors_and_next_call_restarts() {
     let helper = TestHelper::start();
@@ -177,8 +181,8 @@ async fn crashing_call_errors_and_next_call_restarts() {
         format!("{error:?}").contains("may or may not have run"),
         "{error:?}"
     );
-    // Started once for the call, but not restarted: nothing is replayed.
-    assert_eq!(supervisor.spawn_count("echo"), before + 1);
+    // The crash kills the in-flight call without restarting: nothing is replayed.
+    assert_eq!(supervisor.spawn_count("echo"), before);
     let output = supervisor
         .call_tool(
             "echo",
@@ -189,7 +193,7 @@ async fn crashing_call_errors_and_next_call_restarts() {
         .await
         .expect("the next call restarts");
     assert_eq!(echo_text(&output)["text"], "after");
-    assert_eq!(supervisor.spawn_count("echo"), before + 2);
+    assert_eq!(supervisor.spawn_count("echo"), before + 1);
     // The child was re-registered by the restart: its token still works.
     let socket = supervisor.ensure("echo").await.expect("socket");
     let client = NativeClient::connect(socket, "echo", &child)
