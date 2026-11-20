@@ -661,6 +661,110 @@ mod tests {
         }
     }
 
+    /// Only pre-send failures are recoverable: a connect failure or an auth
+    /// rejection means the helper never saw the request, so one replay is
+    /// safe. A mid-call disconnect may have run server-side and surfaces.
+    #[test]
+    fn only_pre_send_failures_are_recoverable() {
+        for error in [
+            NativeError::Mcp(McpError::Connect("down".to_owned())),
+            NativeError::Mcp(McpError::Unauthorized("bad token".to_owned())),
+            NativeError::Mcp(McpError::AuthRequired {
+                server: "helper".to_owned(),
+                www_authenticate: "Bearer".to_owned(),
+            }),
+        ] {
+            assert!(is_recoverable(&error), "{error}");
+        }
+        for error in [
+            NativeError::Mcp(McpError::Disconnected("mid-call".to_owned())),
+            NativeError::Mcp(McpError::Rpc("boom".to_owned())),
+            NativeError::Mcp(McpError::Timeout(std::time::Duration::from_secs(1))),
+            NativeError::Mcp(McpError::Cancelled),
+            NativeError::UnknownPlugin("ghost".to_owned()),
+        ] {
+            assert!(!is_recoverable(&error), "{error}");
+        }
+    }
+
+    /// Even with an identity, a child process with no parent channel mints
+    /// nothing: without an EnsureHelper relay every shared-tool call would
+    /// fail, so no identity (and no shared tool) is offered.
+    #[test]
+    fn child_host_mints_nothing_without_a_relay() {
+        assert!(hoocode_code_subagents::instance::clearance_relay().is_none());
+        let state = Arc::new(ChildNativeState {
+            identity: Some(AgentIdentity::root("token".to_owned())),
+            clients: Mutex::new(HashMap::new()),
+        });
+        let host = CliNativeHost::child(state, ["demo".to_owned()].into_iter().collect());
+        assert!(host.child_env("t1").is_none());
+    }
+
+    /// The root host resolves the current supervisor on every call: after a
+    /// mid-session plugin change the old identities stop minting and the old
+    /// plugins stop serving.
+    #[tokio::test]
+    async fn root_host_follows_mid_session_plugin_changes() {
+        let fixture = Fixture::start();
+        let host = CliNativeHost::root(
+            fixture.holder.clone(),
+            Arc::new(ChildNativeState::new()),
+        );
+        assert!(host.child_env("t1").is_some());
+        host.ensure_helper("t1", "demo")
+            .await
+            .expect("ensure before the change");
+        // The plugin set changes mid-session: no helpers at all now.
+        let settings =
+            SettingsManager::in_memory(serde_json::Map::new());
+        let warnings = fixture
+            .holder
+            .sync(&hoocode_code_plugins::PluginSet::default(), &settings);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(fixture.holder.supervisor().is_none());
+        assert!(
+            host.child_env("t2").is_none(),
+            "nothing to mint without a shared helper"
+        );
+        let error = host
+            .ensure_helper("t2", "demo")
+            .await
+            .expect_err("the old supervisor is gone");
+        assert!(error.contains("no tier C helper"), "{error}");
+    }
+
+    /// Cancelling a running helper call returns promptly: the abort fires
+    /// the call's token instead of waiting out the 30 s sleep.
+    #[tokio::test]
+    async fn cancelled_sleep_call_returns_promptly() {
+        let fixture = Fixture::start();
+        let supervisor = fixture.holder.supervisor().expect("supervisor");
+        supervisor.ensure("demo").await.expect("the helper starts");
+        let cancel = CancellationToken::new();
+        let options = NativeCallOptions {
+            cancel: cancel.clone(),
+        };
+        let call = supervisor.call_tool("demo", "sleep", json!({"ms": 30_000}), options);
+        let started = std::time::Instant::now();
+        let canceller = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            cancel.cancel();
+        });
+        let result = call.await;
+        let elapsed = started.elapsed();
+        let _ = canceller.await;
+        assert!(
+            matches!(result, Err(NativeError::Mcp(McpError::Cancelled))),
+            "the sleep is cancelled, not run to completion: {result:?}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "the cancelled call returns promptly: {elapsed:?}"
+        );
+        let _ = supervisor.shutdown().await;
+    }
+
     /// `EnsureHelper` for a `shared: false` plugin is refused on both sides
     /// before anything starts or registers.
     #[tokio::test]

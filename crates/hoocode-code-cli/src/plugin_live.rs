@@ -148,10 +148,16 @@ impl PluginToolSource {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::path::PathBuf;
 
     use hoocode_code_mcp::TrustStore;
-    use hoocode_code_plugins::{load_plugins, LoadOptions};
+    use hoocode_code_plugins::{
+        LoadedPlugin, PluginFormat, PluginScope, load_plugins, LoadOptions,
+    };
+    use hoocode_code_plugins::native::{
+        NativeHelper, NativeLaunch, NativePermission, NativeSpec, NativeTool,
+    };
     use serde_json::json;
 
     use super::*;
@@ -349,5 +355,116 @@ mod tests {
                 tool: "shared_echo".to_owned(),
             }
         );
+    }
+
+    /// One hand-built loaded plugin: WASM (`extension_wasm`), a native
+    /// helper, or both. Rooted at `dir` (the WASM host reads under it);
+    /// tool building never starts a process.
+    fn loaded_plugin(dir: &std::path::Path, name: &str, wasm: bool, native_tool: Option<&str>) -> LoadedPlugin {
+        let root = dir.join(name);
+        std::fs::create_dir_all(&root).unwrap();
+        LoadedPlugin {
+            name: name.to_owned(),
+            description: String::new(),
+            version: None,
+            format: PluginFormat::AgentPlugins,
+            scope: PluginScope::User,
+            root: root.clone(),
+            marketplace_trusted: true,
+            data_dir: root,
+            skill_dirs: Vec::new(),
+            extension_wasm: wasm.then(|| PathBuf::from(FIXTURE)),
+            tool_render: BTreeMap::new(),
+            native: native_tool.map(|tool| NativeHelper {
+                spec: NativeSpec {
+                    server: "echo".to_owned(),
+                    shared: true,
+                    binaries: BTreeMap::new(),
+                    tools: vec![NativeTool {
+                        name: tool.to_owned(),
+                        description: "Tier C fixture tool.".to_owned(),
+                        input_schema: json!({"type": "object"}),
+                        permission: NativePermission::Read,
+                    }],
+                },
+                launch: NativeLaunch {
+                    command: "never-started".to_owned(),
+                    args: Vec::new(),
+                    env: BTreeMap::new(),
+                    cwd: None,
+                },
+            }),
+            mcp_path: None,
+            mcp_servers: Vec::new(),
+        }
+    }
+
+    fn plugin_set(plugins: Vec<LoadedPlugin>) -> hoocode_code_plugins::PluginSet {
+        hoocode_code_plugins::PluginSet {
+            plugins,
+            ..hoocode_code_plugins::PluginSet::default()
+        }
+    }
+
+    /// First in load order wins across tiers: each plugin registers its WASM
+    /// tools then its native tools before the next plugin is considered, so
+    /// an earlier native tool beats a later WASM tool and vice versa. (The
+    /// echo WASM fixture provides a tool named `echo`.)
+    #[test]
+    fn first_plugin_in_load_order_wins_across_tiers() {
+        let dir = tempfile::tempdir().unwrap();
+        for (first_native, winner) in [(true, "aaa"), (false, "zzz")] {
+            let (first, second) = if first_native {
+                (
+                    loaded_plugin(dir.path(), "aaa", false, Some("echo")),
+                    loaded_plugin(dir.path(), "zzz", true, None),
+                )
+            } else {
+                (
+                    loaded_plugin(dir.path(), "zzz", true, None),
+                    loaded_plugin(dir.path(), "aaa", false, Some("echo")),
+                )
+            };
+            hoocode_code_plugins::set_current(plugin_set(vec![first, second]));
+            let (tools, notices) = source(true).tools(&[]);
+            // The loser reports a taken-name diagnostic naming both origins.
+            assert!(
+                notices.iter().any(|notice| notice.contains("already taken")),
+                "{notices:?}"
+            );
+            // The fixture WASM component provides several tools; only `echo`
+            // is contested. Exactly one `echo` survives, from the winner.
+            let echoes: Vec<_> = tools.iter().filter(|t| t.name == "echo").collect();
+            assert_eq!(echoes.len(), 1, "{tools:?}");
+            assert_eq!(
+                echoes[0].origin,
+                ToolOrigin::Plugin {
+                    plugin: winner.to_owned(),
+                    tool: "echo".to_owned(),
+                },
+                "first loaded wins across tiers"
+            );
+        }
+        hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
+    }
+
+    /// A subagent process with no parent channel is offered no shared tools:
+    /// without an EnsureHelper relay every call would fail.
+    #[test]
+    fn a_subagent_without_a_relay_gets_no_shared_tools() {
+        assert!(hoocode_code_subagents::instance::clearance_relay().is_none());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("repo")).unwrap();
+        hoocode_code_plugins::set_current(native_set(dir.path()));
+        let child = PluginToolSource {
+            subagent: true,
+            ..source(true)
+        };
+        let (tools, _) = child.tools(&[]);
+        assert!(
+            tools.is_empty(),
+            "no shared tool without a relay: {tools:?}"
+        );
+        hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
     }
 }

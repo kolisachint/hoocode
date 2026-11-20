@@ -575,6 +575,41 @@ mod tests {
         })
     }
 
+    /// The abort wrapper ends the wait at once with `Cancelled`: Esc never
+    /// waits out ensure/download/ready-wait/call. Runs on a plain thread
+    /// like the tool blocking threads that call it (`block_on` cannot run
+    /// inside an async test).
+    #[test]
+    fn abortable_returns_cancelled_promptly() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let signal = AbortSignal::new();
+        signal.abort();
+        let cancel = CancellationToken::new();
+        let handle = runtime.handle().clone();
+        let started = std::time::Instant::now();
+        let result: Result<(), NativeError> = abortable(
+            &handle,
+            Some(&signal),
+            cancel.clone(),
+            async {
+                let hung: Result<(), NativeError> = std::future::pending().await;
+                hung
+            },
+        );
+        assert!(
+            matches!(result, Err(NativeError::Mcp(McpError::Cancelled))),
+            "an aborted wait reports cancellation: {result:?}"
+        );
+        assert!(cancel.is_cancelled(), "the op's token fires");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "the aborted wait ends at once"
+        );
+    }
+
     /// `binaryPath` is user-level only (spec D3): a project settings value is
     /// ignored, a global one is honored.
     #[test]

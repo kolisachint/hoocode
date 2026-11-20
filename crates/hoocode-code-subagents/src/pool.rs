@@ -2758,6 +2758,66 @@ const DISPATCH_KEEP: usize = 50;
 const DISPATCH_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[cfg(test)]
+mod child_env_tests {
+    use super::*;
+
+    fn pool_with_env(env: HashMap<String, String>) -> SubagentPool {
+        let dir = tempfile::tempdir().unwrap();
+        SubagentPool::new(SubagentPoolOptions {
+            executable: "hoocode".into(),
+            prefix_args: Vec::new(),
+            max_concurrency: None,
+            cwd: Some(dir.path().to_path_buf()),
+            env: Some(env),
+            runner: None,
+            max_queued: None,
+            max_completed: None,
+            limits: SubagentLimitSettings::default(),
+            skill_paths: Vec::new(),
+            settings: None,
+            available_models: Vec::new(),
+            scope: Vec::new(),
+            clearance: None,
+            native_host: None,
+        })
+    }
+
+    /// With no native host (no identity minted), a child's env must not
+    /// carry agent vars inherited from its parent: without them the child
+    /// cannot act as its parent, and with them its calls would fail.
+    #[tokio::test]
+    async fn child_env_without_identity_strips_inherited_agent_vars() {
+        let mut env = HashMap::new();
+        for (key, value) in [
+            ("HOOCODE_AGENT_ID", "root"),
+            ("HOOCODE_AGENT_TOKEN", "stale-token"),
+            ("HOOCODE_AGENT_PARENT", ""),
+            ("HOOCODE_AGENT_DEPTH", "0"),
+            ("HOOCODE_HELPER_SOCKET_demo", "/tmp/demo.sock"),
+            ("PATH", "/usr/bin"),
+        ] {
+            env.insert(key.to_owned(), value.to_owned());
+        }
+        let pool = pool_with_env(env);
+        let task = SubagentPoolTask {
+            task_id: "t1".to_owned(),
+            ..Default::default()
+        };
+        let child = pool.inner.child_env(&task);
+        for name in [
+            "HOOCODE_AGENT_ID",
+            "HOOCODE_AGENT_TOKEN",
+            "HOOCODE_AGENT_PARENT",
+            "HOOCODE_AGENT_DEPTH",
+            "HOOCODE_HELPER_SOCKET_demo",
+        ] {
+            assert!(!child.contains_key(name), "{name} must be stripped");
+        }
+        assert_eq!(child.get("PATH").map(String::as_str), Some("/usr/bin"));
+    }
+}
+
+#[cfg(test)]
 mod prune_recheck_tests {
     use std::cell::Cell;
 

@@ -984,3 +984,25 @@ pub fn update_warm_subagent_skill_paths(paths: Vec<String>) {
 pub fn set_warm_subagent_pool_for_testing(pool: Option<WarmSubagentPool>) {
     instance().override_pool = pool;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Warm rpc workers never mint tier C identities, tag or not: the
+    /// worker has no parent channel to ask EnsureHelper through, so a
+    /// minted identity would offer shared tools whose every call fails.
+    #[test]
+    fn warm_workers_mint_no_tier_c_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = WarmSubagentPool::new(WarmSubagentPoolOptions::new(dir.path()));
+        for tag in [Some("worker-1"), None] {
+            let (env, minted) = pool.child_env("general-purpose", tag);
+            assert!(!minted, "no identity for tag {tag:?}");
+            assert!(
+                env.iter().all(|(key, _)| key != "HOOCODE_AGENT_ID"),
+                "no agent env for tag {tag:?}: {env:?}"
+            );
+        }
+    }
+}
