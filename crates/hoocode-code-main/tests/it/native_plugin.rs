@@ -314,14 +314,10 @@ struct Printed {
     requests: Vec<Value>,
 }
 
-/// Run `hoocode -p start` in `home` against a scripted mock model, with `env` added. The
+/// Run `hoocode -p start` in `home` against a scripted mock model. The
 /// session's native runtime dir is fixed to `home.runtime` (via the internal override) so
 /// the test can watch the helper's socket appear and disappear.
-fn print_run(
-    home: &Home,
-    script: Vec<Value>,
-    #[allow(unused_variables)] env: &[(&str, &str)],
-) -> Printed {
+fn print_run(home: &Home, script: Vec<Value>) -> Printed {
     run_binary(&home.home, &home.work, script, &home.runtime_dir())
 }
 
@@ -360,7 +356,7 @@ fn call_then_done(tool: &str, arguments: Value) -> Vec<Value> {
 #[test]
 fn tier_c_tools_are_offered_by_bare_name_and_the_plain_server_stays_off() {
     let home = Home::with_t3c_plugin();
-    let printed = print_run(&home, vec![json!({"text": "done"})], &[]);
+    let printed = print_run(&home, vec![json!({"text": "done"})]);
     let first = offered(&printed.requests[0]);
     assert!(
         first.contains(&"echo"),
@@ -385,7 +381,7 @@ fn no_helper_before_the_first_call_then_root_identity_and_shell_env() {
         }}]}),
         json!({"text": "done"}),
     ];
-    let printed = print_run(&home, script, &[]);
+    let printed = print_run(&home, script);
 
     let first = offered(&printed.requests[0]);
     assert!(first.contains(&"echo"), "{first:?}\n{}", printed.stderr);
@@ -448,7 +444,7 @@ fn no_helper_before_the_first_call_then_root_identity_and_shell_env() {
 #[test]
 fn a_dangerous_tool_is_blocked_in_headless_mode() {
     let home = Home::with_t3c_plugin();
-    let printed = print_run(&home, call_then_done("wipe", json!({})), &[]);
+    let printed = print_run(&home, call_then_done("wipe", json!({})));
     let results = tool_results(&printed.requests[1]);
     assert!(
         results.iter().any(|text| text.contains("needs approval")),

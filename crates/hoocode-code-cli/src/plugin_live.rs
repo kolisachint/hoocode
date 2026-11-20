@@ -80,8 +80,8 @@ impl PluginSource for PluginToolSource {
                 diagnostics.push((crate::args::DiagnosticKind::Warning, warning));
             }
         }
-        let relay_up = !self.subagent
-            || hoocode_code_subagents::instance::clearance_relay().is_some();
+        let relay_up =
+            !self.subagent || hoocode_code_subagents::instance::clearance_relay().is_some();
         let mut taken_acc: Vec<(String, ToolOrigin)> = taken.to_vec();
         for plugin in &set.plugins {
             let single = hoocode_code_plugins::PluginSet {
@@ -110,7 +110,11 @@ impl PluginSource for PluginToolSource {
             } else {
                 native_tools::build(&single, &holder, &taken_acc, &mut diagnostics)
             };
-            taken_acc.extend(native_defs.iter().map(|t| (t.name.clone(), t.origin.clone())));
+            taken_acc.extend(
+                native_defs
+                    .iter()
+                    .map(|t| (t.name.clone(), t.origin.clone())),
+            );
             tools.extend(wasm);
             tools.extend(native_defs);
         }
@@ -152,11 +156,11 @@ mod tests {
     use std::path::PathBuf;
 
     use hoocode_code_mcp::TrustStore;
-    use hoocode_code_plugins::{
-        LoadedPlugin, PluginFormat, PluginScope, load_plugins, LoadOptions,
-    };
     use hoocode_code_plugins::native::{
         NativeHelper, NativeLaunch, NativePermission, NativeSpec, NativeTool,
+    };
+    use hoocode_code_plugins::{
+        load_plugins, LoadOptions, LoadedPlugin, PluginFormat, PluginScope,
     };
     use serde_json::json;
 
@@ -360,7 +364,12 @@ mod tests {
     /// One hand-built loaded plugin: WASM (`extension_wasm`), a native
     /// helper, or both. Rooted at `dir` (the WASM host reads under it);
     /// tool building never starts a process.
-    fn loaded_plugin(dir: &std::path::Path, name: &str, wasm: bool, native_tool: Option<&str>) -> LoadedPlugin {
+    fn loaded_plugin(
+        dir: &std::path::Path,
+        name: &str,
+        wasm: bool,
+        native_tool: Option<&str>,
+    ) -> LoadedPlugin {
         let root = dir.join(name);
         std::fs::create_dir_all(&root).unwrap();
         LoadedPlugin {
@@ -429,7 +438,9 @@ mod tests {
             let (tools, notices) = source(true).tools(&[]);
             // The loser reports a taken-name diagnostic naming both origins.
             assert!(
-                notices.iter().any(|notice| notice.contains("already taken")),
+                notices
+                    .iter()
+                    .any(|notice| notice.contains("already taken")),
                 "{notices:?}"
             );
             // The fixture WASM component provides several tools; only `echo`

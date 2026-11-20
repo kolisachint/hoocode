@@ -43,8 +43,9 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
-/// The built echo helper fixture (same recipe as `native_plugin.rs`).
-fn fixture_bin() -> PathBuf {
+/// A built example fixture (same recipe as `native_plugin.rs`): the echo
+/// helper, or the stdio MCP test server for the plain-server test.
+fn fixture_bin(example: &str) -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT
         .get_or_init(|| {
@@ -60,7 +61,7 @@ fn fixture_bin() -> PathBuf {
             let bin = target
                 .join("debug")
                 .join("examples")
-                .join(format!("echo_helper{}", std::env::consts::EXE_SUFFIX));
+                .join(format!("{example}{}", std::env::consts::EXE_SUFFIX));
             let mcp = workspace.join("crates").join("hoocode-agent-mcp");
             // The fixture is fresh when the binary is newer than every input
             // it builds from: the example source plus the whole
@@ -122,11 +123,11 @@ fn fixture_bin() -> PathBuf {
                         .arg("-p")
                         .arg("hoocode-agent-mcp")
                         .arg("--example")
-                        .arg("echo_helper")
+                        .arg(example)
                         .current_dir(&workspace)
                         .status()
-                        .expect("cargo builds the echo fixture");
-                    assert!(status.success(), "cargo build --example echo_helper");
+                        .expect("cargo builds the fixture example");
+                    assert!(status.success(), "cargo build --example {example}");
                 }
                 let _ = std::fs::remove_dir_all(&lock);
             }
@@ -158,13 +159,7 @@ fn native_block(shared: bool) -> Value {
     })
 }
 
-fn write_plugin(
-    plugin: &Path,
-    name: &str,
-    shared: bool,
-    receipts: &Path,
-    plain: Option<(&str, &str)>,
-) {
+fn write_plugin(plugin: &Path, name: &str, shared: bool, receipts: &Path, plain: Option<&Path>) {
     write(
         &plugin.join("plugin.json"),
         &serde_json::to_vec_pretty(&json!({
@@ -182,10 +177,20 @@ fn write_plugin(
         json!({"type": "stdio", "command": "echo-helper-overridden-by-binaryPath",
                "env": {"HOOCODE_ECHO_RECEIPT_DIR": receipts}}),
     );
-    if let Some((command, arg)) = plain {
+    // Plugin server commands must be a bare name or a `./` path: stage the
+    // fixture binary inside the plugin and run it as `./plain-server`.
+    if let Some(fixture) = plain {
+        let staged = plugin.join(format!("plain-server{}", std::env::consts::EXE_SUFFIX));
+        fs::copy(fixture, &staged).expect("stage the plain fixture server");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))
+                .expect("chmod the staged fixture server");
+        }
         servers.insert(
             "plain".to_owned(),
-            json!({"type": "stdio", "command": command, "args": [arg]}),
+            json!({"type": "stdio", "command": "./plain-server"}),
         );
     }
     write(
@@ -204,7 +209,7 @@ fn marketplace_repo(
     name: &str,
     shared: bool,
     receipts: &Path,
-    plain: Option<(&str, &str)>,
+    plain: Option<&Path>,
 ) -> PathBuf {
     let root = origin.join("local-mk");
     write(
@@ -237,7 +242,7 @@ struct Home {
 }
 
 impl Home {
-    fn with_plugin(name: &str, shared: bool, plain: Option<(String, String)>) -> Self {
+    fn with_plugin(name: &str, shared: bool, plain: Option<PathBuf>) -> Self {
         // Short prefix: the helper socket (`<runtime>/<plugin>.sock`) must stay
         // under 100 bytes, and the macOS temp dir is already long.
         let root = tempfile::Builder::new().prefix("nsub-").tempdir().unwrap();
@@ -252,9 +257,7 @@ impl Home {
             name,
             shared,
             &receipts,
-            plain
-                .as_ref()
-                .map(|(command, arg)| (command.as_str(), arg.as_str())),
+            plain.as_deref(),
         );
         let paths = Paths {
             cwd: work.clone(),
@@ -266,7 +269,8 @@ impl Home {
         install::install(&paths, &format!("{name}@{market}"), Scope::User).unwrap();
         fs::write(
             home.join(".hoocode/settings.json"),
-            json!({"nativeHelpers": {name: {"binaryPath": fixture_bin()}}}).to_string(),
+            json!({"nativeHelpers": {name: {"binaryPath": fixture_bin("echo_helper")}}})
+                .to_string(),
         )
         .unwrap();
         Self {
@@ -496,6 +500,70 @@ fn three_subagents_share_one_helper_with_their_own_identities() {
     }
 }
 
+/// A grandchild (root -> child -> grandchild) calls a shared tool with its
+/// own identity: `root/<a>/<b>`, depth 2, `_meta` echoing the caller. The
+/// child's request is relayed up through the intermediate process, and every
+/// level gets its `agentEnded`.
+#[test]
+fn a_grandchild_calls_a_shared_tool_with_its_own_identity() {
+    let home = Home::with_plugin("t3g", true, None);
+    let script = vec![
+        json!({"tool_calls": [agent_call("Delegate to a general-purpose subagent: have it call the echo tool with text 'deep', then finish.")] }),
+        json!({"tool_calls": [agent_call("Call the echo tool with text 'deep', then finish.")] }),
+        json!({"tool_calls": [{"name": "echo", "arguments": {"text": "deep"}}]}),
+        json!({"text": "deep from the grandchild"}),
+        json!({"text": "done by the child"}),
+        json!({"text": "done"}),
+    ];
+    let requests = request_bodies(&home, script);
+    // The child is offered the Agent tool (nested delegation) and the
+    // grandchild the shared echo tool.
+    assert!(
+        offered(&requests[1]).contains(&"Agent"),
+        "the child can delegate: {:?}",
+        offered(&requests[1])
+    );
+    assert!(
+        offered(&requests[2]).contains(&"echo"),
+        "the grandchild sees echo: {:?}",
+        offered(&requests[2])
+    );
+
+    // Exactly one echo call, from the grandchild's identity.
+    let calls = call_receipts(&home);
+    let echoes: Vec<&Value> = calls.iter().filter(|call| call["tool"] == "echo").collect();
+    assert_eq!(echoes.len(), 1, "{calls:?}");
+    let agent_id = echoes[0]["agentId"].as_str().unwrap();
+    let parts: Vec<&str> = agent_id.split('/').collect();
+    assert_eq!(parts.len(), 3, "root/<child>/<grandchild>: {agent_id}");
+    assert_eq!(parts[0], "root");
+    assert_eq!(echoes[0]["parentId"], format!("root/{}", parts[1]));
+    assert_eq!(echoes[0]["depth"], 2);
+    assert_eq!(echoes[0]["metaAgentId"], agent_id);
+
+    // Exactly one helper process served the session.
+    assert_eq!(receipt_names(&home, "helper-boot-").len(), 1);
+
+    // Both the child and the grandchild were announced and deregistered.
+    assert_eq!(receipt_names(&home, "agent-ended-").len(), 2);
+    for id in [agent_id, &format!("root/{}", parts[1])] {
+        let file = format!("agent-ended-{}.received", id.replace('/', "_"));
+        assert!(
+            home.receipts.join(&file).is_file(),
+            "agentEnded for {id}: {:?}",
+            receipt_names(&home, "agent-ended-")
+        );
+    }
+    assert!(
+        home.receipts.join("session-ending.received").is_file(),
+        "sessionEnding receipt"
+    );
+    assert!(
+        !home.runtime_dir().exists(),
+        "the session runtime dir must be removed at session end"
+    );
+}
+
 /// A `shared: false` plugin gives subagents no tier C tools: the child's only
 /// turn is scripted as a plain answer, and the request offering it proves the
 /// tools were absent. The helper never even starts.
@@ -533,45 +601,11 @@ fn an_unshared_plugin_gives_subagents_no_tier_c_tools() {
 }
 
 /// A plain plugin MCP server (not claimed by the native block) stays root-only
-/// while the shared tier C tools reach the child.
+/// while the shared tier C tools reach the child. The server is the Rust
+/// stdio fixture, so the test never depends on python3.
 #[test]
 fn a_plain_plugin_mcp_server_stays_root_only() {
-    let python = match Command::new("python3").arg("--version").output() {
-        Ok(out) if out.status.success() => "python3".to_owned(),
-        _ => {
-            eprintln!("skipped: python3 is not installed");
-            return;
-        }
-    };
-    let server = std::env::temp_dir().join(format!("plain-echo-{}.py", std::process::id()));
-    fs::write(
-        &server,
-        r##"
-import json, sys
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    msg = json.loads(line)
-    if "id" not in msg:
-        continue
-    method = msg.get("method")
-    if method == "initialize":
-        result = {"protocolVersion": msg["params"]["protocolVersion"],
-                  "capabilities": {"tools": {}},
-                  "serverInfo": {"name": "plain", "version": "1"}}
-    elif method == "tools/list":
-        result = {"tools": [{"name": "echo", "description": "Echo",
-            "inputSchema": {"type": "object"}}]}
-    elif method == "tools/call":
-        result = {"content": [{"type": "text", "text": "plain:hi"}], "isError": False}
-    else:
-        result = {}
-    print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
-"##,
-    )
-    .unwrap();
-    let home = Home::with_plugin("t3s", true, Some((python, server.display().to_string())));
+    let home = Home::with_plugin("t3s", true, Some(fixture_bin("mcp_test_server")));
     let script = vec![
         json!({"tool_calls": [agent_call("Say hi. Do not call any tools. Four. Five. Six.")] }),
         json!({"text": "hi from the child"}),
@@ -596,5 +630,4 @@ for line in sys.stdin:
         !child_offered.iter().any(|name| name.starts_with("mcp__")),
         "plain plugin MCP stays root-only: {child_offered:?}"
     );
-    let _ = fs::remove_file(&server);
 }

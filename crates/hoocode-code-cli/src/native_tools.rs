@@ -20,8 +20,8 @@ use hoocode_agent_mcp::{McpError, ToolContent, ToolOutput};
 use hoocode_agent_types::{collision_notices, valid_plugin_tool_name, AgentToolResult, ToolOrigin};
 use hoocode_ai_types::{AbortSignal, Content, ImageContent};
 use hoocode_code_native::{
-    binary_path_overrides, default_home_dir, helper_socket_env_name, NativeCallOptions, NativeError,
-    Supervisor, SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
+    binary_path_overrides, default_home_dir, helper_socket_env_name, NativeCallOptions,
+    NativeError, Supervisor, SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
 };
 use hoocode_code_permissions::{set_native_hints, NativeToolHint};
 use hoocode_code_plugins::native::NativePermission;
@@ -94,7 +94,10 @@ impl NativeHolder {
             // Overrides are read again above so a changed `binaryPath` applies to the next
             // start; publishing the hints again is harmless.
             publish_hints(&helpers);
-            self.inner.lock().unwrap_or_else(|e| e.into_inner()).overrides = overrides;
+            self.inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .overrides = overrides;
             return warnings;
         }
         if helpers.is_empty() {
@@ -590,15 +593,11 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = runtime.handle().clone();
         let started = std::time::Instant::now();
-        let result: Result<(), NativeError> = abortable(
-            &handle,
-            Some(&signal),
-            cancel.clone(),
-            async {
+        let result: Result<(), NativeError> =
+            abortable(&handle, Some(&signal), cancel.clone(), async {
                 let hung: Result<(), NativeError> = std::future::pending().await;
                 hung
-            },
-        );
+            });
         assert!(
             matches!(result, Err(NativeError::Mcp(McpError::Cancelled))),
             "an aborted wait reports cancellation: {result:?}"

@@ -149,10 +149,7 @@ impl CliNativeHost {
     /// The tier C host of a subagent child: serves from its own connection,
     /// asking its own parent first. `shared_plugins` are the shared helper
     /// names this session offers.
-    pub(crate) fn child(
-        shared: Arc<ChildNativeState>,
-        shared_plugins: HashSet<String>,
-    ) -> Self {
+    pub(crate) fn child(shared: Arc<ChildNativeState>, shared_plugins: HashSet<String>) -> Self {
         Self {
             shared,
             mode: HostMode::Child {
@@ -167,9 +164,7 @@ impl NativeChildHost for CliNativeHost {
     fn child_env(&self, task_id: &str) -> Option<Vec<(String, String)>> {
         match &self.mode {
             HostMode::Root {
-                holder,
-                children,
-                ..
+                holder, children, ..
             } => {
                 // The root serves from its supervisor directly: mint while
                 // the session has a shared helper.
@@ -223,9 +218,9 @@ impl NativeChildHost for CliNativeHost {
                     children,
                     registered,
                 } => {
-                    let supervisor = holder.supervisor().ok_or_else(|| {
-                        "This session has no tier C helper.".to_string()
-                    })?;
+                    let supervisor = holder
+                        .supervisor()
+                        .ok_or_else(|| "This session has no tier C helper.".to_string())?;
                     // A child could otherwise get a root-only helper: refuse
                     // before anything starts or registers.
                     if !supervisor.is_shared(plugin) {
@@ -258,9 +253,7 @@ impl NativeChildHost for CliNativeHost {
                         .unwrap_or_else(|e| e.into_inner())
                         .insert(key.clone());
                     if fresh {
-                        if let Err(error) =
-                            supervisor.register_child(plugin, &identity).await
-                        {
+                        if let Err(error) = supervisor.register_child(plugin, &identity).await {
                             registered
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner())
@@ -351,9 +344,7 @@ impl NativeChildHost for CliNativeHost {
                         }
                     }
                 }
-                HostMode::Child {
-                    children, ..
-                } => {
+                HostMode::Child { children, .. } => {
                     let reg = children
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -707,17 +698,13 @@ mod tests {
     #[tokio::test]
     async fn root_host_follows_mid_session_plugin_changes() {
         let fixture = Fixture::start();
-        let host = CliNativeHost::root(
-            fixture.holder.clone(),
-            Arc::new(ChildNativeState::new()),
-        );
+        let host = CliNativeHost::root(fixture.holder.clone(), Arc::new(ChildNativeState::new()));
         assert!(host.child_env("t1").is_some());
         host.ensure_helper("t1", "demo")
             .await
             .expect("ensure before the change");
         // The plugin set changes mid-session: no helpers at all now.
-        let settings =
-            SettingsManager::in_memory(serde_json::Map::new());
+        let settings = SettingsManager::in_memory(serde_json::Map::new());
         let warnings = fixture
             .holder
             .sync(&hoocode_code_plugins::PluginSet::default(), &settings);
@@ -770,10 +757,7 @@ mod tests {
     #[tokio::test]
     async fn unshared_ensure_helper_is_refused_before_start() {
         let fixture = Fixture::start();
-        let host = CliNativeHost::root(
-            fixture.holder.clone(),
-            Arc::new(ChildNativeState::new()),
-        );
+        let host = CliNativeHost::root(fixture.holder.clone(), Arc::new(ChildNativeState::new()));
         assert!(host.child_env("t1").is_some(), "a shared helper mints");
         let error = host
             .ensure_helper("t1", "rt")
@@ -801,10 +785,7 @@ mod tests {
     #[tokio::test]
     async fn retried_task_registers_again_after_child_ended() {
         let fixture = Fixture::start();
-        let host = CliNativeHost::root(
-            fixture.holder.clone(),
-            Arc::new(ChildNativeState::new()),
-        );
+        let host = CliNativeHost::root(fixture.holder.clone(), Arc::new(ChildNativeState::new()));
         assert!(host.child_env("t1").is_some());
         host.ensure_helper("t1", "demo")
             .await

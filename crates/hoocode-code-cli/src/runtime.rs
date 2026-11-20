@@ -975,17 +975,17 @@ fn assemble_session(
             Some(Arc::new(native_child::CliNativeHost::child(
                 child_native.clone(),
                 shared,
-            )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>)
+            ))
+                as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>)
         } else {
             None
         }
     } else if ext_tools_wanted(args, light) {
-        Some(
-            Arc::new(native_child::CliNativeHost::root(
-                native_holder.clone(),
-                child_native.clone(),
-            )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>,
-        )
+        Some(Arc::new(native_child::CliNativeHost::root(
+            native_holder.clone(),
+            child_native.clone(),
+        ))
+            as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>)
     } else {
         None
     };

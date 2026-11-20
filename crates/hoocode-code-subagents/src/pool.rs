@@ -1575,7 +1575,10 @@ impl PoolInner {
         // identity from an ancestor's env is always overwritten — or stripped
         // when none is minted, so the child cannot act as its parent (its
         // calls would fail: without an identity it gets no shared tools).
-        match self.native_host().and_then(|host| host.child_env(&task.task_id)) {
+        match self
+            .native_host()
+            .and_then(|host| host.child_env(&task.task_id))
+        {
             Some(vars) => {
                 for (key, value) in vars {
                     env.insert(key, value);

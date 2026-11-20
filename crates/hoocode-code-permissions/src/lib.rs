@@ -1563,7 +1563,14 @@ mod tests {
         .clone();
         // Interactive: asked, not allowed.
         assert_eq!(
-            evaluate(&skipped, dir.path(), "Wipe", &origin, &json!({}), ApprovalChannel::Ui),
+            evaluate(
+                &skipped,
+                dir.path(),
+                "Wipe",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui
+            ),
             Verdict::Prompt
         );
         // Headless fail-open (print/json): blocked, not allowed.
@@ -1626,7 +1633,14 @@ mod tests {
         .unwrap()
         .clone();
         assert!(matches!(
-            evaluate(&denied_write, dir.path(), "Apply", &origin, &json!({}), ApprovalChannel::Ui),
+            evaluate(
+                &denied_write,
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui
+            ),
             Verdict::Block(_)
         ));
         // Same for Edit.
@@ -1638,7 +1652,14 @@ mod tests {
         .unwrap()
         .clone();
         assert!(matches!(
-            evaluate(&denied_edit, dir.path(), "Apply", &origin, &json!({}), ApprovalChannel::Ui),
+            evaluate(
+                &denied_edit,
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui
+            ),
             Verdict::Block(_)
         ));
         // A mode denying neither still asks, like an edit/write built-in.
