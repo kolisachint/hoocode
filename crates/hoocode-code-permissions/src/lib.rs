@@ -79,21 +79,8 @@ static NATIVE_HINTS: std::sync::LazyLock<Mutex<HashMap<(String, String), NativeT
 
 /// Replace the session's tier C native hints (one entry per declared native tool).
 /// Called from the plugin source whenever the plugin set changes.
-///
-/// TESTS ONLY (unit tests in other crates must not touch the shared map; this is `pub` so
-/// the CLI's `native_tools` can publish the loaded set): prefer [`clear_native_hints`] in
-/// this crate's own tests.
 pub fn set_native_hints(hints: HashMap<(String, String), NativeToolHint>) {
     *NATIVE_HINTS.lock().unwrap_or_else(|e| e.into_inner()) = hints;
-}
-
-/// Clear the session's tier C native hints.
-#[cfg(test)]
-pub(crate) fn clear_native_hints() {
-    NATIVE_HINTS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
 }
 
 /// The tier C hint for one plugin tool, or `None` when it declares no native tool of that name.
@@ -1590,11 +1577,7 @@ mod tests {
         );
         // A built-in keeps its argument subject.
         assert_eq!(
-            describe_tool_with_origin(
-                &"Edit".to_string(),
-                &ToolOrigin::BuiltIn,
-                &json!({"path": "a.rs"})
-            ),
+            describe_tool_with_origin("Edit", &ToolOrigin::BuiltIn, &json!({"path": "a.rs"})),
             "Edit a.rs"
         );
     }

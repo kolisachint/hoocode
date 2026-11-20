@@ -2236,29 +2236,31 @@ pub fn run_interactive_mode(
         ),
     );
 
-    let result = hoocode_code_tui_app::mode::run_interactive(hoocode_code_tui_app::mode::InteractiveOptions {
-        session,
-        session_runtime: Some(session_runtime),
-        runtime: async_runtime(),
-        listing: Box::new(resource_listing),
-        auth_storage: auth,
-        version: hoocode_code_paths::VERSION.to_string(),
-        verbose: args.verbose == Some(true),
-        initial_message,
-        initial_images,
-        initial_messages: messages,
-        // The stderr lines above sit behind the alternate screen; the
-        // startup warnings (a bad setting value) show in the transcript too.
-        startup_warnings: diagnostics
-            .iter()
-            .filter(|(kind, _)| *kind == DiagnosticKind::Warning)
-            .map(|(_, message)| message.clone())
-            .collect(),
-        model_fallback_message: None,
-        terminal: None,
-        perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
-        update_notice,
-    })
+    let result = hoocode_code_tui_app::mode::run_interactive(
+        hoocode_code_tui_app::mode::InteractiveOptions {
+            session,
+            session_runtime: Some(session_runtime),
+            runtime: async_runtime(),
+            listing: Box::new(resource_listing),
+            auth_storage: auth,
+            version: hoocode_code_paths::VERSION.to_string(),
+            verbose: args.verbose == Some(true),
+            initial_message,
+            initial_images,
+            initial_messages: messages,
+            // The stderr lines above sit behind the alternate screen; the
+            // startup warnings (a bad setting value) show in the transcript too.
+            startup_warnings: diagnostics
+                .iter()
+                .filter(|(kind, _)| *kind == DiagnosticKind::Warning)
+                .map(|(_, message)| message.clone())
+                .collect(),
+            model_fallback_message: None,
+            terminal: None,
+            perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
+            update_notice,
+        },
+    )
     .map(|()| 0)
     .map_err(RuntimeError::Setup);
     // Root session end (TUI quit): the helpers get `hoocode/sessionEnding` before exit.

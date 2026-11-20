@@ -17,13 +17,13 @@ use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 
 use hoocode_agent_mcp::{ToolContent, ToolOutput};
-use hoocode_agent_types::{AgentToolResult, ToolOrigin, collision_notices, valid_plugin_tool_name};
+use hoocode_agent_types::{collision_notices, valid_plugin_tool_name, AgentToolResult, ToolOrigin};
 use hoocode_ai_types::{Content, ImageContent};
 use hoocode_code_native::{
-    Supervisor, SupervisorConfig, binary_path_overrides, default_home_dir, helper_socket_env_name,
+    binary_path_overrides, default_home_dir, helper_socket_env_name, Supervisor, SupervisorConfig,
     AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
 };
-use hoocode_code_permissions::{NativeToolHint, set_native_hints};
+use hoocode_code_permissions::{set_native_hints, NativeToolHint};
 use hoocode_code_plugins::native::NativePermission;
 use hoocode_code_plugins::PluginSet;
 use hoocode_code_settings::SettingsManager;
@@ -62,11 +62,7 @@ impl NativeHolder {
     /// Bring the supervisor in line with `plugins`: trusted helpers only, user `binaryPath`
     /// overrides from `settings`. Never starts a process. Returns the problems found (one line
     /// each), for the session's diagnostics.
-    pub(crate) fn sync(
-        &self,
-        plugins: &PluginSet,
-        settings: &SettingsManager,
-    ) -> Vec<String> {
+    pub(crate) fn sync(&self, plugins: &PluginSet, settings: &SettingsManager) -> Vec<String> {
         let trusted: HashSet<&str> = plugins
             .plugins
             .iter()
@@ -96,7 +92,12 @@ impl NativeHolder {
         }
         if helpers.is_empty() {
             set_native_hints(HashMap::new());
-            let old = self.inner.lock().unwrap_or_else(|e| e.into_inner()).supervisor.take();
+            let old = self
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .supervisor
+                .take();
             if old.is_some() {
                 // No helper left: the old supervisor's processes are shut down in the
                 // background, like a swapped MCP hub, so the turn being prepared does not wait.

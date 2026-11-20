@@ -114,7 +114,11 @@ fn fixture_bin() -> PathBuf {
                 }
                 let _ = std::fs::remove_dir_all(&lock);
             }
-            assert!(bin.is_file(), "the echo fixture was built: {}", bin.display());
+            assert!(
+                bin.is_file(),
+                "the echo fixture was built: {}",
+                bin.display()
+            );
             bin
         })
         .clone()
@@ -291,7 +295,11 @@ struct Printed {
 /// Run `hoocode -p start` in `home` against a scripted mock model, with `env` added. The
 /// session's native runtime dir is fixed to `home.runtime` (via the internal override) so
 /// the test can watch the helper's socket appear and disappear.
-fn print_run(home: &Home, script: Vec<Value>, #[allow(unused_variables)] env: &[(&str, &str)]) -> Printed {
+fn print_run(
+    home: &Home,
+    script: Vec<Value>,
+    #[allow(unused_variables)] env: &[(&str, &str)],
+) -> Printed {
     run_binary(&home.home, &home.work, script, &home.runtime_dir())
 }
 
@@ -482,11 +490,14 @@ fn a_tool_name_colliding_with_a_builtin_is_not_loaded_and_names_both_origins() {
     )
     .unwrap();
 
-    let printed = run_binary(&home, &work, vec![json!({"text": "done"})], &home.join("runtime"));
+    let printed = run_binary(
+        &home,
+        &work,
+        vec![json!({"text": "done"})],
+        &home.join("runtime"),
+    );
     assert!(
-        printed
-            .stderr
-            .contains("plugin clash")
+        printed.stderr.contains("plugin clash")
             && printed.stderr.contains("built-in tool")
             && printed.stderr.contains("(Shell)"),
         "the notice must name both origins: {}",
