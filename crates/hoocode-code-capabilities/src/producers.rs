@@ -138,6 +138,7 @@ mod tests {
         let plugin = LoadedPlugin {
             name: "lint-pack".into(),
             description: "Lint helpers.".into(),
+            version: None,
             format: PluginFormat::AgentPlugins,
             scope: PluginScope::User,
             root: "/x/lint-pack".into(),
@@ -146,6 +147,7 @@ mod tests {
             skill_dirs: Vec::new(),
             extension_wasm: None,
             tool_render: Default::default(),
+            native: None,
             mcp_path: None,
             mcp_servers: Vec::new(),
         };

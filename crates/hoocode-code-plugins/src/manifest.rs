@@ -34,11 +34,16 @@ pub struct AgentPluginManifest {
     pub name: String,
     /// The `description` field, or empty.
     pub description: String,
+    /// The `version` field, when present.
+    pub version: Option<String>,
     /// The `$schema` value. The MCP file must target the same version.
     pub schema: String,
     /// Renderer hints from `extensions."dev.hoocode".tools.<Name>.render`: the plugin-declared
     /// tool name to the render id (`web-fetch`, say). The id is data; nothing checks it here.
     pub render_hints: BTreeMap<String, String>,
+    /// The raw `extensions."dev.hoocode"` object, for tier C native helper parsing (see
+    /// [`crate::native`]). `None` when absent or not an object (already warned about).
+    pub dev_hoocode: Option<Map<String, Value>>,
     /// Unknown top-level fields and a non-object `extensions`. Reported, then ignored.
     pub warnings: Vec<String>,
 }
@@ -134,12 +139,23 @@ pub fn parse_agent_plugin_manifest(text: &str) -> Result<AgentPluginManifest, St
         warnings.push("extensions is not an object; ignored".to_owned());
     }
     let render_hints = render_hints_of(root, &mut warnings);
+    let dev_hoocode = root
+        .get("extensions")
+        .and_then(Value::as_object)
+        .and_then(|ext| ext.get("dev.hoocode"))
+        .and_then(Value::as_object)
+        .cloned();
 
     Ok(AgentPluginManifest {
         name,
         description: description_of(root),
+        version: root
+            .get("version")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         schema,
         render_hints,
+        dev_hoocode,
         warnings,
     })
 }

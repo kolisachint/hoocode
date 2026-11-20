@@ -27,6 +27,7 @@ mod load;
 pub mod manifest;
 pub mod marketplace;
 pub mod model;
+pub mod native;
 pub mod paths;
 pub mod propose;
 pub mod skills;
@@ -40,6 +41,7 @@ use hoocode_code_mcp::{PluginServers, ServerDef};
 use hoocode_code_resources::package_resolve::PathMetadata;
 use hoocode_code_resources::source_info::{SourceOrigin, SourceScope};
 use hoocode_code_resources::PathEntry;
+use native::NativeHelper;
 
 pub use load::{load_plugins, LoadOptions};
 pub use trust::{load_default_trust, trust_project_plugins};
@@ -109,11 +111,13 @@ pub struct PluginDiagnostic {
 }
 
 /// A plugin that loaded, with what it contributes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LoadedPlugin {
     pub name: String,
     /// The manifest's `description`, or empty.
     pub description: String,
+    /// The manifest's `version`, when present.
+    pub version: Option<String>,
     pub format: PluginFormat,
     pub scope: PluginScope,
     /// The canonical plugin folder.
@@ -132,9 +136,14 @@ pub struct LoadedPlugin {
     /// The renderer hints of `extensions."dev.hoocode".tools` in the manifest: the tool's
     /// plugin-declared name to its render id (`web-fetch`). Data only; see plugins.md.
     pub tool_render: std::collections::BTreeMap<String, String>,
+    /// The validated tier C native helper (`extensions."dev.hoocode".native`), with how to
+    /// launch it. `None` when the plugin declares none, or when a violation turns it off.
+    pub native: Option<NativeHelper>,
     /// The file the MCP servers came from (`mcp.json`, `.mcp.json`, or the manifest).
     pub mcp_path: Option<PathBuf>,
-    /// The MCP servers, with placeholders already expanded, for `hoocode-code-mcp`.
+    /// The MCP servers, with placeholders already expanded, for `hoocode-code-mcp`. A server
+    /// claimed by [`LoadedPlugin::native`] is removed here, so it never starts as a plain
+    /// MCP server.
     pub mcp_servers: Vec<ServerDef>,
 }
 
@@ -149,8 +158,20 @@ pub struct ProjectTrustPrompt {
     pub plugins: Vec<String>,
 }
 
+/// A tier C native helper of one loaded plugin: which plugin declares it and where it lives.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeHelperEntry {
+    pub plugin: String,
+    pub version: Option<String>,
+    /// The canonical plugin folder.
+    pub root: PathBuf,
+    /// `PLUGIN_DATA` for this plugin (`~/.agents/plugin-data/<name>`).
+    pub data_dir: PathBuf,
+    pub helper: NativeHelper,
+}
+
 /// The result of [`load_plugins`].
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PluginSet {
     pub plugins: Vec<LoadedPlugin>,
     pub diagnostics: Vec<PluginDiagnostic>,
@@ -182,7 +203,26 @@ impl PluginSet {
             .collect()
     }
 
-    /// The MCP servers of each plugin that has any, for `hoocode-code-mcp`.
+    /// The tier C native helpers of every plugin whose `native` block validated, with the
+    /// plugin name, version, plugin root and data dir. Never starts anything.
+    pub fn native_helpers(&self) -> Vec<NativeHelperEntry> {
+        self.plugins
+            .iter()
+            .filter_map(|plugin| {
+                plugin.native.clone().map(|helper| NativeHelperEntry {
+                    plugin: plugin.name.clone(),
+                    version: plugin.version.clone(),
+                    root: plugin.root.clone(),
+                    data_dir: plugin.data_dir.clone(),
+                    helper,
+                })
+            })
+            .collect()
+    }
+
+    /// The MCP servers of each plugin that has any, for `hoocode-code-mcp`. A server a
+    /// plugin's native helper claims is not here (it was removed from the plugin's plain
+    /// server list at load), so it never starts as a plain MCP server.
     pub fn mcp_servers(&self) -> Vec<PluginServers> {
         self.plugins
             .iter()
