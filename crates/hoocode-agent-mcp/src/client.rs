@@ -16,9 +16,10 @@ use std::time::Duration;
 use http::{HeaderName, HeaderValue};
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, CancelledNotificationParam, ClientConfig,
-    ClientRequest, ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationCapability,
-    FormElicitationCapability, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam,
-    ProgressToken, RequestId, ServerResult, UrlElicitationCapability,
+    ClientNotification, ClientRequest, CustomNotification, ElicitRequestParams, ElicitResult,
+    ElicitationAction, ElicitationCapability, FormElicitationCapability, ListToolsResult,
+    PaginatedRequestParams, ProgressNotificationParam, ProgressToken, RequestId, RequestMetaObject,
+    ServerResult, UrlElicitationCapability,
 };
 use rmcp::service::{
     ClientInitializeError, NotificationContext, Peer, PeerRequestOptions, RequestContext,
@@ -52,6 +53,12 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// Largest server-sent event accepted on a Streamable HTTP connection, in bytes
 /// (`docs/design/concurrency.md` section 3). A bigger event fails the request.
 pub const MAX_SSE_EVENT_BYTES: usize = 16 * 1024 * 1024;
+/// Request URI used for Unix-socket connections. The host is irrelevant: the
+/// connection goes through the socket, and hyper sets the `Host` header.
+const UNIX_SOCKET_URI: &str = "http://localhost/mcp";
+/// `_meta` key carrying the tier C agent identity on every `tools/call`
+/// (`docs/design/plugins.md`).
+pub const AGENT_META_KEY: &str = "dev.hoocode/agent";
 /// Most pages of a tool list read before giving up.
 const MAX_LIST_PAGES: usize = 1000;
 /// How long a cancel notification may take to send.
@@ -267,6 +274,8 @@ struct Inner {
     handler: Handler,
     session: tokio::sync::Mutex<Option<Session>>,
     next_generation: AtomicU64,
+    /// `_meta` entries merged into every `tools/call` (tier C agent identity).
+    call_meta: Mutex<Option<serde_json::Map<String, Value>>>,
     /// Set by `shutdown`: calls fail instead of starting the server again.
     closed: AtomicBool,
 }
@@ -404,6 +413,7 @@ impl McpClient {
                 generation: 0,
             })),
             next_generation: AtomicU64::new(1),
+            call_meta: Mutex::new(None),
             closed: AtomicBool::new(false),
         };
         Ok(Self {
@@ -462,6 +472,32 @@ impl McpClient {
         )))
     }
 
+    /// Sets the `_meta` entries merged into every `tools/call` this client
+    /// sends (tier C agent identity under [`AGENT_META_KEY`]). Replaces any
+    /// previous value.
+    pub fn set_call_meta(&self, meta: serde_json::Map<String, Value>) {
+        *lock(&self.inner.call_meta) = Some(meta);
+    }
+
+    /// Sends a custom client->server notification (tier C lifecycle events
+    /// such as `hoocode/agentStarted`). Fire-and-forget: the server never
+    /// answers.
+    pub async fn notify(&self, method: &str, params: Value) -> Result<(), McpError> {
+        let cancel = CancellationToken::new();
+        let deadline = self.deadline();
+        let (peer, _generation) = self.bounded(&cancel, deadline, self.live_peer()).await?;
+        let notification = ClientNotification::CustomNotification(CustomNotification::new(
+            method.to_owned(),
+            Some(params),
+        ));
+        self.bounded(&cancel, deadline, async {
+            peer.send_notification(notification)
+                .await
+                .map_err(|e| map_service(&self.inner.server, e, self.inner.own_auth))
+        })
+        .await
+    }
+
     /// Calls `tool` (the server's own name) with `arguments`, which must be a
     /// JSON object or null.
     ///
@@ -486,6 +522,15 @@ impl McpClient {
         let CallOptions { cancel, progress } = options;
         let deadline = self.deadline();
         let _permit = self.acquire_permit(&cancel, deadline).await?;
+        // `_meta` configured on the client (tier C agent identity) rides on
+        // the request envelope; rmcp serializes it into `params._meta`.
+        let configured_meta = lock(&self.inner.call_meta).clone().map(|map| {
+            let mut meta = RequestMetaObject::new();
+            for (key, value) in map {
+                meta.insert(key, value);
+            }
+            meta
+        });
 
         let mut params = CallToolRequestParams::new(tool.to_owned());
         params.arguments = arguments;
@@ -497,10 +542,15 @@ impl McpClient {
         let mut retried = false;
         loop {
             let (peer, generation) = self.bounded(&cancel, deadline, self.live_peer()).await?;
+            let request_options = configured_meta
+                .clone()
+                .map_or_else(PeerRequestOptions::no_options, |meta| {
+                    PeerRequestOptions::no_options().with_meta(meta)
+                });
             let sent = self
                 .bounded(&cancel, deadline, async {
                     Ok(peer
-                        .send_cancellable_request(request.clone(), PeerRequestOptions::no_options())
+                        .send_cancellable_request(request.clone(), request_options)
                         .await)
                 })
                 .await?;
@@ -740,14 +790,7 @@ async fn start(
                 .map_err(|e| connect_error(server, e, own_auth))
         }
         McpServerConfig::Http { url, headers } => {
-            let mut custom = HashMap::new();
-            for (name, value) in headers {
-                let name = HeaderName::from_bytes(name.as_bytes())
-                    .map_err(|e| McpError::Config(format!("header name {name:?}: {e}")))?;
-                let value = HeaderValue::from_str(value)
-                    .map_err(|e| McpError::Config(format!("value of header {name}: {e}")))?;
-                custom.insert(name, value);
-            }
+            let custom = custom_headers(headers)?;
             let mut config =
                 StreamableHttpClientTransportConfig::with_uri(url.as_str()).custom_headers(custom);
             config.max_sse_event_size = MAX_SSE_EVENT_BYTES;
@@ -767,14 +810,73 @@ async fn start(
             };
             result.map_err(|e| connect_error(server, e, own_auth))
         }
+        McpServerConfig::Unix { path, headers } => {
+            start_unix(server, path, headers, handler, own_auth).await
+        }
     }
+}
+
+/// Converts configured headers to rmcp's map. Never logs the values: one of
+/// them may be the bearer token.
+fn custom_headers(
+    headers: &BTreeMap<String, String>,
+) -> Result<HashMap<HeaderName, HeaderValue>, McpError> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|e| McpError::Config(format!("header name {name:?}: {e}")))?;
+            let value = HeaderValue::from_str(value)
+                .map_err(|e| McpError::Config(format!("value of header {name}: {e}")))?;
+            Ok((name, value))
+        })
+        .collect()
+}
+
+/// Starts a Streamable HTTP session through a Unix socket. The host of the
+/// URI is irrelevant (the connection goes through the socket) and OAuth never
+/// applies. Needs `#[cfg(unix)]`: reqwest only has `unix_socket` there.
+#[cfg(unix)]
+async fn start_unix(
+    server: &str,
+    path: &Path,
+    headers: &BTreeMap<String, String>,
+    handler: Handler,
+    own_auth: bool,
+) -> Result<RunningService<RoleClient, Handler>, McpError> {
+    let custom = custom_headers(headers)?;
+    let client = reqwest::Client::builder()
+        .unix_socket(path)
+        .build()
+        .map_err(|e| McpError::Config(format!("cannot use Unix socket {}: {e}", path.display())))?;
+    let mut config =
+        StreamableHttpClientTransportConfig::with_uri(UNIX_SOCKET_URI).custom_headers(custom);
+    config.max_sse_event_size = MAX_SSE_EVENT_BYTES;
+    handler
+        .serve(StreamableHttpClientTransport::with_client(client, config))
+        .await
+        .map_err(|e| connect_error(server, e, own_auth))
+}
+
+/// Unix sockets need a Unix platform: a clear error everywhere else.
+#[cfg(not(unix))]
+async fn start_unix(
+    _server: &str,
+    _path: &Path,
+    _headers: &BTreeMap<String, String>,
+    _handler: Handler,
+    _own_auth: bool,
+) -> Result<RunningService<RoleClient, Handler>, McpError> {
+    Err(McpError::Config(
+        "Unix-socket MCP servers are not supported on this platform".to_owned(),
+    ))
 }
 
 /// True when a Streamable HTTP entry sends its own `Authorization` header (any letter case).
 fn has_own_authorization(config: &McpServerConfig) -> bool {
     matches!(
         config,
-        McpServerConfig::Http { headers, .. }
+        McpServerConfig::Http { headers, .. } | McpServerConfig::Unix { headers, .. }
             if headers.keys().any(|name| name.eq_ignore_ascii_case("authorization"))
     )
 }

@@ -1,12 +1,15 @@
 //! MCP client for hoocode agents, built on the `rmcp` crate.
 //!
 //! Only this crate depends on `rmcp` (`scripts/ci/dep-firewall.json`). It speaks
-//! stdio and Streamable HTTP, not the legacy HTTP+SSE transport.
+//! stdio, Streamable HTTP, and Streamable HTTP over a Unix socket (tier C
+//! native helpers), not the legacy HTTP+SSE transport.
 //!
 //! - [`McpServerConfig`]: how to reach a server.
 //! - [`McpClient`]: connect (or [`connect_oauth`](McpClient::connect_oauth) for
 //!   a Streamable HTTP server that needs a login), [`list_tools`](McpClient::list_tools),
-//!   [`call_tool`](McpClient::call_tool) with cancellation and progress.
+//!   [`call_tool`](McpClient::call_tool) with cancellation and progress,
+//!   [`set_call_meta`](McpClient::set_call_meta) for per-call `_meta`, and
+//!   [`notify`](McpClient::notify) for custom client->server notifications.
 //! - [`oauth`]: the login flow and the per-issuer token store.
 //! - [`tool_name`]: the model-facing name `mcp__<server>__<tool>`.
 //! - [`ToolOutput`]: the result as plain text and image content.
@@ -38,8 +41,8 @@ mod result;
 mod stdio;
 
 pub use client::{
-    CallOptions, ClientOptions, McpClient, McpTool, ToolProgress, DEFAULT_REQUEST_TIMEOUT,
-    MAX_IN_FLIGHT_REQUESTS, MAX_RESPONSE_BYTES, MAX_SSE_EVENT_BYTES,
+    CallOptions, ClientOptions, McpClient, McpTool, ToolProgress, AGENT_META_KEY,
+    DEFAULT_REQUEST_TIMEOUT, MAX_IN_FLIGHT_REQUESTS, MAX_RESPONSE_BYTES, MAX_SSE_EVENT_BYTES,
 };
 pub use config::McpServerConfig;
 pub use elicitation::{DeclineAll, ElicitationAnswer, ElicitationHandler, ElicitationRequest};

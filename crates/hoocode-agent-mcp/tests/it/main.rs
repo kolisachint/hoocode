@@ -7,3 +7,5 @@ mod client;
 mod elicitation;
 mod oauth;
 mod support;
+#[cfg(unix)]
+mod unix_socket;
