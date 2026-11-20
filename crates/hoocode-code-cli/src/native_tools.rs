@@ -228,6 +228,13 @@ pub(crate) fn current() -> Option<Arc<NativeHolder>> {
     CURRENT.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Take the session's holder, leaving none behind. Used on in-process session replacement
+/// (`/new`, `/resume`, rpc `new_session`, ...): the old session was already torn down, so the
+/// caller shuts its supervisor down gracefully instead of relying on `Drop`.
+pub(crate) fn take_current() -> Option<Arc<NativeHolder>> {
+    CURRENT.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
 /// The model tools of every trusted plugin's native helper: bare names with the
 /// `Plugin { plugin, tool }` origin. A name the session already has (built-ins, the session's
 /// own tools, the MCP tools, the tier B tools registered before these) is skipped with a

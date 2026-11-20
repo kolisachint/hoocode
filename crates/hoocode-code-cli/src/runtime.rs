@@ -1580,6 +1580,15 @@ fn build_session_runtime(
     );
     let factory_args = args.clone();
     let factory: hoocode_code_agent_session::RuntimeFactory = Arc::new(move |request| {
+        // In-process session replacement (`/new`, `/resume`, `/fork`, rpc `new_session`,
+        // ...): the old session was already torn down, so its supervisor ends gracefully in
+        // the background — `hoocode/sessionEnding` to every running helper, then kill —
+        // instead of relying on `Drop`. Without helpers this does nothing.
+        if let Some(old) = native_tools::take_current() {
+            hoocode_runtime::io_handle().spawn(async move {
+                let _ = old.shutdown().await;
+            });
+        }
         let (session, services, diagnostics) = create_runtime(
             &factory_args,
             &auth,
