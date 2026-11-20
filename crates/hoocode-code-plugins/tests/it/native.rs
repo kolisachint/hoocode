@@ -463,11 +463,47 @@ fn every_validation_failure_turns_native_off_and_keeps_the_rest() {
                 .all(|d| d.plugin.as_deref() == Some("browser")),
             "{what}: {errors:?}"
         );
-        // The rest of the plugin still loads: its skill and both MCP servers, including the
-        // named one, which stays a plain server while native is off.
+        // The rest of the plugin still loads: its skill and the plain MCP
+        // servers no native block names. A block that names a server hides
+        // that server from the plain list even when the block is invalid
+        // (the binary expects the tier C launch); a name that matches
+        // nothing changes nothing.
         assert!(!plugin.skill_dirs.is_empty(), "{what}: skills lost");
         let mut plain: Vec<&str> = plugin.mcp_servers.iter().map(|s| s.name.as_str()).collect();
         plain.sort_unstable();
-        assert_eq!(plain, ["docs", "hoo-browser"], "{what}");
+        let named = manifest["extensions"]["dev.hoocode"]["native"]
+            .get("server")
+            .and_then(Value::as_str);
+        let mut expected = vec!["docs", "hoo-browser"];
+        if let Some(name) = named {
+            expected.retain(|server| *server != name);
+        }
+        assert_eq!(plain, expected, "{what}");
     }
+}
+
+/// An invalid `native` block still hides its named server from the plain MCP
+/// list: the binary expects the tier C launch and must never run as plain
+/// MCP. The native part itself stays off with an `Error` diagnostic.
+#[test]
+fn invalid_native_block_still_hides_the_named_server() {
+    let sb = Sandbox::new();
+    let mut manifest = manifest();
+    // Invalid (empty tools), but names the real stdio server.
+    manifest["extensions"]["dev.hoocode"]["native"]["tools"] = json!([]);
+    sb.write_plugin(&manifest);
+    let set = sb.load();
+    let plugin = set
+        .plugins
+        .iter()
+        .find(|p| p.name == "browser")
+        .expect("the plugin still loads");
+    assert!(plugin.native.is_none(), "native stays off");
+    assert!(
+        native_errors(&set).iter().any(|d| d.message.contains("tools")),
+        "an Error says why: {:?}",
+        set.diagnostics
+    );
+    let plain: Vec<&str> = plugin.mcp_servers.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(plain, ["docs"], "the named server never runs as plain MCP");
 }

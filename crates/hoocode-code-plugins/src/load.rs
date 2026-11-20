@@ -362,7 +362,8 @@ fn sorted_children(dir: &Path) -> Vec<PathBuf> {
 /// The tier C `native` block of an Agent Plugins manifest, read after its MCP servers loaded
 /// so `server` resolves against them. A bad block turns the native part off with an [`Error`]
 /// diagnostic; the rest of the plugin still loads. The named server is removed from the
-/// plugin's plain MCP server list, so it never starts as a plain MCP server.
+/// plugin's plain MCP server list even when the native block is invalid, so it never
+/// starts as a plain MCP server (the binary expects the tier C launch).
 ///
 /// [`Error`]: crate::Severity::Error
 fn load_native_helper(
@@ -377,14 +378,25 @@ fn load_native_helper(
         servers: &plugin.mcp_servers,
     };
     let parsed = parse_native(Some(dev_hoocode), &ctx);
-    if let Some(helper) = parsed.helper {
+    // The binary expects the tier C launch: once a block names a server,
+    // that server never runs as a plain MCP server, valid block or not.
+    let named_server: Option<&str> = match &parsed.helper {
+        Some(helper) => Some(&helper.spec.server),
+        None => dev_hoocode
+            .get("native")
+            .and_then(|native| native.get("server"))
+            .and_then(|server| server.as_str()),
+    };
+    if let Some(server) = named_server {
         if let Some(position) = plugin
             .mcp_servers
             .iter()
-            .position(|server| server.name == helper.spec.server)
+            .position(|known| known.name == server)
         {
             plugin.mcp_servers.remove(position);
         }
+    }
+    if let Some(helper) = parsed.helper {
         plugin.native = Some(helper);
     }
     diags.extend(parsed.diagnostics);
