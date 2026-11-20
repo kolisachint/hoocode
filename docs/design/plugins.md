@@ -1,6 +1,6 @@
 # Plugins
 
-Status (2026-11-19): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Built in P2b (2026-11-19): selectors in permission rules, a gate and clearance relays that read the origin, malformed selectors refused everywhere. Built in P4 (2026-11-19): the TUI origin label and renderer hints. See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-22. Designed 2026-11-19 (docs only): a third plugin tier, native helpers (tier C), and the browser plugin built on it (PL-18 to PL-22). See Tiers, Native tier contract and Browser plugin.
+Status (2026-11-20): Plugins and extensions. Built: Agent Plugins 1.0 load and install, `/plugin`, opt-in model tools, the WIT world `hoocode:extension@0.1.0` (`wit/`), the WASM host (`hoocode-code-wasm`), and v1: the webtools plugin (`hoo-web-plugin/plugin/`, listed in the pre-trusted `hoo-plugins` marketplace). Tool identity and names are option D (decided 2026-11-19). Built in P2 (2026-11-19): `ToolOrigin`, the names (WASM tools as declared, MCP tools `mcp__<server>__<tool>`), selectors in `--tools` and agent lists, collision diagnostics. Built in P2b (2026-11-19): selectors in permission rules, a gate and clearance relays that read the origin, malformed selectors refused everywhere. Built in P4 (2026-11-19): the TUI origin label and renderer hints. Built in PL-18 (2026-11-20, branch `agent/pl18-core`): native helpers (tier C). See Naming and identity. Open: PL-1 to PL-5, PL-13 to PL-17, PL-19 to PL-22. Still ahead: the browser plugin built on tier C (PL-19 to PL-22). See Tiers, Native tier contract and Browser plugin.
 
 ## Principles
 
@@ -102,7 +102,7 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 |---|---|---|---|---|---|---|
 | A, static | Rust crate compiled into hoocode behind a cargo feature, against a published contract crate | Rust | anything | no | yes | Future |
 | B, WASM | WASM component in hoocode (wasmtime) | any that builds WASI 0.2 components | host functions only | yes, gate on every gated host call | yes, gated calls via clearance | Built |
-| C, native helper | one process per hoocode session, started on first use; MCP over Streamable HTTP on a local socket | any | anything the process can do | no, trusted (one trust decision per plugin) | yes, if `shared: true` | Designed (PL-18) |
+| C, native helper | one process per hoocode session, started on first use; MCP over Streamable HTTP on a local socket | any | anything the process can do | no, trusted (one trust decision per plugin) | yes, if `shared: true` | Built (PL-18) |
 | C+, WASM host | a tier C helper that hosts WIT components and keeps them alive | as tier B | host functions only | yes | yes | Later, on demand (PL-22) |
 | External | plain MCP server process (stdio or Streamable HTTP) | any | anything the process can do | no, trusted | no | Built |
 
@@ -111,7 +111,7 @@ Opt-in, see [agent.md](agent.md) Tools: `enablePluginTools` (default false) or `
 - Notebook execution: external or a skill (needs a kernel process).
 - Browser automation: tier C (`hoo-browser`, PL-19).
 
-### Native tier contract (tier C, designed 2026-11-19)
+### Native tier contract (tier C, built 2026-11-20)
 
 Why: a browser driver needs state, its own processes and access from many subagents at once. Tier B cannot start processes (WASI 0.3, ratified 2026-06-11, has no process interface) and keeps no state between calls. A plain stdio MCP server serves one client process, so subagents would each start their own copy.
 
@@ -119,28 +119,33 @@ Package. Agent Plugins 1.0 `mcp.json` names the server, as for any MCP plugin. h
 
 | Field | Meaning |
 |---|---|
-| `shared` | `true`: one helper per hoocode session, reachable by subagents |
+| `server` | names the plugin's `mcp.json` stdio server that the helper speaks. Required. That server does not start as a plain MCP server |
+| `shared` | `true`: one helper per hoocode session, reachable by subagents. Default `false`: root only |
 | `binaries` | per platform (`linux-x86_64`, `linux-aarch64`, `darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`): download URL and `sha256`. Shape follows `.mcpb` `platform_overrides` |
-| `tools` | the tool list (name, description, input schema, permission hint: `read`, `act` or `dangerous`). The model sees them before the helper starts |
-| `binaryPath` (user setting) | use an installed binary instead of downloading (offline and IT-approved installs) |
+| `tools` | the tool list (required, non-empty): name, description, input schema (an object schema), permission hint (`read`, `act` or `dangerous`; missing means `act`). The model sees them before the helper starts |
+| `binaryPath` (user setting) | use an installed binary instead of downloading (offline and IT-approved installs). `nativeHelpers.<plugin>.binaryPath` in settings, absolute path only |
 
-Transport. MCP over Streamable HTTP, carried on a local socket, never TCP. The MCP spec allows custom transports and names Unix sockets.
+A bad `native` block turns the native part off for that plugin with an Error diagnostic. The rest of the plugin loads, and the named server stays a plain MCP server. Tool names follow the tier B rules (bare names, no `mcp__` prefix in any case, case-insensitive, first in load order wins). Tier C tools have origin `ToolOrigin::Plugin`, so `plugin:<p>` selectors match them. The permission hint gates the call: `read` runs without asking, `act` asks like an edit or write builtin, `dangerous` always asks unless `auto_allow` names the tool.
 
-- Linux and macOS: a Unix socket in a `0700` per-session directory under `$XDG_RUNTIME_DIR`, else the temp directory. Path under 100 bytes (macOS limit 104, Linux 108).
-- Windows: `\\.\pipe\hoocode-<random>`. Explicit DACL for the current logon SID (the default DACL gives Everyone read), `first_pipe_instance`, remote clients rejected.
-- Naming follows vscode-languageclient. Crates: `interprocess` (0BSD OR Apache-2.0) for the socket, hyper for HTTP.
+Transport. MCP Streamable HTTP over a Unix socket, never TCP. The client builds reqwest with `ClientBuilder::unix_socket(path)` and passes it to rmcp's `StreamableHttpClientTransport::with_client`. The URL is `http://localhost/mcp`. No `interprocess` crate, no hand-written hyper client.
 
-Identity. The root process mints one bearer token per agent (root and each subagent). The supervisor passes the socket path and token in the child's environment (subagents start with `env_clear`, so it adds them explicitly). hoocode's MCP client sends the token as a header the model never sees. The helper maps token to `{agentId, parentId, depth}`. Every call also carries `_meta["dev.hoocode/agent"]`. The socket peer check (peer credentials on Unix, `GetNamedPipeClientProcessId` on Windows) confirms the same user. Shell gets `HOOCODE_AGENT_ID` and the token too, for CLI fallbacks.
+- Linux and macOS: a Unix socket in a `0700` per-session directory under `$XDG_RUNTIME_DIR`, else the temp directory. Path under 100 bytes (macOS limit 104, Linux 108). A longer path falls back to a hash name, else the helper fails with a clear error.
+- Windows: not shipped (EN-11). A Unix-socket server off Unix is a clear config error.
+
+Identity. Every process that spawns a subagent mints the child's token (32 random bytes, hex) and agent id (`<parent agentId>/<task-id>`; the root is `root`). The child gets `HOOCODE_AGENT_ID`, `HOOCODE_AGENT_TOKEN`, `HOOCODE_AGENT_PARENT` and `HOOCODE_AGENT_DEPTH` in its environment (subagents start with `env_clear`, so the parent adds them explicitly). hoocode's MCP client sends `Authorization: Bearer <token>`, which the model never sees and which is never logged. Every `tools/call` also carries `_meta["dev.hoocode/agent"]` (`agentId`, `parentId`, `depth`). The socket directory is mode 0700; the bearer token is the check. Shell gets `HOOCODE_AGENT_ID`, `HOOCODE_AGENT_TOKEN` and `HOOCODE_HELPER_SOCKET_<PLUGIN>` for each live helper, for CLI fallbacks.
 
 Lifecycle.
 
-- Started on first use by the root process, never at session start. The helper signals ready by creating its socket; the supervisor waits up to 10 s.
-- The helper gets `--parent-pid` and exits when the parent dies. On Windows a job object also kills it.
-- Bounded restart: up to 5 restarts in 3 minutes, then the tools report the helper as down.
-- Notifications from hoocode: `hoocode/agentStarted`, `hoocode/agentEnded`, `hoocode/sessionEnding`.
-- Download: once per version into `~/.hoocode/plugin-bin/<plugin>/<version>/`, checksum verified, through the same proxy and CA settings as other plugin HTTP.
+- Started on first use (first tool call, or the first EnsureHelper from a subagent), never at session start, by the root process only. Ready means the socket exists and an MCP `initialize` probe succeeds; the supervisor waits up to 10 s, else the call fails with a clear error.
+- Launch: `<exe> <mcp.json args...> --parent-pid <root pid>`. Env is the mcp.json env plus `HOOCODE_HELPER_SOCKET`, `HOOCODE_HELPER_TOKEN` and `HOOCODE_AGENT_ID=root`. Stdin is null; stdout and stderr append to `<runtime dir>/<plugin>.log`. The child is `kill_on_drop` in its own session.
+- Executable order: the user `binaryPath` (`nativeHelpers.<plugin>.binaryPath`, absolute only) first, then the downloaded `binaries` entry for this platform, then the mcp.json entry's own `command` (`./` paths resolve under the plugin root, bare names use PATH). Args, env and cwd come from the mcp.json entry.
+- A subagent reaches the helper through its parent. On first use of a shared helper it asks up the parent chain (`EnsureHelper`); each parent ensures its own connection (the root starts the helper), sends `hoocode/agentStarted` for the child over its own connection, and replies with the socket path. The child then connects with its own token.
+- Restart: a call that finds the helper gone restarts it and retries once. At most 5 restarts in any 3 minutes; after that every call returns `<plugin> helper is down: <reason>` until the session ends. After a restart the root re-sends `hoocode/agentStarted` for every live registered agent.
+- Notifications: `hoocode/agentStarted` (`agentId`, `parentId`, `depth`, `token`), `hoocode/agentEnded` (`agentId`), `hoocode/sessionEnding` (null). A child that ends is ended on each helper it used.
+- Session end: `hoocode/sessionEnding`, up to 2 s to exit, then kill. The runtime dir is removed.
+- Download: once per version into `~/.hoocode/plugin-bin/<plugin>/<version>/`, skipped when present with a matching sha256. Fetched with hoocode's TLS client (proxy and CA), checksum verified before rename, installed mode 0755. Archive URLs (`.tar.gz`, `.zip` and kin) are refused: plain binaries only.
 
-Core work (PL-18): manifest fields, supervisor (download, verify, start, watch, restart), local-socket Streamable HTTP in `hoocode-agent-mcp`, per-agent tokens, registration of declared tools, the narrowed subagent rule, `docs/user` and `docs/maps`.
+Built 2026-11-20 (branch `agent/pl18-core`): manifest fields (`server`), supervisor (download, verify, start, watch, restart), Unix-socket Streamable HTTP in `hoocode-agent-mcp` (reqwest `unix_socket` + rmcp), per-agent tokens, declared tools, the narrowed subagent rule, the EnsureHelper relay, `docs/user` and `docs/maps`.
 
 ### Browser plugin (designed 2026-11-19)
 
@@ -190,7 +195,7 @@ Implementation plan (locked 2026-11-19). Each phase ends with its tests passing.
 | Phase | Repo | Work | Done when |
 |---|---|---|---|
 | B0 | `kolisachint/agent-browser` | PL-20 fixes AB-1 to AB-4 as upstream PRs; pinned fork release | 8 agents on one headed Chrome pass the no-steal checks |
-| B1 | hoocode | PL-18 tier C core | an echo tier C fixture answers root and 3 subagents at once, identity correct, on Linux and macOS |
+| B1 | hoocode | PL-18 tier C core | Done 2026-11-20: an echo tier C fixture answers root and 3 subagents at once, identity correct, on Linux and macOS |
 | B2 | `hoo-browser-plugin` | PL-19 helper, tools, leases, backends, skill, CLI fallback | the no-steal suite and the latency targets pass headless and headed (Xvfb) |
 | B3 | `hoo-browser-plugin`, `hoo-plugins` | packaging, pinned downloads, marketplace listing, `docs/user` page | `hoocode install` then a subagent eval drives the browser |
 | B4 | all | real Chrome (144+) manual check; Lightpanda backend; AB-5 and AB-6 | recorded results in this doc |
@@ -436,6 +441,12 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | 2026-11-19 | Browser backends: Chromium headless default; headed; real Chrome via the Chrome 144+ toggle; Lightpanda opt-in (AGPL, external only, telemetry off). |
 | 2026-11-19 | Browser tools: 8 declared tools plus a Shell CLI fallback (`hoo-browser`) for the long tail. |
 | 2026-11-19 | Browser implementation plan B0 to B4 locked (see Browser plugin). |
+| 2026-11-20 | Tier C transport as built (D1). MCP Streamable HTTP over a Unix socket: reqwest `ClientBuilder::unix_socket(path)` into rmcp's `StreamableHttpClientTransport::with_client`, URL `http://localhost/mcp`. No `interprocess` crate, no hand-written hyper client. Windows named pipes are not shipped (EN-11): a Unix-socket server off Unix is a clear config error. Supersedes the 2026-11-19 tier C transport row. |
+| 2026-11-20 | Tier C manifest as built (D2). `extensions."dev.hoocode".native` holds `server` (required: the plugin's stdio server, which then does not start as plain MCP), `shared` (default `false`), `binaries` (per platform: https URL and 64-hex sha256) and `tools` (required, non-empty: name, description, object input schema, `read`/`act`/`dangerous`, missing is `act`). A bad block turns native off with an Error diagnostic; the rest of the plugin loads. Resolution order: `binaryPath`, download, mcp.json `command`. Tool names follow the tier B rules; origin is `ToolOrigin::Plugin`. Supersedes the 2026-11-19 Reversed and declared-manifest rows. |
+| 2026-11-20 | Tier C user setting as built (D3). `nativeHelpers.<plugin>.binaryPath` in settings, absolute path only. A relative path is ignored with a diagnostic. |
+| 2026-11-20 | Tier C supervisor as built (D4). Runtime dir `$XDG_RUNTIME_DIR/hoocode-<rand8>` else the temp dir, mode 0700, removed at session end. Socket `<dir>/<plugin>.sock`, under 100 bytes else a hash name. Started on first use only. Launch is `<exe> <args> --parent-pid <pid>` with `HOOCODE_HELPER_SOCKET`, `HOOCODE_HELPER_TOKEN` and `HOOCODE_AGENT_ID=root`; log `<dir>/<plugin>.log`. Ready is socket plus `initialize`, up to 10 s. At most 5 restarts in 3 minutes, then `<plugin> helper is down: <reason>`. Download goes to `~/.hoocode/plugin-bin/<plugin>/<version>/`, sha256 verified, mode 0755; archives refused. |
+| 2026-11-20 | Tier C agents and tokens as built (D5). The spawner mints each child's token (32 random bytes, hex) and id (`<parent>/<task>`; root is `root`). The child env carries `HOOCODE_AGENT_ID`, `HOOCODE_AGENT_TOKEN`, `HOOCODE_AGENT_PARENT` and `HOOCODE_AGENT_DEPTH`. Calls carry `_meta["dev.hoocode/agent"]` (`agentId`, `parentId`, `depth`). A child reaches a shared helper through `EnsureHelper` up the parent chain; each parent sends `hoocode/agentStarted` (`agentId`, `parentId`, `depth`, `token`) over its own connection. `hoocode/agentEnded` carries `agentId`; `hoocode/sessionEnding` is null. Shell gets `HOOCODE_AGENT_ID`, `HOOCODE_AGENT_TOKEN` and `HOOCODE_HELPER_SOCKET_<PLUGIN>`. Supersedes the 2026-11-19 tier C identity row. |
+| 2026-11-20 | Tier C subagent rule as built (D6). Subagents get tier C tools only from `shared: true` plugins; `shared: false` tools are root-only and never built into a child registry. Plain MCP plugin tools stay root-only. Pins the narrowed 2026-11-19 subagent row. |
 
 ## Open
 
@@ -458,7 +469,7 @@ Reading: trimming halves the added build time (clean check, dev and release) and
 | PL-15 | Second-consumer review | S | Two releases after PL-12 | If only one WASM plugin exists, record it and decide whether to keep the host. |
 | PL-16 | Plugin HTTP through an explicit HTTPS_PROXY (CONNECT) | M | A user behind an explicit proxy | Needs care: the proxy resolves the host, so the SSRF address pin can't apply; opt-in only. |
 | PL-17 | Tool identity separate from the model-facing name (option D) | M | Now (roadmap item 0). Phases: P1 design (2026-11-19); P2 core and P2b (built 2026-11-19, not merged); P3 plugin; P4 TUI; P5 live end-to-end; P6 review | See Naming and identity. P2: `ToolOrigin`, names, selectors, collision diagnostics, evals, `docs/user`, `docs/maps`, CHANGELOG. P3: webtools `WebFetch` and `WebSearch`, hint, wasm rebuild. P4: origin label, `toolExternal`, hint dispatch, goldens (tui.md). P5: Tavily rerun, incl. a subagent in json mode. P6: Opus review of the three branches before any PR. |
-| PL-18 | Tier C core: native helpers | L | Next for the browser (B1) | See Native tier contract. Manifest fields, supervisor, local-socket Streamable HTTP in `hoocode-agent-mcp` (`interprocess`, hyper), per-agent tokens, declared tools, narrowed subagent rule, parent-pid exit and Windows job object, bounded restart. Windows is designed for but not shipped (EN-11). |
+| PL-18 | Tier C core: native helpers | L | Done 2026-11-20 (branch `agent/pl18-core`) | Built: manifest fields (`server`), supervisor (download, verify, start, watch, restart), Unix-socket Streamable HTTP in `hoocode-agent-mcp` (reqwest `unix_socket` + rmcp), per-agent tokens, declared tools, the narrowed subagent rule, the EnsureHelper relay. Left: Windows (EN-11), archives in downloads, warm-pool grandchildren have no EnsureHelper. |
 | PL-19 | Browser plugin `hoo-browser` (B2, B3) | L | After PL-18 and AB-1 to AB-4 | See Browser plugin. Repo `hoo-browser-plugin`. |
 | PL-20 | agent-browser fixes upstream (B0, B4) | M | Now, independent of PL-18 | In `kolisachint/agent-browser`, as PRs to Vercel. AB-1 window and focus emulation for pinned sessions, never `bringToFront`. AB-2 popups owned by the opener's session (`openerId`). AB-3 per-session download folder, routed by frame. AB-4 a session bound to a CDP target reattaches to it after a crash, never launches a private browser. AB-5 `agent-browser mcp` serves sessions concurrently and takes its default session from the environment. AB-6 named pipe instead of loopback TCP on Windows. |
 | PL-21 | Tier A: static plugin crates | M | A plugin is promoted into core | Published contract crate and cargo features; one static binary. |

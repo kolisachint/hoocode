@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: native helper plugins (tier C) (2026-11-20)
+- **A plugin can ship a native helper**: a per-platform binary the plugin names as a stdio server in its `mcp.json` and describes in `extensions."dev.hoocode".native` (`server`, `shared`, `binaries`, `tools`). Its tools appear under the names the plugin declares, with no prefix, and with origin `plugin`, so `plugin:<plugin>` selectors match them. A bad `native` block turns the native part off with a diagnostic; the rest of the plugin loads.
+- **One helper process per session, started on first use.** It speaks MCP Streamable HTTP over a Unix socket (`http://localhost/mcp`). Each agent (root and subagents) gets its own token; every call carries its identity, and a subagent reaches a shared helper through its parent (`EnsureHelper`). After 5 restarts in 3 minutes the tools report `<plugin> helper is down: <reason>` until the session ends.
+- **`nativeHelpers.<plugin>.binaryPath` in settings** uses an installed binary (absolute path only) instead of the download. Downloads go to `~/.hoocode/plugin-bin/<plugin>/<version>/`, checksum verified before install.
+- **Each declared tool carries a permission hint**: `read` runs without asking, `act` asks like an edit, `dangerous` always asks unless `auto_allow` names the tool. Subagents get a helper's tools only when the plugin marks it shared; other helpers and plain MCP plugin servers are root-only.
+- Windows is not shipped: a Unix-socket helper off Unix is a clear error.
+
 ### Fixed: MCP tool names never contain `___` (2026-11-19)
 - A server or tool name's leading and trailing `_` are dropped from its model-facing name. A
   name that is only `_` is refused, as an empty one is. Before, `a_` + `b` and `a` + `_b` gave
