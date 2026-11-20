@@ -54,9 +54,7 @@ fn started_params_carry_the_token() {
 /// strangers. No helper starts: this runs on any platform.
 #[test]
 fn identities_round_trip_through_the_child_env() {
-    use hoocode_code_native::{
-        AGENT_DEPTH_ENV, AGENT_ID_ENV, AGENT_PARENT_ENV, AGENT_TOKEN_ENV,
-    };
+    use hoocode_code_native::{AGENT_DEPTH_ENV, AGENT_ID_ENV, AGENT_PARENT_ENV, AGENT_TOKEN_ENV};
     let root = AgentIdentity::root("root-token");
     let child = mint_agent(&root, "task-1");
     let env: HashMap<String, String> = child.child_env().into_iter().collect();

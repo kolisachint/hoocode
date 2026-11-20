@@ -30,6 +30,11 @@ use serde_json::{json, Value};
 pub const REQUEST_TYPE: &str = "clearance_request";
 /// `type` of the parent's answer line.
 pub const RESPONSE_TYPE: &str = "clearance_response";
+/// `type` of a child's EnsureHelper request line (spec D5): the child asks
+/// its parent for the socket path of a shared tier C helper.
+pub const ENSURE_REQUEST_TYPE: &str = "native_ensure_helper";
+/// `type` of the parent's EnsureHelper answer line.
+pub const ENSURE_RESPONSE_TYPE: &str = "native_ensure_helper_response";
 
 /// Why a call is denied when the parent has nobody to ask.
 pub const NO_UI_REASON: &str =
@@ -60,6 +65,44 @@ pub fn request_line(
         map.insert("via".into(), Value::String(via.to_string()));
     }
     line.to_string()
+}
+
+/// A child's EnsureHelper request line for `plugin` (spec D5): the parent
+/// ensures its own connection, registers the child, and answers with the
+/// helper's socket path.
+pub fn ensure_request_line(id: u64, plugin: &str) -> String {
+    json!({"type": ENSURE_REQUEST_TYPE, "id": id, "plugin": plugin}).to_string()
+}
+
+/// The parent's EnsureHelper answer for `id`: `Ok(socket)` is the helper's
+/// socket path, `Err(error)` is why the child cannot use the helper.
+pub fn ensure_response_line(id: u64, result: &Result<String, String>) -> String {
+    match result {
+        Ok(socket) => json!({"type": ENSURE_RESPONSE_TYPE, "id": id, "socket": socket}).to_string(),
+        Err(error) => json!({"type": ENSURE_RESPONSE_TYPE, "id": id, "error": error}).to_string(),
+    }
+    .to_string()
+}
+
+/// Read one EnsureHelper answer line: the id and either the socket path or
+/// the error. `None` when the line is not one.
+pub fn parse_ensure_response(line: &str) -> Option<(u64, Result<String, String>)> {
+    let Value::Object(map) = serde_json::from_str::<Value>(line.trim()).ok()? else {
+        return None;
+    };
+    if map.get("type").and_then(Value::as_str) != Some(ENSURE_RESPONSE_TYPE) {
+        return None;
+    }
+    let id = map.get("id").and_then(Value::as_u64)?;
+    if let Some(socket) = map.get("socket").and_then(Value::as_str) {
+        return Some((id, Ok(socket.to_owned())));
+    }
+    let error = map
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("the parent denied the helper")
+        .to_owned();
+    Some((id, Err(error)))
 }
 
 /// The parent's answer line (without the newline). `verdict` is the gate's
@@ -101,6 +144,8 @@ pub fn parse_response(line: &str) -> Option<(u64, Option<String>)> {
 struct RelayState {
     /// Requests waiting for an answer, by id.
     pending: HashMap<u64, Sender<Option<String>>>,
+    /// EnsureHelper answers the child waits for (spec D5), by request id.
+    ensure_pending: HashMap<u64, Sender<Result<String, String>>>,
     /// The parent's stdin ended: nothing will be answered any more.
     closed: bool,
 }
@@ -150,13 +195,20 @@ impl ChildRelay {
         }
     }
 
-    /// Hands one answer line to the request waiting for it.
+    /// Hands one answer line to the request waiting for it: a clearance
+    /// answer to its clearance request, an EnsureHelper answer to its
+    /// EnsureHelper request. Anything else is not for the relay.
     fn route(&self, line: &str) {
-        let Some((id, verdict)) = parse_response(line) else {
+        if let Some((id, verdict)) = parse_response(line) {
+            if let Some(waiting) = self.state().pending.remove(&id) {
+                let _ = waiting.send(verdict);
+            }
             return;
-        };
-        if let Some(waiting) = self.state().pending.remove(&id) {
-            let _ = waiting.send(verdict);
+        }
+        if let Some((id, result)) = parse_ensure_response(line) {
+            if let Some(waiting) = self.state().ensure_pending.remove(&id) {
+                let _ = waiting.send(result);
+            }
         }
     }
 
@@ -167,6 +219,9 @@ impl ChildRelay {
         for (_, waiting) in state.pending.drain() {
             let _ = waiting.send(Some(PARENT_GONE.to_string()));
         }
+        for (_, waiting) in state.ensure_pending.drain() {
+            let _ = waiting.send(Err(PARENT_GONE.to_string()));
+        }
     }
 
     /// One whole line in one write, so it cannot interleave with the lines the
@@ -176,6 +231,45 @@ impl ChildRelay {
         out.write_all(format!("{line}\n").as_bytes())
             .and_then(|()| out.flush())
             .is_ok()
+    }
+}
+
+impl ChildRelay {
+    /// Ask the parent for the socket path of the shared tier C helper
+    /// `plugin` (spec D5): the parent ensures its own connection, registers
+    /// this agent, and answers. `Err` when the parent denies or is gone.
+    pub fn ask_ensure(&self, plugin: &str) -> Result<String, String> {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = channel();
+        {
+            let mut state = self.state();
+            if state.closed {
+                return Err(PARENT_GONE.to_string());
+            }
+            state.ensure_pending.insert(id, tx);
+        }
+        if !self.write_line(&ensure_request_line(id, plugin)) {
+            self.state().ensure_pending.remove(&id);
+            return Err(PARENT_GONE.to_string());
+        }
+        // The same wait as `ask`: ping while nothing arrives (liveness),
+        // and an error when the input ends (the parent is gone).
+        let mut last_ping = Instant::now();
+        loop {
+            match rx.recv_timeout(POLL) {
+                Ok(result) => return result,
+                Err(RecvTimeoutError::Disconnected) => return Err(PARENT_GONE.to_string()),
+                Err(RecvTimeoutError::Timeout) => {}
+            }
+            let pinged = last_ping.elapsed() >= self.ping_every;
+            if pinged && !self.write_line(r#"{"ping":true}"#) {
+                self.state().ensure_pending.remove(&id);
+                return Err(PARENT_GONE.to_string());
+            }
+            if pinged {
+                last_ping = Instant::now();
+            }
+        }
     }
 }
 

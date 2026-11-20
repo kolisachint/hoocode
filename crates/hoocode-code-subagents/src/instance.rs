@@ -43,6 +43,13 @@ static LIVE_SINK: LazyLock<Mutex<Option<LiveSink>>> = LazyLock::new(Mutex::defau
 static CLEARANCE_RELAY: LazyLock<Mutex<Option<Arc<dyn ClearanceRelay>>>> =
     LazyLock::new(Mutex::default);
 
+/// The session's tier C native host (see [`crate::pool::NativeChildHost`]):
+/// mints child identities, ensures helper sockets and deregisters ended
+/// children. Set when the session is assembled; applies to the shared pools
+/// too, if they exist.
+static NATIVE_HOST: LazyLock<Mutex<Option<Arc<dyn crate::pool::NativeChildHost>>>> =
+    LazyLock::new(Mutex::default);
+
 fn instance() -> MutexGuard<'static, Instance> {
     INSTANCE.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -60,6 +67,23 @@ pub fn set_clearance_relay(relay: Option<Arc<dyn ClearanceRelay>>) {
     if let Some(pool) = &instance().pool {
         pool.set_clearance_relay(relay);
     }
+}
+
+/// Sets (or clears) the session's tier C native host. Applies to the shared
+/// pools too, if they exist.
+pub fn set_native_child_host(host: Option<Arc<dyn crate::pool::NativeChildHost>>) {
+    *NATIVE_HOST.lock().unwrap_or_else(|e| e.into_inner()) = host.clone();
+    if let Some(pool) = &instance().pool {
+        pool.set_native_host(host);
+    }
+}
+
+/// The host set by [`set_native_child_host`], if any.
+pub fn native_child_host() -> Option<Arc<dyn crate::pool::NativeChildHost>> {
+    NATIVE_HOST
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 /// The relay set by [`set_clearance_relay`], if any.
@@ -173,6 +197,7 @@ fn create_pool(
         available_models: available_models.to_vec(),
         scope,
         clearance: clearance_relay(),
+        native_host: native_child_host(),
         ..Default::default()
     });
     wire_progress_to_task_store(&pool);

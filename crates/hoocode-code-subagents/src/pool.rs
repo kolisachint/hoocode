@@ -13,7 +13,9 @@
 //! to approve a gated call; see [`crate::clearance`]).
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -32,7 +34,7 @@ use serde_json::{json, Map, Value};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::agent_log::agent_log;
-use crate::clearance::{response_line, NO_UI_REASON};
+use crate::clearance::{ensure_response_line, response_line, NO_UI_REASON};
 use crate::depth::{
     current_subagent_depth, resolve_max_subagent_depth, tool_allowlist_needs_mcp,
     DEFER_MCP_SCHEMAS_ENV, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
@@ -124,6 +126,36 @@ const EXIT_STDIO_GRACE: Duration = Duration::from_millis(500);
 
 /// The env prefix hoocode stamps on children (read back via any prefix).
 const CHILD_ENV_PREFIX: &str = "HOOCODE_";
+
+/// What a spawned subagent needs from the tier C native helpers (spec D5,
+/// PL-18 slice 4b): its agent env, the socket path of a shared helper with
+/// the child registered on it, and the child's deregistration when it ends.
+///
+/// The pool mints nothing itself: it asks this host, which the session
+/// installs (the root's supervisor in a root process, the relay-backed host
+/// in a subagent child). Plain `async fn` in the trait, like the rest of the
+/// codebase.
+/// A boxed future, like [`crate::runner::BoxFuture`]: the trait below stays
+/// object-safe while its methods await.
+pub type HostFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+pub trait NativeChildHost: Send + Sync {
+    /// The extra child env for a new dispatch: the minted identity (spec D5).
+    /// `None` when the session has no shared tier C helper (no identity is
+    /// minted, no env is added).
+    fn child_env(&self, task_id: &str) -> Option<Vec<(String, String)>>;
+    /// Ensure this process's connection for `plugin`, register the `task_id`
+    /// child on it, and return the helper's socket path. `Err` is the child's
+    /// error text.
+    fn ensure_helper<'a>(
+        &'a self,
+        task_id: &'a str,
+        plugin: &'a str,
+    ) -> HostFuture<'a, Result<PathBuf, String>>;
+    /// The `task_id` child ended (any way): deregister it from every helper
+    /// it was registered with. Best effort.
+    fn child_ended<'a>(&'a self, task_id: &'a str) -> HostFuture<'a, ()>;
+}
 
 /// What [`SubagentPool::statuses`] reports per task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -296,6 +328,11 @@ pub struct SubagentPoolOptions {
     /// the TUI's card, or this process's own parent. `None`: nobody can be
     /// asked, and every such call is denied.
     pub clearance: Option<Arc<dyn ClearanceRelay>>,
+    /// The session's tier C native host (see [`NativeChildHost`]): mints the
+    /// child identity, ensures helper sockets and deregisters ended
+    /// children. `None`: children get no agent env, and their EnsureHelper
+    /// requests are denied.
+    pub native_host: Option<Arc<dyn NativeChildHost>>,
 }
 
 /// `get_status`.
@@ -437,6 +474,7 @@ struct PoolInner {
     state: Mutex<PoolState>,
     listeners: Mutex<Vec<Listener>>,
     clearance: Mutex<Option<Arc<dyn ClearanceRelay>>>,
+    native_host: Mutex<Option<Arc<dyn NativeChildHost>>>,
 }
 
 /// What the stdout reader of one child needs to answer it.
@@ -604,6 +642,7 @@ impl SubagentPool {
             }),
             listeners: Mutex::new(Vec::new()),
             clearance: Mutex::new(options.clearance),
+            native_host: Mutex::new(options.native_host),
         });
         let weak: Weak<PoolInner> = Arc::downgrade(&inner);
         lifeguard.on_event(move |event| {
@@ -629,6 +668,16 @@ impl SubagentPool {
             .clearance
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = relay;
+    }
+
+    /// Sets (or clears) the session's tier C native host (see
+    /// [`NativeChildHost`]).
+    pub fn set_native_host(&self, host: Option<Arc<dyn NativeChildHost>>) {
+        *self
+            .inner
+            .native_host
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = host;
     }
 
     /// A process-unique id for this pool.
@@ -1521,7 +1570,25 @@ impl PoolInner {
         for prefix in hoocode_code_paths::ENV_PREFIXES {
             env.remove(&format!("{prefix}{DEFER_MCP_SCHEMAS_ENV}"));
         }
+        // The child's tier C identity (spec D5): minted by the session's
+        // native host, absent when the session has no shared helper. A stale
+        // identity from an ancestor's env is always overwritten.
+        if let Some(host) = self.native_host() {
+            if let Some(vars) = host.child_env(&task.task_id) {
+                for (key, value) in vars {
+                    env.insert(key, value);
+                }
+            }
+        }
         env
+    }
+
+    /// The session's tier C native host, if one is installed.
+    fn native_host(&self) -> Option<Arc<dyn NativeChildHost>> {
+        self.native_host
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn budget_for(self: &Arc<Self>, task: &SubagentPoolTask) -> Arc<Mutex<TokenBudget>> {
@@ -1582,6 +1649,9 @@ impl PoolInner {
             ..Default::default()
         };
         self.emit("task_cancelled", json!({"task_id": task_id}));
+        // The child never ran (or was just killed): drop its minted identity
+        // without waiting.
+        self.forget_child(task_id);
         self.record_attempt(task, &result, 0, 0, 0, None, false);
         self.resolve_waiter(task_id, result);
         {
@@ -1609,6 +1679,8 @@ impl PoolInner {
                     status: Some(ResultStatus::Failed),
                     ..Default::default()
                 };
+                // The child never ran: drop its minted identity without waiting.
+                self.forget_child(&task.task_id);
                 self.record_attempt(&task, &result, 0, 0, 0, None, false);
                 self.emit(
                     "task_failed",
@@ -1731,6 +1803,10 @@ impl PoolInner {
             })
             .await;
             inner.lifeguard.untrack(&task.task_id);
+            // The child exited (any way): deregister it from the tier C
+            // helpers before the settle resolves, so `agentEnded` lands
+            // before the Agent tool's result does.
+            inner.end_child(&task.task_id).await;
             let (stdout, stderr) = captured.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let retry_scheduled = match status {
                 Ok(status) => inner.settle(&task, &budget, spawned_at, status, stdout, stderr),
@@ -1792,6 +1868,7 @@ impl PoolInner {
             SubagentStdoutLine::Clearance(request) => {
                 self.relay_clearance(task_id, agent_type, &request, link)
             }
+            SubagentStdoutLine::EnsureHelper(request) => self.relay_ensure(task_id, &request, link),
             SubagentStdoutLine::Ignore => {
                 // Not forwarded to the UI, but a model turn ending (message_end)
                 // or streaming is progress: a long turn must not be reaped as stalled.
@@ -1883,6 +1960,82 @@ impl PoolInner {
         });
         if started.is_err() {
             deny("Could not start the permission relay.");
+        }
+    }
+
+    /// A child asks for its tier C helper's socket (spec D5). The session's
+    /// native host ensures this process's own connection (a non-root process
+    /// asks its own parent first, recursively) and registers the child on
+    /// it; the socket path goes back on the child's stdin. With no host the
+    /// session has no shared helper, and the request is denied at once. The
+    /// blocking wait runs on a thread of its own, like the clearance relay.
+    fn relay_ensure(
+        self: &Arc<Self>,
+        task_id: &str,
+        request: &Map<String, Value>,
+        link: &ChildLink,
+    ) {
+        let answer = |result: &Result<String, String>| {
+            if let Some(stdin) = &link.stdin {
+                let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
+                let _ = stdin.try_send(ensure_response_line(id, result));
+            }
+        };
+        let (Some(id), Some(plugin)) = (
+            request.get("id").and_then(Value::as_u64),
+            request.get("plugin").and_then(Value::as_str),
+        ) else {
+            return answer(&Err(
+                "The helper request has no readable plugin.".to_string()
+            ));
+        };
+        if plugin.is_empty() {
+            return answer(&Err(
+                "The helper request has no readable plugin.".to_string()
+            ));
+        }
+        let Some(host) = self.native_host() else {
+            return answer(&Err(
+                "This session has no shared tier C helper: subagents get no helper socket."
+                    .to_string(),
+            ));
+        };
+        let (inner, link_for_thread) = (self.clone(), link.clone());
+        let (task, plugin) = (task_id.to_string(), plugin.to_string());
+        let started = hoocode_runtime::spawn_named_thread("hoocode-ensure", move || {
+            let socket = hoocode_runtime::io_handle()
+                .block_on(host.ensure_helper(&task, &plugin))
+                .map(|path| path.display().to_string());
+            if let Some(stdin) = &link_for_thread.stdin {
+                let _ = stdin.blocking_send(ensure_response_line(id, &socket));
+            }
+            // Without a stdin there is nobody to answer; the registration the
+            // host just made stays (the child may still connect and call).
+            let _ = inner;
+        });
+        if started.is_err() {
+            answer(&Err("Could not start the helper relay.".to_string()));
+        }
+    }
+
+    /// Tell the tier C host the `task_id` child ended, so it deregisters
+    /// the child from every helper it was registered with. Best effort: a
+    /// failure here never fails the settle. Only from async contexts (it
+    /// awaits the host); the sync settle paths use [`Self::forget_child`].
+    async fn end_child(&self, task_id: &str) {
+        if let Some(host) = self.native_host() {
+            host.child_ended(task_id).await;
+        }
+    }
+
+    /// Tell the tier C host the `task_id` child ended, without waiting: the
+    /// sync settle paths have no runtime to await on. Best effort.
+    fn forget_child(&self, task_id: &str) {
+        if let Some(host) = self.native_host() {
+            let task = task_id.to_string();
+            hoocode_runtime::io_handle().spawn(async move {
+                host.child_ended(&task).await;
+            });
         }
     }
 
