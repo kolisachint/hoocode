@@ -36,6 +36,8 @@ reqwest = { version = "0.13", default-features = false }
 async-trait = "0.1"
 
 [dev-dependencies]
+# echo_helper.rs (the tier C echo fixture example) polls its parent with kill(pid, 0).
+libc = "0.2"
 rmcp = { version = "3.5.1", default-features = false, features = [
     "client",
     "server",
