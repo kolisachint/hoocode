@@ -192,7 +192,13 @@ fn marketplace_repo(
         )
         .as_bytes(),
     );
-    write_plugin(&root.join("plugins").join(name), name, shared, receipts, plain);
+    write_plugin(
+        &root.join("plugins").join(name),
+        name,
+        shared,
+        receipts,
+        plain,
+    );
     git(&root, &["init", "-q"]);
     git(&root, &["add", "-A"]);
     git(&root, &["commit", "-q", "-m", "initial"]);
@@ -411,10 +417,7 @@ fn three_subagents_share_one_helper_with_their_own_identities() {
         assert_eq!(call["metaAgentId"], call["agentId"]);
     }
     // The root's own call carries the root identity.
-    let echoes: Vec<&Value> = calls
-        .iter()
-        .filter(|call| call["tool"] == "echo")
-        .collect();
+    let echoes: Vec<&Value> = calls.iter().filter(|call| call["tool"] == "echo").collect();
     assert_eq!(echoes.len(), 1, "{calls:?}");
     assert_eq!(echoes[0]["agentId"], "root");
     assert_eq!(echoes[0]["metaAgentId"], "root");
@@ -429,10 +432,7 @@ fn three_subagents_share_one_helper_with_their_own_identities() {
         .iter()
         .map(|call| call["endMs"].as_u64().expect("endMs"))
         .collect();
-    let (latest_start, earliest_end) = (
-        starts.iter().max().unwrap(),
-        ends.iter().min().unwrap(),
-    );
+    let (latest_start, earliest_end) = (starts.iter().max().unwrap(), ends.iter().min().unwrap());
     assert!(
         latest_start < earliest_end,
         "the sleeps overlapped: starts={starts:?} ends={ends:?}"
@@ -549,11 +549,7 @@ for line in sys.stdin:
 "##,
     )
     .unwrap();
-    let home = Home::with_plugin(
-        "t3s",
-        true,
-        Some((python, server.display().to_string())),
-    );
+    let home = Home::with_plugin("t3s", true, Some((python, server.display().to_string())));
     let script = vec![
         json!({"tool_calls": [agent_call("Say hi. Do not call any tools. Four. Five. Six.")] }),
         json!({"text": "hi from the child"}),

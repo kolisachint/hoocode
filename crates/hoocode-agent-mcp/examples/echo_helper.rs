@@ -64,14 +64,22 @@ struct AgentRecord {
 /// end-to-end tests observe registrations, calls and shutdowns without
 /// racing the runtime-dir removal.
 fn receipt_dir() -> Option<PathBuf> {
-    std::env::var("HOOCODE_ECHO_RECEIPT_DIR").ok().map(PathBuf::from)
+    std::env::var("HOOCODE_ECHO_RECEIPT_DIR")
+        .ok()
+        .map(PathBuf::from)
 }
 
-/// File-safe agent ids (`root/task-1` becomes `root__task-1`).
+/// File-safe agent ids (`root/task-1` becomes `root_task-1`).
 fn sanitize(agent_id: &str) -> String {
     agent_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
