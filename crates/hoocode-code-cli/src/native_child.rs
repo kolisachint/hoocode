@@ -18,8 +18,8 @@ use std::sync::{Arc, Mutex};
 use hoocode_agent_mcp::{McpError, ToolOutput};
 use hoocode_agent_types::ToolOrigin;
 use hoocode_code_native::{
-    helper_socket_env_name, mint_agent, AgentIdentity, NativeClient, NativeError, Supervisor,
-    AGENT_ID_ENV, AGENT_TOKEN_ENV,
+    NativeCallOptions, helper_socket_env_name, mint_agent, AgentIdentity, NativeClient,
+    NativeError, Supervisor, AGENT_ID_ENV, AGENT_TOKEN_ENV,
 };
 use hoocode_code_plugins::PluginSet;
 use hoocode_code_subagents::pool::{HostFuture, NativeChildHost};
@@ -377,7 +377,7 @@ pub(crate) fn call_tool(
                 client
             }
         };
-        handle.block_on(client.call_tool(tool, params.clone()))
+        handle.block_on(client.call_tool(tool, params.clone(), NativeCallOptions::default()))
     };
     match attempt() {
         Ok(output) => Ok(output),

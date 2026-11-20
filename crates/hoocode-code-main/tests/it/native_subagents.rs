@@ -61,22 +61,44 @@ fn fixture_bin() -> PathBuf {
                 .join("debug")
                 .join("examples")
                 .join(format!("echo_helper{}", std::env::consts::EXE_SUFFIX));
-            let source = workspace
-                .join("crates")
-                .join("hoocode-agent-mcp")
-                .join("examples")
-                .join("echo_helper.rs");
+            let mcp = workspace.join("crates").join("hoocode-agent-mcp");
+            // The fixture is fresh when the binary is newer than every input
+            // it builds from: the example source plus the whole
+            // `hoocode-agent-mcp` source tree and manifest.
+            let newest_input = || {
+                let mut newest = std::fs::metadata(mcp.join("examples").join("echo_helper.rs"))
+                    .and_then(|meta| meta.modified())
+                    .ok();
+                newest = newest.max(
+                    std::fs::metadata(mcp.join("Cargo.toml"))
+                        .and_then(|meta| meta.modified())
+                        .ok(),
+                );
+                let mut stack = vec![mcp.join("src")];
+                while let Some(current) = stack.pop() {
+                    let Ok(entries) = std::fs::read_dir(&current) else {
+                        continue;
+                    };
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if let Ok(meta) = entry.metadata() {
+                            newest = newest.max(meta.modified().ok());
+                            if meta.is_dir() {
+                                stack.push(path);
+                            }
+                        }
+                    }
+                }
+                newest
+            };
             let fresh = || {
-                let (Ok(bin_meta), Ok(src_meta)) =
-                    (std::fs::metadata(&bin), std::fs::metadata(&source))
-                else {
+                let (Some(newest), Ok(bin_time)) = (
+                    newest_input(),
+                    std::fs::metadata(&bin).and_then(|meta| meta.modified()),
+                ) else {
                     return false;
                 };
-                let (Ok(bin_time), Ok(src_time)) = (bin_meta.modified(), src_meta.modified())
-                else {
-                    return false;
-                };
-                bin_time >= src_time
+                bin_time >= newest
             };
             if !fresh() {
                 let lock = target

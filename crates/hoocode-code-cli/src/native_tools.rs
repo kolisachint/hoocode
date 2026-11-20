@@ -20,8 +20,8 @@ use hoocode_agent_mcp::{ToolContent, ToolOutput};
 use hoocode_agent_types::{collision_notices, valid_plugin_tool_name, AgentToolResult, ToolOrigin};
 use hoocode_ai_types::{Content, ImageContent};
 use hoocode_code_native::{
-    binary_path_overrides, default_home_dir, helper_socket_env_name, Supervisor, SupervisorConfig,
-    AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
+    NativeCallOptions, binary_path_overrides, default_home_dir, helper_socket_env_name, Supervisor,
+    SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
 };
 use hoocode_code_permissions::{set_native_hints, NativeToolHint};
 use hoocode_code_plugins::native::NativePermission;
@@ -366,7 +366,12 @@ fn definition(
         execute: Arc::new(move |_id, params, _signal, _on_update, _ctx| {
             let output = match &executor {
                 NativeExecutor::Supervisor(supervisor) => handle
-                    .block_on(supervisor.call_tool(&plugin, &remote, params))
+                    .block_on(supervisor.call_tool(
+                        &plugin,
+                        &remote,
+                        params,
+                        NativeCallOptions::default(),
+                    ))
                     .map_err(|error| ToolError::from(error.to_string()))?,
                 NativeExecutor::Child(state) => {
                     super::native_child::call_tool(state, &handle, &plugin, &remote, params)
