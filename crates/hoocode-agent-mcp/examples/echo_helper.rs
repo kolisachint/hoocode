@@ -60,6 +60,40 @@ struct AgentRecord {
     depth: u64,
 }
 
+/// Test receipts: the dir from `HOOCODE_ECHO_RECEIPT_DIR`, when set. Lets
+/// end-to-end tests observe registrations, calls and shutdowns without
+/// racing the runtime-dir removal.
+fn receipt_dir() -> Option<PathBuf> {
+    std::env::var("HOOCODE_ECHO_RECEIPT_DIR").ok().map(PathBuf::from)
+}
+
+/// File-safe agent ids (`root/task-1` becomes `root__task-1`).
+fn sanitize(agent_id: &str) -> String {
+    agent_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect()
+}
+
+fn write_receipt(name: &str, body: &str) {
+    if let Some(dir) = receipt_dir() {
+        let _ = std::fs::write(dir.join(name), body);
+    }
+}
+
+/// Per-call counter, so concurrent calls leave one receipt each.
+static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Helper boot time: call receipts carry start/end offsets from it, so tests
+/// can prove calls overlapped.
+static BOOT: std::sync::LazyLock<std::time::Instant> =
+    std::sync::LazyLock::new(std::time::Instant::now);
+
+/// Milliseconds since the helper booted.
+fn now_ms() -> u64 {
+    BOOT.elapsed().as_millis().min(u64::MAX as u128) as u64
+}
+
 type Tokens = Arc<Mutex<HashMap<String, AgentRecord>>>;
 
 /// Bearer token of a request, from its `Authorization` header.
@@ -145,6 +179,8 @@ struct EchoServer {
 impl EchoServer {
     fn agent_response(
         &self,
+        tool: &str,
+        start_ms: u64,
         parts: &http::request::Parts,
         meta: &Value,
         mut extra: Map<String, Value>,
@@ -161,6 +197,22 @@ impl EchoServer {
             .and_then(|agent| agent.get("agentId"))
             .cloned()
             .unwrap_or(Value::Null);
+        // One receipt per call, so tests can observe concurrent calls with
+        // their resolved identities.
+        let n = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        write_receipt(
+            &format!("call-{n}.json"),
+            &serde_json::json!({
+                "tool": tool,
+                "agentId": record.agent_id,
+                "parentId": record.parent_id,
+                "depth": record.depth,
+                "metaAgentId": meta_agent,
+                "startMs": start_ms,
+                "endMs": now_ms(),
+            })
+            .to_string(),
+        );
         extra.insert("agentId".to_owned(), Value::String(record.agent_id));
         extra.insert(
             "parentId".to_owned(),
@@ -254,6 +306,7 @@ impl ServerHandler for EchoServer {
         let meta = serde_json::to_value(&context.meta).unwrap_or(Value::Null);
         match request.name.as_ref() {
             "echo" => {
+                let start_ms = now_ms();
                 let text = request
                     .arguments
                     .as_ref()
@@ -263,7 +316,7 @@ impl ServerHandler for EchoServer {
                     .to_owned();
                 let mut extra = Map::new();
                 extra.insert("text".to_owned(), Value::String(text));
-                self.agent_response(&parts, &meta, extra)
+                self.agent_response("echo", start_ms, &parts, &meta, extra)
             }
             "crash" => {
                 // Exit without answering, so the in-flight call fails and the
@@ -271,6 +324,7 @@ impl ServerHandler for EchoServer {
                 std::process::exit(1);
             }
             "sleep" => {
+                let start_ms = now_ms();
                 let ms = request
                     .arguments
                     .as_ref()
@@ -280,7 +334,7 @@ impl ServerHandler for EchoServer {
                 tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
                 let mut extra = Map::new();
                 extra.insert("sleptMs".to_owned(), Value::Number(ms.into()));
-                self.agent_response(&parts, &meta, extra)
+                self.agent_response("sleep", start_ms, &parts, &meta, extra)
             }
             name => Err(ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
@@ -329,10 +383,19 @@ impl ServerHandler for EchoServer {
                 self.tokens.lock().expect("tokens").insert(
                     token,
                     AgentRecord {
-                        agent_id,
-                        parent_id,
+                        agent_id: agent_id.clone(),
+                        parent_id: parent_id.clone(),
                         depth,
                     },
+                );
+                write_receipt(
+                    &format!("agent-started-{}.received", sanitize(&agent_id)),
+                    &serde_json::json!({
+                        "agentId": agent_id,
+                        "parentId": parent_id,
+                        "depth": depth,
+                    })
+                    .to_string(),
                 );
             }
             "hoocode/agentEnded" => {
@@ -343,6 +406,10 @@ impl ServerHandler for EchoServer {
                 if let Some(agent_id) = params.get("agentId").and_then(Value::as_str) {
                     let mut map = self.tokens.lock().expect("tokens");
                     map.retain(|_, record| record.agent_id != agent_id);
+                    write_receipt(
+                        &format!("agent-ended-{}.received", sanitize(agent_id)),
+                        agent_id,
+                    );
                 }
             }
             "hoocode/sessionEnding" => {
@@ -422,6 +489,12 @@ async fn main() {
             depth: 0,
         },
     )])));
+
+    // One boot receipt per helper process, so tests can count starts.
+    write_receipt(
+        &format!("helper-boot-{}.received", std::process::id()),
+        "boot",
+    );
 
     // The helper dies with its parent (spec D4): the supervisor additionally
     // relies on kill_on_drop.
