@@ -15,6 +15,7 @@ use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::ToolDefinition;
 
 use crate::ext_tools;
+use crate::native_child::ChildNativeState;
 use crate::native_tools::{self, NativeHolder};
 use crate::runtime::{new_mcp_hub, Diagnostics};
 
@@ -34,8 +35,11 @@ pub(crate) struct PluginToolSource {
     /// A subagent runs no plugin MCP server (`docs/design/subagents.md`).
     pub(crate) subagent: bool,
     /// The session's tier C supervisor state (PL-18 slice 4a). One per root session, shared
-    /// with the Shell env; subagents never use it (slice 4b wires subagent helpers).
+    /// with the Shell env; subagents never use it (their tools come from `child_native`).
     pub(crate) native: Arc<NativeHolder>,
+    /// The session's child-side tier C state, shared by the subagent registration, the
+    /// Shell hook and the pool host (see `native_child`).
+    pub(crate) child_native: Arc<ChildNativeState>,
 }
 
 impl PluginSource for PluginToolSource {
@@ -60,14 +64,21 @@ impl PluginSource for PluginToolSource {
             ext_tools::plugin_configs(&set, &settings)
         };
         let tools = ext_tools::build(&set, &configs, self.gate.clone(), taken, &mut diagnostics);
-        // Tier C native helpers (PL-18): the same path, bare names, the same collision rules
-        // (built-ins never shadowed, first in load order wins, case-insensitive, no `mcp__`
-        // prefix; trusted-only). A subagent registers no tier C tool: slice 4b wires subagent
-        // helpers (EnsureHelper relay, child tokens) on top of this; until then the tools stay
-        // root-only, like the plugin MCP servers. TODO(pl18-4b): register shared helpers in
-        // subagent sessions too.
+        // Tier C native helpers (PL-18): bare names with the same collision rules, trusted-only.
+        // In a subagent only the `shared: true` helpers register, running through the child's
+        // cached connection (spec D6); plain plugin MCP tools and non-shared helpers stay
+        // absent, like the plugin MCP servers.
         let mut tools = tools;
-        if !self.subagent {
+        if self.subagent {
+            let mut taken_with_wasm: Vec<(String, ToolOrigin)> = taken.to_vec();
+            taken_with_wasm.extend(tools.iter().map(|t| (t.name.clone(), t.origin.clone())));
+            tools.extend(crate::native_child::build_shared(
+                &set,
+                &self.child_native,
+                &taken_with_wasm,
+                &mut diagnostics,
+            ));
+        } else {
             let holder = self.native.clone();
             {
                 let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
@@ -155,6 +166,7 @@ mod tests {
             gate: Arc::new(AllowAll),
             subagent: false,
             native: crate::native_tools::NativeHolder::new(),
+            child_native: Arc::new(super::super::native_child::ChildNativeState::new()),
         }
     }
 
@@ -246,5 +258,77 @@ mod tests {
         hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
         assert!(hoocode_code_plugins::generation() > before);
         assert!(source(false).mcp_hub().is_none());
+    }
+
+    /// A plugin fixture with one tier C helper: `tool_name` with `permission`,
+    /// `shared` as given, served by the `echo` stdio server.
+    fn write_native_plugin(dir: &std::path::Path, name: &str, shared: bool, tool_name: &str) {
+        let root = dir.join(name);
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = serde_json::json!({
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": name,
+            "version": "1.0.0",
+            "description": "Tier C fixture",
+            "extensions": {"dev.hoocode": {"native": {
+                "server": "echo",
+                "shared": shared,
+                "tools": [
+                    {"name": tool_name, "description": "Tier C fixture tool.",
+                     "inputSchema": {"type": "object"}, "permission": "read"},
+                ],
+            }}},
+        });
+        std::fs::write(root.join("plugin.json"), manifest.to_string()).unwrap();
+        std::fs::write(
+            root.join("mcp.json"),
+            r#"{"$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                "mcpServers": {"echo": {"type": "stdio", "command": "never-started"}}}"#,
+        )
+        .unwrap();
+    }
+
+    /// Two tier C plugins side by side: `sh` shared, `rt` root-only.
+    fn native_set(dir: &std::path::Path) -> hoocode_code_plugins::PluginSet {
+        let plugins = dir.join("plugins");
+        write_native_plugin(&plugins, "sh", true, "shared_echo");
+        write_native_plugin(&plugins, "rt", false, "root_echo");
+        let trust = TrustStore::empty(dir.join("trust.json"));
+        load_plugins(&LoadOptions {
+            project_folder: dir.join("repo"),
+            user_plugins_dir: plugins,
+            data_root: dir.join("plugin-data"),
+            trust: &trust,
+            untrusted_installs: BTreeSet::new(),
+            installs_unreadable: None,
+        })
+    }
+
+    /// Subagent tier C rule (spec D6): only `shared: true` helpers register, with the
+    /// `Plugin` origin; non-shared helpers and plain plugin MCP servers stay absent.
+    #[test]
+    fn a_subagent_registers_only_shared_tier_c_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("repo")).unwrap();
+        let set = native_set(dir.path());
+        assert!(
+            set.native_helpers()
+                .iter()
+                .all(|entry| { entry.helper.spec.server == "echo" }),
+            "both fixtures parse their native block"
+        );
+        let mut diagnostics = Vec::new();
+        let state = Arc::new(super::super::native_child::ChildNativeState::new());
+        let tools = super::super::native_child::build_shared(&set, &state, &[], &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        assert_eq!(tools.len(), 1, "{tools:?}");
+        assert_eq!(tools[0].name, "shared_echo");
+        assert_eq!(
+            tools[0].origin,
+            ToolOrigin::Plugin {
+                plugin: "sh".to_owned(),
+                tool: "shared_echo".to_owned(),
+            }
+        );
     }
 }

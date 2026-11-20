@@ -274,6 +274,10 @@ impl ChildRelay {
 }
 
 impl ClearanceRelay for ChildRelay {
+    fn ask_ensure(&self, plugin: &str) -> Result<String, String> {
+        ChildRelay::ask_ensure(self, plugin)
+    }
+
     fn ask(&self, request: &RelayRequest) -> Option<String> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (reply, answer) = channel();

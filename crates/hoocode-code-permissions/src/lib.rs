@@ -543,6 +543,14 @@ pub trait ClearanceRelay: Send + Sync {
     /// Blocks until the call is decided. `None` lets it run, `Some(reason)`
     /// blocks it. Any failure to ask (no UI, a closed pipe) is a denial.
     fn ask(&self, request: &RelayRequest) -> Option<String>;
+    /// Asks the parent for the socket path of a shared tier C helper
+    /// (PL-18 slice 4b): the parent ensures its own connection, registers
+    /// the asking agent, and answers. Only a child's relay (a pipe to a
+    /// parent that runs the pool) can answer; every other relay reports that
+    /// there is no parent channel.
+    fn ask_ensure(&self, _plugin: &str) -> Result<String, String> {
+        Err("Shared tier C tools need the parent session's helper: no parent channel in this process.".to_string())
+    }
 }
 
 /// The relay of a headless json or print run that has subagents. Nobody can

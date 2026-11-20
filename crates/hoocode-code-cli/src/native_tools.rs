@@ -25,7 +25,7 @@ use hoocode_code_native::{
 };
 use hoocode_code_permissions::{set_native_hints, NativeToolHint};
 use hoocode_code_plugins::native::NativePermission;
-use hoocode_code_plugins::PluginSet;
+use hoocode_code_plugins::{NativeHelperEntry, PluginSet};
 use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use hoocode_code_tool_bash::{BashSpawnContext, BashSpawnHook};
@@ -198,9 +198,17 @@ impl NativeHolder {
     }
 }
 
+/// Which side runs a tier C tool: the session's supervisor (the root), or a
+/// subagent child's cached connection after an EnsureHelper round-trip.
+#[derive(Clone)]
+pub(crate) enum NativeExecutor {
+    Supervisor(Arc<Supervisor>),
+    Child(Arc<super::native_child::ChildNativeState>),
+}
+
 /// Publish the declared tools' permission hints to the gate, keyed by plugin+tool
 /// (origin-keyed, never name-keyed). Missing hints mean `act`.
-fn publish_hints(helpers: &[hoocode_code_plugins::NativeHelperEntry]) {
+pub(crate) fn publish_hints(helpers: &[hoocode_code_plugins::NativeHelperEntry]) {
     let mut hints = HashMap::new();
     for entry in helpers {
         for tool in &entry.helper.spec.tools {
@@ -255,6 +263,28 @@ pub(crate) fn build(
         .filter(|p| p.marketplace_trusted)
         .map(|p| p.name.as_str())
         .collect();
+    let entries: Vec<NativeHelperEntry> = plugins
+        .native_helpers()
+        .into_iter()
+        .filter(|entry| trusted.contains(entry.plugin.as_str()))
+        .collect();
+    build_from_entries(
+        entries,
+        taken,
+        diagnostics,
+        NativeExecutor::Supervisor(supervisor),
+    )
+}
+
+/// [`build`], over an already-filtered entry list with an explicit executor:
+/// the root runs through its supervisor, a subagent child through its cached
+/// connection (spec D6). Nothing here starts a process either way.
+pub(crate) fn build_from_entries(
+    entries: Vec<NativeHelperEntry>,
+    taken: &[(String, ToolOrigin)],
+    diagnostics: &mut Diagnostics,
+    executor: NativeExecutor,
+) -> Vec<ToolDefinition> {
     let mut out = Vec::new();
     // Every name the session has, with the origin that holds it, keyed by lowercase name: a
     // selector matches a name case-insensitively, so `Read` and `read` are one name.
@@ -263,10 +293,7 @@ pub(crate) fn build(
         .map(|(name, origin)| (name.to_ascii_lowercase(), origin.clone()))
         .collect();
     let mut collisions = Vec::new();
-    for entry in plugins.native_helpers() {
-        if !trusted.contains(entry.plugin.as_str()) {
-            continue;
-        }
+    for entry in &entries {
         let label = format!("plugin {}", entry.plugin);
         for tool in &entry.helper.spec.tools {
             if !valid_plugin_tool_name(&tool.name) {
@@ -297,7 +324,7 @@ pub(crate) fn build(
                 origin,
                 entry.plugin.clone(),
                 tool.clone(),
-                supervisor.clone(),
+                executor.clone(),
             ));
         }
     }
@@ -307,14 +334,14 @@ pub(crate) fn build(
     out
 }
 
-/// A call runs through the session's supervisor
-/// (starting the helper on first use) on the io runtime; the result maps like an MCP tool
-/// result.
+/// A call runs through the session's supervisor (starting the helper on first use) on the
+/// io runtime, or — in a subagent child — through the child's cached connection after an
+/// EnsureHelper round-trip; the result maps like an MCP tool result either way.
 fn definition(
     origin: ToolOrigin,
     plugin: String,
     tool: hoocode_code_plugins::native::NativeTool,
-    supervisor: Arc<Supervisor>,
+    executor: NativeExecutor,
 ) -> ToolDefinition {
     let handle = hoocode_runtime::io_handle();
     let label = tool.name.clone();
@@ -337,9 +364,15 @@ fn definition(
         ordered_start: false,
         abort_grace: None,
         execute: Arc::new(move |_id, params, _signal, _on_update, _ctx| {
-            let output = handle
-                .block_on(supervisor.call_tool(&plugin, &remote, params))
-                .map_err(|error| ToolError::from(error.to_string()))?;
+            let output = match &executor {
+                NativeExecutor::Supervisor(supervisor) => handle
+                    .block_on(supervisor.call_tool(&plugin, &remote, params))
+                    .map_err(|error| ToolError::from(error.to_string()))?,
+                NativeExecutor::Child(state) => {
+                    super::native_child::call_tool(state, &handle, &plugin, &remote, params)
+                        .map_err(|error| ToolError::from(error.to_string()))?
+                }
+            };
             output_result(output)
         }),
     }
@@ -347,7 +380,7 @@ fn definition(
 
 /// An MCP-shaped helper result as the agent tool result, the way MCP tool results map
 /// (`agent-session::mcp`): text and image blocks through, `is_error` as the tool error.
-fn output_result(output: ToolOutput) -> Result<AgentToolResult, ToolError> {
+pub(crate) fn output_result(output: ToolOutput) -> Result<AgentToolResult, ToolError> {
     let content: Vec<Content> = output
         .content
         .into_iter()

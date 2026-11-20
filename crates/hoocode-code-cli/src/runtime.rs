@@ -6,6 +6,7 @@
 //! actual LLM-backed sessions.
 
 use crate::args::Mode;
+use crate::native_child;
 use crate::native_tools::{self, NativeHolder};
 use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
@@ -920,22 +921,56 @@ fn assemble_session(
     let gate = gate.unwrap_or_else(|| build_permission_gate(args, interactive, &cwd));
     // Tier C native helpers (PL-18): one supervisor per root session, created here without
     // starting any process. The plugin source and the Shell env share it (see `native_tools`);
-    // it is rebuilt when the plugin set changes and shut down when the session ends.
+    // it is rebuilt when the plugin set changes and shut down when the session ends. A subagent
+    // child builds no supervisor: its tier C tools run through the child-side state below.
+    let in_subagent = args.task_id.is_some()
+        || hoocode_code_subagents::depth::current_subagent_depth(
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ) > 0;
     let native_holder = NativeHolder::new();
-    if ext_tools_wanted(args, light) {
+    if ext_tools_wanted(args, light) && !in_subagent {
         for warning in native_holder.sync(plugins, &settings) {
             diagnostics.push((DiagnosticKind::Warning, warning));
         }
     }
     native_tools::set_current(native_holder.clone());
+    // The child-side tier C state (PL-18 slice 4b): this process's own identity when spawned
+    // as a subagent, and its cached helper connections. The plugin source, the Shell hook
+    // and the pool host share it; the next session replaces it.
+    let child_native = Arc::new(native_child::ChildNativeState::new());
+    // The pool's tier C host for this session (spec D5): the root serves from its supervisor,
+    // a subagent child from its own connection (asking its own parent first). Only installed
+    // when the session has a shared helper; the existing pool picks it up, like the
+    // clearance relay. `None` clears a previous session's host.
+    let native_host: Option<Arc<dyn hoocode_code_subagents::pool::NativeChildHost>> = if in_subagent
+    {
+        if native_child::has_shared_helpers(plugins) {
+            child_native.identity().map(|_| {
+                Arc::new(native_child::CliNativeHost::child(
+                    child_native.clone(),
+                    true,
+                )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>
+            })
+        } else {
+            None
+        }
+    } else {
+        native_holder
+            .supervisor()
+            .filter(|supervisor| supervisor.has_shared_helpers())
+            .map(|supervisor| {
+                Arc::new(native_child::CliNativeHost::root(
+                    supervisor,
+                    child_native.clone(),
+                    true,
+                )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>
+            })
+    };
+    hoocode_code_subagents::instance::set_native_child_host(native_host);
     // Background shell jobs (`enableBackgroundShell`, on by default) in the
     // interactive TUI only, which shows them and asks about them on quit.
     // Print, json, rpc and app-server runs, the light preset and subagents
     // have none: a job would outlive the process with no one to read it.
-    let in_subagent = args.task_id.is_some()
-        || hoocode_code_subagents::depth::current_subagent_depth(
-            &hoocode_code_subagents::depth::ProcessEnv,
-        ) > 0;
     let jobs = (interactive && !light && !in_subagent && settings.enable_background_shell())
         .then(|| background_job_registry(&session_manager, &settings));
     // main.ts: the light preset is an allowlist of the four short-schema tools
@@ -958,16 +993,22 @@ fn assemble_session(
         // The plugin tools (`ext_`) are attached after the session exists, from its plugin
         // source, so they can follow the plugins (see `plugin_live`).
         let custom = custom_tools(args, &settings, &cwd, interactive, jobs.as_ref());
-        // Shell commands get `HOOCODE_AGENT_ID`/`HOOCODE_AGENT_TOKEN` plus the started
-        // helpers' sockets (spec D5) through the spawn hook; a session with no helper gets no
-        // extra variable, so these match the default tools exactly until a helper exists.
+        // Shell commands get the tier C identity plus the started helpers' sockets (spec D5)
+        // through the spawn hook; a session with no helper gets no extra variable, so these
+        // match the default tools exactly until a helper exists. In a subagent the hook
+        // emits the child's own identity and its known sockets.
         let hook_holder = native_holder.clone();
+        let hook_child_native = child_native.clone();
         let hook_jobs = jobs.clone();
         let factory: BaseToolsFactory = Arc::new(move |ctx| {
             hoocode_code_agent_session::services::default_base_tools_with_jobs_and_hook(
                 ctx,
                 hook_jobs.clone(),
-                Some(native_tools::shell_spawn_hook(hook_holder.clone())),
+                Some(if in_subagent {
+                    native_child::shell_spawn_hook(hook_child_native.clone())
+                } else {
+                    native_tools::shell_spawn_hook(hook_holder.clone())
+                }),
             )
         });
         (Some(BaseTools::Factory(factory)), custom, None)
@@ -1090,6 +1131,7 @@ fn assemble_session(
             gate: plugin_gate,
             subagent,
             native: native_holder.clone(),
+            child_native: child_native.clone(),
         });
         for notice in session.attach_plugins(source) {
             diagnostics.push((DiagnosticKind::Warning, notice));

@@ -15,6 +15,7 @@ mod help_text;
 pub mod initial_message;
 mod keybindings_command;
 mod list_models;
+mod native_child;
 mod native_tools;
 mod plugin_command;
 mod plugin_live;
