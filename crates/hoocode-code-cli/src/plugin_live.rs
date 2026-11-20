@@ -63,37 +63,56 @@ impl PluginSource for PluginToolSource {
             let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
             ext_tools::plugin_configs(&set, &settings)
         };
-        let tools = ext_tools::build(&set, &configs, self.gate.clone(), taken, &mut diagnostics);
+        let tools = Vec::new();
         // Tier C native helpers (PL-18): bare names with the same collision rules, trusted-only.
-        // In a subagent only the `shared: true` helpers register, running through the child's
-        // cached connection (spec D6); plain plugin MCP tools and non-shared helpers stay
-        // absent, like the plugin MCP servers.
+        // First in load order wins across tiers: each plugin registers its WASM tools then its
+        // native tools before the next plugin is considered, so an earlier plugin's native tool
+        // beats a later plugin's WASM tool. In a subagent only the `shared: true` helpers
+        // register, running through the child's cached connection (spec D6), and only when
+        // this process has a parent channel to ask EnsureHelper through: without a relay
+        // every call would fail, so no shared tool is offered. Plain plugin MCP tools and
+        // non-shared helpers stay absent, like the plugin MCP servers.
         let mut tools = tools;
-        if self.subagent {
-            let mut taken_with_wasm: Vec<(String, ToolOrigin)> = taken.to_vec();
-            taken_with_wasm.extend(tools.iter().map(|t| (t.name.clone(), t.origin.clone())));
-            tools.extend(crate::native_child::build_shared(
-                &set,
-                &self.child_native,
-                &taken_with_wasm,
-                &mut diagnostics,
-            ));
-        } else {
-            let holder = self.native.clone();
-            {
-                let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
-                for warning in holder.sync(&set, &settings) {
-                    diagnostics.push((crate::args::DiagnosticKind::Warning, warning));
-                }
+        let holder = self.native.clone();
+        if !self.subagent {
+            let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
+            for warning in holder.sync(&set, &settings) {
+                diagnostics.push((crate::args::DiagnosticKind::Warning, warning));
             }
-            let mut taken_with_wasm: Vec<(String, ToolOrigin)> = taken.to_vec();
-            taken_with_wasm.extend(tools.iter().map(|t| (t.name.clone(), t.origin.clone())));
-            tools.extend(native_tools::build(
-                &set,
-                &holder,
-                &taken_with_wasm,
+        }
+        let relay_up = !self.subagent
+            || hoocode_code_subagents::instance::clearance_relay().is_some();
+        let mut taken_acc: Vec<(String, ToolOrigin)> = taken.to_vec();
+        for plugin in &set.plugins {
+            let single = hoocode_code_plugins::PluginSet {
+                plugins: vec![plugin.clone()],
+                ..hoocode_code_plugins::PluginSet::default()
+            };
+            let wasm = ext_tools::build(
+                &single,
+                &configs,
+                self.gate.clone(),
+                &taken_acc,
                 &mut diagnostics,
-            ));
+            );
+            taken_acc.extend(wasm.iter().map(|t| (t.name.clone(), t.origin.clone())));
+            let native_defs = if self.subagent {
+                if relay_up {
+                    crate::native_child::build_shared(
+                        &single,
+                        &self.child_native,
+                        &taken_acc,
+                        &mut diagnostics,
+                    )
+                } else {
+                    Vec::new()
+                }
+            } else {
+                native_tools::build(&single, &holder, &taken_acc, &mut diagnostics)
+            };
+            taken_acc.extend(native_defs.iter().map(|t| (t.name.clone(), t.origin.clone())));
+            tools.extend(wasm);
+            tools.extend(native_defs);
         }
         let notices = diagnostics
             .into_iter()

@@ -16,12 +16,12 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 
-use hoocode_agent_mcp::{ToolContent, ToolOutput};
+use hoocode_agent_mcp::{McpError, ToolContent, ToolOutput};
 use hoocode_agent_types::{collision_notices, valid_plugin_tool_name, AgentToolResult, ToolOrigin};
-use hoocode_ai_types::{Content, ImageContent};
+use hoocode_ai_types::{AbortSignal, Content, ImageContent};
 use hoocode_code_native::{
-    binary_path_overrides, default_home_dir, helper_socket_env_name, NativeCallOptions, Supervisor,
-    SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
+    binary_path_overrides, default_home_dir, helper_socket_env_name, NativeCallOptions, NativeError,
+    Supervisor, SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
 };
 use hoocode_code_permissions::{set_native_hints, NativeToolHint};
 use hoocode_code_plugins::native::NativePermission;
@@ -30,6 +30,7 @@ use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use hoocode_code_tool_bash::{BashSpawnContext, BashSpawnHook};
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 
 use crate::args::DiagnosticKind;
 use crate::runtime::Diagnostics;
@@ -47,6 +48,8 @@ struct HolderInner {
     supervisor: Option<Arc<Supervisor>>,
     /// The sorted plugin names the active supervisor serves.
     plugins: Vec<String>,
+    /// The user `binaryPath` overrides the active supervisor was built with.
+    overrides: HashMap<String, std::path::PathBuf>,
 }
 
 impl NativeHolder {
@@ -55,6 +58,7 @@ impl NativeHolder {
             inner: Mutex::new(HolderInner {
                 supervisor: None,
                 plugins: Vec::new(),
+                overrides: HashMap::new(),
             }),
         })
     }
@@ -77,7 +81,9 @@ impl NativeHolder {
         helpers.sort_by(|a, b| a.plugin.cmp(&b.plugin));
         let names: Vec<String> = helpers.iter().map(|e| e.plugin.clone()).collect();
 
-        let raw = Value::Object(settings.settings().clone());
+        let raw = Value::Object(settings.global_settings().clone());
+        // `binaryPath` is user-level only (spec D3): a cloned repo's project settings must
+        // never point a trusted plugin's helper at its own binary.
         let (overrides, mut warnings) = binary_path_overrides(&raw);
         let same = {
             let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -88,6 +94,7 @@ impl NativeHolder {
             // Overrides are read again above so a changed `binaryPath` applies to the next
             // start; publishing the hints again is harmless.
             publish_hints(&helpers);
+            self.inner.lock().unwrap_or_else(|e| e.into_inner()).overrides = overrides;
             return warnings;
         }
         if helpers.is_empty() {
@@ -108,13 +115,15 @@ impl NativeHolder {
                     }
                 });
             }
-            self.inner.lock().unwrap_or_else(|e| e.into_inner()).plugins = Vec::new();
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            inner.plugins = Vec::new();
+            inner.overrides = HashMap::new();
             return warnings;
         }
         let supervisor = match Supervisor::new(
             default_home_dir(),
             helpers.clone(),
-            overrides,
+            overrides.clone(),
             SupervisorConfig::default(),
         ) {
             Ok(supervisor) => Arc::new(supervisor),
@@ -127,6 +136,7 @@ impl NativeHolder {
         let old = {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.plugins = names;
+            inner.overrides = overrides;
             inner.supervisor.replace(supervisor)
         };
         if let Some(old) = old {
@@ -145,6 +155,18 @@ impl NativeHolder {
             .unwrap_or_else(|e| e.into_inner())
             .supervisor
             .clone()
+    }
+
+    /// The user `binaryPath` override for `plugin`, if one is set. Tests use
+    /// it to prove a project-level value is ignored (spec D3).
+    #[cfg(test)]
+    pub(crate) fn override_for(&self, plugin: &str) -> Option<std::path::PathBuf> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .overrides
+            .get(plugin)
+            .cloned()
     }
 
     /// Gracefully shut the supervisor down (bounded by its own timeout): `hoocode/sessionEnding`
@@ -363,23 +385,62 @@ fn definition(
         background_placeholder: None,
         ordered_start: false,
         abort_grace: None,
-        execute: Arc::new(move |_id, params, _signal, _on_update, _ctx| {
+        execute: Arc::new(move |_id, params, signal, _on_update, _ctx| {
+            // Esc aborts the turn: the token fires (the helper sees a cancelled
+            // call) and the wait ends at once, without waiting out
+            // ensure/download/ready-wait. The dropped op may still have
+            // started server-side, like a call cut by a crash.
+            let cancel = CancellationToken::new();
+            let options = NativeCallOptions {
+                cancel: cancel.clone(),
+            };
             let output = match &executor {
-                NativeExecutor::Supervisor(supervisor) => handle
-                    .block_on(supervisor.call_tool(
-                        &plugin,
-                        &remote,
-                        params,
-                        NativeCallOptions::default(),
-                    ))
-                    .map_err(|error| ToolError::from(error.to_string()))?,
-                NativeExecutor::Child(state) => {
-                    super::native_child::call_tool(state, &handle, &plugin, &remote, params)
+                NativeExecutor::Supervisor(supervisor) => {
+                    let call = supervisor.call_tool(&plugin, &remote, params, options);
+                    abortable(&handle, signal.as_ref(), cancel, call)
                         .map_err(|error| ToolError::from(error.to_string()))?
                 }
+                NativeExecutor::Child(state) => super::native_child::call_tool(
+                    state,
+                    &handle,
+                    &plugin,
+                    &remote,
+                    params,
+                    signal.as_ref(),
+                    cancel,
+                )
+                .map_err(|error| ToolError::from(error.to_string()))?,
             };
             output_result(output)
         }),
+    }
+}
+
+/// Run an async tier C op from a tool's blocking thread, wiring the turn's
+/// abort signal to `cancel`: on abort the token fires and the wait ends at
+/// once with `McpError::Cancelled` (see the `execute` above).
+pub(crate) fn abortable<T>(
+    handle: &tokio::runtime::Handle,
+    signal: Option<&AbortSignal>,
+    cancel: CancellationToken,
+    op: impl std::future::Future<Output = Result<T, NativeError>>,
+) -> Result<T, NativeError> {
+    handle.block_on(async {
+        tokio::pin!(op);
+        tokio::select! {
+            result = &mut op => result,
+            _ = wait_for_abort(signal) => {
+                cancel.cancel();
+                Err(NativeError::Mcp(McpError::Cancelled))
+            }
+        }
+    })
+}
+
+async fn wait_for_abort(signal: Option<&AbortSignal>) {
+    match signal {
+        Some(signal) => signal.cancelled().await,
+        None => std::future::pending().await,
     }
 }
 
@@ -430,4 +491,126 @@ pub(crate) fn shell_spawn_hook(holder: Arc<NativeHolder>) -> BashSpawnHook {
         }
         ctx
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hoocode_code_mcp::TrustStore;
+    use hoocode_code_plugins::{load_plugins, LoadOptions};
+    use serde_json::json;
+    use std::collections::BTreeSet;
+    use std::path::Path;
+
+    fn write_native_plugin(dir: &Path) {
+        let root = dir.join("plugins").join("demo");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("plugin.json"),
+            serde_json::json!({
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "demo",
+                "version": "1.0.0",
+                "description": "Tier C fixture",
+                "extensions": {"dev.hoocode": {"native": {
+                    "server": "echo",
+                    "shared": true,
+                    "tools": [
+                        {"name": "echo", "description": "Echo.",
+                         "inputSchema": {"type": "object"}, "permission": "read"},
+                    ],
+                }}},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("mcp.json"),
+            r#"{"$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                "mcpServers": {"echo": {"type": "stdio", "command": "never-started"}}}"#,
+        )
+        .unwrap();
+    }
+
+    fn settings_with(
+        cwd: &Path,
+        agent_dir: &Path,
+        global_native: Option<serde_json::Value>,
+        project_native: Option<serde_json::Value>,
+    ) -> SettingsManager {
+        std::fs::create_dir_all(agent_dir).unwrap();
+        std::fs::create_dir_all(cwd.join(".hoocode")).unwrap();
+        let mut global = serde_json::Map::new();
+        if let Some(native) = global_native {
+            global.insert("nativeHelpers".into(), native);
+        }
+        std::fs::write(
+            agent_dir.join("settings.json"),
+            serde_json::Value::Object(global).to_string(),
+        )
+        .unwrap();
+        let mut project = serde_json::Map::new();
+        if let Some(native) = project_native {
+            project.insert("nativeHelpers".into(), native);
+        }
+        std::fs::write(
+            cwd.join(".hoocode/settings.json"),
+            serde_json::Value::Object(project).to_string(),
+        )
+        .unwrap();
+        SettingsManager::create(cwd, agent_dir)
+    }
+
+    fn native_helpers_of(dir: &Path) -> PluginSet {
+        std::fs::create_dir_all(dir.join("repo")).unwrap();
+        write_native_plugin(dir);
+        let trust = TrustStore::empty(dir.join("trust.json"));
+        load_plugins(&LoadOptions {
+            project_folder: dir.join("repo"),
+            user_plugins_dir: dir.join("plugins"),
+            data_root: dir.join("plugin-data"),
+            trust: &trust,
+            untrusted_installs: BTreeSet::new(),
+            installs_unreadable: None,
+        })
+    }
+
+    /// `binaryPath` is user-level only (spec D3): a project settings value is
+    /// ignored, a global one is honored.
+    #[test]
+    fn binary_path_is_user_level_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let set = native_helpers_of(dir.path());
+        assert!(
+            set.native_helpers().iter().any(|e| e.plugin == "demo"),
+            "the fixture plugin parses its native block"
+        );
+        let mk = |name: &str| json!({name: {"binaryPath": "/abs/project-binary"}});
+        // A project-only value is ignored: no override, no warning.
+        let settings = settings_with(
+            &dir.path().join("repo"),
+            &dir.path().join("agent"),
+            None,
+            Some(mk("demo")),
+        );
+        assert!(settings.project_settings().contains_key("nativeHelpers"));
+        let holder = NativeHolder::new();
+        let warnings = holder.sync(&set, &settings);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(holder.override_for("demo"), None);
+        // A global value is honored alongside an (ignored) project one.
+        let settings = settings_with(
+            &dir.path().join("repo"),
+            &dir.path().join("agent"),
+            Some(json!({"demo": {"binaryPath": "/abs/user-binary"}})),
+            Some(mk("demo")),
+        );
+        let holder = NativeHolder::new();
+        let warnings = holder.sync(&set, &settings);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            holder.override_for("demo"),
+            Some(std::path::PathBuf::from("/abs/user-binary"))
+        );
+    }
 }

@@ -17,17 +17,19 @@ use std::sync::{Arc, Mutex};
 
 use hoocode_agent_mcp::{McpError, ToolOutput};
 use hoocode_agent_types::ToolOrigin;
+use hoocode_ai_types::AbortSignal;
 use hoocode_code_native::{
     helper_socket_env_name, mint_agent, AgentIdentity, NativeCallOptions, NativeClient,
-    NativeError, Supervisor, AGENT_ID_ENV, AGENT_TOKEN_ENV,
+    NativeError, AGENT_ID_ENV, AGENT_TOKEN_ENV,
 };
 use hoocode_code_plugins::PluginSet;
 use hoocode_code_subagents::pool::{HostFuture, NativeChildHost};
 use hoocode_code_tool_api::ToolDefinition;
 use hoocode_code_tool_bash::{BashSpawnContext, BashSpawnHook};
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 
-use crate::native_tools::{self, NativeExecutor};
+use crate::native_tools::{self, NativeExecutor, NativeHolder};
 use crate::runtime::Diagnostics;
 
 /// Per-session tier C state of a process that may run as a subagent child: its
@@ -102,23 +104,24 @@ impl ChildNativeState {
 /// (recursively), so a grandchild's EnsureHelper reaches the helper through
 /// every level.
 pub(crate) struct CliNativeHost {
-    /// Whether the session has a shared tier C helper at all: without one no
-    /// identity is minted and every EnsureHelper is denied.
-    has_shared: bool,
     shared: Arc<ChildNativeState>,
     mode: HostMode,
 }
 
 enum HostMode {
     Root {
-        supervisor: Arc<Supervisor>,
+        holder: Arc<NativeHolder>,
         children: Mutex<HashMap<String, AgentIdentity>>,
-        /// (task id, plugin) pairs already registered: each child is
-        /// announced to a helper generation at most once (the supervisor
-        /// itself re-announces every live agent after a restart).
-        registered: Mutex<HashSet<(String, String)>>,
+        /// `(task id, plugin, token)` already registered: keyed by token so
+        /// a retried task (same task id, fresh token) registers again
+        /// instead of reusing the dead token. Entries leave in `child_ended`;
+        /// a failed register never marks.
+        registered: Mutex<HashSet<(String, String, String)>>,
     },
     Child {
+        /// The shared plugin names this session offers: `EnsureHelper` for
+        /// anything else is refused without a relay round trip.
+        shared_plugins: HashSet<String>,
         children: Mutex<HashMap<String, ChildReg>>,
     },
 }
@@ -129,27 +132,31 @@ struct ChildReg {
 }
 
 impl CliNativeHost {
-    pub(crate) fn root(
-        supervisor: Arc<Supervisor>,
-        shared: Arc<ChildNativeState>,
-        has_shared: bool,
-    ) -> Self {
+    /// The tier C host of a root session: serves from the session holder's
+    /// current supervisor (resolved on every call, so a mid-session plugin
+    /// reload is picked up).
+    pub(crate) fn root(holder: Arc<NativeHolder>, shared: Arc<ChildNativeState>) -> Self {
         Self {
-            has_shared,
             shared,
             mode: HostMode::Root {
-                supervisor,
+                holder,
                 children: Mutex::new(HashMap::new()),
                 registered: Mutex::new(HashSet::new()),
             },
         }
     }
 
-    pub(crate) fn child(shared: Arc<ChildNativeState>, has_shared: bool) -> Self {
+    /// The tier C host of a subagent child: serves from its own connection,
+    /// asking its own parent first. `shared_plugins` are the shared helper
+    /// names this session offers.
+    pub(crate) fn child(
+        shared: Arc<ChildNativeState>,
+        shared_plugins: HashSet<String>,
+    ) -> Self {
         Self {
-            has_shared,
             shared,
             mode: HostMode::Child {
+                shared_plugins,
                 children: Mutex::new(HashMap::new()),
             },
         }
@@ -158,15 +165,15 @@ impl CliNativeHost {
 
 impl NativeChildHost for CliNativeHost {
     fn child_env(&self, task_id: &str) -> Option<Vec<(String, String)>> {
-        if !self.has_shared {
-            return None;
-        }
         match &self.mode {
             HostMode::Root {
-                supervisor,
+                holder,
                 children,
                 ..
             } => {
+                // The root serves from its supervisor directly: mint while
+                // the session has a shared helper.
+                let supervisor = holder.supervisor().filter(|s| s.has_shared_helpers())?;
                 let identity = supervisor.mint_agent("root", task_id).ok()?;
                 let vars = identity.child_env().into_iter().collect::<Vec<_>>();
                 children
@@ -175,7 +182,20 @@ impl NativeChildHost for CliNativeHost {
                     .insert(task_id.to_owned(), identity);
                 Some(vars)
             }
-            HostMode::Child { children } => {
+            HostMode::Child {
+                shared_plugins,
+                children,
+            } => {
+                // Without a shared helper there is nothing to hand out, and
+                // without a parent channel there is no EnsureHelper relay: a
+                // minted identity then would offer tools whose every call
+                // fails.
+                if shared_plugins.is_empty() {
+                    return None;
+                }
+                if hoocode_code_subagents::instance::clearance_relay().is_none() {
+                    return None;
+                }
                 let own = self.shared.identity()?;
                 let identity = mint_agent(&own, task_id);
                 let vars = identity.child_env().into_iter().collect::<Vec<_>>();
@@ -199,10 +219,20 @@ impl NativeChildHost for CliNativeHost {
         Box::pin(async move {
             match &self.mode {
                 HostMode::Root {
-                    supervisor,
+                    holder,
                     children,
                     registered,
                 } => {
+                    let supervisor = holder.supervisor().ok_or_else(|| {
+                        "This session has no tier C helper.".to_string()
+                    })?;
+                    // A child could otherwise get a root-only helper: refuse
+                    // before anything starts or registers.
+                    if !supervisor.is_shared(plugin) {
+                        return Err(format!(
+                            "Plugin {plugin} does not share its helper with subagents (shared: false): no socket to hand out."
+                        ));
+                    }
                     let identity = children
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -215,19 +245,42 @@ impl NativeChildHost for CliNativeHost {
                         .ensure(plugin)
                         .await
                         .map_err(|error| error.to_string())?;
+                    // Keyed by token: a retried task (same task id, fresh
+                    // token) registers again instead of reusing the dead
+                    // token, and a failed register never marks.
+                    let key = (
+                        task_id.to_owned(),
+                        plugin.to_owned(),
+                        identity.token.clone(),
+                    );
                     let fresh = registered
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
-                        .insert((task_id.to_owned(), plugin.to_owned()));
+                        .insert(key.clone());
                     if fresh {
-                        supervisor
-                            .register_child(plugin, &identity)
-                            .await
-                            .map_err(|error| error.to_string())?;
+                        if let Err(error) =
+                            supervisor.register_child(plugin, &identity).await
+                        {
+                            registered
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .remove(&key);
+                            return Err(error.to_string());
+                        }
                     }
                     Ok(socket)
                 }
-                HostMode::Child { children } => {
+                HostMode::Child {
+                    shared_plugins,
+                    children,
+                } => {
+                    // Refuse root-only helpers before relaying up: the
+                    // parent would refuse them anyway.
+                    if !shared_plugins.contains(plugin) {
+                        return Err(format!(
+                            "Plugin {plugin} does not share its helper with subagents (shared: false): no socket to hand out."
+                        ));
+                    }
                     let identity = children
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -278,19 +331,29 @@ impl NativeChildHost for CliNativeHost {
         Box::pin(async move {
             match &self.mode {
                 HostMode::Root {
-                    supervisor,
+                    holder,
                     children,
-                    ..
+                    registered,
                 } => {
                     let identity = children
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .remove(task_id);
+                    // The token the retry (or the failed register) left
+                    // behind must not block the next registration.
+                    registered
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .retain(|(task, _, _)| task != task_id);
                     if let Some(identity) = identity {
-                        let _ = supervisor.end_agent(&identity.agent_id).await;
+                        if let Some(supervisor) = holder.supervisor() {
+                            let _ = supervisor.end_agent(&identity.agent_id).await;
+                        }
                     }
                 }
-                HostMode::Child { children } => {
+                HostMode::Child {
+                    children, ..
+                } => {
                     let reg = children
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -341,66 +404,87 @@ pub(crate) fn build_shared(
     )
 }
 
-/// Run one shared tool in a subagent child: EnsureHelper for the socket (the
-/// error names the plugin when there is no parent channel), connect with this
-/// process's identity, call, and — on an auth or connection failure only —
-/// ensure once more and retry once (the helper may have restarted and dropped
-/// the token). Anything else surfaces at once. Calls are bounded by the
-/// client's own timeout.
+/// Run one shared tool in a subagent child: one EnsureHelper round trip per
+/// plugin per process, then the cached socket and connection; re-asked only
+/// after a recoverable error (the helper may have restarted and dropped the
+/// token). The turn's abort signal fires `cancel` and ends the wait at once
+/// (see `native_tools::abortable`). Calls are bounded by the client's own timeout.
 pub(crate) fn call_tool(
     state: &Arc<ChildNativeState>,
     handle: &tokio::runtime::Handle,
     plugin: &str,
     tool: &str,
     params: Value,
+    signal: Option<&AbortSignal>,
+    cancel: CancellationToken,
 ) -> Result<ToolOutput, NativeError> {
-    let identity = state.identity().ok_or_else(|| {
-        NativeError::Io(format!(
+    let cancel2 = cancel.clone();
+    super::native_tools::abortable(handle, signal, cancel, async move {
+        let identity = state.identity().ok_or_else(|| {
+            NativeError::Io(format!(
             "Cannot run the shared plugin tool {tool}: this subagent was started without a tier C identity."
             ))
-    })?;
-    let relay = hoocode_code_subagents::instance::clearance_relay().ok_or_else(|| {
-        NativeError::Io(format!(
-            "Cannot run the shared plugin tool {tool}: no parent channel in this process."
-        ))
-    })?;
-    let attempt = || -> Result<ToolOutput, NativeError> {
-        let socket: PathBuf = relay
-            .ask_ensure(plugin)
-            .map(PathBuf::from)
-            .map_err(NativeError::Io)?;
+        })?;
+        let relay = hoocode_code_subagents::instance::clearance_relay().ok_or_else(|| {
+            NativeError::Io(format!(
+                "Cannot run the shared plugin tool {tool}: no parent channel in this process."
+            ))
+        })?;
+        // One EnsureHelper round trip per plugin per process: the socket and
+        // the parent's connection are cached; re-asked only after a
+        // recoverable error. (The relay answer itself blocks the tool
+        // thread; the abort token still cancels the call that follows.)
         let client = match state.cached(plugin) {
             Some(client) => client,
-            None => {
-                let client = handle.block_on(NativeClient::connect(&socket, plugin, &identity))?;
-                state.store(plugin, socket, client.clone());
-                client
-            }
+            None => connect_cached(state, &relay, plugin, &identity).await?,
         };
-        handle.block_on(client.call_tool(tool, params.clone(), NativeCallOptions::default()))
-    };
-    match attempt() {
-        Ok(output) => Ok(output),
-        Err(error) if is_recoverable(&error) => {
-            // The helper may have restarted since the last call: drop the
-            // cached connection, register again, and retry once.
-            state.forget(plugin);
-            attempt()
+        let options = NativeCallOptions {
+            cancel: cancel2.clone(),
+        };
+        match client.call_tool(tool, params.clone(), options).await {
+            Ok(output) => Ok(output),
+            Err(error) if is_recoverable(&error) => {
+                // The request never reached the helper (a connect failure or
+                // an auth rejection before the send): drop the cached
+                // connection, register again, and retry once. Anything else
+                // — including a mid-call disconnect — may have run and is
+                // returned.
+                state.forget(plugin);
+                let client = connect_cached(state, &relay, plugin, &identity).await?;
+                let options = NativeCallOptions { cancel: cancel2 };
+                client.call_tool(tool, params, options).await
+            }
+            Err(error) => Err(error),
         }
-        Err(error) => Err(error),
-    }
+    })
 }
 
-/// An error a second EnsureHelper round-trip may fix: the helper restarted
-/// (dropped tokens, dropped connections) since the cached client connected.
+/// Ask the parent for `plugin`'s socket and connect with this process's
+/// identity, caching both for the next call.
+async fn connect_cached(
+    state: &Arc<ChildNativeState>,
+    relay: &Arc<dyn hoocode_code_permissions::ClearanceRelay>,
+    plugin: &str,
+    identity: &AgentIdentity,
+) -> Result<NativeClient, NativeError> {
+    let socket: PathBuf = relay
+        .ask_ensure(plugin)
+        .map(PathBuf::from)
+        .map_err(NativeError::Io)?;
+    let client = NativeClient::connect(&socket, plugin, identity).await?;
+    state.store(plugin, socket, client.clone());
+    Ok(client)
+}
+
+/// An error a second EnsureHelper round-trip may fix: the request never
+/// reached the helper (a connect failure, or an auth rejection before the
+/// send), so a replay is safe. A mid-call `Disconnected` may have run
+/// server-side and must not be replayed.
 fn is_recoverable(error: &NativeError) -> bool {
     matches!(
         error,
         NativeError::Mcp(
-            McpError::Unauthorized(_)
-                | McpError::AuthRequired { .. }
-                | McpError::Disconnected(_)
-                | McpError::Connect(_)
+            McpError::Connect(_) | McpError::Unauthorized(_) | McpError::AuthRequired { .. }
         )
     )
 }
@@ -435,4 +519,212 @@ pub(crate) fn has_shared_helpers(plugins: &PluginSet) -> bool {
         .native_helpers()
         .iter()
         .any(|entry| entry.helper.spec.shared)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use hoocode_code_mcp::TrustStore;
+    use hoocode_code_plugins::{load_plugins, LoadOptions};
+    use hoocode_code_settings::SettingsManager;
+    use serde_json::json;
+    use std::collections::BTreeSet;
+    use std::path::{Path, PathBuf};
+
+    /// The built echo helper fixture (same recipe as the native integration
+    /// tests): builds once, reuses the binary afterwards.
+    fn fixture_bin() -> PathBuf {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest
+            .parent()
+            .and_then(|dir| dir.parent())
+            .expect("crate lives in <workspace>/crates/<name>")
+            .to_path_buf();
+        let bin = workspace
+            .join("target")
+            .join("debug")
+            .join("examples")
+            .join(format!("echo_helper{}", std::env::consts::EXE_SUFFIX));
+        if !bin.is_file() {
+            let status = std::process::Command::new("cargo")
+                .arg("build")
+                .arg("-p")
+                .arg("hoocode-agent-mcp")
+                .arg("--example")
+                .arg("echo_helper")
+                .current_dir(&workspace)
+                .status()
+                .expect("cargo builds the echo fixture");
+            assert!(status.success(), "cargo build --example echo_helper");
+        }
+        assert!(bin.is_file(), "the echo fixture was built");
+        bin
+    }
+
+    fn write_plugin(dir: &Path, name: &str, shared: bool, receipts: &Path) {
+        let root = dir.join(name);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("plugin.json"),
+            json!({
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": name,
+                "version": "1.0.0",
+                "description": "Tier C fixture",
+                "extensions": {"dev.hoocode": {"native": {
+                    "server": "echo",
+                    "shared": shared,
+                    "tools": [
+                        {"name": "echo", "description": "Echo.",
+                         "inputSchema": {"type": "object"}, "permission": "read"},
+                    ],
+                }}},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("mcp.json"),
+            json!({
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                "mcpServers": {"echo": {
+                    "type": "stdio",
+                    "command": "never-started-without-binaryPath",
+                    "env": {"HOOCODE_ECHO_RECEIPT_DIR": receipts},
+                }},
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        holder: Arc<NativeHolder>,
+        receipts: PathBuf,
+    }
+
+    impl Fixture {
+        fn start() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let plugins = dir.path().join("plugins");
+            let receipts = dir.path().join("receipts");
+            std::fs::create_dir_all(&receipts).unwrap();
+            write_plugin(&plugins, "demo", true, &receipts);
+            write_plugin(&plugins, "rt", false, &receipts);
+            std::fs::create_dir_all(dir.path().join("repo")).unwrap();
+            let trust = TrustStore::empty(dir.path().join("trust.json"));
+            let set = load_plugins(&LoadOptions {
+                project_folder: dir.path().join("repo"),
+                user_plugins_dir: plugins,
+                data_root: dir.path().join("plugin-data"),
+                trust: &trust,
+                untrusted_installs: BTreeSet::new(),
+                installs_unreadable: None,
+            });
+            assert!(
+                set.native_helpers().iter().any(|e| e.plugin == "demo"),
+                "the shared fixture parses"
+            );
+            assert!(
+                set.native_helpers().iter().any(|e| e.plugin == "rt"),
+                "the root-only fixture parses"
+            );
+            let settings = SettingsManager::in_memory(
+                json!({"nativeHelpers": {"demo": {"binaryPath": fixture_bin()}}})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+            let holder = NativeHolder::new();
+            let warnings = holder.sync(&set, &settings);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            Self {
+                _dir: dir,
+                holder,
+                receipts,
+            }
+        }
+
+        fn agent_started_receipts(&self) -> Vec<PathBuf> {
+            let mut out: Vec<PathBuf> = std::fs::read_dir(&self.receipts)
+                .unwrap()
+                .filter_map(|entry| {
+                    let path = entry.ok()?.path();
+                    let name = path.file_name()?.to_str()?;
+                    (name.starts_with("agent-started-") && name.ends_with(".received"))
+                        .then(|| path.clone())
+                })
+                .collect();
+            out.sort();
+            out
+        }
+    }
+
+    /// `EnsureHelper` for a `shared: false` plugin is refused on both sides
+    /// before anything starts or registers.
+    #[tokio::test]
+    async fn unshared_ensure_helper_is_refused_before_start() {
+        let fixture = Fixture::start();
+        let host = CliNativeHost::root(
+            fixture.holder.clone(),
+            Arc::new(ChildNativeState::new()),
+        );
+        assert!(host.child_env("t1").is_some(), "a shared helper mints");
+        let error = host
+            .ensure_helper("t1", "rt")
+            .await
+            .expect_err("root-only helpers hand out no socket");
+        assert!(error.contains("shared"), "{error}");
+        let supervisor = fixture.holder.supervisor().expect("supervisor");
+        assert_eq!(supervisor.spawn_count("rt"), 0);
+        assert!(!supervisor.live_sockets().contains_key("rt"));
+        // The child side refuses before relaying up: no parent channel needed.
+        let child = CliNativeHost::child(
+            Arc::new(ChildNativeState::new()),
+            ["demo".to_owned()].into_iter().collect(),
+        );
+        let error = child
+            .ensure_helper("t9", "rt")
+            .await
+            .expect_err("root-only helpers are refused in the child");
+        assert!(error.contains("shared"), "{error}");
+    }
+
+    /// A retried task (same task id, fresh token) registers again after
+    /// `child_ended`: the helper re-announces the new token instead of
+    /// skipping a stale registration.
+    #[tokio::test]
+    async fn retried_task_registers_again_after_child_ended() {
+        let fixture = Fixture::start();
+        let host = CliNativeHost::root(
+            fixture.holder.clone(),
+            Arc::new(ChildNativeState::new()),
+        );
+        assert!(host.child_env("t1").is_some());
+        host.ensure_helper("t1", "demo")
+            .await
+            .expect("first ensure registers");
+        let supervisor = fixture.holder.supervisor().expect("supervisor");
+        assert_eq!(supervisor.spawn_count("demo"), 1);
+        assert_eq!(fixture.agent_started_receipts().len(), 1);
+        // The retry mints a fresh token under the same task id.
+        host.child_ended("t1").await;
+        // Delete the announcement: the retry must announce the fresh token
+        // again (the same file name would hide a skipped registration).
+        for receipt in fixture.agent_started_receipts() {
+            std::fs::remove_file(receipt).unwrap();
+        }
+        assert!(host.child_env("t1").is_some());
+        host.ensure_helper("t1", "demo")
+            .await
+            .expect("the retry registers again");
+        assert_eq!(supervisor.spawn_count("demo"), 1, "no restart");
+        assert_eq!(
+            fixture.agent_started_receipts().len(),
+            1,
+            "the fresh token is announced again"
+        );
+        let _ = supervisor.shutdown().await;
+    }
 }

@@ -737,6 +737,7 @@ fn build_session(args: &Args, interactive: bool) -> (AgentSession, Diagnostics) 
         None,
         interactive,
         None,
+        false,
     );
     (session, diagnostics)
 }
@@ -788,6 +789,8 @@ fn initial_session_manager(args: &Args, interactive: bool) -> SessionManager {
 /// the `--models` scope, the model from the flags (or `findInitialModel`
 /// inside `create_agent_session`), `--api-key` as a runtime key for the chosen
 /// provider, and the default or light tools. `auth` is shared across runtimes.
+/// `is_app_server` turns tier C off (no native tools, no supervisor, no
+/// host): app-server threads share one process with no per-session tier C state.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn create_runtime(
     args: &Args,
@@ -798,6 +801,7 @@ fn create_runtime(
     session_start_event: Option<SessionStartEvent>,
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
+    is_app_server: bool,
 ) -> (AgentSession, AgentSessionServices, Diagnostics) {
     let mut settings = SettingsManager::create_default(&cwd);
     if let Some(patterns) = &args.models {
@@ -870,6 +874,7 @@ fn create_runtime(
         gate,
         &plugins,
         &mut diagnostics,
+        is_app_server,
     );
     (session, services, diagnostics)
 }
@@ -914,6 +919,7 @@ fn assemble_session(
     gate: Option<Arc<dyn PermissionGate>>,
     plugins: &hoocode_code_plugins::PluginSet,
     diagnostics: &mut Diagnostics,
+    is_app_server: bool,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
     // The gate is built here, not at `create_agent_session`, so the plugin tools' network
@@ -927,8 +933,14 @@ fn assemble_session(
         || hoocode_code_subagents::depth::current_subagent_depth(
             &hoocode_code_subagents::depth::ProcessEnv,
         ) > 0;
+    // App-server threads share one process across sessions with no per-session
+    // tier C state (process-wide holder, hints and host): tier C stays off
+    // there until that exists (no native tools, no supervisor, no host).
+    // TODO(per-session-native): turn tier C back on in the app-server once the
+    // holder, hints and host are per-session instead of process-wide.
+    let tier_c = !is_app_server;
     let native_holder = NativeHolder::new();
-    if ext_tools_wanted(args, light) && !in_subagent {
+    if tier_c && ext_tools_wanted(args, light) && !in_subagent {
         for warning in native_holder.sync(plugins, &settings) {
             diagnostics.push((DiagnosticKind::Warning, warning));
         }
@@ -938,33 +950,44 @@ fn assemble_session(
     // as a subagent, and its cached helper connections. The plugin source, the Shell hook
     // and the pool host share it; the next session replaces it.
     let child_native = Arc::new(native_child::ChildNativeState::new());
-    // The pool's tier C host for this session (spec D5): the root serves from its supervisor,
-    // a subagent child from its own connection (asking its own parent first). Only installed
-    // when the session has a shared helper; the existing pool picks it up, like the
-    // clearance relay. `None` clears a previous session's host.
-    let native_host: Option<Arc<dyn hoocode_code_subagents::pool::NativeChildHost>> = if in_subagent
-    {
-        if native_child::has_shared_helpers(plugins) {
-            child_native.identity().map(|_| {
-                Arc::new(native_child::CliNativeHost::child(
-                    child_native.clone(),
-                    true,
-                )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>
-            })
+    // The pool's tier C host for this session (spec D5). The root host holds
+    // the holder and resolves the current supervisor on every call, so a
+    // mid-session plugin reload is picked up; it is installed whenever native
+    // tools are wanted, and mints only while a shared helper exists. A
+    // subagent child serves from its own connection (asking its own parent
+    // first), only when it has an identity and a parent channel to ask
+    // through: without a relay its tools' every call would fail. `None`
+    // clears a previous session's host. The app-server installs none (tier C
+    // is off there).
+    let native_host: Option<Arc<dyn hoocode_code_subagents::pool::NativeChildHost>> = if !tier_c {
+        None
+    } else if in_subagent {
+        if native_child::has_shared_helpers(plugins)
+            && hoocode_code_subagents::instance::clearance_relay().is_some()
+            && child_native.identity().is_some()
+        {
+            let shared: std::collections::HashSet<String> = plugins
+                .native_helpers()
+                .into_iter()
+                .filter(|entry| entry.helper.spec.shared)
+                .map(|entry| entry.plugin)
+                .collect();
+            Some(Arc::new(native_child::CliNativeHost::child(
+                child_native.clone(),
+                shared,
+            )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>)
         } else {
             None
         }
+    } else if ext_tools_wanted(args, light) {
+        Some(
+            Arc::new(native_child::CliNativeHost::root(
+                native_holder.clone(),
+                child_native.clone(),
+            )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>,
+        )
     } else {
-        native_holder
-            .supervisor()
-            .filter(|supervisor| supervisor.has_shared_helpers())
-            .map(|supervisor| {
-                Arc::new(native_child::CliNativeHost::root(
-                    supervisor,
-                    child_native.clone(),
-                    true,
-                )) as Arc<dyn hoocode_code_subagents::pool::NativeChildHost>
-            })
+        None
     };
     hoocode_code_subagents::instance::set_native_child_host(native_host);
     // Background shell jobs (`enableBackgroundShell`, on by default) in the
@@ -1619,6 +1642,7 @@ fn build_session_runtime(
         None,
         interactive,
         None,
+        false,
     );
     let factory_args = args.clone();
     let factory: hoocode_code_agent_session::RuntimeFactory = Arc::new(move |request| {
@@ -1640,6 +1664,7 @@ fn build_session_runtime(
             request.session_start_event,
             interactive,
             None,
+            false,
         );
         let created = CreatedRuntime {
             session,
@@ -1729,6 +1754,7 @@ impl AppServerSessions {
             None,
             false,
             Some(gate),
+            true,
         );
         if let Some((_, message)) = diagnostics
             .iter()
@@ -2393,6 +2419,7 @@ mod tests {
             None,
             &hoocode_code_plugins::PluginSet::default(),
             &mut Diagnostics::new(),
+            false,
         );
         (session.system_prompt(), session.get_active_tool_names())
     }
@@ -2462,6 +2489,7 @@ mod tests {
             None,
             &hoocode_code_plugins::PluginSet::default(),
             &mut Diagnostics::new(),
+            false,
         );
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
@@ -2899,6 +2927,7 @@ mod tests {
                 None,
                 &hoocode_code_plugins::PluginSet::default(),
                 &mut Diagnostics::new(),
+                false,
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {
