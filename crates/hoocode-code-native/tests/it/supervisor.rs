@@ -458,6 +458,37 @@ async fn sleep_waits_then_answers() {
     helper.supervisor().shutdown().await.expect("shutdown");
 }
 
+/// `has_shared_helpers` gates the child env: only a shared helper means
+/// subagents get agent identities.
+#[test]
+fn shared_helpers_gate_the_child_env() {
+    use crate::common::echo_entry;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let exe = crate::common::fixture_bin();
+    let mut unshared = echo_entry(dir.path(), "echo", &exe);
+    unshared.helper.spec.shared = false;
+    let supervisor = Supervisor::new(
+        dir.path().join("home"),
+        vec![unshared],
+        HashMap::new(),
+        SupervisorConfig::for_tests(),
+    )
+    .expect("supervisor");
+    assert!(!supervisor.has_shared_helpers());
+    assert!(supervisor.has_helpers());
+    let shared = echo_entry(dir.path(), "echo", &exe);
+    assert!(shared.helper.spec.shared);
+    let supervisor = Supervisor::new(
+        dir.path().join("home"),
+        vec![shared],
+        HashMap::new(),
+        SupervisorConfig::for_tests(),
+    )
+    .expect("supervisor");
+    assert!(supervisor.has_shared_helpers());
+    let _ = std::fs::remove_dir_all(supervisor.runtime_dir());
+}
+
 /// The helper exits when its parent pid is gone: spawn it with a fake
 /// short-lived parent, reap that parent, and the helper must follow.
 #[tokio::test]

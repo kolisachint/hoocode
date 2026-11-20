@@ -16,7 +16,10 @@ mod resolve;
 mod runtime_dir;
 mod supervisor;
 
-pub use agents::{mint_agent, new_token, AgentIdentity, AGENT_META_KEY, ROOT_AGENT_ID};
+pub use agents::{
+    mint_agent, new_token, AgentIdentity, AGENT_DEPTH_ENV, AGENT_ID_ENV, AGENT_META_KEY,
+    AGENT_PARENT_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
+};
 pub use download::{
     ensure_plugin_binary, fetch_bytes, file_name_from_url, sha256_hex, verify_sha256,
     MAX_DOWNLOAD_BYTES,
@@ -29,7 +32,5 @@ pub use runtime_dir::{
     create_runtime_dir, internal_runtime_dir, random_suffix, socket_path_for,
     INTERNAL_RUNTIME_DIR_ENV, MAX_SOCKET_PATH_BYTES,
 };
-pub use supervisor::{
-    helper_socket_env_name, NativeClient, Supervisor, SupervisorConfig, AGENT_ID_ENV,
-    AGENT_TOKEN_ENV, HELPER_SOCKET_ENV, HELPER_TOKEN_ENV,
-};
+pub use supervisor::{helper_socket_env_name, NativeClient, Supervisor, SupervisorConfig};
+pub use supervisor::{HELPER_SOCKET_ENV, HELPER_TOKEN_ENV};

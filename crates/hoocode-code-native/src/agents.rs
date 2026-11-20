@@ -7,7 +7,18 @@
 //! `root`. Slice 4 passes these through the parent<-child relay; this crate
 //! only mints them and tells helpers about them.
 
+use std::collections::HashMap;
+
 use serde_json::{Map, Value};
+
+/// The agent id in the child env (spec D5).
+pub const AGENT_ID_ENV: &str = "HOOCODE_AGENT_ID";
+/// The bearer token in the child env (spec D5). Never logged.
+pub const AGENT_TOKEN_ENV: &str = "HOOCODE_AGENT_TOKEN";
+/// The parent agent id in the child env (spec D5).
+pub const AGENT_PARENT_ENV: &str = "HOOCODE_AGENT_PARENT";
+/// The agent depth in the child env (spec D5).
+pub const AGENT_DEPTH_ENV: &str = "HOOCODE_AGENT_DEPTH";
 
 /// The root agent's id.
 pub const ROOT_AGENT_ID: &str = "root";
@@ -79,6 +90,60 @@ pub fn new_token() -> String {
     let mut bytes = [0u8; 32];
     rand::fill(&mut bytes);
     hex_encode(&bytes)
+}
+
+/// Read one variable, ignoring empty values.
+fn read_env(get: &dyn Fn(&str) -> Option<String>, name: &str) -> Option<String> {
+    get(name).filter(|value| !value.is_empty())
+}
+
+/// The identity described by the four child env variables (spec D5): `None`
+/// when the id or token is missing or empty (a root process, or a child
+/// spawned without tier C). The depth falls back to 0 when it does not
+/// parse; an empty parent means the root. Never logs: the token stays in
+/// the returned value.
+fn from_vars(get: &dyn Fn(&str) -> Option<String>) -> Option<AgentIdentity> {
+    let agent_id = read_env(get, AGENT_ID_ENV)?;
+    let token = read_env(get, AGENT_TOKEN_ENV)?;
+    let parent_id = read_env(get, AGENT_PARENT_ENV);
+    let depth = read_env(get, AGENT_DEPTH_ENV)
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(0);
+    Some(AgentIdentity {
+        agent_id,
+        parent_id,
+        depth,
+        token,
+    })
+}
+
+impl AgentIdentity {
+    /// This process's own identity from its environment ([`from_map`] over
+    /// [`std::env`]): `Some` in a subagent child spawned from [`mint_agent`],
+    /// `None` in a root process. Never logs.
+    pub fn from_env() -> Option<Self> {
+        from_vars(&|name| std::env::var(name).ok())
+    }
+
+    /// [`from_env`](Self::from_env) over an explicit map (tests, child env builders).
+    pub fn from_map(env: &HashMap<String, String>) -> Option<Self> {
+        from_vars(&|name| env.get(name).cloned())
+    }
+
+    /// This identity as the four child env variables (spec D5): id, token,
+    /// parent (empty for the root) and depth. The caller passes them on
+    /// explicitly (children start with `env_clear`). Never logs.
+    pub fn child_env(&self) -> [(String, String); 4] {
+        [
+            (AGENT_ID_ENV.to_owned(), self.agent_id.clone()),
+            (AGENT_TOKEN_ENV.to_owned(), self.token.clone()),
+            (
+                AGENT_PARENT_ENV.to_owned(),
+                self.parent_id.clone().unwrap_or_default(),
+            ),
+            (AGENT_DEPTH_ENV.to_owned(), self.depth.to_string()),
+        ]
+    }
 }
 
 /// Mint a child agent of `parent` for `task_id`: id `<parent>/<task id>`,

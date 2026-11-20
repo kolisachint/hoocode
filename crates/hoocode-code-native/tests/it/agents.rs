@@ -53,6 +53,47 @@ fn started_params_carry_the_token() {
 /// The supervisor mints for the root and registered agents, and refuses
 /// strangers. No helper starts: this runs on any platform.
 #[test]
+fn identities_round_trip_through_the_child_env() {
+    use hoocode_code_native::{
+        AGENT_DEPTH_ENV, AGENT_ID_ENV, AGENT_PARENT_ENV, AGENT_TOKEN_ENV,
+    };
+    let root = AgentIdentity::root("root-token");
+    let child = mint_agent(&root, "task-1");
+    let env: HashMap<String, String> = child.child_env().into_iter().collect();
+    assert_eq!(env[AGENT_ID_ENV], "root/task-1");
+    assert_eq!(env[AGENT_PARENT_ENV], "root");
+    assert_eq!(env[AGENT_DEPTH_ENV], "1");
+    assert_eq!(env[AGENT_TOKEN_ENV], child.token);
+    let back = AgentIdentity::from_map(&env).expect("identity");
+    assert_eq!(back.agent_id, child.agent_id);
+    assert_eq!(back.parent_id, child.parent_id);
+    assert_eq!(back.depth, child.depth);
+    assert_eq!(back.token, child.token);
+    // The root has an empty parent and parses a depth of 0.
+    let root_env: HashMap<String, String> = root.child_env().into_iter().collect();
+    assert_eq!(root_env[AGENT_PARENT_ENV], "");
+    let back = AgentIdentity::from_map(&root_env).expect("root identity");
+    assert_eq!(back.parent_id, None);
+    assert_eq!(back.depth, 0);
+}
+
+#[test]
+fn identity_from_map_needs_an_id_and_a_token() {
+    let mut env = HashMap::new();
+    assert!(AgentIdentity::from_map(&env).is_none());
+    env.insert("HOOCODE_AGENT_ID".to_owned(), "root/a".to_owned());
+    assert!(AgentIdentity::from_map(&env).is_none());
+    env.insert("HOOCODE_AGENT_TOKEN".to_owned(), "tok".to_owned());
+    let identity = AgentIdentity::from_map(&env).expect("identity");
+    assert_eq!(identity.agent_id, "root/a");
+    assert_eq!(identity.parent_id, None);
+    assert_eq!(identity.depth, 0);
+    // A depth that does not parse falls back to 0.
+    env.insert("HOOCODE_AGENT_DEPTH".to_owned(), "deep".to_owned());
+    assert_eq!(AgentIdentity::from_map(&env).expect("id").depth, 0);
+}
+
+#[test]
 fn supervisor_mints_for_known_parents() {
     let dir = tempfile::tempdir().expect("tempdir");
     let supervisor = Supervisor::new(

@@ -33,10 +33,7 @@ use crate::runtime_dir::{create_runtime_dir, socket_path_for};
 pub const HELPER_SOCKET_ENV: &str = "HOOCODE_HELPER_SOCKET";
 /// The root bearer token, in the helper's environment.
 pub const HELPER_TOKEN_ENV: &str = "HOOCODE_HELPER_TOKEN";
-/// The agent id the helper process runs as (`root`), in its environment.
-pub const AGENT_ID_ENV: &str = "HOOCODE_AGENT_ID";
-/// The root bearer token, in the Shell tool's environment (spec D5).
-pub const AGENT_TOKEN_ENV: &str = "HOOCODE_AGENT_TOKEN";
+use crate::agents::AGENT_ID_ENV;
 
 /// The Shell environment variable carrying one started helper's socket (spec D5):
 /// `HOOCODE_HELPER_SOCKET_<PLUGIN>`, with the plugin name uppercased and every
@@ -258,6 +255,16 @@ impl Supervisor {
     /// Whether this supervisor manages at least one helper.
     pub fn has_helpers(&self) -> bool {
         !self.inner.entries.is_empty()
+    }
+
+    /// Whether at least one managed helper is shared with subagents: only
+    /// then do spawned children get agent env and the EnsureHelper relay
+    /// (spec D5/D6).
+    pub fn has_shared_helpers(&self) -> bool {
+        self.inner
+            .entries
+            .values()
+            .any(|entry| entry.helper.spec.shared)
     }
 
     /// The socket paths of the helpers currently running (started and not yet
@@ -863,6 +870,7 @@ fn spawn_helper(
 /// The non-root side: one agent's connection to a helper, over its socket with
 /// its own token. Subagent processes build this after the parent relays the
 /// socket path (slice 4); this crate only connects.
+#[derive(Clone)]
 pub struct NativeClient {
     client: McpClient,
     identity: AgentIdentity,
