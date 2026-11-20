@@ -2761,6 +2761,7 @@ const DISPATCH_KEEP: usize = 50;
 const DISPATCH_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // the env test builds a pool, which needs a runtime for its lifeguard
 mod child_env_tests {
     use super::*;
 

@@ -497,6 +497,7 @@ pub(crate) fn shell_spawn_hook(holder: Arc<NativeHolder>) -> BashSpawnHook {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // the abortable test runs on its own runtime, like the tool threads
 mod tests {
     use super::*;
     use hoocode_code_mcp::TrustStore;

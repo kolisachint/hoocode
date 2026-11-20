@@ -188,9 +188,7 @@ impl NativeChildHost for CliNativeHost {
                 if shared_plugins.is_empty() {
                     return None;
                 }
-                if hoocode_code_subagents::instance::clearance_relay().is_none() {
-                    return None;
-                }
+                hoocode_code_subagents::instance::clearance_relay()?;
                 let own = self.shared.identity()?;
                 let identity = mint_agent(&own, task_id);
                 let vars = identity.child_env().into_iter().collect::<Vec<_>>();
@@ -513,6 +511,7 @@ pub(crate) fn has_shared_helpers(plugins: &PluginSet) -> bool {
 }
 
 #[cfg(all(test, unix))]
+#[allow(clippy::disallowed_methods)] // tests drive the fixture helper on their own runtime
 mod tests {
     use super::*;
     use hoocode_code_mcp::TrustStore;
