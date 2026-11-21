@@ -13,7 +13,11 @@ See [Commands](commands.md) for the other plugin commands.
 
 One shared Chromium serves the whole session. Each agent gets its own tabs,
 and each agent's first tab opens its own window. An agent never sees another
-agent's tabs, popups, or downloads. Subagents get the tools too: the plugin
+agent's tabs. Full isolation (popups, downloads) needs the hoo fork of
+agent-browser (versions with a `-hoo.N` suffix, pinned by the plugin); with
+upstream agent-browser the helper runs in a safe mode (`browser_tabs` lists
+and closes only the lease's own tab) and popups/downloads isolation is not
+guaranteed. Subagents get the tools too: the plugin
 marks its helper shared, so root and subagents browse side by side.
 
 The loop is the same every time: `browser_open` a URL, `browser_snapshot` for
@@ -49,7 +53,7 @@ Defaults fit most setups. These environment variables change them:
 | `HOO_BROWSER_HEADED=1` | Same as the headed backend |
 | `HOO_BROWSER_CHROME` | Path to Chromium or Chrome. Else agent-browser's own install, else common install paths |
 | `HOO_BROWSER_AGENT_BROWSER` | Path to the agent-browser CLI. Else the copy in the data dir, else `PATH` |
-| `HOO_BROWSER_DATA` | Where the helper keeps its profile, sockets, and log. hoocode sets it from the plugin data dir |
+| `HOO_BROWSER_DATA` | Where the helper keeps its profile and logs. hoocode sets it from the plugin data dir. The daemon sockets live under the per-session runtime dir, not here |
 
 ## Long tail
 
@@ -65,6 +69,9 @@ call).
 
 ## Data
 
-Everything lives under the plugin data dir: the Chromium profile, the
-agent-browser daemon sockets (`ab/`), and `hoo-browser.log` with per-call
-timings.
+Two homes. Under the plugin data dir (`HOO_BROWSER_DATA`): the Chromium
+profile, the pinned `agent-browser` binary, and the logs (`hoo-browser.log`
+with per-call timings, `chromium-stderr.log`). Under the per-session runtime
+dir (the helper socket's parent, removed when the session ends): the
+agent-browser daemon sockets (`ab/`) and the helper-owned
+`agent-browser-config.json` (`{}`).
