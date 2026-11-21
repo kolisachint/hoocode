@@ -1153,6 +1153,7 @@ fn assemble_session(
             settings: plugin_settings,
             gate: plugin_gate,
             subagent,
+            tier_c,
             native: native_holder.clone(),
             child_native: child_native.clone(),
         });

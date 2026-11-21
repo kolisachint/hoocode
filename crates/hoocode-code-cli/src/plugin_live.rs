@@ -34,6 +34,11 @@ pub(crate) struct PluginToolSource {
     pub(crate) gate: Arc<dyn PermissionGate>,
     /// A subagent runs no plugin MCP server (`docs/design/subagents.md`).
     pub(crate) subagent: bool,
+    /// Tier C runs only in single-session processes. The app-server shares one
+    /// process across sessions with no per-session tier C state, so its
+    /// sessions pass false: no sync, no build, no hint publishing, no host
+    /// install (see `runtime::assemble_session`).
+    pub(crate) tier_c: bool,
     /// The session's tier C supervisor state (PL-18 slice 4a). One per root session, shared
     /// with the Shell env; subagents never use it (their tools come from `child_native`).
     pub(crate) native: Arc<NativeHolder>,
@@ -74,14 +79,45 @@ impl PluginSource for PluginToolSource {
         // non-shared helpers stay absent, like the plugin MCP servers.
         let mut tools = tools;
         let holder = self.native.clone();
-        if !self.subagent {
+        // Without tier C (the app-server) the holder is never synced: no
+        // supervisor, and no hint publishing below.
+        if self.tier_c && !self.subagent {
             let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
             for warning in holder.sync(&set, &settings) {
                 diagnostics.push((crate::args::DiagnosticKind::Warning, warning));
             }
         }
-        let relay_up =
-            !self.subagent || hoocode_code_subagents::instance::clearance_relay().is_some();
+        // A relay that cannot answer EnsureHelper (a headless fail-closed child
+        // of an rpc root, warm workers) is no parent channel either.
+        let relay_up = !self.subagent
+            || hoocode_code_subagents::instance::clearance_relay()
+                .is_some_and(|relay| relay.can_ensure());
+        // Tier C tools are built only where tier C runs (the app-server
+        // registers none).
+        let tier_c_tools = self.tier_c && (!self.subagent || relay_up);
+        if tier_c_tools {
+            // The D2 hints are process-wide and `set_native_hints` replaces the
+            // whole map, so publish once for every trusted helper here (root:
+            // all; subagent: shared only), before the per-plugin loop below.
+            // A per-plugin publish would leave only the last plugin's hints,
+            // and a shared `dangerous` tool in an earlier plugin would read as
+            // an ungated WASM-like tool.
+            let trusted: std::collections::HashSet<&str> = set
+                .plugins
+                .iter()
+                .filter(|p| p.marketplace_trusted)
+                .map(|p| p.name.as_str())
+                .collect();
+            let hint_entries: Vec<hoocode_code_plugins::NativeHelperEntry> = set
+                .native_helpers()
+                .into_iter()
+                .filter(|entry| {
+                    trusted.contains(entry.plugin.as_str())
+                        && (!self.subagent || entry.helper.spec.shared)
+                })
+                .collect();
+            crate::native_tools::publish_hints(&hint_entries);
+        }
         let mut taken_acc: Vec<(String, ToolOrigin)> = taken.to_vec();
         for plugin in &set.plugins {
             let single = hoocode_code_plugins::PluginSet {
@@ -96,17 +132,15 @@ impl PluginSource for PluginToolSource {
                 &mut diagnostics,
             );
             taken_acc.extend(wasm.iter().map(|t| (t.name.clone(), t.origin.clone())));
-            let native_defs = if self.subagent {
-                if relay_up {
-                    crate::native_child::build_shared(
-                        &single,
-                        &self.child_native,
-                        &taken_acc,
-                        &mut diagnostics,
-                    )
-                } else {
-                    Vec::new()
-                }
+            let native_defs = if !tier_c_tools {
+                Vec::new()
+            } else if self.subagent {
+                crate::native_child::build_shared(
+                    &single,
+                    &self.child_native,
+                    &taken_acc,
+                    &mut diagnostics,
+                )
             } else {
                 native_tools::build(&single, &holder, &taken_acc, &mut diagnostics)
             };
@@ -194,6 +228,7 @@ mod tests {
             ))),
             gate: Arc::new(AllowAll),
             subagent: false,
+            tier_c: true,
             native: crate::native_tools::NativeHolder::new(),
             child_native: Arc::new(super::super::native_child::ChildNativeState::new()),
         }

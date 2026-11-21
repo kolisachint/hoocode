@@ -188,7 +188,13 @@ impl NativeChildHost for CliNativeHost {
                 if shared_plugins.is_empty() {
                     return None;
                 }
-                hoocode_code_subagents::instance::clearance_relay()?;
+                // A relay that cannot answer EnsureHelper is no parent
+                // channel (a headless fail-closed child, warm workers): mint
+                // nothing, as when no relay is set at all.
+                let relay = hoocode_code_subagents::instance::clearance_relay()?;
+                if !relay.can_ensure() {
+                    return None;
+                }
                 let own = self.shared.identity()?;
                 let identity = mint_agent(&own, task_id);
                 let vars = identity.child_env().into_iter().collect::<Vec<_>>();
@@ -284,11 +290,13 @@ impl NativeChildHost for CliNativeHost {
                     // recursively), then the child on top of it. The
                     // connection is rebuilt every time: after a helper
                     // restart the cached one holds a dropped token.
-                    let relay = hoocode_code_subagents::instance::clearance_relay().ok_or_else(|| {
-                        format!(
-                            "The {plugin} helper needs the parent session: no parent channel in this process."
-                        )
-                    })?;
+                    let relay = hoocode_code_subagents::instance::clearance_relay()
+                        .filter(|relay| relay.can_ensure())
+                        .ok_or_else(|| {
+                            format!(
+                                "The {plugin} helper needs the parent session: no parent channel in this process."
+                            )
+                        })?;
                     let socket: PathBuf =
                         relay
                             .ask_ensure(plugin)
@@ -382,9 +390,11 @@ pub(crate) fn build_shared(
         .into_iter()
         .filter(|entry| trusted.contains(entry.plugin.as_str()) && entry.helper.spec.shared)
         .collect();
-    // The D2 hints apply in the child too: its gate uses this map, and gated
-    // calls go up the existing clearance relay as today.
-    native_tools::publish_hints(&entries);
+    // The D2 hints are published once for the whole set by the caller (the
+    // plugin source, before its per-plugin loop): publishing here would
+    // replace the process-wide map once per plugin and leave only the last
+    // plugin's hints. The child's gate reads that map, and gated calls go
+    // up the existing clearance relay as today.
     native_tools::build_from_entries(
         entries,
         taken,
@@ -414,11 +424,13 @@ pub(crate) fn call_tool(
             "Cannot run the shared plugin tool {tool}: this subagent was started without a tier C identity."
             ))
         })?;
-        let relay = hoocode_code_subagents::instance::clearance_relay().ok_or_else(|| {
-            NativeError::Io(format!(
-                "Cannot run the shared plugin tool {tool}: no parent channel in this process."
-            ))
-        })?;
+        let relay = hoocode_code_subagents::instance::clearance_relay()
+            .filter(|relay| relay.can_ensure())
+            .ok_or_else(|| {
+                NativeError::Io(format!(
+                    "Cannot run the shared plugin tool {tool}: no parent channel in this process."
+                ))
+            })?;
         // One EnsureHelper round trip per plugin per process: the socket and
         // the parent's connection are cached; re-asked only after a
         // recoverable error. (The relay answer itself blocks the tool
