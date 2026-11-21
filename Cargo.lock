@@ -1382,7 +1382,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hoocode-agent-compaction"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-agent-harness",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-core"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-loop",
  "hoocode-agent-types",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-harness"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "futures-util",
@@ -1434,7 +1434,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-loop"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-agent-types",
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-mcp"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1471,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-session"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-types"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-ai-stream",
  "hoocode-ai-types",
@@ -1494,14 +1494,14 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-env"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-home",
 ]
 
 [[package]]
 name = "hoocode-ai-models"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-ai-models-catalog",
  "hoocode-ai-types",
@@ -1511,11 +1511,11 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-models-catalog"
-version = "0.2.51"
+version = "0.2.52"
 
 [[package]]
 name = "hoocode-ai-oauth"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "hoocode-ai-types",
@@ -1531,7 +1531,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-anthropic"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-ai-oauth",
  "hoocode-ai-types",
@@ -1543,7 +1543,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-github-copilot"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-ai-models",
@@ -1557,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-google"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-ai-oauth",
  "serde_json",
@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-openai-codex"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "hoocode-ai-oauth",
@@ -1579,7 +1579,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-anthropic"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1594,7 +1594,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-faux"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-ai-registry",
@@ -1606,7 +1606,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-google"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1624,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-google-gemini-cli"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "futures-util",
@@ -1642,7 +1642,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1658,7 +1658,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai-codex"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -1679,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai-responses"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1695,7 +1695,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-registry"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -1717,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-sse"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "eventsource-stream",
  "futures-executor",
@@ -1726,7 +1726,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-stream"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-executor",
  "futures-util",
@@ -1738,7 +1738,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-types"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "serde",
  "serde_json",
@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-util"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-ai-types",
@@ -1763,7 +1763,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-app-server"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "futures-util",
  "hoocode-agent-core",
@@ -1790,7 +1790,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-app-server-protocol"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "serde",
  "serde_json",
@@ -1798,7 +1798,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-agent-session"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-agent-compaction",
@@ -1838,7 +1838,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-auth"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "hoocode-ai-env",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-capabilities"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-plugins",
@@ -1868,7 +1868,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-cli"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1932,7 +1932,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-main"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-code-cli",
  "hoocode-code-plugins",
@@ -1945,7 +1945,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-mcp"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-code-paths",
  "serde",
@@ -1956,7 +1956,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-media"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "fancy-regex",
@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-models"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "glob",
  "hoocode-ai-models",
@@ -1983,7 +1983,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-modes"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-code-agent-session",
  "hoocode-code-paths",
@@ -1994,7 +1994,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-native"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-mcp",
  "hoocode-ai-util",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-paths"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-home",
  "serde_json",
@@ -2022,7 +2022,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-permissions"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-code-modes",
@@ -2034,7 +2034,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-plugins"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-code-mcp",
@@ -2048,7 +2048,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-print"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -2058,7 +2058,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-prompts"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-agent-harness",
@@ -2068,7 +2068,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-resources"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "glob",
  "hoocode-agent-harness",
@@ -2086,7 +2086,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-rpc"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-core",
  "hoocode-agent-harness",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-scheduler"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-session"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-agent-session",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-settings"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-ai-types",
  "hoocode-code-paths",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-subagents"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -2177,11 +2177,11 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-task-store"
-version = "0.2.51"
+version = "0.2.52"
 
 [[package]]
 name = "hoocode-code-tool-api"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -2195,7 +2195,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tool-bash"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-harness",
  "hoocode-agent-types",
@@ -2213,7 +2213,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tool-search"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "grep-matcher",
  "grep-regex",
@@ -2233,7 +2233,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "glob",
  "hoocode-agent-types",
@@ -2252,7 +2252,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools-fs"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "hoocode-agent-types",
@@ -2273,7 +2273,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools-optin"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -2286,7 +2286,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-app"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "arboard",
  "chrono",
@@ -2341,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-keybindings"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-tui-theme",
@@ -2355,7 +2355,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-selectors"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-ai-models",
@@ -2385,7 +2385,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-theme"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-session",
@@ -2400,7 +2400,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-widgets"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -2431,7 +2431,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-update"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-ai-util",
  "hoocode-code-paths",
@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-wasm"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -2471,14 +2471,14 @@ dependencies = [
 
 [[package]]
 name = "hoocode-home"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "dirs",
 ]
 
 [[package]]
 name = "hoocode-models-sync"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "reqwest 0.12.28",
  "serde",
@@ -2487,7 +2487,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-runtime"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "libc",
  "memory-stats",
@@ -2498,7 +2498,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-components"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-home",
  "hoocode-runtime",
@@ -2517,19 +2517,19 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-editing"
-version = "0.2.51"
+version = "0.2.52"
 
 [[package]]
 name = "hoocode-tui-fuzzy"
-version = "0.2.51"
+version = "0.2.52"
 
 [[package]]
 name = "hoocode-tui-glyphs"
-version = "0.2.51"
+version = "0.2.52"
 
 [[package]]
 name = "hoocode-tui-highlight"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-tui-util",
  "serde_json",
@@ -2537,7 +2537,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-images"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "base64 0.23.1",
  "hoocode-tui-util",
@@ -2547,7 +2547,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-keys"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "once_cell",
  "regex",
@@ -2555,7 +2555,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-ratatui"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-code-tui-theme",
  "hoocode-tui-render",
@@ -2566,7 +2566,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-render"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "hoocode-tui-images",
  "hoocode-tui-keys",
@@ -2578,7 +2578,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-terminal"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "crossterm",
  "hoocode-runtime",
@@ -2590,7 +2590,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-util"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "fancy-regex",
  "unicode-segmentation",
