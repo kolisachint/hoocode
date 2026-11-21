@@ -278,6 +278,11 @@ impl ClearanceRelay for ChildRelay {
         ChildRelay::ask_ensure(self, plugin)
     }
 
+    fn can_ensure(&self) -> bool {
+        // This relay is the parent channel: EnsureHelper goes up it.
+        true
+    }
+
     fn ask(&self, request: &RelayRequest) -> Option<String> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (reply, answer) = channel();
@@ -316,5 +321,20 @@ impl ClearanceRelay for ChildRelay {
                 last_ping = Instant::now();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The child relay is the parent channel: EnsureHelper goes up it.
+    #[test]
+    fn child_relay_can_ensure() {
+        let relay = ChildRelay::new(Box::new(std::io::sink()), Duration::from_millis(50));
+        assert!(
+            ClearanceRelay::can_ensure(&*relay),
+            "a child's relay answers EnsureHelper"
+        );
     }
 }

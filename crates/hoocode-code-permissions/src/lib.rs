@@ -551,6 +551,13 @@ pub trait ClearanceRelay: Send + Sync {
     fn ask_ensure(&self, _plugin: &str) -> Result<String, String> {
         Err("Shared tier C tools need the parent session's helper: no parent channel in this process.".to_string())
     }
+    /// Whether [`ask_ensure`](Self::ask_ensure) can reach a parent: true only
+    /// for a child's relay. A headless fail-closed child of an rpc root and a
+    /// warm worker have no parent channel, so their relays always fail closed;
+    /// callers check this instead of treating any set relay as a channel.
+    fn can_ensure(&self) -> bool {
+        false
+    }
 }
 
 /// The relay of a headless json or print run that has subagents. Nobody can
@@ -1718,6 +1725,29 @@ mod tests {
                 ApprovalChannel::Headless { fail_closed: true },
             ),
             Verdict::Allow
+        );
+    }
+
+    /// A relay that cannot answer EnsureHelper says so: the headless
+    /// fail-closed relay of an rpc root's child has no parent channel, and
+    /// the trait default refuses too, so only an explicit opt-in (the
+    /// subagents child relay) counts as a channel.
+    #[test]
+    fn relays_without_a_parent_channel_cannot_ensure() {
+        let headless = HeadlessClearanceRelay::new(std::path::PathBuf::from("/tmp"), true);
+        assert!(
+            !ClearanceRelay::can_ensure(&headless),
+            "a headless fail-closed child has no parent channel"
+        );
+        struct NoChannel;
+        impl ClearanceRelay for NoChannel {
+            fn ask(&self, _request: &RelayRequest) -> Option<String> {
+                None
+            }
+        }
+        assert!(
+            !ClearanceRelay::can_ensure(&NoChannel),
+            "the default relay cannot ensure"
         );
     }
 

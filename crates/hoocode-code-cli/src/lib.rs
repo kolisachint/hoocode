@@ -35,6 +35,12 @@ use std::io::{IsTerminal, Read, Write};
 /// `VERSION` printed by `--version`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Serializes the tests that set the process-wide clearance relay (the tier C
+/// parent channel): a relay set by one test must not leak into another test's
+/// `clearance_relay().is_none()` assertion running on a sibling thread.
+#[cfg(test)]
+pub(crate) static RELAY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// What `hoocode resources` says. It is not a command: the startup listing of an
 /// interactive session and `hoocode config` show the same resources.
 const RESOURCES_UNAVAILABLE: &str = "Error: `hoocode resources` is not available. \
