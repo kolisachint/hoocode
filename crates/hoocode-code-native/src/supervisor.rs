@@ -1332,6 +1332,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // test code: #[tokio::test] builds a runtime
 mod tests {
     use super::*;
     use std::collections::HashMap;
