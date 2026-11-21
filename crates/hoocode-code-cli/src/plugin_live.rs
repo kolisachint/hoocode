@@ -498,6 +498,9 @@ mod tests {
     /// without an EnsureHelper relay every call would fail.
     #[test]
     fn a_subagent_without_a_relay_gets_no_shared_tools() {
+        let _relay_lock = crate::RELAY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(hoocode_code_subagents::instance::clearance_relay().is_none());
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("repo")).unwrap();
@@ -510,6 +513,206 @@ mod tests {
         assert!(
             tools.is_empty(),
             "no shared tool without a relay: {tools:?}"
+        );
+        hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
+    }
+
+    /// Restores the process-wide clearance relay to none: the relay tests
+    /// must not leak a set relay into a sibling thread's `is_none`
+    /// assertion (all of them hold [`crate::RELAY_TEST_LOCK`]).
+    struct RelayRestore;
+
+    impl Drop for RelayRestore {
+        fn drop(&mut self) {
+            hoocode_code_subagents::instance::set_clearance_relay(None);
+        }
+    }
+
+    /// Two native plugins where the first in load order declares a
+    /// `dangerous` tool: one publish covers the whole set, so the first
+    /// plugin's hints survive the per-plugin loop (N1). The hint is present
+    /// after the root build, and the gate blocks the call instead of running
+    /// it as an ungated tool.
+    fn write_native_pair(dir: &std::path::Path) {
+        for (name, permission, tool) in
+            [("aaa", "dangerous", "Wipe"), ("zzz", "read", "Lookup")]
+        {
+            let root = dir.join("plugins").join(name);
+            std::fs::create_dir_all(&root).unwrap();
+            let manifest = serde_json::json!({
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": name,
+                "version": "1.0.0",
+                "description": "Tier C fixture",
+                "extensions": {"dev.hoocode": {"native": {
+                    "server": "echo",
+                    "shared": true,
+                    "tools": [
+                        {"name": tool, "description": "Tier C fixture tool.",
+                         "inputSchema": {"type": "object"}, "permission": permission},
+                    ],
+                }}},
+            });
+            std::fs::write(root.join("plugin.json"), manifest.to_string()).unwrap();
+            std::fs::write(
+                root.join("mcp.json"),
+                r#"{"$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                "mcpServers": {"echo": {"type": "stdio", "command": "never-started"}}}"#,
+            )
+            .unwrap();
+        }
+    }
+
+    fn native_pair_set(dir: &std::path::Path) -> hoocode_code_plugins::PluginSet {
+        let trust = TrustStore::empty(dir.join("trust.json"));
+        load_plugins(&LoadOptions {
+            project_folder: dir.join("repo"),
+            user_plugins_dir: dir.join("plugins"),
+            data_root: dir.join("plugin-data"),
+            trust: &trust,
+            untrusted_installs: BTreeSet::new(),
+            installs_unreadable: None,
+        })
+    }
+
+    /// The gate blocks a `dangerous` tier C tool where nobody can answer
+    /// (headless, fail closed): the prompt the UI would have shown becomes a
+    /// denial with the gate's reason.
+    fn dangerous_is_blocked_headless(dir: &std::path::Path) {
+        let gate = hoocode_code_permissions::HooPermissionGate::new(
+            dir.to_path_buf(),
+            hoocode_code_permissions::ApprovalChannel::Headless { fail_closed: true },
+            None,
+        );
+        let origin = ToolOrigin::Plugin {
+            plugin: "aaa".to_string(),
+            tool: "Wipe".to_string(),
+        };
+        assert!(
+            gate.check_call("Wipe", &origin, &json!({})).is_some(),
+            "the dangerous tool is gated"
+        );
+    }
+
+    #[test]
+    fn first_plugin_hints_survive_the_root_build() {
+        let dir = tempfile::tempdir().unwrap();
+        write_native_pair(dir.path());
+        let set = native_pair_set(dir.path());
+        hoocode_code_plugins::set_current(set);
+        let source = source(true);
+        let (tools, _) = source.tools(&[]);
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            names.contains(&"Wipe"),
+            "the first plugin's tool is registered: {names:?}"
+        );
+        assert!(
+            names.contains(&"Lookup"),
+            "the second plugin's tool is registered: {names:?}"
+        );
+        assert_eq!(
+            hoocode_code_permissions::native_hint_for("aaa", "Wipe"),
+            Some(hoocode_code_permissions::NativeToolHint::Dangerous),
+            "the dangerous hint survives the per-plugin loop"
+        );
+        assert_eq!(
+            hoocode_code_permissions::native_hint_for("zzz", "Lookup"),
+            Some(hoocode_code_permissions::NativeToolHint::Read),
+            "the later plugin's hint survives too"
+        );
+        dangerous_is_blocked_headless(dir.path());
+        hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
+    }
+
+    /// The subagent build publishes the shared helpers' hints the same way:
+    /// with a parent channel open, both plugins' shared tools register and
+    /// the first plugin's `dangerous` hint is present and gated.
+    #[test]
+    fn subagent_hints_cover_every_shared_plugin() {
+        let _relay_lock = crate::RELAY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        write_native_pair(dir.path());
+        let set = native_pair_set(dir.path());
+        hoocode_code_plugins::set_current(set);
+        let relay = hoocode_code_subagents::clearance::ChildRelay::new(
+            Box::new(std::io::sink()),
+            std::time::Duration::from_millis(50),
+        );
+        hoocode_code_subagents::instance::set_clearance_relay(Some(relay));
+        let _restore = RelayRestore;
+        let child = PluginToolSource {
+            subagent: true,
+            ..source(true)
+        };
+        let (tools, _) = child.tools(&[]);
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            names.contains(&"Wipe"),
+            "the first shared tool is registered: {names:?}"
+        );
+        assert!(
+            names.contains(&"Lookup"),
+            "the second shared tool is registered: {names:?}"
+        );
+        assert_eq!(
+            hoocode_code_permissions::native_hint_for("aaa", "Wipe"),
+            Some(hoocode_code_permissions::NativeToolHint::Dangerous),
+            "the subagent build keeps the first plugin's hint"
+        );
+        dangerous_is_blocked_headless(dir.path());
+        hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
+    }
+
+    /// Without tier C (the app-server) the source registers no native tools
+    /// and never syncs the holder: no supervisor, and no hint publishing.
+    #[test]
+    fn app_server_registers_no_native_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        write_native_plugin(&dir.path().join("plugins"), "sh", true, "shared_echo");
+        let set = native_set(dir.path());
+        hoocode_code_plugins::set_current(set);
+        let mut source = source(true);
+        source.tier_c = false;
+        let (tools, _) = source.tools(&[]);
+        assert!(
+            tools.is_empty(),
+            "app-server sessions register no native tools: {tools:?}"
+        );
+        assert!(
+            source.native.supervisor().is_none(),
+            "the holder is never synced without tier C"
+        );
+        hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
+    }
+
+    /// A headless fail-closed relay is no parent channel: a child of an rpc
+    /// root registers no shared tools through it, since every call would fail.
+    #[test]
+    fn headless_relay_registers_no_shared_tools() {
+        let _relay_lock = crate::RELAY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        write_native_plugin(&dir.path().join("plugins"), "sh", true, "shared_echo");
+        let set = native_set(dir.path());
+        hoocode_code_plugins::set_current(set);
+        let relay = hoocode_code_permissions::HeadlessClearanceRelay::new(
+            dir.path().to_path_buf(),
+            true,
+        );
+        hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(relay)));
+        let _restore = RelayRestore;
+        let child = PluginToolSource {
+            subagent: true,
+            ..source(true)
+        };
+        let (tools, _) = child.tools(&[]);
+        assert!(
+            tools.is_empty(),
+            "a headless relay offers no shared tools: {tools:?}"
         );
         hoocode_code_plugins::set_current(hoocode_code_plugins::PluginSet::default());
     }

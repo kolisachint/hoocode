@@ -694,6 +694,9 @@ mod tests {
     /// fail, so no identity (and no shared tool) is offered.
     #[test]
     fn child_host_mints_nothing_without_a_relay() {
+        let _relay_lock = crate::RELAY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(hoocode_code_subagents::instance::clearance_relay().is_none());
         let state = Arc::new(ChildNativeState {
             identity: Some(AgentIdentity::root("token".to_owned())),
