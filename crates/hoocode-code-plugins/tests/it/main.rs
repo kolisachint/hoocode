@@ -7,6 +7,7 @@ mod layouts;
 mod manifests;
 mod mcp_fixtures;
 mod model;
+mod native;
 mod precedence;
 mod propose;
 mod trust;

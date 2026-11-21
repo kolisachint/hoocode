@@ -37,6 +37,9 @@ pub enum SubagentStdoutLine {
     Progress(Map<String, Value>),
     /// The child asks its parent to decide a gated call (see [`crate::clearance`]).
     Clearance(Map<String, Value>),
+    /// The child asks for its tier C helper's socket (see [`crate::clearance`]):
+    /// the pool ensures it and registers the child, then answers on its stdin.
+    EnsureHelper(Map<String, Value>),
     Ignore,
 }
 
@@ -54,6 +57,7 @@ pub fn classify_subagent_line(line: &str) -> SubagentStdoutLine {
     }
     match parsed.get("type").and_then(Value::as_str) {
         Some(crate::clearance::REQUEST_TYPE) => SubagentStdoutLine::Clearance(parsed),
+        Some(crate::clearance::ENSURE_REQUEST_TYPE) => SubagentStdoutLine::EnsureHelper(parsed),
         Some(t) if FORWARDED_SUBAGENT_EVENTS.contains(&t) => SubagentStdoutLine::Progress(parsed),
         _ => SubagentStdoutLine::Ignore,
     }

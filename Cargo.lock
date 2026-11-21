@@ -1459,6 +1459,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "libc",
  "reqwest 0.13.5",
  "rmcp",
  "serde_json",
@@ -1892,6 +1893,7 @@ dependencies = [
  "hoocode-code-media",
  "hoocode-code-models",
  "hoocode-code-modes",
+ "hoocode-code-native",
  "hoocode-code-paths",
  "hoocode-code-permissions",
  "hoocode-code-plugins",
@@ -1924,6 +1926,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-util",
  "url",
 ]
 
@@ -1990,6 +1993,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "hoocode-code-native"
+version = "0.2.50"
+dependencies = [
+ "hoocode-agent-mcp",
+ "hoocode-ai-util",
+ "hoocode-code-paths",
+ "hoocode-code-plugins",
+ "hoocode-runtime",
+ "rand 0.10.3",
+ "reqwest 0.12.28",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "hoocode-code-paths"
 version = "0.2.50"
 dependencies = [
@@ -2015,6 +2036,7 @@ dependencies = [
 name = "hoocode-code-plugins"
 version = "0.2.50"
 dependencies = [
+ "hoocode-agent-types",
  "hoocode-code-mcp",
  "hoocode-code-paths",
  "hoocode-code-resources",

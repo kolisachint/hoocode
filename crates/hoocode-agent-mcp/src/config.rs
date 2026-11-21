@@ -21,4 +21,11 @@ pub enum McpServerConfig {
         url: String,
         headers: BTreeMap<String, String>,
     },
+    /// A Streamable HTTP endpoint reached through a Unix socket (tier C native
+    /// helpers). The request URI is `http://localhost/mcp`; `headers` are sent
+    /// with every request, for example `Authorization`. OAuth is never used.
+    Unix {
+        path: PathBuf,
+        headers: BTreeMap<String, String>,
+    },
 }

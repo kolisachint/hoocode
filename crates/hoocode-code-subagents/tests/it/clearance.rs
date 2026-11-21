@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 
 use hoocode_code_permissions::{ClearanceRelay, RelayRequest};
 use hoocode_code_subagents::clearance::{
-    parse_response, request_line, response_line, ChildRelay, NO_UI_REASON,
+    ensure_request_line, ensure_response_line, parse_ensure_response, parse_response, request_line,
+    response_line, ChildRelay, NO_UI_REASON,
 };
 use hoocode_code_subagents::pool::{SubagentPool, SubagentPoolOptions, SubagentPoolTask};
 use hoocode_code_subagents::runner::{ScriptedRunner, ScriptedStep};
@@ -432,5 +433,217 @@ async fn a_request_stops_waiting_when_its_run_ends() {
     let p = pool(runner.clone(), dir.path(), Some(Parent::new(None, true)));
     p.spawn(task()).unwrap();
     assert_eq!(answers(&runner), [(9, Some("run ended".to_string()))]);
+    p.dispose();
+}
+
+// ---- EnsureHelper (tier C, spec D5) ----------------------------------------
+
+/// The EnsureHelper wire format round-trips; neither side reads the other's
+/// clearance lines.
+#[test]
+fn the_ensure_wire_format_round_trips() {
+    let request: Value = serde_json::from_str(&ensure_request_line(3, "echo")).unwrap();
+    assert_eq!(
+        request,
+        json!({"type": "native_ensure_helper", "id": 3, "plugin": "echo"})
+    );
+    assert_eq!(
+        parse_ensure_response(&ensure_response_line(3, &Ok("/run/echo.sock".into()))),
+        Some((3, Ok("/run/echo.sock".to_string())))
+    );
+    assert_eq!(
+        parse_ensure_response(&ensure_response_line(3, &Err("down".into()))),
+        Some((3, Err("down".to_string())))
+    );
+    assert_eq!(parse_ensure_response(r#"{"ping":true}"#), None);
+    assert_eq!(parse_ensure_response("not json"), None);
+    // Each side ignores the other's answers.
+    assert_eq!(
+        parse_response(&ensure_response_line(3, &Ok("s".into()))),
+        None
+    );
+    assert_eq!(parse_ensure_response(&response_line(3, &None)), None);
+}
+
+/// The child asks for its helper's socket and gets it back, by request id.
+#[test]
+fn the_child_receives_the_helper_socket() {
+    let wire = Wire::default();
+    let relay = ChildRelay::new(Box::new(wire.clone()), Duration::from_secs(30));
+    let (stdin, reader) = feed();
+    relay.serve(reader);
+
+    let asked = std::thread::spawn({
+        let relay = relay.clone();
+        move || relay.ask_ensure("echo")
+    });
+    let line = wait_for("the ensure request", || {
+        wire.lines()
+            .into_iter()
+            .find(|line| line.contains("native_ensure_helper"))
+    });
+    let id: u64 = serde_json::from_str::<Value>(&line).unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    stdin
+        .send(
+            format!(
+                "{}\n",
+                ensure_response_line(id, &Ok("/run/echo.sock".into()))
+            )
+            .into_bytes(),
+        )
+        .unwrap();
+    assert_eq!(asked.join().unwrap(), Ok("/run/echo.sock".to_string()));
+}
+
+/// A parent denial (or a closed stdin) is an error, not a socket.
+#[test]
+fn a_denied_ensure_is_an_error() {
+    let wire = Wire::default();
+    let relay = ChildRelay::new(Box::new(wire.clone()), Duration::from_secs(30));
+    let (stdin, reader) = feed();
+    relay.serve(reader);
+
+    let asked = std::thread::spawn({
+        let relay = relay.clone();
+        move || relay.ask_ensure("echo")
+    });
+    let line = wait_for("the ensure request", || {
+        wire.lines()
+            .into_iter()
+            .find(|line| line.contains("native_ensure_helper"))
+    });
+    let id: u64 = serde_json::from_str::<Value>(&line).unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    stdin
+        .send(format!("{}\n", ensure_response_line(id, &Err("no helper".into()))).into_bytes())
+        .unwrap();
+    assert_eq!(asked.join().unwrap(), Err("no helper".to_string()));
+
+    // A closed stdin (the parent is gone) denies every later request at once.
+    drop(stdin);
+    assert!(relay.ask_ensure("echo").is_err());
+}
+
+// ---- the pool's end ----------------------------------------------------------
+
+use std::path::PathBuf;
+
+use hoocode_code_subagents::pool::{HostFuture, NativeChildHost};
+
+/// A scripted child asking for its tier C helper's socket.
+fn child_ensuring(id: u64) -> ScriptedRunner {
+    let line = ensure_request_line(id, "t3c");
+    ScriptedRunner::new(vec![ScriptedStep {
+        stdout: vec![format!("{line}\n")],
+        hang: true,
+        ..Default::default()
+    }])
+}
+
+/// A [`NativeChildHost`] with a fixed socket and canned env, recording the
+/// children it deregisters.
+struct FakeHost {
+    vars: Vec<(String, String)>,
+    ended: Mutex<Vec<String>>,
+}
+
+impl FakeHost {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            vars: vec![("HOOCODE_AGENT_ID".into(), "root/t1".into())],
+            ended: Mutex::new(Vec::new()),
+        })
+    }
+}
+
+impl NativeChildHost for FakeHost {
+    fn child_env(&self, task_id: &str) -> Option<Vec<(String, String)>> {
+        assert_eq!(task_id, "t1");
+        Some(self.vars.clone())
+    }
+
+    fn ensure_helper<'a>(
+        &'a self,
+        task_id: &'a str,
+        plugin: &'a str,
+    ) -> HostFuture<'a, Result<PathBuf, String>> {
+        assert_eq!((task_id, plugin), ("t1", "t3c"));
+        Box::pin(async move { Ok(PathBuf::from("/run/t3c.sock")) })
+    }
+
+    fn child_ended<'a>(&'a self, task_id: &'a str) -> HostFuture<'a, ()> {
+        self.ended.lock().unwrap().push(task_id.to_string());
+        Box::pin(async move {})
+    }
+}
+
+fn pool_with_host(runner: ScriptedRunner, cwd: &Path, host: Arc<FakeHost>) -> SubagentPool {
+    isolate_agent_dir();
+    SubagentPool::new(SubagentPoolOptions {
+        runner: Some(Arc::new(runner)),
+        cwd: Some(cwd.to_path_buf()),
+        native_host: Some(host as Arc<dyn NativeChildHost>),
+        ..Default::default()
+    })
+}
+
+fn ensure_answers(runner: &ScriptedRunner) -> Vec<(u64, Result<String, String>)> {
+    wait_for("an ensure answer on the child's stdin", || {
+        let parsed: Vec<_> = runner
+            .stdin_lines()
+            .iter()
+            .filter_map(|line| parse_ensure_response(line))
+            .collect();
+        (!parsed.is_empty()).then_some(parsed)
+    })
+}
+
+/// The pool answers EnsureHelper from its host, registering the child first.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_pool_answers_ensure_helper_from_its_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = child_ensuring(7);
+    let p = pool_with_host(runner.clone(), dir.path(), FakeHost::new());
+    p.spawn(task()).unwrap();
+    assert_eq!(
+        ensure_answers(&runner),
+        [(7, Ok("/run/t3c.sock".to_string()))]
+    );
+    p.dispose();
+}
+
+/// With no host the session has no shared helper: the request is denied.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ensure_helper_without_a_host_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = child_ensuring(5);
+    let p = pool(runner.clone(), dir.path(), None);
+    p.spawn(task()).unwrap();
+    let answers = ensure_answers(&runner);
+    assert_eq!(answers.len(), 1);
+    assert_eq!(answers[0].0, 5);
+    assert!(answers[0].1.is_err(), "{answers:?}");
+    p.dispose();
+}
+
+/// A child that ended is deregistered, even when its run failed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ended_child_is_deregistered() {
+    let dir = tempfile::tempdir().unwrap();
+    // The scripted child exits at once with no result: the run fails, and the
+    // settle still deregisters the child first.
+    let line = ensure_request_line(7, "t3c");
+    let runner = ScriptedRunner::new(vec![ScriptedStep {
+        stdout: vec![format!("{line}\n")],
+        ..Default::default()
+    }]);
+    let host = FakeHost::new();
+    let p = pool_with_host(runner.clone(), dir.path(), host.clone());
+    p.spawn(task()).unwrap();
+    let _ = p.wait_for("t1").await;
+    assert_eq!(host.ended.lock().unwrap().clone(), ["t1"]);
     p.dispose();
 }

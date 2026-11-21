@@ -108,6 +108,8 @@ pub struct SpawnCommand {
 }
 
 static NEXT_WORKER: AtomicU64 = AtomicU64::new(1);
+/// Minted tier C identities for warm workers, unique per worker boot.
+static NEXT_WORKER_IDENTITY: AtomicU64 = AtomicU64::new(1);
 
 /// One long-lived RPC child pinned to a single agent configuration.
 pub struct WarmSubagentWorker {
@@ -115,6 +117,9 @@ pub struct WarmSubagentWorker {
     id: u64,
     client: RpcClient,
     alive: bool,
+    /// The tier C identity tag minted for this boot (`None` when the session
+    /// has no shared helper). Ended with the worker in [`WarmSubagentPool`].
+    identity_tag: Option<String>,
 }
 
 impl WarmSubagentWorker {
@@ -128,6 +133,7 @@ impl WarmSubagentWorker {
         selection: &ModelSelection,
         limits: SubagentLimits,
         spawn: Option<&SpawnCommand>,
+        identity_tag: Option<String>,
     ) -> Self {
         let (executable, prefix_args) = match spawn {
             Some(spawn) => (Some(spawn.executable.clone()), spawn.prefix_args.clone()),
@@ -146,6 +152,17 @@ impl WarmSubagentWorker {
             id: NEXT_WORKER.fetch_add(1, Ordering::Relaxed),
             client,
             alive: true,
+            identity_tag,
+        }
+    }
+
+    /// Deregister the minted tier C identity, if any (spec D5). Best effort.
+    async fn end_identity(&mut self) {
+        if let (Some(tag), Some(host)) = (
+            self.identity_tag.take(),
+            crate::instance::native_child_host(),
+        ) {
+            host.child_ended(&tag).await;
         }
     }
 
@@ -586,7 +603,17 @@ impl WarmSubagentPool {
     /// The child's environment additions: depth + 1, MCP skipped for an
     /// MCP-free allowlist. (hoocode also deletes the deferred-MCP flag, but
     /// its RpcClient spreads the parent environment back over it.)
-    fn child_env(&self, agent_type: &str) -> Vec<(String, String)> {
+    ///
+    /// `identity_tag` (spec D5) is the worker boot's unique tier C key. It is
+    /// always `None` here: a warm rpc worker has no parent channel to ask
+    /// EnsureHelper through (rpc installs no clearance relay), so a minted
+    /// identity would offer shared tools whose every call fails. No identity
+    /// is minted and no tag is ended with the worker.
+    fn child_env(
+        &self,
+        agent_type: &str,
+        identity_tag: Option<&str>,
+    ) -> (Vec<(String, String)>, bool) {
         let mut env = vec![
             (
                 format!("HOOCODE_{SUBAGENT_DEPTH_ENV}"),
@@ -606,7 +633,8 @@ impl WarmSubagentPool {
         if !tool_allowlist_needs_mcp(tools) {
             env.push((format!("HOOCODE_{SUBAGENT_SKIP_MCP_ENV}"), "1".into()));
         }
-        env
+        let _ = identity_tag;
+        (env, false)
     }
 
     /// Run a task on a warm worker: acquire (reuse or boot), run, release.
@@ -747,15 +775,23 @@ impl WarmSubagentPool {
             worker.dispose().await;
         }
         let skill_paths = self.state().skill_paths.clone();
+        // The tier C identity for this boot (spec D5): unique per worker,
+        // ended with it. `None` until the host mints one from the tag.
+        let tag = format!(
+            "warm-{}",
+            NEXT_WORKER_IDENTITY.fetch_add(1, Ordering::Relaxed)
+        );
+        let (env, minted) = self.child_env(&options.agent_type, Some(&tag));
         let mut worker = WarmSubagentWorker::new(
             key.clone(),
             options,
-            self.child_env(&options.agent_type),
+            env,
             &self.registry(),
             &skill_paths,
             &selection,
             self.inner.limits,
             self.inner.spawn.as_ref(),
+            minted.then_some(tag),
         );
         *self.state().live_count.entry(key.clone()).or_insert(0) += 1;
         if let Err(error) = worker.start().await {
@@ -812,6 +848,8 @@ impl WarmSubagentPool {
             timer.abort();
         }
         self.dec_live(&worker.key);
+        // A minted tier C identity ends with its worker (spec D5).
+        worker.end_identity().await;
         worker.dispose().await;
     }
 
@@ -860,6 +898,7 @@ impl WarmSubagentPool {
             state.idle.drain().flat_map(|(_, w)| w).collect()
         };
         for mut worker in workers {
+            worker.end_identity().await;
             worker.dispose().await;
         }
     }
@@ -944,4 +983,26 @@ pub fn update_warm_subagent_skill_paths(paths: Vec<String>) {
 /// Inject a warm pool for tests; `None` clears the override.
 pub fn set_warm_subagent_pool_for_testing(pool: Option<WarmSubagentPool>) {
     instance().override_pool = pool;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Warm rpc workers never mint tier C identities, tag or not: the
+    /// worker has no parent channel to ask EnsureHelper through, so a
+    /// minted identity would offer shared tools whose every call fails.
+    #[test]
+    fn warm_workers_mint_no_tier_c_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = WarmSubagentPool::new(WarmSubagentPoolOptions::new(dir.path()));
+        for tag in [Some("worker-1"), None] {
+            let (env, minted) = pool.child_env("general-purpose", tag);
+            assert!(!minted, "no identity for tag {tag:?}");
+            assert!(
+                env.iter().all(|(key, _)| key != "HOOCODE_AGENT_ID"),
+                "no agent env for tag {tag:?}: {env:?}"
+            );
+        }
+    }
 }

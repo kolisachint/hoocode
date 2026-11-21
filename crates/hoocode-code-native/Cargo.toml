@@ -1,0 +1,37 @@
+[package]
+name = "hoocode-code-native"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Tier C native plugin helpers for the hoocode coding agent: the per-session supervisor that downloads, starts, watches and restarts one helper process per plugin"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-agent-mcp = { workspace = true }
+hoocode-ai-util = { workspace = true }
+hoocode-code-paths = { workspace = true }
+hoocode-code-plugins = { workspace = true }
+hoocode-runtime = { workspace = true }
+# CSPRNG for agent tokens (rand::fill) and sha256 of downloads.
+rand = "0.10"
+# 0.12 to match hoocode-ai-util: the download client comes from its
+# proxy/CA-aware http_client_builder().
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde_json = "1"
+sha2 = "0.11"
+tokio = { version = "1", features = ["fs", "process", "sync", "time"] }
+# CancellationToken for cancellable tier C calls (mirrors hoocode-agent-mcp).
+tokio-util = { version = "0.7", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread"] }

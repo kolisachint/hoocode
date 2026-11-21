@@ -32,7 +32,8 @@ pub const PLUGIN_TOOLS: [&str; 5] = [
 
 /// Whether a call is to an MCP tool, or to a plugin lifecycle tool (`PLUGIN_TOOLS`, built in).
 /// Decided by origin: a model-facing name says nothing about where a tool comes from. A plugin
-/// WASM tool is not one of these, so it is never gated at call level.
+/// WASM tool is not one of these, so it is never gated at call level. A tier C native tool is
+/// gated by its own permission hint instead (see [`native_hint_for_origin`]).
 fn is_mcp_or_plugin_tool(tool_name: &str, origin: &ToolOrigin) -> bool {
     match origin {
         ToolOrigin::Mcp { .. } => true,
@@ -47,10 +48,58 @@ fn is_gated_builtin(tool_name: &str, origin: &ToolOrigin) -> bool {
 }
 
 /// Whether a call to `tool_name` from `origin` is one an approval-asking client would be asked
-/// about: the interactive gated tools, plus the MCP and plugin tools that rpc gates. Print and
-/// json run these without asking; the CLI names the ones that ran.
+/// about: the interactive gated tools, plus the MCP and plugin tools that rpc gates, plus tier C
+/// native tools with an `act` or `dangerous` hint. Print and json run these without asking (a
+/// `dangerous` native tool still blocks there); the CLI names the ones that ran.
 pub fn is_approval_tool(tool_name: &str, origin: &ToolOrigin) -> bool {
-    is_gated_builtin(tool_name, origin) || is_mcp_or_plugin_tool(tool_name, origin)
+    if is_gated_builtin(tool_name, origin) || is_mcp_or_plugin_tool(tool_name, origin) {
+        return true;
+    }
+    matches!(
+        native_hint_for_origin(origin),
+        Some(NativeToolHint::Act | NativeToolHint::Dangerous)
+    )
+}
+
+/// The permission hint of one tier C native tool (spec D2: `read`, `act`, `dangerous`).
+/// Missing means [`Act`]. The gate maps it; parsing lives in `hoocode-code-plugins`.
+///
+/// [`Act`]: NativeToolHint::Act
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeToolHint {
+    Read,
+    Act,
+    Dangerous,
+}
+
+/// The session's tier C native hints, keyed by (plugin, tool): origin-keyed, never name-keyed.
+/// Set from the loaded plugin set whenever it changes; read by [`evaluate`].
+static NATIVE_HINTS: std::sync::LazyLock<Mutex<HashMap<(String, String), NativeToolHint>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Replace the session's tier C native hints (one entry per declared native tool).
+/// Called from the plugin source whenever the plugin set changes.
+pub fn set_native_hints(hints: HashMap<(String, String), NativeToolHint>) {
+    *NATIVE_HINTS.lock().unwrap_or_else(|e| e.into_inner()) = hints;
+}
+
+/// The tier C hint for one plugin tool, or `None` when it declares no native tool of that name.
+/// Origin-keyed: the same bare name in another plugin is a different tool.
+pub fn native_hint_for(plugin: &str, tool: &str) -> Option<NativeToolHint> {
+    NATIVE_HINTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&(plugin.to_owned(), tool.to_owned()))
+        .copied()
+}
+
+/// The tier C hint for `origin`, or `None` for anything but a native plugin tool
+/// (built-ins, MCP tools and WASM plugin tools have no hint).
+pub fn native_hint_for_origin(origin: &ToolOrigin) -> Option<NativeToolHint> {
+    match origin {
+        ToolOrigin::Plugin { plugin, tool } => native_hint_for(plugin, tool),
+        _ => None,
+    }
 }
 
 /// The mode lists whose entries are tool selectors (`auto_allow`, `denied_tools`,
@@ -494,6 +543,21 @@ pub trait ClearanceRelay: Send + Sync {
     /// Blocks until the call is decided. `None` lets it run, `Some(reason)`
     /// blocks it. Any failure to ask (no UI, a closed pipe) is a denial.
     fn ask(&self, request: &RelayRequest) -> Option<String>;
+    /// Asks the parent for the socket path of a shared tier C helper
+    /// (PL-18 slice 4b): the parent ensures its own connection, registers
+    /// the asking agent, and answers. Only a child's relay (a pipe to a
+    /// parent that runs the pool) can answer; every other relay reports that
+    /// there is no parent channel.
+    fn ask_ensure(&self, _plugin: &str) -> Result<String, String> {
+        Err("Shared tier C tools need the parent session's helper: no parent channel in this process.".to_string())
+    }
+    /// Whether [`ask_ensure`](Self::ask_ensure) can reach a parent: true only
+    /// for a child's relay. A headless fail-closed child of an rpc root and a
+    /// warm worker have no parent channel, so their relays always fail closed;
+    /// callers check this instead of treating any set relay as a channel.
+    fn can_ensure(&self) -> bool {
+        false
+    }
 }
 
 /// The relay of a headless json or print run that has subagents. Nobody can
@@ -814,6 +878,21 @@ pub fn mutation_path(input: &Value) -> Option<String> {
 
 /// `describeTool`: the prompt's subject.
 pub fn describe_tool(tool_name: &str, input: &Value) -> String {
+    describe_tool_inner(tool_name, input)
+}
+
+/// [`describe_tool`], naming the plugin and tool for a tier C native call so the card says
+/// which plugin's tool is asking (D2).
+fn describe_tool_with_origin(tool_name: &str, origin: &ToolOrigin, input: &Value) -> String {
+    if let ToolOrigin::Plugin { plugin, tool: own } = origin {
+        if native_hint_for(plugin, own).is_some() {
+            return format!("plugin {plugin} tool {own}");
+        }
+    }
+    describe_tool_inner(tool_name, input)
+}
+
+fn describe_tool_inner(tool_name: &str, input: &Value) -> String {
     let field = |k: &str| {
         input
             .get(k)
@@ -878,19 +957,21 @@ pub fn evaluate(
     let list = |key: &str| config::mode_list(config, &mode, key);
 
     // An unreadable deny or allow-list blocks: a malformed deny would otherwise deny nothing.
-    match selectors(config, &mode, "denied_tools") {
+    let denied = match selectors(config, &mode, "denied_tools") {
         Err(problem) => {
             return Verdict::Block(format!(
                 "Tool \"{tool_name}\" is blocked: mode \"{mode}\" has a malformed denied_tools rule ({problem}). Fix it in hoo-config.json."
             ))
         }
-        Ok(denied) if takes(&denied, tool_name, origin) => {
-            return Verdict::Block(format!(
-                "Tool \"{tool_name}\" is denied in mode \"{mode}\"."
-            ))
+        Ok(denied) => {
+            if takes(&denied, tool_name, origin) {
+                return Verdict::Block(format!(
+                    "Tool \"{tool_name}\" is denied in mode \"{mode}\"."
+                ));
+            }
+            denied
         }
-        Ok(_) => {}
-    }
+    };
     match selectors(config, &mode, "enabled_tools") {
         Err(problem) => {
             return Verdict::Block(format!(
@@ -924,17 +1005,41 @@ pub fn evaluate(
         }
     }
 
+    // The tier C hint for a plugin tool, looked up by plugin+tool (origin-keyed, never
+    // name-keyed): `read` runs like `Read`, `act` asks like an edit/write built-in under the
+    // current mode, `dangerous` always asks unless `auto_allow` names the tool.
+    let native_hint = native_hint_for_origin(origin);
+    // A native `act` tool writes the way Write/Edit do: where the mode's
+    // denied_tools denies Write or Edit, the `act` tool is denied the same
+    // way (ask/debug modes deny both by default). Elsewhere it behaves as
+    // now: asked, like an edit/write built-in.
+    if native_hint == Some(NativeToolHint::Act)
+        && (takes(&denied, "Write", &ToolOrigin::BuiltIn)
+            || takes(&denied, "Edit", &ToolOrigin::BuiltIn))
+    {
+        return Verdict::Block(format!(
+            "Tool \"{tool_name}\" is denied in mode \"{mode}\" (it acts, and the mode denies Write/Edit)."
+        ));
+    }
+    let dangerous = native_hint == Some(NativeToolHint::Dangerous);
     let fail_closed = match channel {
         ApprovalChannel::Ui => false,
-        // print/json: nobody is asked, and the CLI prints one notice per run.
-        ApprovalChannel::Headless { fail_closed: false } => return Verdict::Allow,
-        ApprovalChannel::Headless { fail_closed: true } => true,
+        // print/json: nobody is asked, and the CLI prints one notice per run. A `dangerous`
+        // native tool still blocks there unless `auto_allow` names it, so it is treated as
+        // fail-closed even in print/json.
+        ApprovalChannel::Headless { fail_closed: false } if !dangerous => return Verdict::Allow,
+        ApprovalChannel::Headless { fail_closed } => fail_closed || dangerous,
     };
     // MCP and plugin lifecycle tools are gated only where nobody can answer (rpc). A UI still
     // runs them without a prompt, as before. A plugin WASM tool is never gated here: its network
-    // requests are asked as `WebFetch` by the plugin host.
+    // requests are asked as `WebFetch` by the plugin host. A native `read` tool is ungated like
+    // `Read`; `act` and `dangerous` are gated.
     let gated = is_gated_builtin(tool_name, origin)
-        || (fail_closed && is_mcp_or_plugin_tool(tool_name, origin));
+        || (fail_closed && is_mcp_or_plugin_tool(tool_name, origin))
+        || matches!(
+            native_hint,
+            Some(NativeToolHint::Act | NativeToolHint::Dangerous)
+        );
     if !gated {
         return Verdict::Allow;
     }
@@ -964,8 +1069,10 @@ pub fn evaluate(
         }
     }
     // `skip_permissions` (config or `--skip-permissions`): nothing is
-    // asked. The mode rules above still hold.
-    if config::skip_permissions(config) {
+    // asked. The mode rules above still hold — except a `dangerous`
+    // native tool, which always asks (or is blocked where nobody can
+    // answer) unless `auto_allow` names it.
+    if config::skip_permissions(config) && native_hint != Some(NativeToolHint::Dangerous) {
         return Verdict::Allow;
     }
     // `safe_shell`: a read-only command runs in every mode without asking.
@@ -1118,7 +1225,7 @@ impl HooPermissionGate {
                 };
                 let info = ClearanceInfo {
                     tool: tool_name.to_string(),
-                    detail: describe_tool(tool_name, input),
+                    detail: describe_tool_with_origin(tool_name, origin, input),
                     mode: config::active_mode(&merged).unwrap_or_else(|| "build".into()),
                     step: None,
                     reach: reach_for(tool_name, input),
@@ -1263,6 +1370,400 @@ mod tests {
                 ApprovalChannel::Ui,
             ),
             Verdict::Prompt
+        );
+    }
+
+    /// Serializes the tier C hint tests: they share the process-wide hint map.
+    static NATIVE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn native_guard(
+        hints: Vec<((&str, &str), NativeToolHint)>,
+    ) -> std::sync::MutexGuard<'static, ()> {
+        let guard = NATIVE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set_native_hints(
+            hints
+                .into_iter()
+                .map(|((plugin, tool), hint)| ((plugin.to_owned(), tool.to_owned()), hint))
+                .collect(),
+        );
+        guard
+    }
+
+    fn plugin_origin(plugin: &str, tool: &str) -> ToolOrigin {
+        ToolOrigin::Plugin {
+            plugin: plugin.to_owned(),
+            tool: tool.to_owned(),
+        }
+    }
+
+    #[test]
+    fn native_read_runs_without_a_prompt_like_read() {
+        let _guard = native_guard(vec![(("nread", "Lookup"), NativeToolHint::Read)]);
+        let dir = fresh_cwd();
+        let config = build_config();
+        let origin = plugin_origin("nread", "Lookup");
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Lookup",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Allow
+        );
+        // Even where rpc gates MCP tools, a `read` native tool still runs.
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Lookup",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Headless { fail_closed: true },
+            ),
+            Verdict::Allow
+        );
+        assert!(!is_approval_tool("Lookup", &origin));
+    }
+
+    #[test]
+    fn native_act_asks_like_an_edit_write_builtin() {
+        let _guard = native_guard(vec![(("nact", "Apply"), NativeToolHint::Act)]);
+        let dir = fresh_cwd();
+        let config = build_config();
+        let origin = plugin_origin("nact", "Apply");
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Prompt
+        );
+        // print/json (fail-open): runs without asking, like Edit.
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Headless { fail_closed: false },
+            ),
+            Verdict::Allow
+        );
+        // rpc (fail-closed): blocked unless `auto_allow` names it.
+        assert!(matches!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Headless { fail_closed: true },
+            ),
+            Verdict::Block(_)
+        ));
+        assert!(is_approval_tool("Apply", &origin));
+    }
+
+    #[test]
+    fn native_act_auto_allow_by_selector_or_name() {
+        let _guard = native_guard(vec![(("nact", "Apply"), NativeToolHint::Act)]);
+        let dir = fresh_cwd();
+        let origin = plugin_origin("nact", "Apply");
+        for allow in ["plugin:nact/Apply", "Apply"] {
+            let config = json!({
+                "modes": {"build": {"auto_allow": [allow]}}
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            assert_eq!(
+                evaluate(
+                    &config,
+                    dir.path(),
+                    "Apply",
+                    &origin,
+                    &json!({}),
+                    ApprovalChannel::Headless { fail_closed: true },
+                ),
+                Verdict::Allow,
+                "auto_allow {allow:?} should allow the act tool"
+            );
+        }
+    }
+
+    #[test]
+    fn native_dangerous_always_asks_unless_auto_allow_names_it() {
+        let _guard = native_guard(vec![(("ndgr", "Wipe"), NativeToolHint::Dangerous)]);
+        let dir = fresh_cwd();
+        let config = build_config();
+        let origin = plugin_origin("ndgr", "Wipe");
+        // Interactive: asked.
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Wipe",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Prompt
+        );
+        // Headless fail-open (print/json): still blocked, since nobody can answer.
+        assert!(matches!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Wipe",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Headless { fail_closed: false },
+            ),
+            Verdict::Block(_)
+        ));
+        assert!(is_approval_tool("Wipe", &origin));
+        // `auto_allow` naming the tool (selector or bare name) allows it everywhere.
+        for allow in ["plugin:ndgr/Wipe", "Wipe"] {
+            let config = json!({
+                "modes": {"build": {"auto_allow": [allow]}}
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            for channel in [
+                ApprovalChannel::Ui,
+                ApprovalChannel::Headless { fail_closed: false },
+                ApprovalChannel::Headless { fail_closed: true },
+            ] {
+                assert_eq!(
+                    evaluate(&config, dir.path(), "Wipe", &origin, &json!({}), channel),
+                    Verdict::Allow,
+                    "auto_allow {allow:?} should allow the dangerous tool"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_dangerous_ignores_skip_permissions_unless_auto_allow() {
+        let _guard = native_guard(vec![
+            (("ndgr", "Wipe"), NativeToolHint::Dangerous),
+            (("nact", "Apply"), NativeToolHint::Act),
+        ]);
+        let dir = fresh_cwd();
+        let origin = plugin_origin("ndgr", "Wipe");
+        let skipped = json!({
+            "active_mode": "build",
+            "modes": {"build": {}},
+            "skip_permissions": true,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        // Interactive: asked, not allowed.
+        assert_eq!(
+            evaluate(
+                &skipped,
+                dir.path(),
+                "Wipe",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui
+            ),
+            Verdict::Prompt
+        );
+        // Headless fail-open (print/json): blocked, not allowed.
+        assert!(matches!(
+            evaluate(
+                &skipped,
+                dir.path(),
+                "Wipe",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Headless { fail_closed: false },
+            ),
+            Verdict::Block(_)
+        ));
+        // A non-dangerous tool still passes via `skip_permissions`.
+        assert_eq!(
+            evaluate(
+                &skipped,
+                dir.path(),
+                "Apply",
+                &plugin_origin("nact", "Apply"),
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Allow
+        );
+        // `auto_allow` naming the dangerous tool allows it again, everywhere.
+        let allowed = json!({
+            "active_mode": "build",
+            "modes": {"build": {"auto_allow": ["Wipe"]}},
+            "skip_permissions": true,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        for channel in [
+            ApprovalChannel::Ui,
+            ApprovalChannel::Headless { fail_closed: false },
+            ApprovalChannel::Headless { fail_closed: true },
+        ] {
+            assert_eq!(
+                evaluate(&allowed, dir.path(), "Wipe", &origin, &json!({}), channel),
+                Verdict::Allow,
+                "auto_allow should allow the dangerous tool under skip_permissions"
+            );
+        }
+    }
+
+    #[test]
+    fn native_act_follows_write_edit_denials() {
+        let _guard = native_guard(vec![(("nact", "Apply"), NativeToolHint::Act)]);
+        let dir = fresh_cwd();
+        let origin = plugin_origin("nact", "Apply");
+        // A mode denying Write denies the act tool the same way.
+        let denied_write = json!({
+            "active_mode": "ask",
+            "modes": {"ask": {"denied_tools": ["Write"]}},
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            evaluate(
+                &denied_write,
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui
+            ),
+            Verdict::Block(_)
+        ));
+        // Same for Edit.
+        let denied_edit = json!({
+            "active_mode": "ask",
+            "modes": {"ask": {"denied_tools": ["Edit"]}},
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            evaluate(
+                &denied_edit,
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui
+            ),
+            Verdict::Block(_)
+        ));
+        // A mode denying neither still asks, like an edit/write built-in.
+        assert_eq!(
+            evaluate(
+                &build_config(),
+                dir.path(),
+                "Apply",
+                &origin,
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Prompt
+        );
+    }
+
+    #[test]
+    fn native_hints_are_origin_keyed_never_name_keyed() {
+        let _guard = native_guard(vec![
+            (("alpha", "Tool"), NativeToolHint::Read),
+            (("beta", "Tool"), NativeToolHint::Dangerous),
+        ]);
+        let dir = fresh_cwd();
+        let config = build_config();
+        // Same bare name, different plugins: different hints.
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Tool",
+                &plugin_origin("alpha", "Tool"),
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Allow
+        );
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Tool",
+                &plugin_origin("beta", "Tool"),
+                &json!({}),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Prompt
+        );
+        // A WASM plugin tool with no hint is never gated, even sharing the name.
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Tool",
+                &plugin_origin("gamma", "Tool"),
+                &json!({}),
+                ApprovalChannel::Headless { fail_closed: true },
+            ),
+            Verdict::Allow
+        );
+    }
+
+    /// A relay that cannot answer EnsureHelper says so: the headless
+    /// fail-closed relay of an rpc root's child has no parent channel, and
+    /// the trait default refuses too, so only an explicit opt-in (the
+    /// subagents child relay) counts as a channel.
+    #[test]
+    fn relays_without_a_parent_channel_cannot_ensure() {
+        let headless = HeadlessClearanceRelay::new(std::path::PathBuf::from("/tmp"), true);
+        assert!(
+            !ClearanceRelay::can_ensure(&headless),
+            "a headless fail-closed child has no parent channel"
+        );
+        struct NoChannel;
+        impl ClearanceRelay for NoChannel {
+            fn ask(&self, _request: &RelayRequest) -> Option<String> {
+                None
+            }
+        }
+        assert!(
+            !ClearanceRelay::can_ensure(&NoChannel),
+            "the default relay cannot ensure"
+        );
+    }
+
+    #[test]
+    fn native_prompt_card_names_the_plugin_and_tool() {
+        let _guard = native_guard(vec![(("browser", "Open"), NativeToolHint::Act)]);
+        let origin = plugin_origin("browser", "Open");
+        let detail = describe_tool_with_origin("Open", &origin, &json!({}));
+        assert!(
+            detail.contains("browser") && detail.contains("Open"),
+            "the card must name the plugin and tool: {detail:?}"
+        );
+        // A built-in keeps its argument subject.
+        assert_eq!(
+            describe_tool_with_origin("Edit", &ToolOrigin::BuiltIn, &json!({"path": "a.rs"})),
+            "Edit a.rs"
         );
     }
 }

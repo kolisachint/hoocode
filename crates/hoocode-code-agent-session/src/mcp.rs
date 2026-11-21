@@ -654,8 +654,11 @@ async fn connect_and_list(
             )
             .await?
         }
-        stdio @ McpServerConfig::Stdio { .. } => {
-            McpClient::connect_with_elicitation(name, stdio, options, elicitation).await?
+        // Tier C Unix-socket helpers are supervisor-managed and never reach
+        // this path, but connecting one directly works the same as stdio:
+        // its own Authorization header means OAuth never applies.
+        other @ (McpServerConfig::Stdio { .. } | McpServerConfig::Unix { .. }) => {
+            McpClient::connect_with_elicitation(name, other, options, elicitation).await?
         }
     };
     match client.list_tools().await {

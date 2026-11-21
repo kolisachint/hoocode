@@ -74,6 +74,18 @@ appear to the model under the names the plugin gives them, with no prefix (`WebF
 for example). They are live as soon as the plugin is installed, updated or removed, with
 no `/reload`.
 
+A plugin may also ship a native helper: a per-platform binary the plugin names in its `mcp.json` and describes in `extensions."dev.hoocode".native`. hoocode starts one helper per session on first use. Its tools appear under the names the plugin declares, with no prefix, and are live with no `/reload`. Only trusted plugins start helpers.
+
+- The binary is downloaded once per version into `~/.hoocode/plugin-bin/<plugin>/<version>/`, checksum verified. To use an installed binary instead (offline or IT-approved installs), set an absolute path in your user `settings.json` (project settings are ignored: a cloned repo cannot redirect the helper):
+
+```json
+{ "nativeHelpers": { "<plugin>": { "binaryPath": "/abs/path" } } }
+```
+
+- Each declared tool carries a permission hint. `read` runs without asking. `act` asks like an edit, and is denied where your mode denies Write or Edit. `dangerous` always asks unless your mode's `auto_allow` names it, even with `skip_permissions` (where nobody can answer, it stays blocked).
+- Subagents get a helper's tools only when the plugin marks it shared. Other helpers are root-only, as are plain MCP plugin servers.
+- Native helpers are not available in `hoocode app-server`: its sessions register no native tools. Single-session paths (TUI, print, json, rpc) are unaffected.
+
 - Tool names. An MCP server's tool appears as `mcp__<server>__<tool>`, for example
   `mcp__github__create_issue`. `--tools`, `--disallowed-tools` and an agent's `tools`
   and `disallowedTools` take a name or a selector: `plugin:<plugin>` (every tool of a

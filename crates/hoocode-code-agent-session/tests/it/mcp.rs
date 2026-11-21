@@ -394,6 +394,8 @@ async fn an_unset_variable_marks_the_server_failed_and_names_it() {
 }
 
 /// A subagent's MCP tools never include a plugin's, whatever the hub reports (subagents.md).
+/// A shared tier C tool (origin `Plugin`, not `Mcp`) passes the filter: dropping it is the
+/// plugin registry's job (spec D6), not the MCP hub's.
 #[test]
 fn a_subagent_drops_plugin_mcp_tools_and_keeps_the_others() {
     use crate::common::tool;
@@ -410,10 +412,18 @@ fn a_subagent_drops_plugin_mcp_tools_and_keeps_the_others() {
         tool: "echo".into(),
         plugin: None,
     };
-    let kept: Vec<String> =
-        hoocode_code_agent_session::mcp::without_plugin_mcp_tools(vec![plugin_tool, user_tool])
-            .into_iter()
-            .map(|t| t.name)
-            .collect();
-    assert_eq!(kept, ["echo"]);
+    let mut tier_c_tool = tool("browser_open", |_| unimplemented!());
+    tier_c_tool.origin = ToolOrigin::Plugin {
+        plugin: "hoo-browser".into(),
+        tool: "browser_open".into(),
+    };
+    let kept: Vec<String> = hoocode_code_agent_session::mcp::without_plugin_mcp_tools(vec![
+        plugin_tool,
+        user_tool,
+        tier_c_tool,
+    ])
+    .into_iter()
+    .map(|t| t.name)
+    .collect();
+    assert_eq!(kept, ["echo", "browser_open"]);
 }

@@ -94,3 +94,17 @@ fn a_clearance_request_is_its_own_kind_of_line() {
     // Not a progress event the UI would show as the run's activity.
     assert!(!FORWARDED_SUBAGENT_EVENTS.contains(&"clearance_request"));
 }
+
+/// The child's EnsureHelper request is its own line kind, not clearance and
+/// not progress.
+#[test]
+fn an_ensure_request_is_neither_clearance_nor_progress() {
+    let line = hoocode_code_subagents::clearance::ensure_request_line(4, "t3c");
+    match classify_subagent_line(&line) {
+        SubagentStdoutLine::EnsureHelper(request) => {
+            assert_eq!(request["plugin"], json!("t3c"));
+            assert_eq!(request["id"], json!(4));
+        }
+        other => panic!("expected EnsureHelper, got {other:?}"),
+    }
+}

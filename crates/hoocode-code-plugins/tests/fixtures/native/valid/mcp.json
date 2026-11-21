@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "hoo-browser": {
+      "type": "stdio",
+      "command": "./bin/hoo-browser",
+      "args": ["--serve", "${PLUGIN_DATA}/state"],
+      "env": {"CONFIG": "${PLUGIN_ROOT}/config.json"}
+    },
+    "docs": {
+      "type": "streamable-http",
+      "url": "https://docs.example.com/mcp"
+    }
+  }
+}

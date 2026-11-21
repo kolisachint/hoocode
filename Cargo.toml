@@ -54,6 +54,7 @@ members = [
     "crates/hoocode-code-modes",
     "crates/hoocode-code-permissions",
     "crates/hoocode-code-plugins",
+    "crates/hoocode-code-native",
     "crates/hoocode-code-wasm",
     "crates/hoocode-code-print",
     "crates/hoocode-code-prompts",
@@ -151,6 +152,7 @@ hoocode-code-mcp = { path = "crates/hoocode-code-mcp" }
 hoocode-code-modes = { path = "crates/hoocode-code-modes" }
 hoocode-code-permissions = { path = "crates/hoocode-code-permissions" }
 hoocode-code-plugins = { path = "crates/hoocode-code-plugins" }
+hoocode-code-native = { path = "crates/hoocode-code-native" }
 hoocode-code-wasm = { path = "crates/hoocode-code-wasm" }
 hoocode-ai-registry = { path = "crates/hoocode-ai-registry" }
 hoocode-code-prompts = { path = "crates/hoocode-code-prompts" }
