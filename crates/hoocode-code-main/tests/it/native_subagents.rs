@@ -67,9 +67,12 @@ fn fixture_bin(example: &str) -> PathBuf {
             // it builds from: the example source plus the whole
             // `hoocode-agent-mcp` source tree and manifest.
             let newest_input = || {
-                let mut newest = std::fs::metadata(mcp.join("examples").join("echo_helper.rs"))
-                    .and_then(|meta| meta.modified())
-                    .ok();
+                // Freshness keys on the built example's own source, not
+                // always on `echo_helper.rs`.
+                let mut newest =
+                    std::fs::metadata(mcp.join("examples").join(format!("{example}.rs")))
+                        .and_then(|meta| meta.modified())
+                        .ok();
                 newest = newest.max(
                     std::fs::metadata(mcp.join("Cargo.toml"))
                         .and_then(|meta| meta.modified())

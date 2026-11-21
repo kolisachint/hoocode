@@ -533,33 +533,98 @@ mod tests {
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
 
-    /// The built echo helper fixture (same recipe as the native integration
-    /// tests): builds once, reuses the binary afterwards.
+    /// The built echo helper fixture (the shared freshness recipe, same as
+    /// `crates/hoocode-code-native/tests/it/common.rs`): a binary newer than
+    /// the fixture source is reused as is, else one builder builds while the
+    /// rest wait on a lock dir. Honors `$CARGO_TARGET_DIR`.
     fn fixture_bin() -> PathBuf {
+        use std::time::Duration;
+        fn mtime(path: &Path) -> Option<std::time::SystemTime> {
+            std::fs::metadata(path)
+                .and_then(|meta| meta.modified())
+                .ok()
+        }
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let workspace = manifest
             .parent()
             .and_then(|dir| dir.parent())
             .expect("crate lives in <workspace>/crates/<name>")
             .to_path_buf();
-        let bin = workspace
-            .join("target")
+        let target = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| workspace.join("target"));
+        let bin = target
             .join("debug")
             .join("examples")
             .join(format!("echo_helper{}", std::env::consts::EXE_SUFFIX));
-        if !bin.is_file() {
-            let status = std::process::Command::new("cargo")
-                .arg("build")
-                .arg("-p")
-                .arg("hoocode-agent-mcp")
-                .arg("--example")
-                .arg("echo_helper")
-                .current_dir(&workspace)
-                .status()
-                .expect("cargo builds the echo fixture");
-            assert!(status.success(), "cargo build --example echo_helper");
+        let mcp = workspace.join("crates").join("hoocode-agent-mcp");
+        // The fixture is fresh when the binary is newer than every input it
+        // builds from: the example source plus the whole `hoocode-agent-mcp`
+        // source tree and manifest.
+        let newest_input = || {
+            let mut newest = mtime(&mcp.join("examples").join("echo_helper.rs"));
+            newest = newest.max(mtime(&mcp.join("Cargo.toml")));
+            let mut stack = vec![mcp.join("src")];
+            while let Some(current) = stack.pop() {
+                let Ok(entries) = std::fs::read_dir(&current) else {
+                    continue;
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Ok(meta) = entry.metadata() {
+                        newest = newest.max(mtime(&path));
+                        if meta.is_dir() {
+                            stack.push(path);
+                        }
+                    }
+                }
+            }
+            newest
+        };
+        let fresh = || {
+            let (Some(newest), Ok(bin_time)) = (
+                newest_input(),
+                std::fs::metadata(&bin).and_then(|meta| meta.modified()),
+            ) else {
+                return false;
+            };
+            bin_time >= newest
+        };
+        if !fresh() {
+            let lock = target
+                .join("debug")
+                .join("examples")
+                .join(".echo-helper-build.lock");
+            let mut waited = 0;
+            while std::fs::create_dir(&lock).is_err() {
+                if waited > 60 {
+                    let _ = std::fs::remove_dir_all(&lock);
+                }
+                std::thread::sleep(Duration::from_secs(1));
+                waited += 1;
+                if fresh() {
+                    break;
+                }
+            }
+            if !fresh() {
+                let status = std::process::Command::new("cargo")
+                    .arg("build")
+                    .arg("-p")
+                    .arg("hoocode-agent-mcp")
+                    .arg("--example")
+                    .arg("echo_helper")
+                    .current_dir(&workspace)
+                    .status()
+                    .expect("cargo builds the echo fixture");
+                assert!(status.success(), "cargo build --example echo_helper");
+            }
+            let _ = std::fs::remove_dir_all(&lock);
         }
-        assert!(bin.is_file(), "the echo fixture was built");
+        assert!(
+            bin.is_file(),
+            "the echo fixture was built: {}",
+            bin.display()
+        );
         bin
     }
 
