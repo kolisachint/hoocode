@@ -172,7 +172,9 @@ enum HelperState {
         /// gets `HOOCODE_HELPER_BIN_<PLUGIN>` next to the socket (spec D5).
         exe: PathBuf,
         client: McpClient,
-        child: tokio::process::Child,
+        /// Boxed: `Child` is ~200 bytes and would otherwise trip
+        /// `clippy::large_enum_variant` against the 24-byte `Down`.
+        child: Box<tokio::process::Child>,
     },
     Down {
         reason: String,
@@ -579,7 +581,7 @@ impl Supervisor {
         };
         let mut state = slot.state.lock().await;
         match &mut *state {
-            HelperState::Live { child, .. } => child_dead_before_send(child),
+            HelperState::Live { child, .. } => child_dead_before_send(child.as_mut()),
             HelperState::Idle => true,
             HelperState::Down { .. } => false,
         }
@@ -1133,7 +1135,7 @@ impl Supervisor {
                     socket: socket.clone(),
                     exe: executable.clone(),
                     client: ready_client,
-                    child,
+                    child: Box::new(child),
                 };
                 // Visible to the Shell env and EnsureHelper answers from
                 // here: read back while the slot lock is held, so a
