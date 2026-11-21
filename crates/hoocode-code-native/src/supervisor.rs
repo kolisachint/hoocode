@@ -52,7 +52,22 @@ pub const HELPER_TOKEN_ENV: &str = "HOOCODE_HELPER_TOKEN";
 /// `HOOCODE_HELPER_SOCKET_<PLUGIN>`, with the plugin name uppercased and every
 /// non-alphanumeric character replaced by `_`.
 pub fn helper_socket_env_name(plugin: &str) -> String {
-    let mut name = String::from("HOOCODE_HELPER_SOCKET_");
+    helper_env_name("HOOCODE_HELPER_SOCKET_", plugin)
+}
+
+/// The Shell environment variable carrying one started helper's executable
+/// (spec D5): `HOOCODE_HELPER_BIN_<PLUGIN>`, mangled like the socket name.
+/// The helper binary is downloaded under `~/.hoocode/plugin-bin` or set by
+/// `binaryPath`, so it is not on PATH; a plugin's skill runs its CLI fallback
+/// through this variable.
+pub fn helper_bin_env_name(plugin: &str) -> String {
+    helper_env_name("HOOCODE_HELPER_BIN_", plugin)
+}
+
+/// `prefix` plus the plugin name uppercased, every non-alphanumeric character
+/// replaced by `_`.
+fn helper_env_name(prefix: &str, plugin: &str) -> String {
+    let mut name = String::from(prefix);
     for c in plugin.chars() {
         if c.is_ascii_alphanumeric() {
             name.push(c.to_ascii_uppercase());
@@ -152,8 +167,14 @@ enum HelperState {
     Idle,
     Live {
         socket: PathBuf,
+        /// The resolved executable that was started: `binaryPath`, the
+        /// downloaded binary, or the mcp.json command. Recorded so Shell
+        /// gets `HOOCODE_HELPER_BIN_<PLUGIN>` next to the socket (spec D5).
+        exe: PathBuf,
         client: McpClient,
-        child: tokio::process::Child,
+        /// Boxed: `Child` is ~200 bytes and would otherwise trip
+        /// `clippy::large_enum_variant` against the 24-byte `Down`.
+        child: Box<tokio::process::Child>,
     },
     Down {
         reason: String,
@@ -195,6 +216,12 @@ struct SupervisorInner {
     /// when created.
     runtime_dir: Mutex<Option<PathBuf>>,
     slots: HashMap<String, HelperSlot>,
+    /// Snapshot of the live helpers (plugin to socket and resolved exe),
+    /// updated while the slot's start lock is held (on start, retire and
+    /// shutdown). `live_helpers` and the Shell spawn hook read this instead
+    /// of `try_lock`ing the slot state, so a concurrent start never makes
+    /// a live helper briefly disappear from the Shell env (spec D5).
+    live_snapshot: Mutex<HashMap<String, (PathBuf, PathBuf)>>,
     agents: Mutex<HashMap<String, RegisteredAgent>>,
     shutdown: AtomicBool,
     /// Cancelled by `shutdown`: wakes calls waiting out a download or start.
@@ -254,6 +281,7 @@ impl Supervisor {
                 root_identity,
                 runtime_dir: Mutex::new(None),
                 slots,
+                live_snapshot: Mutex::new(HashMap::new()),
                 agents: Mutex::new(HashMap::new()),
                 shutdown: AtomicBool::new(false),
                 shutdown_token: CancellationToken::new(),
@@ -352,25 +380,48 @@ impl Supervisor {
     /// shut down), without starting anything. Used for the Shell tool's
     /// environment (spec D5): a socket appears once its helper has started.
     pub fn live_sockets(&self) -> HashMap<String, PathBuf> {
-        let mut out = HashMap::new();
-        for plugin in self.inner.entries.keys() {
-            let Some(slot) = self.inner.slots.get(plugin) else {
-                continue;
-            };
-            let Ok(state) = slot.state.try_lock() else {
-                continue;
-            };
-            if let HelperState::Live { socket, .. } = &*state {
-                out.insert(plugin.clone(), socket.clone());
-            }
-        }
-        out
+        self.live_helpers()
+            .into_iter()
+            .map(|(plugin, (socket, _))| (plugin, socket))
+            .collect()
+    }
+
+    /// The socket path and resolved executable of the helpers currently
+    /// running, without starting anything. Used for the Shell tool's
+    /// environment (spec D5): both appear once the helper has started.
+    /// The executable is the `binaryPath`, the downloaded binary, or the
+    /// mcp.json command the helper was started from. Read from the live
+    /// snapshot, so a concurrent start holding the slot lock never makes a
+    /// running helper briefly disappear.
+    pub fn live_helpers(&self) -> HashMap<String, (PathBuf, PathBuf)> {
+        lock(&self.inner.live_snapshot).clone()
+    }
+
+    /// The resolved executable of the currently running helper for `plugin`:
+    /// `None` when it is not running. Answered to subagents with the
+    /// EnsureHelper socket, so their Shell env gets the binary too. Read
+    /// from the live snapshot, like [`Self::live_helpers`].
+    pub fn helper_exe(&self, plugin: &str) -> Option<PathBuf> {
+        lock(&self.inner.live_snapshot)
+            .get(plugin)
+            .map(|(_, exe)| exe.clone())
     }
 
     /// Start the helper for `plugin` on first use and return its socket path.
     /// Later calls return the running helper's path. Unix only.
     pub async fn ensure(&self, plugin: &str) -> Result<PathBuf, NativeError> {
-        self.ensure_cancel(plugin, &CancellationToken::new()).await
+        self.ensure_with_exe(plugin).await.map(|(socket, _)| socket)
+    }
+
+    /// `ensure` plus the resolved executable the helper was started from
+    /// (`binaryPath`, the downloaded binary, or the mcp.json command),
+    /// read while the slot lock is held. Prefer this over `ensure` plus
+    /// [`Self::helper_exe`]: the two-step read can miss when another task
+    /// holds the slot lock right after the ensure, and a child that caches
+    /// the answer would keep `None` for good.
+    pub async fn ensure_with_exe(&self, plugin: &str) -> Result<(PathBuf, PathBuf), NativeError> {
+        self.ensure_cancel_with_exe(plugin, &CancellationToken::new())
+            .await
     }
 
     /// Call `tool` for the root agent, starting the helper first. Cancelling
@@ -479,7 +530,7 @@ impl Supervisor {
             return Ok(());
         }
         self.inner.shutdown_token.cancel();
-        for slot in self.inner.slots.values() {
+        for (plugin, slot) in self.inner.slots.iter() {
             let mut state = slot.state.lock().await;
             let HelperState::Live {
                 client, mut child, ..
@@ -487,6 +538,9 @@ impl Supervisor {
             else {
                 continue;
             };
+            // No longer live: drop it from the snapshot now, so the Shell
+            // env loses the socket and the binary together.
+            lock(&self.inner.live_snapshot).remove(plugin);
             drop(state);
             // Bounded: a wedged helper must not hold shutdown past a beat.
             // Afterwards the child is killed either way.
@@ -527,7 +581,7 @@ impl Supervisor {
         };
         let mut state = slot.state.lock().await;
         match &mut *state {
-            HelperState::Live { child, .. } => child_dead_before_send(child),
+            HelperState::Live { child, .. } => child_dead_before_send(child.as_mut()),
             HelperState::Idle => true,
             HelperState::Down { .. } => false,
         }
@@ -728,6 +782,7 @@ impl Supervisor {
                 socket,
                 client,
                 child,
+                ..
             } => match child.try_wait() {
                 Ok(None) if socket.exists() => Some(client.clone()),
                 _ => None,
@@ -807,6 +862,18 @@ impl Supervisor {
         plugin: &str,
         cancel: &CancellationToken,
     ) -> Result<PathBuf, NativeError> {
+        self.ensure_cancel_with_exe(plugin, cancel)
+            .await
+            .map(|(socket, _)| socket)
+    }
+
+    /// `ensure_with_exe` with a cancellation token: a cancelled wait fails
+    /// at once instead of riding out a download or start.
+    async fn ensure_cancel_with_exe(
+        &self,
+        plugin: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(PathBuf, PathBuf), NativeError> {
         #[cfg(not(unix))]
         {
             let _ = (plugin, cancel);
@@ -825,7 +892,7 @@ impl Supervisor {
         &self,
         plugin: &str,
         cancel: &CancellationToken,
-    ) -> Result<PathBuf, NativeError> {
+    ) -> Result<(PathBuf, PathBuf), NativeError> {
         if self.inner.shutdown.load(Ordering::SeqCst) {
             return Err(shut_down(plugin));
         }
@@ -843,8 +910,12 @@ impl Supervisor {
         {
             let mut state = slot.state.lock().await;
             match &mut *state {
-                HelperState::Live { socket, child, .. } => match child.try_wait() {
-                    Ok(None) if socket.exists() => return Ok(socket.clone()),
+                HelperState::Live {
+                    socket, exe, child, ..
+                } => match child.try_wait() {
+                    Ok(None) if socket.exists() => {
+                        return Ok((socket.clone(), exe.clone()));
+                    }
                     // Dead or unreachable: fall through to (re)start.
                     _ => {}
                 },
@@ -873,7 +944,7 @@ impl Supervisor {
         plugin: &str,
         slot: &HelperSlot,
         cancel: &CancellationToken,
-    ) -> Result<PathBuf, NativeError> {
+    ) -> Result<(PathBuf, PathBuf), NativeError> {
         if self.inner.shutdown.load(Ordering::SeqCst) {
             return Err(shut_down(plugin));
         }
@@ -907,6 +978,10 @@ impl Supervisor {
                     None
                 }
             };
+            // The helper is not live from here until the start below
+            // succeeds: drop it from the snapshot now, so the Shell env
+            // never points at a retired socket.
+            lock(&self.inner.live_snapshot).remove(plugin);
             drop(state);
             if let Some(mut child) = retired {
                 let _ = child.kill().await;
@@ -936,6 +1011,7 @@ impl Supervisor {
                     *slot.state.lock().await = HelperState::Down {
                         reason: reason.clone(),
                     };
+                    lock(&self.inner.live_snapshot).remove(plugin);
                     return Err(NativeError::Down {
                         plugin: plugin.to_owned(),
                         reason,
@@ -1057,10 +1133,16 @@ impl Supervisor {
                 }
                 *state = HelperState::Live {
                     socket: socket.clone(),
+                    exe: executable.clone(),
                     client: ready_client,
-                    child,
+                    child: Box::new(child),
                 };
-                Ok(socket)
+                // Visible to the Shell env and EnsureHelper answers from
+                // here: read back while the slot lock is held, so a
+                // concurrent ensure gets the same exe.
+                let live = (socket.clone(), executable.clone());
+                lock(&self.inner.live_snapshot).insert(plugin.to_owned(), live.clone());
+                Ok(live)
             }
             Err(error) => {
                 let _ = child.kill().await;
@@ -1416,6 +1498,26 @@ mod tests {
         assert!(
             !child_dead_before_send(&mut running),
             "a running child can receive the call"
+        );
+    }
+
+    /// The Shell variable names for one plugin (spec D5): the binary name
+    /// uses the same mangling as the socket name, so the two always agree.
+    #[test]
+    fn helper_env_names_mangle_plugin_names_alike() {
+        assert_eq!(
+            helper_socket_env_name("hoo-browser"),
+            "HOOCODE_HELPER_SOCKET_HOO_BROWSER"
+        );
+        assert_eq!(
+            helper_bin_env_name("hoo-browser"),
+            "HOOCODE_HELPER_BIN_HOO_BROWSER"
+        );
+        assert_eq!(helper_socket_env_name("t3c"), "HOOCODE_HELPER_SOCKET_T3C");
+        assert_eq!(helper_bin_env_name("t3c"), "HOOCODE_HELPER_BIN_T3C");
+        assert_eq!(
+            helper_bin_env_name("my.plugin/v2"),
+            "HOOCODE_HELPER_BIN_MY_PLUGIN_V2"
         );
     }
 }

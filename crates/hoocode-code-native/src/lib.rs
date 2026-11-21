@@ -33,6 +33,7 @@ pub use runtime_dir::{
     validate_path_component, INTERNAL_RUNTIME_DIR_ENV, MAX_SOCKET_PATH_BYTES,
 };
 pub use supervisor::{
-    helper_socket_env_name, NativeCallOptions, NativeClient, Supervisor, SupervisorConfig,
+    helper_bin_env_name, helper_socket_env_name, NativeCallOptions, NativeClient, Supervisor,
+    SupervisorConfig,
 };
 pub use supervisor::{HELPER_SOCKET_ENV, HELPER_TOKEN_ENV};

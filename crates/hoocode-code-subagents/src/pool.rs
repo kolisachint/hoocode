@@ -22,7 +22,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hoocode_ai_types::Model;
 use hoocode_code_models::ResolvedScoped;
-use hoocode_code_permissions::{ClearanceRelay, RelayRequest};
+use hoocode_code_permissions::{ClearanceRelay, EnsureHelperAnswer, RelayRequest};
 use hoocode_code_resources::{
     load_agent_registry, AgentDefinition, AgentRegistry, AgentSource, LoadAgentRegistryOptions,
     MODEL_INHERIT,
@@ -34,7 +34,7 @@ use serde_json::{json, Map, Value};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::agent_log::agent_log;
-use crate::clearance::{ensure_response_line, response_line, NO_UI_REASON};
+use crate::clearance::{ensure_response_line_full, response_line, NO_UI_REASON};
 use crate::depth::{
     current_subagent_depth, resolve_max_subagent_depth, tool_allowlist_needs_mcp,
     DEFER_MCP_SCHEMAS_ENV, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
@@ -145,13 +145,15 @@ pub trait NativeChildHost: Send + Sync {
     /// minted, no env is added).
     fn child_env(&self, task_id: &str) -> Option<Vec<(String, String)>>;
     /// Ensure this process's connection for `plugin`, register the `task_id`
-    /// child on it, and return the helper's socket path. `Err` is the child's
+    /// child on it, and return the helper's socket path plus its resolved
+    /// executable (so the child's Shell env gets the binary too; missing
+    /// when this process has no executable recorded). `Err` is the child's
     /// error text.
     fn ensure_helper<'a>(
         &'a self,
         task_id: &'a str,
         plugin: &'a str,
-    ) -> HostFuture<'a, Result<PathBuf, String>>;
+    ) -> HostFuture<'a, Result<(PathBuf, Option<PathBuf>), String>>;
     /// The `task_id` child ended (any way): deregister it from every helper
     /// it was registered with. Best effort.
     fn child_ended<'a>(&'a self, task_id: &'a str) -> HostFuture<'a, ()>;
@@ -1982,7 +1984,8 @@ impl PoolInner {
     /// A child asks for its tier C helper's socket (spec D5). The session's
     /// native host ensures this process's own connection (a non-root process
     /// asks its own parent first, recursively) and registers the child on
-    /// it; the socket path goes back on the child's stdin. With no host the
+    /// it; the socket path plus the helper's executable go back on the
+    /// child's stdin. With no host the
     /// session has no shared helper, and the request is denied at once. The
     /// blocking wait runs on a thread of its own, like the clearance relay.
     fn relay_ensure(
@@ -1991,10 +1994,10 @@ impl PoolInner {
         request: &Map<String, Value>,
         link: &ChildLink,
     ) {
-        let answer = |result: &Result<String, String>| {
+        let answer = |result: &EnsureHelperAnswer| {
             if let Some(stdin) = &link.stdin {
                 let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
-                let _ = stdin.try_send(ensure_response_line(id, result));
+                let _ = stdin.try_send(ensure_response_line_full(id, result));
             }
         };
         let (Some(id), Some(plugin)) = (
@@ -2021,9 +2024,14 @@ impl PoolInner {
         let started = hoocode_runtime::spawn_named_thread("hoocode-ensure", move || {
             let socket = hoocode_runtime::io_handle()
                 .block_on(host.ensure_helper(&task, &plugin))
-                .map(|path| path.display().to_string());
+                .map(|(path, exe)| {
+                    (
+                        path.display().to_string(),
+                        exe.map(|exe| exe.display().to_string()),
+                    )
+                });
             if let Some(stdin) = &link_for_thread.stdin {
-                let _ = stdin.blocking_send(ensure_response_line(id, &socket));
+                let _ = stdin.blocking_send(ensure_response_line_full(id, &socket));
             }
             // Without a stdin there is nobody to answer; the registration the
             // host just made stays (the child may still connect and call).

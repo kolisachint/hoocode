@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: Shell gets each helper's binary (2026-11-21)
+- **Shell sees `HOOCODE_HELPER_BIN_<PLUGIN>`** next to `HOOCODE_HELPER_SOCKET_<PLUGIN>` for every started helper: the resolved executable the helper was started from (`binaryPath`, the download, or the mcp.json command). The helper binary is not on `PATH`, so a plugin's skill runs its CLI fallback as `"$HOOCODE_HELPER_BIN_<PLUGIN>" cli <args>`. Subagents learn it on their first shared tool call, through `EnsureHelper`.
+
 ### Added: native helper plugins (tier C) (2026-11-20)
 - **A plugin can ship a native helper**: a per-platform binary the plugin names as a stdio server in its `mcp.json` and describes in `extensions."dev.hoocode".native` (`server`, `shared`, `binaries`, `tools`). Its tools appear under the names the plugin declares, with no prefix, and with origin `plugin`, so `plugin:<plugin>` selectors match them. A bad `native` block turns the native part off with a diagnostic; the rest of the plugin loads.
 - **One helper process per session, started on first use.** It speaks MCP Streamable HTTP over a Unix socket (`http://localhost/mcp`). Each agent (root and subagents) gets its own token; every call carries its identity, and a subagent reaches a shared helper through its parent (`EnsureHelper`). After 5 restarts in 3 minutes the tools report `<plugin> helper is down: <reason>` until the session ends.

@@ -19,8 +19,8 @@ use hoocode_agent_mcp::{McpError, ToolOutput};
 use hoocode_agent_types::ToolOrigin;
 use hoocode_ai_types::AbortSignal;
 use hoocode_code_native::{
-    helper_socket_env_name, mint_agent, AgentIdentity, NativeCallOptions, NativeClient,
-    NativeError, AGENT_ID_ENV, AGENT_TOKEN_ENV,
+    helper_bin_env_name, helper_socket_env_name, mint_agent, AgentIdentity, NativeCallOptions,
+    NativeClient, NativeError, AGENT_ID_ENV, AGENT_TOKEN_ENV,
 };
 use hoocode_code_plugins::PluginSet;
 use hoocode_code_subagents::pool::{HostFuture, NativeChildHost};
@@ -44,6 +44,10 @@ pub(crate) struct ChildNativeState {
 
 struct ChildConn {
     socket: PathBuf,
+    /// The helper's resolved executable, missing when an old parent answered
+    /// the EnsureHelper without it. The child's Shell env gets
+    /// `HOOCODE_HELPER_BIN_<PLUGIN>` from it.
+    exe: Option<PathBuf>,
     client: NativeClient,
 }
 
@@ -68,11 +72,18 @@ impl ChildNativeState {
             .map(|conn| conn.client.clone())
     }
 
-    fn store(&self, plugin: &str, socket: PathBuf, client: NativeClient) {
+    fn store(&self, plugin: &str, socket: PathBuf, exe: Option<PathBuf>, client: NativeClient) {
         self.clients
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(plugin.to_owned(), ChildConn { socket, client });
+            .insert(
+                plugin.to_owned(),
+                ChildConn {
+                    socket,
+                    exe,
+                    client,
+                },
+            );
     }
 
     fn forget(&self, plugin: &str) {
@@ -82,14 +93,16 @@ impl ChildNativeState {
             .remove(plugin);
     }
 
-    /// The known helper sockets, for the Shell env.
-    fn sockets(&self) -> Vec<(String, PathBuf)> {
-        let mut out: Vec<(String, PathBuf)> = self
+    /// The known helpers' sockets and executables, for the Shell env (spec
+    /// D5). The executable is missing when an old parent answered the
+    /// EnsureHelper without it.
+    fn helpers(&self) -> Vec<(String, PathBuf, Option<PathBuf>)> {
+        let mut out: Vec<(String, PathBuf, Option<PathBuf>)> = self
             .clients
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .iter()
-            .map(|(plugin, conn)| (plugin.clone(), conn.socket.clone()))
+            .map(|(plugin, conn)| (plugin.clone(), conn.socket.clone(), conn.exe.clone()))
             .collect();
         out.sort();
         out
@@ -214,7 +227,7 @@ impl NativeChildHost for CliNativeHost {
         &'a self,
         task_id: &'a str,
         plugin: &'a str,
-    ) -> HostFuture<'a, Result<PathBuf, String>> {
+    ) -> HostFuture<'a, Result<(PathBuf, Option<PathBuf>), String>> {
         Box::pin(async move {
             match &self.mode {
                 HostMode::Root {
@@ -240,10 +253,16 @@ impl NativeChildHost for CliNativeHost {
                         .ok_or_else(|| {
                             format!("Unknown subagent {task_id}: no tier C identity.")
                         })?;
-                    let socket = supervisor
-                        .ensure(plugin)
+                    // The socket and the executable the helper was started
+                    // from, read while the slot lock is held: the child's
+                    // Shell env gets the exe as `HOOCODE_HELPER_BIN_<PLUGIN>`.
+                    // A separate `helper_exe` read after the ensure could
+                    // miss under a concurrent start and cache `None`.
+                    let (socket, exe) = supervisor
+                        .ensure_with_exe(plugin)
                         .await
                         .map_err(|error| error.to_string())?;
+                    let exe = Some(exe);
                     // Keyed by token: a retried task (same task id, fresh
                     // token) registers again instead of reusing the dead
                     // token, and a failed register never marks.
@@ -265,7 +284,7 @@ impl NativeChildHost for CliNativeHost {
                             return Err(error.to_string());
                         }
                     }
-                    Ok(socket)
+                    Ok((socket, exe))
                 }
                 HostMode::Child {
                     shared_plugins,
@@ -297,13 +316,12 @@ impl NativeChildHost for CliNativeHost {
                                 "The {plugin} helper needs the parent session: no parent channel in this process."
                             )
                         })?;
-                    let socket: PathBuf =
-                        relay
-                            .ask_ensure(plugin)
-                            .map(PathBuf::from)
-                            .map_err(|error| {
-                                format!("The {plugin} helper is not available: {error}")
-                            })?;
+                    let (socket, exe): (PathBuf, Option<PathBuf>) = relay
+                        .ask_ensure(plugin)
+                        .map(|(socket, exe)| (PathBuf::from(socket), exe.map(PathBuf::from)))
+                        .map_err(|error| {
+                            format!("The {plugin} helper is not available: {error}")
+                        })?;
                     let own = self.shared.identity().ok_or_else(|| {
                         "This subagent was started without a tier C identity.".to_string()
                     })?;
@@ -314,13 +332,14 @@ impl NativeChildHost for CliNativeHost {
                         .register_child(&identity)
                         .await
                         .map_err(|error| error.to_string())?;
-                    self.shared.store(plugin, socket.clone(), client);
+                    self.shared
+                        .store(plugin, socket.clone(), exe.clone(), client);
                     children
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .get_mut(task_id)
                         .map(|reg| reg.plugins.insert(plugin.to_owned()));
-                    Ok(socket)
+                    Ok((socket, exe))
                 }
             }
         })
@@ -437,7 +456,7 @@ pub(crate) fn call_tool(
         // thread; the abort token still cancels the call that follows.)
         let client = match state.cached(plugin) {
             Some(client) => client,
-            None => connect_cached(state, &relay, plugin, &identity).await?,
+            None => connect_cached(state, &relay, plugin, &identity).await?.0,
         };
         let options = NativeCallOptions {
             cancel: cancel2.clone(),
@@ -451,7 +470,7 @@ pub(crate) fn call_tool(
                 // — including a mid-call disconnect — may have run and is
                 // returned.
                 state.forget(plugin);
-                let client = connect_cached(state, &relay, plugin, &identity).await?;
+                let (client, _) = connect_cached(state, &relay, plugin, &identity).await?;
                 let options = NativeCallOptions { cancel: cancel2 };
                 client.call_tool(tool, params, options).await
             }
@@ -460,21 +479,22 @@ pub(crate) fn call_tool(
     })
 }
 
-/// Ask the parent for `plugin`'s socket and connect with this process's
-/// identity, caching both for the next call.
+/// Ask the parent for `plugin`'s socket and executable and connect with this
+/// process's identity, caching all three for the next call. The executable
+/// is missing when an old parent answered without it.
 async fn connect_cached(
     state: &Arc<ChildNativeState>,
     relay: &Arc<dyn hoocode_code_permissions::ClearanceRelay>,
     plugin: &str,
     identity: &AgentIdentity,
-) -> Result<NativeClient, NativeError> {
-    let socket: PathBuf = relay
+) -> Result<(NativeClient, Option<PathBuf>), NativeError> {
+    let (socket, exe): (PathBuf, Option<PathBuf>) = relay
         .ask_ensure(plugin)
-        .map(PathBuf::from)
+        .map(|(socket, exe)| (PathBuf::from(socket), exe.map(PathBuf::from)))
         .map_err(NativeError::Io)?;
     let client = NativeClient::connect(&socket, plugin, identity).await?;
-    state.store(plugin, socket, client.clone());
-    Ok(client)
+    state.store(plugin, socket, exe.clone(), client.clone());
+    Ok((client, exe))
 }
 
 /// An error a second EnsureHelper round-trip may fix: the request never
@@ -491,9 +511,9 @@ fn is_recoverable(error: &NativeError) -> bool {
 }
 
 /// Shell commands in a subagent get the child's own identity and the started
-/// helpers' sockets (spec D5), like the root's Shell hook but for this
-/// process. A session with no helper contributes no extra variable, exactly
-/// like the root's hook.
+/// helpers' sockets and executables (spec D5), like the root's Shell hook
+/// but for this process. A session with no helper contributes no extra
+/// variable, exactly like the root's hook.
 pub(crate) fn shell_spawn_hook(state: Arc<ChildNativeState>) -> BashSpawnHook {
     Arc::new(move |mut ctx: BashSpawnContext| {
         if let Some(identity) = state.identity() {
@@ -501,10 +521,14 @@ pub(crate) fn shell_spawn_hook(state: Arc<ChildNativeState>) -> BashSpawnHook {
                 .insert(AGENT_ID_ENV.into(), identity.agent_id.into());
             ctx.env
                 .insert(AGENT_TOKEN_ENV.into(), identity.token.into());
-            for (plugin, socket) in state.sockets() {
+            for (plugin, socket, exe) in state.helpers() {
                 if let Some(path) = socket.to_str() {
                     ctx.env
                         .insert(helper_socket_env_name(&plugin).into(), path.into());
+                }
+                if let Some(exe) = exe.as_ref().and_then(|exe| exe.to_str()) {
+                    ctx.env
+                        .insert(helper_bin_env_name(&plugin).into(), exe.into());
                 }
             }
         }
@@ -889,6 +913,50 @@ mod tests {
             1,
             "the fresh token is announced again"
         );
+        let _ = supervisor.shutdown().await;
+    }
+
+    /// Concurrent `EnsureHelper` answers all carry the exe: the answer reads
+    /// it from the ensure itself, not from a separate lookup that can miss
+    /// under a concurrent start and be cached as `None` for good.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_ensure_helper_answers_all_carry_the_exe() {
+        let fixture = Fixture::start();
+        let host = std::sync::Arc::new(CliNativeHost::root(
+            fixture.holder.clone(),
+            std::sync::Arc::new(ChildNativeState::new()),
+        ));
+        let mut set = tokio::task::JoinSet::new();
+        for index in 0..16 {
+            let host = host.clone();
+            set.spawn(async move {
+                let task = format!("t-exe-{index}");
+                assert!(
+                    host.child_env(&task).is_some(),
+                    "each child gets an identity"
+                );
+                host.ensure_helper(&task, "demo").await
+            });
+        }
+        let mut sockets = Vec::new();
+        while let Some(joined) = set.join_next().await {
+            let (socket, exe) = joined.expect("task").expect("ensure");
+            assert!(socket.exists(), "the socket is real");
+            assert_eq!(
+                exe,
+                Some(fixture_bin()),
+                "every EnsureHelper answer carries the exe"
+            );
+            sockets.push(socket);
+        }
+        assert_eq!(sockets.len(), 16);
+        let first = &sockets[0];
+        assert!(
+            sockets.iter().all(|socket| socket == first),
+            "one helper serves every caller"
+        );
+        let supervisor = fixture.holder.supervisor().expect("supervisor");
+        assert_eq!(supervisor.spawn_count("demo"), 1, "one process starts");
         let _ = supervisor.shutdown().await;
     }
 }

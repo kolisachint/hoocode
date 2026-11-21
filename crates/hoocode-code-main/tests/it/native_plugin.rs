@@ -377,7 +377,7 @@ fn no_helper_before_the_first_call_then_root_identity_and_shell_env() {
         json!({"tool_calls": [{"name": "Shell", "arguments": {"command": ls}}]}),
         json!({"tool_calls": [{"name": "echo", "arguments": {"text": "hello"}}]}),
         json!({"tool_calls": [{"name": "Shell", "arguments": {
-            "command": "echo \"ID=$HOOCODE_AGENT_ID\"; echo \"SOCK=${HOOCODE_HELPER_SOCKET_T3C:-unset}\"; echo \"LEN=${#HOOCODE_AGENT_TOKEN}\"",
+            "command": "echo \"ID=$HOOCODE_AGENT_ID\"; echo \"SOCK=${HOOCODE_HELPER_SOCKET_T3C:-unset}\"; echo \"BIN=${HOOCODE_HELPER_BIN_T3C:-unset}\"; echo \"LEN=${#HOOCODE_AGENT_TOKEN}\"",
         }}]}),
         json!({"text": "done"}),
     ];
@@ -386,11 +386,17 @@ fn no_helper_before_the_first_call_then_root_identity_and_shell_env() {
     let first = offered(&printed.requests[0]);
     assert!(first.contains(&"echo"), "{first:?}\n{}", printed.stderr);
 
-    // Before the first call the helper never started: its socket is absent.
+    // Before the first call the helper never started: its socket and binary
+    // are absent.
     let before = tool_results(&printed.requests[1]);
     assert!(
         before.iter().all(|text| !text.contains(".sock")),
         "no helper socket before the first call: {before:?}\n{}",
+        printed.stderr
+    );
+    assert!(
+        before.iter().all(|text| !text.contains("BIN=")),
+        "no helper binary env before the first call: {before:?}\n{}",
         printed.stderr
     );
 
@@ -405,7 +411,9 @@ fn no_helper_before_the_first_call_then_root_identity_and_shell_env() {
         printed.stderr
     );
 
-    // The Shell env gains the agent id/token and the started helper's socket (D5).
+    // The Shell env gains the agent id/token and the started helper's socket
+    // and binary (D5). The binary is the `binaryPath` the test pointed at
+    // the fixture.
     let env = tool_results(&printed.requests[3]);
     assert!(
         env.iter().any(|text| text.contains("ID=root")),
@@ -416,6 +424,13 @@ fn no_helper_before_the_first_call_then_root_identity_and_shell_env() {
         env.iter()
             .any(|text| text.contains("SOCK=/") && !text.contains("unset")),
         "HOOCODE_HELPER_SOCKET_T3C must be set once the helper started: {env:?}\n{}",
+        printed.stderr
+    );
+    let binary = fixture_bin().display().to_string();
+    assert!(
+        env.iter()
+            .any(|text| text.contains(&format!("BIN={binary}"))),
+        "HOOCODE_HELPER_BIN_T3C must be the binaryPath once the helper started: {env:?}\n{}",
         printed.stderr
     );
     assert!(
