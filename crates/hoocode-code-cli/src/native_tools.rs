@@ -87,17 +87,15 @@ impl NativeHolder {
         let (overrides, mut warnings) = binary_path_overrides(&raw);
         let same = {
             let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            inner.plugins == names && inner.supervisor.is_some()
+            inner.plugins == names
+                && inner.overrides == overrides
+                && inner.supervisor.is_some()
         };
         if same {
-            // The helper set did not change: keep the running supervisor (and its processes).
-            // Overrides are read again above so a changed `binaryPath` applies to the next
-            // start; publishing the hints again is harmless.
+            // Neither the helper set nor the `binaryPath` overrides changed:
+            // keep the running supervisor (and its processes). Publishing the
+            // hints again is harmless.
             publish_hints(&helpers);
-            self.inner
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .overrides = overrides;
             return warnings;
         }
         if helpers.is_empty() {
@@ -646,6 +644,49 @@ mod tests {
         assert_eq!(
             holder.override_for("demo"),
             Some(std::path::PathBuf::from("/abs/user-binary"))
+        );
+    }
+
+    /// A changed `binaryPath` rebuilds the supervisor: the running one was
+    /// built with the old overrides and never re-reads them, so keeping it
+    /// would start helpers from the stale path. The old supervisor shuts
+    /// down in the background like any other set change.
+    #[test]
+    fn changed_overrides_rebuild_the_supervisor() {
+        let dir = tempfile::tempdir().unwrap();
+        let set = native_helpers_of(dir.path());
+        let settings = |binary: &str| {
+            settings_with(
+                &dir.path().join("repo"),
+                &dir.path().join("agent"),
+                Some(json!({"demo": {"binaryPath": binary}})),
+                None,
+            )
+        };
+        let holder = NativeHolder::new();
+        assert!(holder.sync(&set, &settings("/abs/first")).is_empty());
+        let first = holder.supervisor().expect("supervisor after first sync");
+        assert_eq!(
+            holder.override_for("demo"),
+            Some(std::path::PathBuf::from("/abs/first"))
+        );
+        // Same helper set, only the override changed: the supervisor is
+        // replaced, not kept with stale overrides.
+        assert!(holder.sync(&set, &settings("/abs/second")).is_empty());
+        let second = holder.supervisor().expect("supervisor after override change");
+        assert_eq!(
+            holder.override_for("demo"),
+            Some(std::path::PathBuf::from("/abs/second"))
+        );
+        assert!(
+            !Arc::ptr_eq(&first, &second),
+            "the supervisor is rebuilt for new overrides"
+        );
+        // An identical re-sync keeps the running supervisor.
+        assert!(holder.sync(&set, &settings("/abs/second")).is_empty());
+        assert!(
+            Arc::ptr_eq(&second, &holder.supervisor().expect("still there")),
+            "an unchanged sync keeps the supervisor"
         );
     }
 }
