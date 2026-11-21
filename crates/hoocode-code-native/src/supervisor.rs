@@ -516,6 +516,23 @@ impl Supervisor {
         Ok(())
     }
 
+    /// True when the helper cannot receive this call because it never started
+    /// (idle) or its child already exited: the request provably never went
+    /// out, so the call is [`CallFailure::NeverSent`]. A `Down` helper is not
+    /// "dead before send": it stays a final error, never a retry. Unknown
+    /// plugins are left for `do_call` to report.
+    async fn dead_before_send(&self, plugin: &str) -> bool {
+        let Some(slot) = self.inner.slots.get(plugin) else {
+            return false;
+        };
+        let mut state = slot.state.lock().await;
+        match &mut *state {
+            HelperState::Live { child, .. } => child_dead_before_send(child),
+            HelperState::Idle => true,
+            HelperState::Down { .. } => false,
+        }
+    }
+
     /// Run `do_call`, but stop waiting as soon as the helper child is gone:
     /// the connection dies with it, so the call can never answer. Without
     /// this a call in flight while the helper crashes waits out the whole
@@ -527,6 +544,15 @@ impl Supervisor {
         args: &Value,
         cancel: &CancellationToken,
     ) -> Result<ToolOutput, CallFailure> {
+        // A child already dead when the call starts never got the request:
+        // say so up front, so the caller restarts and retries once. Without
+        // this the biased select below sees `wait_child_gone` ready first and
+        // reports a mid-call death ("may or may not have run") for a call
+        // that never went out. A death in the instant after this check still
+        // races as a mid-call death, as it should.
+        if self.dead_before_send(plugin).await {
+            return Err(CallFailure::NeverSent(not_running(plugin)));
+        }
         tokio::select! {
             biased;
             _ = cancel.cancelled() => Err(CallFailure::Final(cancelled())),
@@ -1290,10 +1316,107 @@ impl NativeClient {
     }
 }
 
+/// A spawned helper child that already exited never received anything sent
+/// after it died: the call is never sent, so the caller restarts and retries
+/// once instead of reporting a mid-call death.
+fn child_dead_before_send(child: &mut tokio::process::Child) -> bool {
+    !matches!(child.try_wait(), Ok(None))
+}
+
 /// Locks a std mutex, ignoring poisoning: the maps hold no invariants a panic
 /// could break.
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn entry(plugin: &str) -> NativeHelperEntry {
+        NativeHelperEntry {
+            plugin: plugin.to_owned(),
+            version: Some("test".to_owned()),
+            root: PathBuf::from("/tmp"),
+            data_dir: PathBuf::from("/tmp"),
+            helper: hoocode_code_plugins::native::NativeHelper {
+                spec: hoocode_code_plugins::native::NativeSpec {
+                    server: "echo".to_owned(),
+                    shared: true,
+                    binaries: BTreeMap::new(),
+                    tools: Vec::new(),
+                },
+                launch: hoocode_code_plugins::native::NativeLaunch {
+                    command: "/bin/true".to_owned(),
+                    args: Vec::new(),
+                    env: BTreeMap::new(),
+                    cwd: None,
+                },
+            },
+        }
+    }
+
+    fn supervisor() -> Supervisor {
+        Supervisor::new(
+            PathBuf::from("/tmp"),
+            vec![entry("echo")],
+            HashMap::new(),
+            SupervisorConfig::for_tests(),
+        )
+        .expect("supervisor")
+    }
+
+    /// The send-time classification: an idle helper never got the request
+    /// (`NeverSent`), a `Down` helper stays a final error, and an unknown
+    /// plugin is left for `do_call` to report.
+    #[tokio::test]
+    async fn dead_before_send_classifies_an_unstarted_helper() {
+        let supervisor = supervisor();
+        assert!(
+            supervisor.dead_before_send("echo").await,
+            "an idle helper never got the request"
+        );
+        assert!(
+            !supervisor.dead_before_send("nope").await,
+            "an unknown plugin is left for do_call"
+        );
+        {
+            let slot = supervisor.inner.slots.get("echo").expect("slot");
+            *slot.state.lock().await = HelperState::Down {
+                reason: "down for the test".to_owned(),
+            };
+        }
+        assert!(
+            !supervisor.dead_before_send("echo").await,
+            "a down helper is not dead before send"
+        );
+    }
+
+    /// The child check itself: an exited child never got the request, a
+    /// running child can receive the call (`true`/`sleep` resolve through
+    /// PATH; Windows has neither).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn exited_child_is_dead_before_send() {
+        let mut exited = tokio::process::Command::new("true")
+            .spawn()
+            .expect("spawn");
+        exited.wait().await.expect("exit");
+        assert!(
+            child_dead_before_send(&mut exited),
+            "an exited child never got the request"
+        );
+        let mut running = tokio::process::Command::new("sleep")
+            .arg("60")
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn");
+        assert!(
+            !child_dead_before_send(&mut running),
+            "a running child can receive the call"
+        );
+    }
 }
