@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use hoocode_agent_types::ToolOrigin;
-use hoocode_code_permissions::{ClearanceRelay, RelayRequest};
+use hoocode_code_permissions::{ClearanceRelay, EnsureHelperAnswer, RelayRequest};
 use serde_json::{json, Value};
 
 /// `type` of the child's request line.
@@ -76,17 +76,38 @@ pub fn ensure_request_line(id: u64, plugin: &str) -> String {
 
 /// The parent's EnsureHelper answer for `id`: `Ok(socket)` is the helper's
 /// socket path, `Err(error)` is why the child cannot use the helper.
+/// Kept for readers that only need the socket: the binary travels in
+/// [`ensure_response_line_full`].
 pub fn ensure_response_line(id: u64, result: &Result<String, String>) -> String {
-    match result {
-        Ok(socket) => json!({"type": ENSURE_RESPONSE_TYPE, "id": id, "socket": socket}).to_string(),
-        Err(error) => json!({"type": ENSURE_RESPONSE_TYPE, "id": id, "error": error}).to_string(),
-    }
-    .to_string()
+    let full: Result<(String, Option<String>), String> = match result {
+        Ok(socket) => Ok((socket.clone(), None)),
+        Err(error) => Err(error.clone()),
+    };
+    ensure_response_line_full(id, &full)
 }
 
-/// Read one EnsureHelper answer line: the id and either the socket path or
-/// the error. `None` when the line is not one.
-pub fn parse_ensure_response(line: &str) -> Option<(u64, Result<String, String>)> {
+/// The parent's EnsureHelper answer for `id`, with the helper's resolved
+/// executable: `Ok((socket, exe))` is the socket path plus the binary the
+/// parent started (so the child's Shell env gets `HOOCODE_HELPER_BIN_*`).
+/// `exe` is optional on the wire: an old parent answers without it, and an
+/// old child reads only the socket.
+pub fn ensure_response_line_full(id: u64, result: &EnsureHelperAnswer) -> String {
+    match result {
+        Ok((socket, exe)) => {
+            let mut answer = json!({"type": ENSURE_RESPONSE_TYPE, "id": id, "socket": socket});
+            if let (Some(exe), Some(map)) = (exe, answer.as_object_mut()) {
+                map.insert("exe".into(), Value::String(exe.clone()));
+            }
+            answer.to_string()
+        }
+        Err(error) => json!({"type": ENSURE_RESPONSE_TYPE, "id": id, "error": error}).to_string(),
+    }
+}
+
+/// Read one EnsureHelper answer line: the id and either the socket path plus
+/// the helper's executable (missing when an old parent answered) or the
+/// error. `None` when the line is not one.
+pub fn parse_ensure_response(line: &str) -> Option<(u64, EnsureHelperAnswer)> {
     let Value::Object(map) = serde_json::from_str::<Value>(line.trim()).ok()? else {
         return None;
     };
@@ -95,7 +116,8 @@ pub fn parse_ensure_response(line: &str) -> Option<(u64, Result<String, String>)
     }
     let id = map.get("id").and_then(Value::as_u64)?;
     if let Some(socket) = map.get("socket").and_then(Value::as_str) {
-        return Some((id, Ok(socket.to_owned())));
+        let exe = map.get("exe").and_then(Value::as_str).map(str::to_owned);
+        return Some((id, Ok((socket.to_owned(), exe))));
     }
     let error = map
         .get("error")
@@ -145,7 +167,9 @@ struct RelayState {
     /// Requests waiting for an answer, by id.
     pending: HashMap<u64, Sender<Option<String>>>,
     /// EnsureHelper answers the child waits for (spec D5), by request id.
-    ensure_pending: HashMap<u64, Sender<Result<String, String>>>,
+    /// The answer is the socket path plus the helper's executable, which is
+    /// missing when an old parent answered.
+    ensure_pending: HashMap<u64, Sender<EnsureHelperAnswer>>,
     /// The parent's stdin ended: nothing will be answered any more.
     closed: bool,
 }
@@ -237,8 +261,10 @@ impl ChildRelay {
 impl ChildRelay {
     /// Ask the parent for the socket path of the shared tier C helper
     /// `plugin` (spec D5): the parent ensures its own connection, registers
-    /// this agent, and answers. `Err` when the parent denies or is gone.
-    pub fn ask_ensure(&self, plugin: &str) -> Result<String, String> {
+    /// this agent, and answers with the socket path plus the helper's
+    /// executable (missing when an old parent answers). `Err` when the
+    /// parent denies or is gone.
+    pub fn ask_ensure(&self, plugin: &str) -> EnsureHelperAnswer {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = channel();
         {
@@ -274,7 +300,7 @@ impl ChildRelay {
 }
 
 impl ClearanceRelay for ChildRelay {
-    fn ask_ensure(&self, plugin: &str) -> Result<String, String> {
+    fn ask_ensure(&self, plugin: &str) -> EnsureHelperAnswer {
         ChildRelay::ask_ensure(self, plugin)
     }
 

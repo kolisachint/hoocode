@@ -54,10 +54,13 @@ Defaults fit most setups. These environment variables change them:
 ## Long tail
 
 Cookies, network, recording, and the rest the eight tools do not cover: run
-`hoo-browser` through Shell. It calls the helper scoped to your own tabs.
+the helper's CLI through Shell. It calls the helper scoped to your own tabs.
+The binary is not on `PATH`: use the variable, which is set from your first
+browser tool call on (a subagent's Shell learns it on its first shared tool
+call).
 
 ```bash
-hoo-browser cli snapshot
+"$HOOCODE_HELPER_BIN_HOO_BROWSER" cli snapshot
 ```
 
 ## Data

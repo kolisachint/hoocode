@@ -52,7 +52,22 @@ pub const HELPER_TOKEN_ENV: &str = "HOOCODE_HELPER_TOKEN";
 /// `HOOCODE_HELPER_SOCKET_<PLUGIN>`, with the plugin name uppercased and every
 /// non-alphanumeric character replaced by `_`.
 pub fn helper_socket_env_name(plugin: &str) -> String {
-    let mut name = String::from("HOOCODE_HELPER_SOCKET_");
+    helper_env_name("HOOCODE_HELPER_SOCKET_", plugin)
+}
+
+/// The Shell environment variable carrying one started helper's executable
+/// (spec D5): `HOOCODE_HELPER_BIN_<PLUGIN>`, mangled like the socket name.
+/// The helper binary is downloaded under `~/.hoocode/plugin-bin` or set by
+/// `binaryPath`, so it is not on PATH; a plugin's skill runs its CLI fallback
+/// through this variable.
+pub fn helper_bin_env_name(plugin: &str) -> String {
+    helper_env_name("HOOCODE_HELPER_BIN_", plugin)
+}
+
+/// `prefix` plus the plugin name uppercased, every non-alphanumeric character
+/// replaced by `_`.
+fn helper_env_name(prefix: &str, plugin: &str) -> String {
+    let mut name = String::from(prefix);
     for c in plugin.chars() {
         if c.is_ascii_alphanumeric() {
             name.push(c.to_ascii_uppercase());
@@ -152,6 +167,10 @@ enum HelperState {
     Idle,
     Live {
         socket: PathBuf,
+        /// The resolved executable that was started: `binaryPath`, the
+        /// downloaded binary, or the mcp.json command. Recorded so Shell
+        /// gets `HOOCODE_HELPER_BIN_<PLUGIN>` next to the socket (spec D5).
+        exe: PathBuf,
         client: McpClient,
         child: tokio::process::Child,
     },
@@ -352,6 +371,18 @@ impl Supervisor {
     /// shut down), without starting anything. Used for the Shell tool's
     /// environment (spec D5): a socket appears once its helper has started.
     pub fn live_sockets(&self) -> HashMap<String, PathBuf> {
+        self.live_helpers()
+            .into_iter()
+            .map(|(plugin, (socket, _))| (plugin, socket))
+            .collect()
+    }
+
+    /// The socket path and resolved executable of the helpers currently
+    /// running, without starting anything. Used for the Shell tool's
+    /// environment (spec D5): both appear once the helper has started.
+    /// The executable is the `binaryPath`, the downloaded binary, or the
+    /// mcp.json command the helper was started from.
+    pub fn live_helpers(&self) -> HashMap<String, (PathBuf, PathBuf)> {
         let mut out = HashMap::new();
         for plugin in self.inner.entries.keys() {
             let Some(slot) = self.inner.slots.get(plugin) else {
@@ -360,11 +391,24 @@ impl Supervisor {
             let Ok(state) = slot.state.try_lock() else {
                 continue;
             };
-            if let HelperState::Live { socket, .. } = &*state {
-                out.insert(plugin.clone(), socket.clone());
+            if let HelperState::Live { socket, exe, .. } = &*state {
+                out.insert(plugin.clone(), (socket.clone(), exe.clone()));
             }
         }
         out
+    }
+
+    /// The resolved executable of the currently running helper for `plugin`:
+    /// `None` when it is not running. Answered to subagents with the
+    /// EnsureHelper socket, so their Shell env gets the binary too.
+    pub fn helper_exe(&self, plugin: &str) -> Option<PathBuf> {
+        let slot = self.inner.slots.get(plugin)?;
+        let state = slot.state.try_lock().ok()?;
+        if let HelperState::Live { exe, .. } = &*state {
+            Some(exe.clone())
+        } else {
+            None
+        }
     }
 
     /// Start the helper for `plugin` on first use and return its socket path.
@@ -728,6 +772,7 @@ impl Supervisor {
                 socket,
                 client,
                 child,
+                ..
             } => match child.try_wait() {
                 Ok(None) if socket.exists() => Some(client.clone()),
                 _ => None,
@@ -1057,6 +1102,7 @@ impl Supervisor {
                 }
                 *state = HelperState::Live {
                     socket: socket.clone(),
+                    exe: executable.clone(),
                     client: ready_client,
                     child,
                 };
@@ -1416,6 +1462,26 @@ mod tests {
         assert!(
             !child_dead_before_send(&mut running),
             "a running child can receive the call"
+        );
+    }
+
+    /// The Shell variable names for one plugin (spec D5): the binary name
+    /// uses the same mangling as the socket name, so the two always agree.
+    #[test]
+    fn helper_env_names_mangle_plugin_names_alike() {
+        assert_eq!(
+            helper_socket_env_name("hoo-browser"),
+            "HOOCODE_HELPER_SOCKET_HOO_BROWSER"
+        );
+        assert_eq!(
+            helper_bin_env_name("hoo-browser"),
+            "HOOCODE_HELPER_BIN_HOO_BROWSER"
+        );
+        assert_eq!(helper_socket_env_name("t3c"), "HOOCODE_HELPER_SOCKET_T3C");
+        assert_eq!(helper_bin_env_name("t3c"), "HOOCODE_HELPER_BIN_T3C");
+        assert_eq!(
+            helper_bin_env_name("my.plugin/v2"),
+            "HOOCODE_HELPER_BIN_MY_PLUGIN_V2"
         );
     }
 }

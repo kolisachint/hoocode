@@ -20,8 +20,9 @@ use hoocode_agent_mcp::{McpError, ToolContent, ToolOutput};
 use hoocode_agent_types::{collision_notices, valid_plugin_tool_name, AgentToolResult, ToolOrigin};
 use hoocode_ai_types::{AbortSignal, Content, ImageContent};
 use hoocode_code_native::{
-    binary_path_overrides, default_home_dir, helper_socket_env_name, NativeCallOptions,
-    NativeError, Supervisor, SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV, ROOT_AGENT_ID,
+    binary_path_overrides, default_home_dir, helper_bin_env_name, helper_socket_env_name,
+    NativeCallOptions, NativeError, Supervisor, SupervisorConfig, AGENT_ID_ENV, AGENT_TOKEN_ENV,
+    ROOT_AGENT_ID,
 };
 use hoocode_code_permissions::{set_native_hints, NativeToolHint};
 use hoocode_code_plugins::native::NativePermission;
@@ -185,8 +186,9 @@ impl NativeHolder {
 
     /// The extra Shell environment for one command (spec D5): `HOOCODE_AGENT_ID` (`root`) and
     /// `HOOCODE_AGENT_TOKEN` (the root token) when the session has a tier C helper, plus
-    /// `HOOCODE_HELPER_SOCKET_<PLUGIN>` for every helper that has started. Empty when the
-    /// session has no helper. Never logs, never reaches the model except through the command.
+    /// `HOOCODE_HELPER_SOCKET_<PLUGIN>` and `HOOCODE_HELPER_BIN_<PLUGIN>` for every helper
+    /// that has started. Empty when the session has no helper. Never logs, never reaches the
+    /// model except through the command.
     pub(crate) fn shell_extra_env(&self) -> Vec<(OsString, OsString)> {
         let supervisor = self
             .inner
@@ -207,12 +209,16 @@ impl NativeHolder {
                 OsString::from(supervisor.root_identity().token.clone()),
             ),
         ];
-        let mut sockets: Vec<_> = supervisor.live_sockets().into_iter().collect();
-        sockets.sort_by(|a, b| a.0.cmp(&b.0));
-        for (plugin, socket) in sockets {
+        let mut helpers: Vec<_> = supervisor.live_helpers().into_iter().collect();
+        helpers.sort_by(|a, b| a.0.cmp(&b.0));
+        for (plugin, (socket, exe)) in helpers {
             env.push((
                 OsString::from(helper_socket_env_name(&plugin)),
                 OsString::from(socket),
+            ));
+            env.push((
+                OsString::from(helper_bin_env_name(&plugin)),
+                OsString::from(exe),
             ));
         }
         env

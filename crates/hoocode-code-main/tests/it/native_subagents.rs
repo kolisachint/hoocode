@@ -567,6 +567,80 @@ fn a_grandchild_calls_a_shared_tool_with_its_own_identity() {
     );
 }
 
+/// Every tool result text across the run's model requests, in order: the
+/// `role: tool` messages the mock saw.
+fn all_tool_results(requests: &[Value]) -> Vec<String> {
+    let mut out = Vec::new();
+    for request in requests {
+        let Some(messages) = request.get("messages").and_then(Value::as_array) else {
+            continue;
+        };
+        for message in messages {
+            if message.get("role").and_then(Value::as_str) != Some("tool") {
+                continue;
+            }
+            match &message["content"] {
+                Value::String(text) => out.push(text.clone()),
+                Value::Array(parts) => {
+                    let mut text = String::new();
+                    for part in parts {
+                        if let Some(chunk) = part.get("text").and_then(Value::as_str) {
+                            text.push_str(chunk);
+                        }
+                    }
+                    out.push(text);
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// A subagent's Shell sees the helper's socket and binary only after its
+/// first shared tool call. Before that both vars are unset: the child learns
+/// them through EnsureHelper, which the first shared call triggers.
+#[test]
+fn a_subagents_shell_sees_the_helper_binary_after_its_first_shared_call() {
+    let home = Home::with_plugin("t3b", true, None);
+    let print_env = json!({"tool_calls": [{"name": "Shell", "arguments": {
+        "command": "echo \"SOCK=${HOOCODE_HELPER_SOCKET_T3B:-unset}\"; echo \"BIN=${HOOCODE_HELPER_BIN_T3B:-unset}\"",
+    }}]});
+    let script = vec![
+        json!({"tool_calls": [agent_call("Run Shell to print the helper env, then call the echo tool with text 'hi', then run Shell to print the helper env again, then finish.")]}),
+        print_env.clone(),
+        json!({"tool_calls": [{"name": "echo", "arguments": {"text": "hi"}}]}),
+        print_env,
+        json!({"text": "done by the child"}),
+        json!({"text": "done"}),
+    ];
+    let requests = request_bodies(&home, script);
+    let results = all_tool_results(&requests);
+
+    // The first Shell ran before any shared call: both vars unset.
+    let first = results
+        .iter()
+        .position(|text| text.contains("BIN=unset"))
+        .expect("the first Shell prints an unset binary var");
+    assert!(
+        results[first].contains("SOCK=unset"),
+        "the socket var is unset too: {:?}",
+        results[first]
+    );
+    // The second Shell ran after the echo call: the socket is set and the
+    // binary is the `binaryPath` the test pointed at the fixture.
+    let binary = fixture_bin("echo_helper").display().to_string();
+    let later = results[first + 1..]
+        .iter()
+        .position(|text| text.contains(&format!("BIN={binary}")))
+        .expect("the second Shell prints the helper binary");
+    let text = &results[first + 1 + later];
+    assert!(
+        text.contains("SOCK=/") && !text.contains("unset"),
+        "the socket var is set too: {text:?}"
+    );
+}
+
 /// A `shared: false` plugin gives subagents no tier C tools: the child's only
 /// turn is scripted as a plain answer, and the request offering it proves the
 /// tools were absent. The helper never even starts.

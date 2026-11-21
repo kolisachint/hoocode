@@ -9,10 +9,10 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
 
-use hoocode_code_permissions::{ClearanceRelay, RelayRequest};
+use hoocode_code_permissions::{ClearanceRelay, EnsureHelperAnswer, RelayRequest};
 use hoocode_code_subagents::clearance::{
-    ensure_request_line, ensure_response_line, parse_ensure_response, parse_response, request_line,
-    response_line, ChildRelay, NO_UI_REASON,
+    ensure_request_line, ensure_response_line, ensure_response_line_full, parse_ensure_response,
+    parse_response, request_line, response_line, ChildRelay, NO_UI_REASON,
 };
 use hoocode_code_subagents::pool::{SubagentPool, SubagentPoolOptions, SubagentPoolTask};
 use hoocode_code_subagents::runner::{ScriptedRunner, ScriptedStep};
@@ -449,11 +449,22 @@ fn the_ensure_wire_format_round_trips() {
     );
     assert_eq!(
         parse_ensure_response(&ensure_response_line(3, &Ok("/run/echo.sock".into()))),
-        Some((3, Ok("/run/echo.sock".to_string())))
+        Some((3, Ok(("/run/echo.sock".to_string(), None))))
     );
     assert_eq!(
         parse_ensure_response(&ensure_response_line(3, &Err("down".into()))),
         Some((3, Err("down".to_string())))
+    );
+    // The executable rides along as an optional field: a new parent's answer
+    // parses, and an old parent's answer (no `exe`) still does.
+    let full =
+        ensure_response_line_full(3, &Ok(("/run/echo.sock".into(), Some("/bin/echo".into()))));
+    assert_eq!(
+        parse_ensure_response(&full),
+        Some((
+            3,
+            Ok(("/run/echo.sock".to_string(), Some("/bin/echo".to_string())))
+        ))
     );
     assert_eq!(parse_ensure_response(r#"{"ping":true}"#), None);
     assert_eq!(parse_ensure_response("not json"), None);
@@ -494,7 +505,10 @@ fn the_child_receives_the_helper_socket() {
             .into_bytes(),
         )
         .unwrap();
-    assert_eq!(asked.join().unwrap(), Ok("/run/echo.sock".to_string()));
+    assert_eq!(
+        asked.join().unwrap(),
+        Ok(("/run/echo.sock".to_string(), None))
+    );
 }
 
 /// A parent denial (or a closed stdin) is an error, not a socket.
@@ -569,9 +583,14 @@ impl NativeChildHost for FakeHost {
         &'a self,
         task_id: &'a str,
         plugin: &'a str,
-    ) -> HostFuture<'a, Result<PathBuf, String>> {
+    ) -> HostFuture<'a, Result<(PathBuf, Option<PathBuf>), String>> {
         assert_eq!((task_id, plugin), ("t1", "t3c"));
-        Box::pin(async move { Ok(PathBuf::from("/run/t3c.sock")) })
+        Box::pin(async move {
+            Ok((
+                PathBuf::from("/run/t3c.sock"),
+                Some(PathBuf::from("/bin/t3c")),
+            ))
+        })
     }
 
     fn child_ended<'a>(&'a self, task_id: &'a str) -> HostFuture<'a, ()> {
@@ -590,7 +609,7 @@ fn pool_with_host(runner: ScriptedRunner, cwd: &Path, host: Arc<FakeHost>) -> Su
     })
 }
 
-fn ensure_answers(runner: &ScriptedRunner) -> Vec<(u64, Result<String, String>)> {
+fn ensure_answers(runner: &ScriptedRunner) -> Vec<(u64, EnsureHelperAnswer)> {
     wait_for("an ensure answer on the child's stdin", || {
         let parsed: Vec<_> = runner
             .stdin_lines()
@@ -610,7 +629,10 @@ async fn the_pool_answers_ensure_helper_from_its_host() {
     p.spawn(task()).unwrap();
     assert_eq!(
         ensure_answers(&runner),
-        [(7, Ok("/run/t3c.sock".to_string()))]
+        [(
+            7,
+            Ok(("/run/t3c.sock".to_string(), Some("/bin/t3c".to_string())))
+        )]
     );
     p.dispose();
 }

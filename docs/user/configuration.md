@@ -82,6 +82,8 @@ A plugin may also ship a native helper: a per-platform binary the plugin names i
 { "nativeHelpers": { "<plugin>": { "binaryPath": "/abs/path" } } }
 ```
 
+- Shell sees each started helper: `HOOCODE_HELPER_SOCKET_<PLUGIN>` is its socket, `HOOCODE_HELPER_BIN_<PLUGIN>` is the binary it was started from. A plugin's skill runs its CLI fallback through the binary variable, which is set from the first tool call on (subagents learn it on their first shared tool call). The binary is not on `PATH`.
+
 - Each declared tool carries a permission hint. `read` runs without asking. `act` asks like an edit, and is denied where your mode denies Write or Edit. `dangerous` always asks unless your mode's `auto_allow` names it, even with `skip_permissions` (where nobody can answer, it stays blocked).
 - Subagents get a helper's tools only when the plugin marks it shared. Other helpers are root-only, as are plain MCP plugin servers.
 - Native helpers are not available in `hoocode app-server`: its sessions register no native tools. Single-session paths (TUI, print, json, rpc) are unaffected.
