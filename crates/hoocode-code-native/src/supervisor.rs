@@ -269,15 +269,19 @@ impl Supervisor {
 
     /// The runtime dir, creating it on first use: the test override when
     /// set, else a fresh random dir. Never eager: `new` creates nothing.
+    /// The lock is held across the check, the creation and the store, so two
+    /// plugins starting at once share one dir instead of each creating one
+    /// and leaking the loser.
     fn runtime_dir_or_create(&self) -> Result<PathBuf, NativeError> {
-        if let Some(dir) = lock(&self.inner.runtime_dir).clone() {
+        let mut slot = lock(&self.inner.runtime_dir);
+        if let Some(dir) = slot.clone() {
             return Ok(dir);
         }
         let dir = match crate::runtime_dir::internal_runtime_dir() {
             Some(dir) => dir,
             None => create_runtime_dir()?,
         };
-        *lock(&self.inner.runtime_dir) = Some(dir.clone());
+        *slot = Some(dir.clone());
         Ok(dir)
     }
 

@@ -566,6 +566,44 @@ async fn concurrent_first_calls_start_one_process() {
     helper.supervisor().shutdown().await.expect("shutdown");
 }
 
+/// Two plugins starting at once share one runtime dir: the check, the
+/// creation and the store hold one lock, so the second start sees the
+/// first's dir instead of creating its own and leaking it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_plugin_starts_share_one_runtime_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bin = fixture_bin();
+    let supervisor = std::sync::Arc::new(
+        Supervisor::new(
+            dir.path().join("home"),
+            vec![
+                echo_entry(dir.path(), "echo", &bin),
+                echo_entry(dir.path(), "echo2", &bin),
+            ],
+            HashMap::new(),
+            SupervisorConfig::for_tests(),
+        )
+        .expect("supervisor"),
+    );
+    let (one, two) = tokio::join!(
+        supervisor.ensure("echo"),
+        supervisor.ensure("echo2"),
+    );
+    let one = one.expect("first start");
+    let two = two.expect("second start");
+    assert_eq!(
+        one.parent(),
+        two.parent(),
+        "both helpers start in one runtime dir"
+    );
+    assert_eq!(
+        one.parent().map(|dir| dir.to_path_buf()),
+        supervisor.runtime_dir(),
+        "the runtime dir is the shared one"
+    );
+    supervisor.shutdown().await.expect("shutdown");
+}
+
 /// The helper's stderr lands in the plugin log (the fixture logs a startup line).
 #[tokio::test]
 async fn helper_output_goes_to_the_log() {
