@@ -756,3 +756,107 @@ async fn helper_exits_when_its_parent_pid_is_gone() {
         .expect("the helper exits when its parent is gone");
     assert!(status.expect("exit status").success());
 }
+
+/// `ensure_with_exe` reads the exe while the slot lock is held: concurrent
+/// ensures all get the socket and the exe, and only one process starts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_ensure_with_exe_gives_every_caller_the_exe() {
+    let helper = TestHelper::start();
+    let supervisor = helper.supervisor().clone();
+    let expected_exe = fixture_bin();
+    let mut set = tokio::task::JoinSet::new();
+    for _ in 0..16 {
+        let supervisor = supervisor.clone();
+        set.spawn(async move {
+            let mut last = None;
+            for _ in 0..10 {
+                last = Some(supervisor.ensure_with_exe("echo").await);
+            }
+            last.expect("at least one ensure")
+        });
+    }
+    let mut sockets = Vec::new();
+    while let Some(joined) = set.join_next().await {
+        let (socket, exe) = joined.expect("task").expect("ensure");
+        assert_eq!(exe, expected_exe, "every caller gets the exe");
+        assert!(socket.exists(), "the socket is real");
+        sockets.push(socket);
+    }
+    assert_eq!(sockets.len(), 16);
+    let first = &sockets[0];
+    assert!(
+        sockets.iter().all(|socket| socket == first),
+        "one helper serves every caller"
+    );
+    assert_eq!(supervisor.spawn_count("echo"), 1, "one process starts");
+    assert_eq!(
+        supervisor.live_helpers().get("echo"),
+        Some(&(first.clone(), expected_exe)),
+        "the snapshot matches the answers"
+    );
+    helper.supervisor().shutdown().await.expect("shutdown");
+}
+
+/// The live snapshot never loses a running helper under contention: once
+/// started, every `live_helpers`/`live_sockets`/`helper_exe` read sees it
+/// until shutdown, even while ensures, calls and registrations contend on
+/// the slot locks. The Shell spawn hook reads the same snapshot, so the
+/// `HOOCODE_HELPER_SOCKET_<PLUGIN>` and `HOOCODE_HELPER_BIN_<PLUGIN>` vars
+/// never drop out mid-session either.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn live_snapshot_survives_concurrent_churn() {
+    let helper = TestHelper::start();
+    let supervisor = helper.supervisor().clone();
+    let (socket, exe) = supervisor.ensure_with_exe("echo").await.expect("start");
+    let mut set = tokio::task::JoinSet::new();
+    for index in 0..4 {
+        let supervisor = supervisor.clone();
+        set.spawn(async move {
+            for round in 0..20 {
+                supervisor.ensure("echo").await.expect("ensure");
+                supervisor
+                    .call_tool(
+                        "echo",
+                        "echo",
+                        json!({"text": "churn"}),
+                        NativeCallOptions::default(),
+                    )
+                    .await
+                    .expect("echo");
+                let child = supervisor
+                    .mint_agent("root", &format!("churn-{index}-{round}"))
+                    .expect("mint");
+                supervisor
+                    .register_child("echo", &child)
+                    .await
+                    .expect("register");
+            }
+        });
+    }
+    for _ in 0..4 {
+        let supervisor = supervisor.clone();
+        let (socket, exe) = (socket.clone(), exe.clone());
+        set.spawn(async move {
+            for _ in 0..500 {
+                assert_eq!(
+                    supervisor.live_helpers().get("echo"),
+                    Some(&(socket.clone(), exe.clone())),
+                    "the snapshot never loses a live helper"
+                );
+                assert_eq!(supervisor.live_sockets().get("echo"), Some(&socket));
+                assert_eq!(supervisor.helper_exe("echo"), Some(exe.clone()));
+            }
+        });
+    }
+    while let Some(joined) = set.join_next().await {
+        joined.expect("task");
+    }
+    assert_eq!(supervisor.spawn_count("echo"), 1, "no spurious restarts");
+    supervisor.shutdown().await.expect("shutdown");
+    assert!(
+        supervisor.live_helpers().is_empty(),
+        "shutdown clears the snapshot"
+    );
+    assert!(supervisor.live_sockets().is_empty());
+    assert_eq!(supervisor.helper_exe("echo"), None);
+}

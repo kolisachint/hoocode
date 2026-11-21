@@ -253,15 +253,16 @@ impl NativeChildHost for CliNativeHost {
                         .ok_or_else(|| {
                             format!("Unknown subagent {task_id}: no tier C identity.")
                         })?;
-                    let socket = supervisor
-                        .ensure(plugin)
+                    // The socket and the executable the helper was started
+                    // from, read while the slot lock is held: the child's
+                    // Shell env gets the exe as `HOOCODE_HELPER_BIN_<PLUGIN>`.
+                    // A separate `helper_exe` read after the ensure could
+                    // miss under a concurrent start and cache `None`.
+                    let (socket, exe) = supervisor
+                        .ensure_with_exe(plugin)
                         .await
                         .map_err(|error| error.to_string())?;
-                    // The executable the helper was started from: the child's
-                    // Shell env gets it as `HOOCODE_HELPER_BIN_<PLUGIN>`.
-                    // Missing only when the helper stopped racing the
-                    // ensure; the socket is still usable.
-                    let exe = supervisor.helper_exe(plugin);
+                    let exe = Some(exe);
                     // Keyed by token: a retried task (same task id, fresh
                     // token) registers again instead of reusing the dead
                     // token, and a failed register never marks.
@@ -912,6 +913,50 @@ mod tests {
             1,
             "the fresh token is announced again"
         );
+        let _ = supervisor.shutdown().await;
+    }
+
+    /// Concurrent `EnsureHelper` answers all carry the exe: the answer reads
+    /// it from the ensure itself, not from a separate lookup that can miss
+    /// under a concurrent start and be cached as `None` for good.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_ensure_helper_answers_all_carry_the_exe() {
+        let fixture = Fixture::start();
+        let host = std::sync::Arc::new(CliNativeHost::root(
+            fixture.holder.clone(),
+            std::sync::Arc::new(ChildNativeState::new()),
+        ));
+        let mut set = tokio::task::JoinSet::new();
+        for index in 0..16 {
+            let host = host.clone();
+            set.spawn(async move {
+                let task = format!("t-exe-{index}");
+                assert!(
+                    host.child_env(&task).is_some(),
+                    "each child gets an identity"
+                );
+                host.ensure_helper(&task, "demo").await
+            });
+        }
+        let mut sockets = Vec::new();
+        while let Some(joined) = set.join_next().await {
+            let (socket, exe) = joined.expect("task").expect("ensure");
+            assert!(socket.exists(), "the socket is real");
+            assert_eq!(
+                exe,
+                Some(fixture_bin()),
+                "every EnsureHelper answer carries the exe"
+            );
+            sockets.push(socket);
+        }
+        assert_eq!(sockets.len(), 16);
+        let first = &sockets[0];
+        assert!(
+            sockets.iter().all(|socket| socket == first),
+            "one helper serves every caller"
+        );
+        let supervisor = fixture.holder.supervisor().expect("supervisor");
+        assert_eq!(supervisor.spawn_count("demo"), 1, "one process starts");
         let _ = supervisor.shutdown().await;
     }
 }
