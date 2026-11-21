@@ -84,6 +84,7 @@ A plugin may also ship a native helper: a per-platform binary the plugin names i
 
 - Each declared tool carries a permission hint. `read` runs without asking. `act` asks like an edit, and is denied where your mode denies Write or Edit. `dangerous` always asks unless your mode's `auto_allow` names it, even with `skip_permissions` (where nobody can answer, it stays blocked).
 - Subagents get a helper's tools only when the plugin marks it shared. Other helpers are root-only, as are plain MCP plugin servers.
+- Native helpers are not available in `hoocode app-server`: its sessions register no native tools. Single-session paths (TUI, print, json, rpc) are unaffected.
 
 - Tool names. An MCP server's tool appears as `mcp__<server>__<tool>`, for example
   `mcp__github__create_issue`. `--tools`, `--disallowed-tools` and an agent's `tools`
