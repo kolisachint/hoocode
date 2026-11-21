@@ -87,9 +87,7 @@ impl NativeHolder {
         let (overrides, mut warnings) = binary_path_overrides(&raw);
         let same = {
             let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            inner.plugins == names
-                && inner.overrides == overrides
-                && inner.supervisor.is_some()
+            inner.plugins == names && inner.overrides == overrides && inner.supervisor.is_some()
         };
         if same {
             // Neither the helper set nor the `binaryPath` overrides changed:
@@ -673,7 +671,9 @@ mod tests {
         // Same helper set, only the override changed: the supervisor is
         // replaced, not kept with stale overrides.
         assert!(holder.sync(&set, &settings("/abs/second")).is_empty());
-        let second = holder.supervisor().expect("supervisor after override change");
+        let second = holder
+            .supervisor()
+            .expect("supervisor after override change");
         assert_eq!(
             holder.override_for("demo"),
             Some(std::path::PathBuf::from("/abs/second"))

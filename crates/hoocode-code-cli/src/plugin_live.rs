@@ -534,9 +534,7 @@ mod tests {
     /// after the root build, and the gate blocks the call instead of running
     /// it as an ungated tool.
     fn write_native_pair(dir: &std::path::Path) {
-        for (name, permission, tool) in
-            [("aaa", "dangerous", "Wipe"), ("zzz", "read", "Lookup")]
-        {
+        for (name, permission, tool) in [("aaa", "dangerous", "Wipe"), ("zzz", "read", "Lookup")] {
             let root = dir.join("plugins").join(name);
             std::fs::create_dir_all(&root).unwrap();
             let manifest = serde_json::json!({
@@ -699,10 +697,8 @@ mod tests {
         write_native_plugin(&dir.path().join("plugins"), "sh", true, "shared_echo");
         let set = native_set(dir.path());
         hoocode_code_plugins::set_current(set);
-        let relay = hoocode_code_permissions::HeadlessClearanceRelay::new(
-            dir.path().to_path_buf(),
-            true,
-        );
+        let relay =
+            hoocode_code_permissions::HeadlessClearanceRelay::new(dir.path().to_path_buf(), true);
         hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(relay)));
         let _restore = RelayRestore;
         let child = PluginToolSource {

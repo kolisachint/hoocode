@@ -585,10 +585,7 @@ async fn concurrent_plugin_starts_share_one_runtime_dir() {
         )
         .expect("supervisor"),
     );
-    let (one, two) = tokio::join!(
-        supervisor.ensure("echo"),
-        supervisor.ensure("echo2"),
-    );
+    let (one, two) = tokio::join!(supervisor.ensure("echo"), supervisor.ensure("echo2"),);
     let one = one.expect("first start");
     let two = two.expect("second start");
     assert_eq!(

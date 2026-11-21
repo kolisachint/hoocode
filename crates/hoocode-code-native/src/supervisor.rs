@@ -1401,9 +1401,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn exited_child_is_dead_before_send() {
-        let mut exited = tokio::process::Command::new("true")
-            .spawn()
-            .expect("spawn");
+        let mut exited = tokio::process::Command::new("true").spawn().expect("spawn");
         exited.wait().await.expect("exit");
         assert!(
             child_dead_before_send(&mut exited),
