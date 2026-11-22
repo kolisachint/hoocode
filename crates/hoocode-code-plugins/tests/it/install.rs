@@ -241,6 +241,52 @@ fn an_install_from_an_untrusted_marketplace_needs_a_grant_for_its_mcp_servers() 
 }
 
 #[test]
+fn install_records_the_manifest_version_when_the_listing_is_stale() {
+    let env = Env::new();
+    let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
+    // The floating source moved on: the manifest is 1.0.8 while the listing still says 1.0.0.
+    plugin_files(&repo, "tool", "1.0.8", false);
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "1.0.8"]);
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
+
+    let installed = install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
+    assert_eq!(installed.version, "1.0.8");
+    assert!(
+        installed
+            .notes
+            .iter()
+            .any(|note| note.contains("1.0.8") && note.contains("1.0.0")),
+        "the warning names both versions: {:?}",
+        installed.notes
+    );
+    assert_eq!(install::records(&env.paths).unwrap()[0].version, "1.0.8");
+}
+
+#[test]
+fn install_falls_back_to_the_listing_version_when_the_manifest_has_none() {
+    let env = Env::new();
+    let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
+    write(
+        &repo.join("plugins/tool/plugin.json"),
+        r#"{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          "name": "tool", "description": "A tool"}"#,
+    );
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "drop version"]);
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
+
+    let installed = install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
+    assert_eq!(installed.version, "1.0.0");
+    assert!(
+        installed.notes.iter().all(|note| !note.contains("listing")),
+        "no stale-listing warning without a manifest version: {:?}",
+        installed.notes
+    );
+    assert_eq!(install::records(&env.paths).unwrap()[0].version, "1.0.0");
+}
+
+#[test]
 fn an_install_from_a_trusted_marketplace_needs_no_grant() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "trusted-mk", &[("mcpy", "1.0.0", true)]);
@@ -375,6 +421,34 @@ fn update_replaces_a_changed_plugin_and_leaves_an_unchanged_one() {
         std::fs::read_to_string(env.paths.user_plugins.join("tool/skills/hello/SKILL.md")).unwrap();
     assert!(text.contains("tool 1.1.0"), "{text}");
     assert_eq!(install::records(&env.paths).unwrap()[0].version, "1.1.0");
+}
+
+#[test]
+fn update_records_the_manifest_version_when_the_listing_is_stale() {
+    let env = Env::new();
+    let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
+    install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
+
+    // The marketplace publishes listing 1.1.0, but the fetched plugin.json is already 1.1.8.
+    plugin_files(&repo, "tool", "1.1.8", false);
+    write(
+        &repo.join(".claude-plugin/marketplace.json"),
+        r#"{"name": "local-mk", "plugins": [{"name": "tool", "source": "./plugins/tool", "version": "1.1.0"}]}"#,
+    );
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "1.1.8"]);
+
+    let after = install::update(&env.paths, None).unwrap();
+    assert_eq!(
+        after,
+        vec![UpdateOutcome::Updated {
+            name: "tool".into(),
+            from: "1.0.0".into(),
+            to: "1.1.8".into(),
+        }]
+    );
+    assert_eq!(install::records(&env.paths).unwrap()[0].version, "1.1.8");
 }
 
 #[test]

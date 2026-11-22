@@ -329,13 +329,17 @@ fn stage_entry(
 }
 
 /// The manifest in a staged plugin: it must parse and name the plugin the marketplace lists.
-fn check_manifest(root: &Path, name: &str) -> Result<(), String> {
+/// Returns the manifest's own `version`, when it has one (a Claude manifest has no version
+/// hoocode reads, and an Agent Plugins manifest may omit it).
+fn check_manifest(root: &Path, name: &str) -> Result<Option<String>, String> {
     let agent = root.join("plugin.json");
     let claude = root.join(".claude-plugin").join("plugin.json");
-    let manifest_name = if agent.is_file() {
-        parse_agent_plugin_manifest(&read(&agent)?)?.name
+    let (manifest_name, version) = if agent.is_file() {
+        let manifest = parse_agent_plugin_manifest(&read(&agent)?)?;
+        (manifest.name, manifest.version)
     } else if claude.is_file() {
-        parse_claude_manifest(&read(&claude)?)?.name
+        let manifest = parse_claude_manifest(&read(&claude)?)?;
+        (manifest.name, None)
     } else {
         return Err("the plugin has no plugin.json or .claude-plugin/plugin.json".to_owned());
     };
@@ -344,7 +348,29 @@ fn check_manifest(root: &Path, name: &str) -> Result<(), String> {
             "the manifest names \"{manifest_name}\", but the marketplace lists \"{name}\""
         ));
     }
-    Ok(())
+    Ok(version)
+}
+
+/// The version an install or update records: the staged plugin's own manifest version, falling
+/// back to the marketplace listing's version only when the manifest has none. A floating
+/// source (a git `ref`, say) can move under a stale listing version, so when they differ the
+/// warning names both and the manifest version wins.
+fn resolve_version(
+    entry: &Entry,
+    marketplace: &str,
+    manifest: Option<String>,
+) -> (String, Option<String>) {
+    match manifest {
+        Some(version) if version != entry.version => {
+            let warning = format!(
+                "warning: the {marketplace} listing says {} is {}, but its plugin.json says {version}; recording the installed version",
+                entry.name, entry.version
+            );
+            (version, Some(warning))
+        }
+        Some(version) => (version, None),
+        None => (entry.version.clone(), None),
+    }
 }
 
 fn read(path: &Path) -> Result<String, String> {
@@ -447,12 +473,17 @@ pub fn install(paths: &Paths, spec: &str, scope: Scope) -> Result<Installed, Str
     let stage = paths.staging_dir().join(format!("install-{name}"));
     let _ = fs::remove_dir_all(&stage);
     fs::create_dir_all(paths.staging_dir()).map_err(|e| e.to_string())?;
-    let staged = stage_entry(paths, &marketplace, &entry, &stage)
-        .and_then(|()| check_manifest(&stage, &name));
-    if let Err(error) = staged {
-        let _ = fs::remove_dir_all(&stage);
-        return Err(error);
-    }
+    let manifest_version = match stage_entry(paths, &marketplace, &entry, &stage)
+        .and_then(|()| check_manifest(&stage, &name))
+    {
+        Ok(version) => version,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&stage);
+            return Err(error);
+        }
+    };
+    let (version, warning) = resolve_version(&entry, &marketplace.name, manifest_version);
+    notes.extend(warning);
 
     // The record goes first, so a folder that appears always has its record. If the move fails,
     // the record is taken back out.
@@ -464,7 +495,7 @@ pub fn install(paths: &Paths, spec: &str, scope: Scope) -> Result<Installed, Str
         scope,
         marketplace: marketplace.name.clone(),
         source: source_text(&entry.source),
-        version: entry.version.clone(),
+        version: version.clone(),
         trusted: marketplace.trusted,
     };
     let mut records = records(paths)?;
@@ -480,7 +511,7 @@ pub fn install(paths: &Paths, spec: &str, scope: Scope) -> Result<Installed, Str
 
     Ok(Installed {
         name,
-        version: entry.version,
+        version,
         root,
         scope,
         marketplace: marketplace.name,
@@ -634,12 +665,19 @@ fn update_one(paths: &Paths, record: &Record) -> Result<UpdateOutcome, String> {
     let _ = fs::remove_dir_all(&stage);
     fs::create_dir_all(stage.parent().unwrap_or(&stage)).map_err(|e| e.to_string())?;
     fs::create_dir_all(paths.staging_dir()).map_err(|e| e.to_string())?;
-    let staged = stage_entry(paths, &marketplace, &entry, &stage)
-        .and_then(|()| check_manifest(&stage, &record.name));
-    if let Err(error) = staged {
-        let _ = fs::remove_dir_all(&stage);
-        return Err(error);
-    }
+    let manifest_version = match stage_entry(paths, &marketplace, &entry, &stage)
+        .and_then(|()| check_manifest(&stage, &record.name))
+    {
+        Ok(version) => version,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&stage);
+            return Err(error);
+        }
+    };
+    // The update records the staged plugin's own manifest version, like an install: a
+    // floating source can move under a stale listing version. `from` below is the previously
+    // installed manifest version.
+    let (version, _) = resolve_version(&entry, &marketplace.name, manifest_version);
 
     if record.root.is_dir()
         && fingerprint(std::slice::from_ref(&stage))
@@ -665,7 +703,7 @@ fn update_one(paths: &Paths, record: &Record) -> Result<UpdateOutcome, String> {
 
     let mut records = records(paths)?;
     for r in records.iter_mut().filter(|r| r.root == record.root) {
-        r.version = entry.version.clone();
+        r.version = version.clone();
         r.source = source_text(&entry.source);
         r.trusted = marketplace.trusted;
     }
@@ -673,7 +711,7 @@ fn update_one(paths: &Paths, record: &Record) -> Result<UpdateOutcome, String> {
     Ok(UpdateOutcome::Updated {
         name: record.name.clone(),
         from: record.version.clone(),
-        to: entry.version,
+        to: version,
     })
 }
 

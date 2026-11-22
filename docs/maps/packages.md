@@ -149,7 +149,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-native` | Tier C native plugin helpers for the hoocode coding agent: the per-session supervisor that downloads, starts, watches and restarts one helper process per plugin | 1 | 2401 / 1604 | keep |
 | `code-paths` | App identity, config directories and path helpers for the hoocode coding agent | 21 | 1145 / 475 | keep |
 | `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 4 | 1953 / 1691 | keep |
-| `code-plugins` | Plugins for the hoocode coding agent: loading Agent Plugins 1.0 and Claude plugin layouts (discovery, precedence, folder trust, and the skills and MCP servers they contribute), and installing them from git marketplaces | 5 | 5215 / 2709 | keep |
+| `code-plugins` | Plugins for the hoocode coding agent: loading Agent Plugins 1.0 and Claude plugin layouts (discovery, precedence, folder trust, and the skills and MCP servers they contribute), and installing them from git marketplaces | 5 | 5295 / 2783 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 297 / 297 | keep |
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 801 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4470 / 3149 | keep |
