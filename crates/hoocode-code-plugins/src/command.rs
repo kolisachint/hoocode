@@ -448,6 +448,48 @@ mod tests {
     }
 
     #[test]
+    fn install_reports_the_manifest_version_when_the_listing_is_stale() {
+        let sandbox = sandbox();
+        let repo = local_marketplace(&sandbox.dir.path().join("origin"), "local-mk");
+        // The floating source moved on: the manifest is 1.0.8 while the listing still says 1.0.0.
+        std::fs::write(
+            repo.join("plugins/tool/plugin.json"),
+            r#"{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "tool", "version": "1.0.8", "description": "A tool"}"#,
+        )
+        .unwrap();
+        for args in [vec!["add", "-A"], vec!["commit", "-q", "-m", "1.0.8"]] {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+                .args(&args)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?}");
+        }
+        run_cmd(
+            &sandbox.paths,
+            &["marketplace", "add", &repo.display().to_string()],
+        )
+        .unwrap();
+
+        let installed = run_cmd(&sandbox.paths, &["install", "tool@local-mk"]).unwrap();
+        assert!(installed.changed);
+        assert!(
+            installed
+                .text
+                .contains("Installed tool 1.0.8 from local-mk"),
+            "{}",
+            installed.text
+        );
+        assert!(
+            installed.text.contains("1.0.8") && installed.text.contains("1.0.0"),
+            "the warning names both versions: {}",
+            installed.text
+        );
+    }
+
+    #[test]
     fn add_with_trust_says_the_marketplace_is_trusted() {
         let sandbox = sandbox();
         let repo = local_marketplace(&sandbox.dir.path().join("origin"), "mine-mk");

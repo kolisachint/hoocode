@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Each declared tool carries a permission hint**: `read` runs without asking, `act` asks like an edit, `dangerous` always asks unless `auto_allow` names the tool. Subagents get a helper's tools only when the plugin marks it shared; other helpers and plain MCP plugin servers are root-only.
 - Windows is not shipped: a Unix-socket helper off Unix is a clear error.
 
+### Fixed: installs record the plugin manifest's version (2026-11-22)
+- `hoocode install` (and `/plugin install`, the model's install tool, and `plugin update`)
+  record the installed plugin's own `plugin.json` version in `plugin-installs.json` and in the
+  `Installed ...` message, falling back to the marketplace listing's version only when the
+  manifest has none. Before, the record and message used the listing version, which can be stale
+  when the entry is a floating git source (`ref: main`, as with `hoo-browser@hoo-plugins`).
+  When they differ, the install message carries a warning naming both versions.
+
 ### Fixed: MCP tool names never contain `___` (2026-11-19)
 - A server or tool name's leading and trailing `_` are dropped from its model-facing name. A
   name that is only `_` is refused, as an empty one is. Before, `a_` + `b` and `a` + `_b` gave
