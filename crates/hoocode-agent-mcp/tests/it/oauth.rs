@@ -148,13 +148,16 @@ async fn reconnect_uses_the_stored_token() {
 
 #[tokio::test]
 async fn an_expired_token_is_refreshed_on_connect() {
-    // Tokens expire in one second, inside the refresh margin, so the client
-    // renews before it uses them.
+    // Tokens live one second. rmcp only refreshes proactively once less than
+    // `min(30, expires_in / 2)` seconds remain, so a still-valid short-lived
+    // token is used as-is: wait until this one is genuinely expired, then the
+    // client must renew it on connect instead of logging in again.
     let auth = start_auth(false, 1).await;
     let mcp = start_protected_mcp(&auth).await;
     let dir = data_dir("refresh");
     log_in(&mcp.url, &dir).await;
     let first = stored_access_token(&dir);
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
     let client = McpClient::connect_oauth("docs", &mcp.url, BTreeMap::new(), &dir, options())
         .await
