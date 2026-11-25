@@ -433,6 +433,11 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry("app.permission.pick1", &["1"], "Permission: pick option 1"),
         entry("app.permission.pick2", &["2"], "Permission: pick option 2"),
         entry("app.permission.pick3", &["3"], "Permission: pick option 3"),
+        entry(
+            "app.permission.detach",
+            &["d"],
+            "Permission: approve a parked call and detach it",
+        ),
     ]
 }
 

@@ -873,7 +873,7 @@ impl AgentSession {
 
     /// `_processAgentEvent`, run synchronously as the agent emits; the
     /// `agent_end` tail (retry backoff, compaction) runs in the background.
-    fn process_agent_event(&self, event: &AgentEvent) {
+    pub(crate) fn process_agent_event(&self, event: &AgentEvent) {
         match event {
             AgentEvent::AgentStart => self.inner.run_ended.store(false, Ordering::SeqCst),
             AgentEvent::AgentEnd { .. } => self.inner.run_ended.store(true, Ordering::SeqCst),

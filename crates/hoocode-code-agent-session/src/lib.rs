@@ -15,6 +15,7 @@ pub mod mcp;
 pub mod mcp_rows;
 pub mod model_fallback;
 pub mod output_guard;
+pub mod parked;
 pub mod plugin_source;
 pub mod provider_health;
 pub mod resources;
@@ -34,6 +35,7 @@ pub use hooks::{
     SessionStartReason, SessionSwitchReason, SlashCommandInfo, StaticResourceLoader, TemplateKind,
     TreePreparation,
 };
+pub use parked::{file_sha256, ParkedCall, ParkedDecision, ParkedOutcome};
 pub use plugin_source::PluginSource;
 pub use resources::DefaultResources;
 pub use runtime::{

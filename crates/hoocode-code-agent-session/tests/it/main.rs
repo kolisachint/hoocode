@@ -15,6 +15,7 @@ mod mcp;
 mod mcp_auth;
 mod mcp_rows;
 mod model_fallback;
+mod parked;
 mod plugin_source;
 mod prompt;
 mod provider_health;

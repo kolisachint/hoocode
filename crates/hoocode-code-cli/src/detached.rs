@@ -6,9 +6,8 @@
 //! child runs unattended with the subagent limits, flushes every entry, and
 //! records how it ended in a `detached_exit` entry.
 
-use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use hoocode_agent_types::{AgentMessage, AgentToolResult};
@@ -17,18 +16,14 @@ use hoocode_code_agent_session::AgentSession;
 use hoocode_code_permissions::{ParkHandler, ParkRequest};
 use hoocode_code_session::detached::{DETACHED_EXIT_ENTRY, PARKED_CALL_ENTRY};
 use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
-use hoocode_code_subagents::depth::SUBAGENT_DEPTH_ENV;
-use hoocode_code_subagents::lifeguard::SUBAGENT_DEADLINE_MS;
-use hoocode_code_subagents::DEFAULT_SUBAGENT_MAX_TURNS;
+pub use hoocode_code_subagents::detached_child::{
+    child_command, log_path_for, spawn_detached, DETACHED_ENV,
+};
 use hoocode_code_tool_api::{ToolContext, ToolDefinition, ToolError, ToolOrigin};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 /// The model-facing name of the tool.
 pub const SESSION_SPAWN_TOOL: &str = "SessionSpawn";
-
-/// Set in the environment of every detached run (and read by the run itself).
-pub const DETACHED_ENV: &str = "HOOCODE_DETACHED";
 
 /// The section names a brief must have, in the order the errors name them.
 pub const SECTIONS: [&str; 4] = ["Goal", "Decisions", "Dead ends", "Next step"];
@@ -38,18 +33,6 @@ const GOAL_MAX_CHARS: usize = 60;
 
 /// Dirty-file lines listed in the facts before the "… and N more" line.
 const DIRTY_LIMIT: usize = 50;
-
-/// The task-identity variables the subagent machinery sets on its children. A
-/// detached session is a root run, so it must not inherit them.
-const AGENT_IDENTITY_ENV: [&str; 4] = [
-    "HOOCODE_AGENT_ID",
-    "HOOCODE_AGENT_TOKEN",
-    "HOOCODE_AGENT_PARENT",
-    "HOOCODE_AGENT_DEPTH",
-];
-
-/// Prefix of the tier C helper socket variables, which a child must not inherit.
-const HELPER_SOCKET_PREFIX: &str = "HOOCODE_HELPER_SOCKET_";
 
 /// Whether this process is a detached run.
 pub fn is_detached_run() -> bool {
@@ -79,7 +62,7 @@ pub fn parked_call_data(
             let path = cwd.join(path);
             json!({
                 "path": path.display().to_string(),
-                "sha256": file_sha256(&path),
+                "sha256": hoocode_code_agent_session::file_sha256(&path),
             })
         }
     };
@@ -89,13 +72,6 @@ pub fn parked_call_data(
         "reason": reason,
         "target": target,
     })
-}
-
-/// The lowercase hex sha256 of the file at `path`; `None` when it cannot be read.
-fn file_sha256(path: &Path) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
-    let digest = Sha256::digest(&bytes);
-    Some(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 /// The handler a detached run sets on its permission gate: it records the parked call and
@@ -315,69 +291,6 @@ pub fn child_prompt(brief: &str, facts: &str) -> String {
     )
 }
 
-/// The command that runs the child: `-p <prompt> --session <path>` with the
-/// subagent turn and deadline limits, and the parent's model when it has one.
-/// The child gets `HOOCODE_DETACHED=1`, no subagent depth and no task identity,
-/// and no stdin. Its stdio is set by [`spawn_detached`].
-pub fn child_command(
-    exe: &Path,
-    session: &Path,
-    prompt: &str,
-    cwd: &Path,
-    model: Option<(&str, &str)>,
-) -> Command {
-    let mut command = Command::new(exe);
-    command
-        .arg("-p")
-        .arg(prompt)
-        .arg("--session")
-        .arg(session)
-        .arg("--max-turns")
-        .arg(DEFAULT_SUBAGENT_MAX_TURNS.to_string())
-        .arg("--deadline-ms")
-        .arg(SUBAGENT_DEADLINE_MS.to_string());
-    if let Some((provider, id)) = model {
-        command
-            .arg("--provider")
-            .arg(provider)
-            .arg("--model")
-            .arg(id);
-    }
-    command
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .env(DETACHED_ENV, "1");
-    for prefix in hoocode_code_paths::ENV_PREFIXES {
-        command.env_remove(format!("{prefix}{SUBAGENT_DEPTH_ENV}"));
-    }
-    for name in AGENT_IDENTITY_ENV {
-        command.env_remove(name);
-    }
-    for (key, _) in std::env::vars_os() {
-        if key.to_string_lossy().starts_with(HELPER_SOCKET_PREFIX) {
-            command.env_remove(key);
-        }
-    }
-    command
-}
-
-/// The log file of a detached session: `<session file>.log`.
-pub fn log_path_for(session: &Path) -> PathBuf {
-    let mut name = session.as_os_str().to_owned();
-    name.push(".log");
-    PathBuf::from(name)
-}
-
-/// Starts `command` detached (its own session, `SIGHUP` ignored) with stdout and
-/// stderr appended to `log`. The child is not killed when this process exits.
-pub fn spawn_detached(command: &mut Command, log: &Path) -> std::io::Result<Child> {
-    let file = OpenOptions::new().create(true).append(true).open(log)?;
-    let copy = file.try_clone()?;
-    command.stdout(Stdio::from(file)).stderr(Stdio::from(copy));
-    hoocode_runtime::spawn_detached_session(command);
-    command.spawn()
-}
-
 /// Creates the child's session file in `dir` and records its parent, name and
 /// goal. The file exists when this returns; the manager (and its lock) is dropped.
 pub fn create_child_session(
@@ -546,6 +459,7 @@ fn run_session_spawn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hoocode_code_subagents::detached_child::{child_command_continue, AGENT_IDENTITY_ENV};
 
     #[test]
     fn parked_call_data_names_the_file_with_its_hash() {
@@ -788,6 +702,38 @@ mod tests {
             None,
         );
         assert!(!args_of(&command).iter().any(|a| a == "--model"));
+    }
+
+    #[test]
+    fn continue_command_has_no_prompt_and_the_same_limits() {
+        let command = child_command_continue(
+            Path::new("/bin/hoocode"),
+            Path::new("/abs/sessions/2026_x.jsonl"),
+            Path::new("/work/repo"),
+            Some(("anthropic", "claude-x")),
+        );
+        assert_eq!(
+            args_of(&command),
+            vec![
+                "-p",
+                "--session",
+                "/abs/sessions/2026_x.jsonl",
+                "--max-turns",
+                "200",
+                "--deadline-ms",
+                "14400000",
+                "--provider",
+                "anthropic",
+                "--model",
+                "claude-x",
+            ]
+        );
+        assert_eq!(command.get_current_dir(), Some(Path::new("/work/repo")));
+        let detached = command
+            .get_envs()
+            .find(|(k, _)| k.to_string_lossy() == DETACHED_ENV)
+            .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()));
+        assert_eq!(detached.as_deref(), Some("1"));
     }
 
     #[test]

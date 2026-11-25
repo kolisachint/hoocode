@@ -49,6 +49,10 @@ pub(super) enum SessionOutcome {
         overridden: bool,
         result: Result<ReplaceResult, RuntimeError>,
     },
+    /// A parked call answered (`parked.rs`).
+    Parked {
+        result: Result<super::parked::ParkedReport, String>,
+    },
     /// `/import`.
     Import {
         input: String,
@@ -181,6 +185,7 @@ impl Mode {
                 overridden,
                 result,
             } => self.finish_import(input, overridden, result),
+            SessionOutcome::Parked { result } => self.finish_parked(result),
             SessionOutcome::Reload => self.finish_reload(),
         }
         if self.session_op.is_none() {

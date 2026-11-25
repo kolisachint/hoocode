@@ -381,3 +381,71 @@ fn shell_card_mono_golden() {
     let (mut card, _) = card(shell_info("$ printf 'alpha\\nbeta\\ngamma\\n' | sort -r"));
     assert_golden!("clearance_shell_mono_100", render_golden(&mut card, 100));
 }
+
+/// A parked call's card (SA-12 row 4b): yes, approve and detach, no. No always row and
+/// no edit key, and `d` (or `2`) approves and detaches.
+#[test]
+fn a_parked_card_offers_yes_detach_and_no() {
+    let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+    let answered: Answered = Rc::default();
+    let detached = Rc::new(std::cell::Cell::new(false));
+    let (sink, flag) = (answered.clone(), detached.clone());
+    let mut card = ClearanceCard::parked(
+        shell_info("$ ls"),
+        Box::new(move |choice| *sink.borrow_mut() = Some(choice)),
+        Box::new(move || flag.set(true)),
+    );
+    let rows = rows(&mut card, 100);
+    assert!(rows[0].contains("Allow Shell?"), "row 0: {:?}", rows[0]);
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("parked call from a detached run")),
+        "{rows:?}"
+    );
+    assert!(rows.iter().any(|r| r.contains("› 1  yes")), "{rows:?}");
+    assert!(
+        rows.iter().any(|r| r.contains("2  approve and detach")),
+        "{rows:?}"
+    );
+    assert!(rows.iter().any(|r| r.contains("3  no")), "{rows:?}");
+    assert!(!rows.iter().any(|r| r.contains("always")), "{rows:?}");
+
+    card.handle_input("d");
+    assert!(detached.get(), "d detaches");
+    assert!(
+        answered.borrow().is_none(),
+        "detaching is not an answer to on_done"
+    );
+}
+
+/// The answer a parked card gives for `key` typed at it.
+fn parked_answer(key: &str) -> (Option<ClearanceChoice>, String) {
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+    let answered: Answered = Rc::default();
+    let sink = answered.clone();
+    let mut card = ClearanceCard::parked(
+        shell_info("$ ls"),
+        Box::new(move |choice| *sink.borrow_mut() = Some(choice)),
+        Box::new(|| {}),
+    );
+    card.handle_input(key);
+    let text = rows(&mut card, 100).join("\n");
+    let answer = answered.borrow().clone();
+    (answer, text)
+}
+
+#[test]
+fn a_parked_card_answers_yes_and_no_and_has_no_edit_key() {
+    let _g = lock(Some("dark"));
+    assert_eq!(parked_answer("y").0, Some(ClearanceChoice::Once));
+    assert_eq!(
+        parked_answer("n").0,
+        Some(ClearanceChoice::Deny { reason: None })
+    );
+    // `e` is not an edit key on a parked card: it types into the reply, so nothing is
+    // answered and no edit row appears.
+    let (answer, text) = parked_answer("e");
+    assert_eq!(answer, None);
+    assert!(!text.contains("edit"), "{text}");
+}

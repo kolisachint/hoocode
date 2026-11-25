@@ -14,6 +14,7 @@
 pub mod agent_log;
 pub mod clearance;
 pub mod depth;
+pub mod detached_child;
 pub mod dispatch;
 pub mod events;
 pub mod inbox;

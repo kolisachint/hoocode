@@ -36,6 +36,10 @@ pub struct ClearanceCard {
     selected: usize,
     focused: bool,
     on_done: Option<ClearanceAnswer>,
+    /// A parked call of a detached run (SA-12 row 4b): rows yes, approve and detach, no.
+    parked: bool,
+    /// Runs when the parked call's "approve and detach" row is chosen.
+    on_detach: Option<Box<dyn FnOnce()>>,
 }
 
 impl ClearanceCard {
@@ -49,7 +53,23 @@ impl ClearanceCard {
             selected: 0,
             focused: false,
             on_done: Some(on_done),
+            parked: false,
+            on_detach: None,
         }
+    }
+
+    /// The card for a call a detached run parked. Its answer is `on_done` (yes or no,
+    /// as a [`ClearanceChoice`]); `on_detach` runs for the "approve and detach" row. The
+    /// card has no always row and no edit key: the call's arguments are fixed.
+    pub fn parked(
+        info: ClearanceInfo,
+        on_done: ClearanceAnswer,
+        on_detach: Box<dyn FnOnce()>,
+    ) -> Self {
+        let mut card = Self::new(info, on_done);
+        card.parked = true;
+        card.on_detach = Some(on_detach);
+        card
     }
 
     fn done(&mut self, choice: ClearanceChoice) {
@@ -65,6 +85,9 @@ impl ClearanceCard {
 
     /// The facts after the chip: the subagent that asks, when one does.
     fn facts(&self) -> Option<String> {
+        if self.parked {
+            return Some("parked call from a detached run".to_string());
+        }
         self.info
             .from
             .as_ref()
@@ -77,6 +100,9 @@ impl ClearanceCard {
     /// word comes from the gate's [`shell_program`], so the label and the
     /// stored rule always agree).
     fn always_offer(&self) -> Option<String> {
+        if self.parked {
+            return None;
+        }
         if self.info.mode.trim().eq_ignore_ascii_case("plan") {
             return None;
         }
@@ -129,6 +155,13 @@ impl ClearanceCard {
     /// no. The scope rides on the always label's row while it fits, else
     /// on its own continuation row (mock §S4).
     fn options(&self) -> Vec<(String, Option<String>)> {
+        if self.parked {
+            return vec![
+                ("yes".to_string(), None),
+                ("approve and detach".to_string(), None),
+                ("no".to_string(), None),
+            ];
+        }
         let mut options = vec![("yes".to_string(), None)];
         if let Some(program) = self.always_offer() {
             // Shell approvals live for this session only; other tools
@@ -221,12 +254,16 @@ impl ClearanceCard {
                 key_hint_text(PICK_IDS[0]),
                 key_hint_text(PICK_IDS[count.min(PICK_IDS.len()) - 1])
             );
-            let edit = key_hint_text("app.permission.edit");
+            let (action_key, action_label) = if self.parked {
+                (key_hint_text("app.permission.detach"), "approve and detach")
+            } else {
+                (key_hint_text("app.permission.edit"), "edit first")
+            };
             // The hint names the design's items only. `y` and `n` still
             // answer while the reply is empty (decision 2026-11-05); the
             // hint does not list them.
             let mut hint = fit_hint_line(
-                &[(pick.as_str(), "pick"), (edit.as_str(), "edit first")],
+                &[(pick.as_str(), "pick"), (action_key.as_str(), action_label)],
                 false,
                 width,
             );
@@ -243,6 +280,18 @@ impl ClearanceCard {
 
     /// Answers with the option at `index` (0 is yes, the last is no).
     fn choose(&mut self, index: usize) {
+        if self.parked {
+            match index {
+                0 => self.done(ClearanceChoice::Once),
+                1 => {
+                    if let Some(detach) = self.on_detach.take() {
+                        detach();
+                    }
+                }
+                _ => self.done(ClearanceChoice::Deny { reason: None }),
+            }
+            return;
+        }
         let count = self.options().len();
         if index == 0 {
             self.done(ClearanceChoice::Once);
@@ -309,7 +358,7 @@ impl Component for ClearanceCard {
             // Esc alone is no (spec §6.2).
             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),
             "\r" | "\n" => self.choose(self.selected),
-            _ if kb.matches(data, "app.permission.edit") => {
+            _ if kb.matches(data, "app.permission.edit") && !self.parked => {
                 self.editing = true;
                 self.edit.set_value(self.editable());
                 // Editing starts at the end of the command (ctrl+e).
@@ -319,10 +368,13 @@ impl Component for ClearanceCard {
             _ if kb.matches(data, "app.permission.pick1") => self.choose(0),
             _ if kb.matches(data, "app.permission.pick2") && count >= 2 => self.choose(1),
             _ if kb.matches(data, "app.permission.pick3") && count >= 3 => self.choose(2),
+            _ if kb.matches(data, "app.permission.detach") && self.parked => self.choose(1),
             // The dialog letters (K-P4), only here with no reply typed: y and n
             // answer at once. a moves the highlight to the always row; enter confirms it.
             _ if kb.matches(data, "app.dialog.yes") => self.choose(0),
-            _ if kb.matches(data, "app.dialog.always") && count >= 3 => self.selected = 1,
+            _ if kb.matches(data, "app.dialog.always") && count >= 3 && !self.parked => {
+                self.selected = 1
+            }
             _ if kb.matches(data, "app.dialog.no") => self.choose(count - 1),
             "\u{7f}" | "\u{8}" => {}
             _ if matches_key(data, "up") => {

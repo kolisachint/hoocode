@@ -685,6 +685,7 @@ impl Mode {
                 } else {
                     "Resumed session"
                 });
+                self.check_parked_call();
             }
             Err(RuntimeError::MissingSessionCwd(issue)) if !overridden => {
                 let title = format!(

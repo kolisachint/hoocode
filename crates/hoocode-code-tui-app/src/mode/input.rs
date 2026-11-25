@@ -65,6 +65,8 @@ pub(super) enum Action {
     /// The options pane closed: the answers, or `None` when skipped.
     AskOptionsDone(Option<Vec<String>>),
     ClearanceDone(ClearanceChoice),
+    /// The parked-call card answered (`parked.rs`).
+    ParkedDone(super::parked::ParkedChoice),
     EndShiftDone(EndShiftChoice),
     EndShiftJobsDone(EndShiftJobsChoice),
     /// The multi-line editor dialog closed.
@@ -1031,6 +1033,7 @@ impl Mode {
             Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
             Action::ClearanceDone(choice) => self.close_clearance(choice),
+            Action::ParkedDone(choice) => self.answer_parked(choice),
             Action::EndShiftDone(choice) => self.close_end_shift(choice),
             Action::EndShiftJobsDone(choice) => self.close_end_shift_jobs(choice),
             Action::EditorDialogDone(outcome) => self.close_editor_dialog(outcome),

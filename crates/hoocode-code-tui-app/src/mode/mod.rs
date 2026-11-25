@@ -93,6 +93,9 @@ mod leader_tests;
 mod loop_command;
 mod mcp;
 mod models;
+mod parked;
+#[cfg(test)]
+mod parked_tests;
 mod plugin;
 #[cfg(test)]
 mod prompt_flight_tests;
@@ -282,6 +285,8 @@ enum AppEvent {
     AttachPicked(Option<attach::RunRow>),
     /// A session operation run off the UI thread ended (`session_op.rs`).
     SessionOp(Box<session_op::SessionOpDone>),
+    /// A parked call of a detached run was answered (`parked.rs`).
+    Parked(Result<parked::ParkedReport, String>),
     /// Queued messages sent after a compaction failed; they go back.
     CompactionQueueFailed(Vec<(String, StreamingBehavior)>, String),
     /// A message typed while streaming could not be queued.
@@ -503,6 +508,9 @@ struct Mode {
     clearance: Option<OpenClearance>,
     /// The clearance requests waiting behind the card that is up.
     clearance_queue: ClearanceQueue,
+    /// The card for a call a detached run parked, and that call.
+    parked_card: Option<parked::OpenParkedCard>,
+    parked_call: Option<hoocode_code_agent_session::ParkedCall>,
     end_shift_card: Option<OpenEndShift>,
     end_shift_jobs_card: Option<OpenEndShiftJobs>,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
@@ -985,6 +993,8 @@ impl Mode {
             ask_options: None,
             clearance: None,
             clearance_queue: ClearanceQueue::default(),
+            parked_card: None,
+            parked_call: None,
             end_shift_card: None,
             end_shift_jobs_card: None,
             settings_changes: Rc::default(),
@@ -1315,6 +1325,7 @@ impl Mode {
         })));
         let mut input = self.tui.start();
         self.install_interrupt_hook();
+        self.check_parked_call();
         // Only the interactive mode reports to Herdr: print, RPC and subagent
         // runs never build a reporter. OSC 7501 goes to any terminal.
         self.herdr = crate::herdr::Reporter::from_process_env();
@@ -1599,6 +1610,7 @@ impl Mode {
                     }
                     AppEvent::QueueError(error) => self.show_error(&error),
                     AppEvent::Status(message) => self.show_status(&message),
+                    AppEvent::Parked(result) => self.finish_parked(result),
                     AppEvent::ImportAnswer {
                         input,
                         cwd_fallback,

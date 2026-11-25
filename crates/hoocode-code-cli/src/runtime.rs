@@ -10,7 +10,7 @@ use crate::native_child;
 use crate::native_tools::{self, NativeHolder};
 use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
-use hoocode_agent_types::{AgentEvent, PermissionGate, ToolOrigin, ToolSelector};
+use hoocode_agent_types::{AgentEvent, AgentMessage, PermissionGate, ToolOrigin, ToolSelector};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
@@ -1599,35 +1599,45 @@ fn run_print_body(
         .as_ref()
         .map(|id| termination_handler(session.clone(), id.clone(), result_written.clone()));
 
-    // `session.prompt(initialMessage)` then each remaining message in turn.
+    // `session.prompt(initialMessage)` then each remaining message in turn. SA-12 row 4b:
+    // a detached run with no message, whose session ends in tool results (the user
+    // answered its parked call), continues from them instead.
+    let continue_run = crate::detached::is_detached_run()
+        && task_id.is_none()
+        && initial_message.is_none()
+        && messages.is_empty()
+        && matches!(session.messages().last(), Some(AgentMessage::ToolResult(_)));
+    let steps: Vec<Option<&String>> = if continue_run {
+        vec![None]
+    } else {
+        initial_message
+            .iter()
+            .chain(messages.iter())
+            .map(Some)
+            .collect()
+    };
     let mut initial_images = Some(initial_images);
-    for prompt in initial_message.iter().chain(messages.iter()) {
+    for step in steps {
         // The @file images go with the initial message only.
         let images = if initial_message.is_some() {
             initial_images.take().unwrap_or_default()
         } else {
             Vec::new()
         };
-        let run = session.prompt(
-            prompt,
-            PromptOptions {
-                images,
-                ..Default::default()
-            },
-        );
-        let result = async_runtime().block_on(async {
-            tokio::pin!(run);
-            loop {
-                tokio::select! {
-                    result = &mut run => break Ok(result),
-                    Some(line) = rx.recv() => {
-                        if let Err(e) = output.write_all(line.as_bytes()).and_then(|_| output.flush()) {
-                            break Err(e);
-                        }
-                    }
-                }
-            }
-        })?;
+        let result = match step {
+            Some(prompt) => await_run_writing(
+                session.prompt(
+                    prompt,
+                    PromptOptions {
+                        images,
+                        ..Default::default()
+                    },
+                ),
+                &mut rx,
+                output,
+            )?,
+            None => await_run_writing(session.continue_run(), &mut rx, output)?,
+        };
         write_lines(&mut rx, output)?;
         if let Err(e) = result {
             writeln!(err, "{e}")?;
@@ -1719,6 +1729,28 @@ fn run_print_body(
         // json mode never inspects the final message.
         PrintMode::Json => Ok(exit_code),
     }
+}
+
+/// Drives one run to its end on the async runtime, writing the lines its listeners queue
+/// (json events) to `output` as they come.
+fn await_run_writing(
+    run: impl std::future::Future<Output = Result<(), hoocode_code_agent_session::AgentSessionError>>,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    output: &mut dyn Write,
+) -> std::io::Result<Result<(), hoocode_code_agent_session::AgentSessionError>> {
+    async_runtime().block_on(async {
+        tokio::pin!(run);
+        loop {
+            tokio::select! {
+                result = &mut run => break Ok(result),
+                Some(line) = rx.recv() => {
+                    if let Err(e) = output.write_all(line.as_bytes()).and_then(|_| output.flush()) {
+                        break Err(e);
+                    }
+                }
+            }
+        }
+    })
 }
 
 /// SA-12: a detached run ends its file with a `detached_exit` record (done or failed), so

@@ -196,6 +196,7 @@ const PERMISSION_SCOPE: &[&str] = &[
     "app.permission.pick1",
     "app.permission.pick2",
     "app.permission.pick3",
+    "app.permission.detach",
 ];
 
 /// The settings list: Space toggles the picked row (the search query only
