@@ -9,6 +9,7 @@ mod app_server;
 pub mod args;
 pub mod auth;
 mod config_command;
+mod detached;
 mod ext_tools;
 mod help;
 mod help_text;

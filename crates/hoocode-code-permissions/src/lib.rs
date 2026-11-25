@@ -17,8 +17,16 @@ use std::sync::{Arc, Mutex};
 /// that name only (`ToolOrigin::BuiltIn`). `ShellKill` stops a background job, so it asks like
 /// `Shell`; `ShellOutput` only reads and is not gated. `WebFetch` is the network category: a
 /// plugin's network request is asked as it (`ext_tools.rs`, once per origin). No built-in tool
-/// has that name, and a plugin tool named `WebFetch` is not gated by name.
-pub const GATED_TOOLS: [&str; 5] = ["Shell", "Write", "Edit", "WebFetch", "ShellKill"];
+/// has that name, and a plugin tool named `WebFetch` is not gated by name. `SessionSpawn` starts
+/// a detached session that runs unattended, so it always asks unless `auto_allow` names it.
+pub const GATED_TOOLS: [&str; 6] = [
+    "Shell",
+    "Write",
+    "Edit",
+    "WebFetch",
+    "ShellKill",
+    "SessionSpawn",
+];
 
 /// The plugin lifecycle tools. They are not in [`GATED_TOOLS`]; in fail-closed
 /// (rpc) mode they are gated like one, so they need `auto_allow`.
@@ -898,6 +906,57 @@ fn describe_tool_with_origin(tool_name: &str, origin: &ToolOrigin, input: &Value
     describe_tool_inner(tool_name, input)
 }
 
+/// The approval detail of a `SessionSpawn` call (`SessionSpawn` in the clearance card): the
+/// brief, then what runs unattended in this mode, then the checkout it works in. `unattended`
+/// is the mode's `auto_allow` entries; empty reads as "nothing".
+pub fn describe_session_spawn(input: &Value, cwd: &Path, unattended: &[String]) -> String {
+    let brief = input
+        .get("brief")
+        .and_then(Value::as_str)
+        .unwrap_or("(unknown)");
+    let runs = if unattended.is_empty() {
+        "nothing".to_string()
+    } else {
+        unattended.join(", ")
+    };
+    format!(
+        "{}\nRuns unattended: {runs}; any other call that needs approval waits until you open the session.\nIt works in this checkout ({}); if you keep editing the same files, the two sessions can collide.",
+        brief.trim(),
+        cwd.display()
+    )
+}
+
+/// The `auto_allow` entries of `mode` as written in the config: the tools that run unattended.
+fn auto_allow_entries(config: &HooConfig, mode: &str) -> Vec<String> {
+    config::mode_config(config, mode)
+        .and_then(|m| m.get("auto_allow"))
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The clearance detail for a call that needs approval. `SessionSpawn` names the mode's
+/// unattended tools and the checkout, which the input alone does not say.
+fn gate_detail(
+    tool_name: &str,
+    origin: &ToolOrigin,
+    input: &Value,
+    cwd: &Path,
+    config: &HooConfig,
+    mode: &str,
+) -> String {
+    if tool_name == "SessionSpawn" && *origin == ToolOrigin::BuiltIn {
+        return describe_session_spawn(input, cwd, &auto_allow_entries(config, mode));
+    }
+    describe_tool_with_origin(tool_name, origin, input)
+}
+
 fn describe_tool_inner(tool_name: &str, input: &Value) -> String {
     let field = |k: &str| {
         input
@@ -907,6 +966,8 @@ fn describe_tool_inner(tool_name: &str, input: &Value) -> String {
             .to_string()
     };
     match tool_name {
+        // Without the mode and checkout, only the brief; the gate adds the rest.
+        "SessionSpawn" => field("brief"),
         "Shell" => {
             // `command.replace(/\s+/g, " ").slice(0, 100)` (UTF-16 units).
             let command = input.get("command").and_then(Value::as_str).unwrap_or("");
@@ -1229,10 +1290,11 @@ impl HooPermissionGate {
                         "Denied by permission gate: {tool_name} needs approval in mode \"{mode}\", but no approval prompt is available in this session. Ask the user to allow it, or use a read-only alternative."
                     ));
                 };
+                let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
                 let info = ClearanceInfo {
                     tool: tool_name.to_string(),
-                    detail: describe_tool_with_origin(tool_name, origin, input),
-                    mode: config::active_mode(&merged).unwrap_or_else(|| "build".into()),
+                    detail: gate_detail(tool_name, origin, input, &self.cwd, &merged, &mode),
+                    mode,
                     step: None,
                     reach: reach_for(tool_name, input),
                     from: None,
@@ -1755,6 +1817,31 @@ mod tests {
             !ClearanceRelay::can_ensure(&NoChannel),
             "the default relay cannot ensure"
         );
+    }
+
+    #[test]
+    fn session_spawn_detail_names_the_brief_unattended_tools_and_checkout() {
+        let input = json!({"brief": "## Goal\nship it\n"});
+        let detail = describe_session_spawn(
+            &input,
+            Path::new("/work/repo"),
+            &["Shell".to_string(), "Read".to_string()],
+        );
+        assert_eq!(
+            detail,
+            "## Goal\nship it\nRuns unattended: Shell, Read; any other call that needs approval waits until you open the session.\nIt works in this checkout (/work/repo); if you keep editing the same files, the two sessions can collide."
+        );
+        let none = describe_session_spawn(&input, Path::new("/w"), &[]);
+        assert!(none.contains("Runs unattended: nothing;"), "{none}");
+    }
+
+    #[test]
+    fn session_spawn_is_a_gated_tool() {
+        assert!(is_approval_tool("SessionSpawn", &ToolOrigin::BuiltIn));
+        assert!(!is_approval_tool(
+            "SessionSpawn",
+            &plugin_origin("p", "SessionSpawn")
+        ));
     }
 
     #[test]

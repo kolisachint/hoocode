@@ -15,6 +15,7 @@
 //! - [`spawn_bg`]: housekeeping on the one Low lane thread `hoocode-bg`.
 //! - [`lower_child_priority`]: niceness of a child process, set at spawn.
 //! - [`spawn_in_new_session`]: a child with no controlling terminal.
+//! - [`spawn_detached_session`]: the same, and `SIGHUP` ignored (a detached session).
 //! - [`ParallelToolLimit`]: the per-turn cap on parallel tool calls.
 //! - [`session_io`]: the `hoocode-session-io` thread, the only writer of session
 //!   files, with a bounded queue and flush barriers.
@@ -43,7 +44,8 @@ pub mod watchdog;
 
 pub use bg::{spawn_bg, BG_THREAD_NAME};
 pub use child::{
-    lower_child_priority, spawn_in_new_session, BELOW_NORMAL_PRIORITY_CLASS, SUBAGENT_CHILD_NICE,
+    lower_child_priority, spawn_detached_session, spawn_in_new_session,
+    BELOW_NORMAL_PRIORITY_CLASS, SUBAGENT_CHILD_NICE,
 };
 pub use lanes::{apply_current_thread_lane, spawn_lane_thread, Lane};
 pub use limits::{

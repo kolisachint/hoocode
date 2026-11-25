@@ -5,12 +5,14 @@
 //! tree via `id`/`parent_id`, and the leaf pointer tracks the current branch.
 
 pub mod context;
+pub mod detached;
 pub mod entry;
 pub mod identity;
 pub mod lock;
 pub mod manager;
 
 pub use context::{build_session_context, ModelRef, SessionContext};
+pub use detached::{detached_status, DetachedStatus};
 pub use entry::{CustomMessageContent, FileEntry, Header, CURRENT_SESSION_VERSION};
 pub use lock::{lock_holder, lock_path_for, session_in_use_message, SessionLock, SessionLockError};
 pub use manager::{

@@ -423,6 +423,17 @@ fn custom_tools(
         tools.extend(hoocode_code_scheduler::create_cron_tool_definitions(cwd));
     }
     tools.extend(subagent_tools(args, settings, false, cwd));
+    // SA-12: a detached session for a clean handover. Not in a detached run, a subagent tree,
+    // or a task child.
+    if crate::detached::session_spawn_registered(
+        crate::detached::is_detached_run(),
+        hoocode_code_subagents::depth::current_subagent_depth(
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ),
+        args.task_id.is_some(),
+    ) {
+        tools.push(crate::detached::create_session_spawn_tool_definition());
+    }
     if args.task_id.is_none()
         && args
             .todo_write
@@ -1461,6 +1472,7 @@ fn run_print_body(
         Ok(prepared) => prepared,
         Err(message) => {
             writeln!(err, "{}", crate::red(color, &message))?;
+            record_early_exit(&session, args, &message);
             return Ok(1);
         }
     };
@@ -1469,17 +1481,13 @@ fn run_print_body(
         .iter()
         .any(|(kind, _)| *kind == DiagnosticKind::Error)
     {
+        record_early_exit(&session, args, "startup diagnostics reported an error");
         return Ok(1);
     }
     if session.model().is_none() {
-        writeln!(
-            err,
-            "{}",
-            crate::red(
-                color,
-                &hoocode_code_auth::auth_guidance::format_no_models_available_message()
-            )
-        )?;
+        let message = hoocode_code_auth::auth_guidance::format_no_models_available_message();
+        writeln!(err, "{}", crate::red(color, &message))?;
+        record_early_exit(&session, args, &message);
         return Ok(1);
     }
 
@@ -1590,6 +1598,9 @@ fn run_print_body(
         write_lines(&mut rx, output)?;
         if let Err(e) = result {
             writeln!(err, "{e}")?;
+            if task_id.is_none() {
+                record_detached_exit(&session, Some(&e.to_string()));
+            }
             session.dispose();
             shutdown_native_blocking();
             return Ok(1);
@@ -1646,6 +1657,9 @@ fn run_print_body(
             exit_code = 1;
         }
     }
+    if task_id.is_none() {
+        record_detached_exit(&session, None);
+    }
     if let Some(heartbeat) = heartbeat {
         heartbeat.abort();
     }
@@ -1671,6 +1685,30 @@ fn run_print_body(
         }
         // json mode never inspects the final message.
         PrintMode::Json => Ok(exit_code),
+    }
+}
+
+/// SA-12: a detached run ends its file with a `detached_exit` record (done or failed), so
+/// its status can be read after the process is gone. A no-op outside a detached run. The
+/// caller skips a subagent child, which may inherit the variable.
+fn record_detached_exit(session: &AgentSession, run_error: Option<&str>) {
+    if !crate::detached::is_detached_run() {
+        return;
+    }
+    let data = crate::detached::detached_exit_data(run_error, &session.messages());
+    let mut manager = session.session_manager();
+    manager.append_custom_entry(
+        hoocode_code_session::detached::DETACHED_EXIT_ENTRY,
+        Some(data),
+    );
+    let _ = manager.flush(hoocode_code_session::SESSION_FLUSH_DEADLINE);
+}
+
+/// [`record_detached_exit`] for a run that stops before its first prompt. A subagent
+/// child is skipped, as in [`record_detached_exit`]'s callers.
+fn record_early_exit(session: &AgentSession, args: &Args, reason: &str) {
+    if args.task_id.is_none() {
+        record_detached_exit(session, Some(reason));
     }
 }
 
@@ -2681,6 +2719,7 @@ mod tests {
                 "AskUserQuestion",
                 "Agent",
                 "AgentOutput",
+                "SessionSpawn",
                 "TodoWrite"
             ]
         );

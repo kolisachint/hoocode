@@ -1,3 +1,4 @@
+mod detached_status;
 mod entry_round_trip;
 mod fuzz_smoke;
 mod sdk_session_manager;

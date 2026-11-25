@@ -92,6 +92,36 @@ pub fn spawn_in_new_session(command: &mut Command) {
     }
 }
 
+/// Runs the child that `command` will spawn as a detached session: the
+/// [`spawn_in_new_session`] setup, plus `SIGHUP` ignored, so the child keeps
+/// running when the terminal that started it hangs up. The parent never kills
+/// it. A no-op off Unix.
+pub fn spawn_detached_session(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        // SAFETY: the closure only calls setsid and signal, which are
+        // async-signal-safe, between fork and exec. It touches no memory of the
+        // parent. An ignored disposition survives the exec.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::signal(libc::SIGHUP, libc::SIG_IGN) == libc::SIG_ERR {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+    }
+}
+
 #[cfg(test)]
 mod unit {
     use super::SUBAGENT_CHILD_NICE;
