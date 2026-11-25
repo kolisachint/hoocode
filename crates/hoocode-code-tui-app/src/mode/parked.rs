@@ -60,7 +60,8 @@ impl Mode {
     /// target file that changed since the call was parked is not asked about: the call is
     /// recorded as not run and the model is told.
     pub(super) fn check_parked_call(&mut self) {
-        if self.parked_call.is_some() || self.session_op.is_some() {
+        // A followed session's run is alive, so its call is not parked (SA-12 row 5).
+        if self.parked_call.is_some() || self.session_op.is_some() || self.is_following() {
             return;
         }
         let Some(call) = self.session.open_parked_call() else {

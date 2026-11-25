@@ -806,13 +806,13 @@ fn initial_session_manager(args: &Args, interactive: bool) -> SessionManager {
     if std::env::var_os("HOOCODE_DETACHED").is_some() {
         session_manager.set_flush_each_entry(true);
     }
-    if let Some(pid) = session_manager.lock_held_by() {
+    // SA-12 follow view: interactive mode keeps this read-only manager and follows
+    // the process that holds the session (`Mode::new`). Other modes refuse.
+    if let Some(pid) = session_manager.lock_held_by().filter(|_| !interactive) {
         let path = session_manager
             .session_file()
             .unwrap_or(std::path::Path::new(""));
         let message = hoocode_code_session::session_in_use_message(pid, path);
-        // SA-12 follow view: interactive mode will open this session read-only
-        // (following the other process) instead of exiting.
         eprintln!("{}", crate::red(crate::Env::detect().color, &message));
         std::process::exit(1);
     }

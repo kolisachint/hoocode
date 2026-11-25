@@ -52,6 +52,23 @@ and does not open the picker.
 
 Built-in tools: **Read**, **Shell**, **Edit**, **Write** and **CodeSearch**.
 
+## Detached sessions
+
+A background run can keep writing its session while you are away. Open that
+session with `hoocode --session <path>`, the command the run shows (`--resume`
+and `--continue` open it too when they pick it). It opens read-only:
+
+- The history shows, and new messages appear about once a second as the run writes them.
+- Enter does not send. The text stays in the prompt and a note says the session is read-only.
+  `/quit`, `/resume` and `/new` still work. Commands that change the session (`/name`,
+  `/compact`, `/model`, `/tree`, `/fork`) are refused.
+- Ctrl+C sends an interrupt (SIGINT) to the process that runs the session, and the
+  status line says so. A second Ctrl+C within half a second quits hoocode. Quitting does
+  not stop the run.
+- When the run ends, the status line says so and the session opens as a normal one, so
+  you can send messages to it. A tool call the run was waiting on (a permission) is
+  asked then.
+
 ## More
 
 The [README](../../README.md) and the

@@ -678,13 +678,18 @@ impl Mode {
         match result {
             Ok(result) if result.cancelled => {}
             Ok(_) => {
+                // The follow view's session was held by a process that has ended now.
+                let ended = self.follow.as_ref().map(|follow| follow.pid);
                 self.rebind_current_session();
                 self.render_current_session_state();
-                self.show_status(if overridden {
-                    "Resumed session in current cwd"
-                } else {
-                    "Resumed session"
-                });
+                match ended {
+                    Some(pid) => self.show_status(&follow::follow_ended_text(pid)),
+                    None => self.show_status(if overridden {
+                        "Resumed session in current cwd"
+                    } else {
+                        "Resumed session"
+                    }),
+                }
                 self.check_parked_call();
             }
             Err(RuntimeError::MissingSessionCwd(issue)) if !overridden => {
@@ -700,7 +705,13 @@ impl Mode {
                 self.show_dialog_selector(&title, vec!["Yes".into(), "No".into()], answer);
             }
             // SA-12: the session is in use elsewhere; the current one stays.
-            Err(error @ RuntimeError::SessionInUse(_)) => self.show_error(&error.to_string()),
+            // The follow view stays: the lock is still held, so it keeps following.
+            Err(error @ RuntimeError::SessionInUse(_)) => {
+                if let Some(follow) = self.follow.as_mut() {
+                    follow.leaving = false;
+                }
+                self.show_error(&error.to_string());
+            }
             Err(error) => {
                 // `handleFatalRuntimeError`.
                 self.show_error(&format!("Failed to resume session: {error}"));
@@ -735,6 +746,8 @@ impl Mode {
 
     /// `rebindCurrentSession`: point the mode at the runtime's session.
     pub(super) fn rebind_current_session(&mut self) {
+        // Whatever session this is now, it is not the one the view followed.
+        self.follow = None;
         let Some(runtime) = &self.session_runtime else {
             return;
         };

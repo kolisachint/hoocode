@@ -81,6 +81,9 @@ mod clipboard;
 mod commands;
 mod dialogs;
 mod events;
+mod follow;
+#[cfg(test)]
+mod follow_tests;
 mod history_search;
 #[cfg(test)]
 mod history_search_tests;
@@ -511,6 +514,8 @@ struct Mode {
     /// The card for a call a detached run parked, and that call.
     parked_card: Option<parked::OpenParkedCard>,
     parked_call: Option<hoocode_code_agent_session::ParkedCall>,
+    /// The session another process holds, shown read-only (SA-12 row 5).
+    follow: Option<follow::Follow>,
     end_shift_card: Option<OpenEndShift>,
     end_shift_jobs_card: Option<OpenEndShiftJobs>,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
@@ -615,6 +620,7 @@ pub fn run_interactive(options: InteractiveOptions) -> Result<(), String> {
 impl Mode {
     fn new(options: InteractiveOptions) -> Self {
         let session = options.session;
+        let follow = follow::Follow::for_session(&session);
         let settings = session.settings();
         let (
             show_hardware_cursor,
@@ -995,6 +1001,7 @@ impl Mode {
             clearance_queue: ClearanceQueue::default(),
             parked_card: None,
             parked_call: None,
+            follow,
             end_shift_card: None,
             end_shift_jobs_card: None,
             settings_changes: Rc::default(),
@@ -1253,6 +1260,10 @@ impl Mode {
             if let Some(at) = self.stream_render_at {
                 wait = wait.min((at + STREAM_RENDER_THROTTLE).saturating_duration_since(now));
             }
+        }
+        // The follow view checks the file each second (its own cadence).
+        if let Some(follow) = &self.follow {
+            wait = wait.min(follow.next_check.saturating_duration_since(now));
         }
         // The once-a-second tick in `run` (attached view, task panel, turn clock,
         // ticking tool blocks): wake for it on time, not at the first pass after it.
@@ -1515,6 +1526,7 @@ impl Mode {
             self.drain_extension_ui_requests();
             self.tick_scheduler();
             self.tick_job_wake();
+            self.tick_follow();
             self.poll_update_notice();
             self.advance_auto_loop();
             self.poll_auto_theme();

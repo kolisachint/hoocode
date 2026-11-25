@@ -56,7 +56,25 @@ pub(super) fn test_mode_in(session_file: Option<&Path>, cwd: PathBuf) -> Mode {
     let agent = Arc::new(hoocode_agent_core::Agent::with_options(
         hoocode_agent_core::AgentOptions::default(),
     ));
-    mode_over(agent, Arc::new(NoAuth), session_file, cwd)
+    let session_manager = match session_file {
+        Some(dir) => SessionManager::create("/work", Some(dir.into())),
+        None => SessionManager::in_memory("/work"),
+    };
+    mode_over(agent, Arc::new(NoAuth), session_manager, cwd)
+}
+
+/// A `Mode` over a session another process holds: `manager` is the read-only manager of
+/// that file. It starts as the interactive run does: the file's messages are the session's,
+/// and its history is rendered.
+pub(super) fn follow_mode(manager: SessionManager) -> Mode {
+    let agent = Arc::new(hoocode_agent_core::Agent::with_options(
+        hoocode_agent_core::AgentOptions::default(),
+    ));
+    let messages = manager.build_context().messages;
+    let mut mode = mode_over(agent, Arc::new(NoAuth), manager, std::env::temp_dir());
+    mode.session.agent().set_messages(messages);
+    mode.render_current_session_state();
+    mode
 }
 
 /// Auth for the faux model only: every provider has a key.
@@ -99,20 +117,21 @@ pub(super) fn streaming_mode(gate: Arc<tokio::sync::Notify>) -> Mode {
             ..Default::default()
         },
     ));
-    mode_over(agent, Arc::new(FauxAuth), None, std::env::temp_dir())
+    mode_over(
+        agent,
+        Arc::new(FauxAuth),
+        SessionManager::in_memory("/work"),
+        std::env::temp_dir(),
+    )
 }
 
 /// The `Mode` over `agent`, with `auth` for its model and the session in `cwd`.
 fn mode_over(
     agent: Arc<hoocode_agent_core::Agent>,
     auth: Arc<dyn hoocode_code_models::AuthLookup + Send + Sync>,
-    session_file: Option<&Path>,
+    session_manager: SessionManager,
     cwd: PathBuf,
 ) -> Mode {
-    let session_manager = match session_file {
-        Some(dir) => SessionManager::create("/work", Some(dir.into())),
-        None => SessionManager::in_memory("/work"),
-    };
     // The theme is `dark`, as the layer goldens load it: `Mode::new` loads
     // the settings' theme into the process-wide state.
     let settings = hoocode_code_settings::SettingsManager::in_memory(

@@ -537,6 +537,13 @@ impl Mode {
     /// `PromptDone` would settle the winner's turn), so the text is queued
     /// behind it as a follow-up instead.
     pub(super) fn start_prompt(&mut self, text: String, images: Vec<ImageContent>, typed: bool) {
+        // The follow view starts no run (SA-12 row 5).
+        if self.is_following() {
+            if typed {
+                self.refuse_read_only();
+            }
+            return;
+        }
         startup_progress::clear();
         if self.prompt_pending {
             self.queue_behind_pending_prompt(text, images);
@@ -620,6 +627,12 @@ impl Mode {
                     self.prompt_with_images(last.text, last.images);
                 }
             }
+            return;
+        }
+        // The follow view sends nothing: the text stays in the prompt (SA-12 row 5).
+        if self.is_following() && !follow::follow_allows_submit(&text) {
+            self.refuse_read_only();
+            self.editor.borrow_mut().editor.set_text(&text);
             return;
         }
         // A session change is running: the text goes back to the prompt.
@@ -931,6 +944,16 @@ impl Mode {
     }
 
     pub(super) fn handle_action(&mut self, action: Action) {
+        if self.is_following() {
+            // Esc has nothing to stop in the follow view.
+            if matches!(action, Action::Interrupt) {
+                return;
+            }
+            if follow::follow_refuses_action(&action) {
+                self.refuse_read_only();
+                return;
+            }
+        }
         match action {
             Action::Submit(text) => self.submit(text),
             Action::Interrupt => {
@@ -961,6 +984,9 @@ impl Mode {
                     .is_some_and(|at| now.duration_since(at) < Duration::from_millis(500))
                 {
                     self.request_user_quit();
+                } else if self.is_following() {
+                    // Ctrl-C stops the process that holds the session (SA-12 row 5).
+                    self.follow_interrupt(now);
                 } else {
                     self.editor.borrow_mut().editor.set_text("");
                     self.last_sigint = Some(now);
