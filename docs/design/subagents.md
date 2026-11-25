@@ -1,6 +1,6 @@
 # Subagents
 
-Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-11.
+Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-12.
 
 Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
 
@@ -206,6 +206,44 @@ The mock tests mechanics only. It does not show that a real model follows the br
 
 **Last recorded:** `--include-slow` 22/22 as declared, 33 attempts, 32 usable (97%), 2026-10-30. Matrix 65/65 and soak 26 rounds, 0 leaks, were 2026-10-05 and predate the cancel and tree-kill rounds (SA-4).
 
+### Detached sessions (SA-12)
+
+Designed 2026-11-25. Not built. Phase 1 below.
+
+Purpose: hand work to a fresh session with its own context. Compaction keeps a tail and summarises summaries; a fresh session starts from a brief only.
+
+| | Subagent | Detached session |
+|---|---|---|
+| Result | Returns to the parent | None. The parent shows a link |
+| Lifetime | Dies with the parent | Own process group, outlives the parent |
+| Trust | Parent's gate via clearance | Tier 1, same as a session the user started |
+| First prompt | Brief | Brief the user approved |
+
+Flow:
+
+1. The model calls `SessionSpawn { brief }`, when asked or on its own. The call is gated: the approval shows the brief and the effective `auto_allow` list (what will run unattended). An approved brief carries user authority. A headless parent follows its gate's headless default.
+2. The brief has four sections: Goal, Decisions, Dead ends, Next step. A missing section is a tool error. The harness appends facts: cwd, branch, HEAD, dirty files, todos, parent session path.
+3. The harness creates the child file path itself, `<parent session dir>/<ts>_<id>.jsonl` (absolute), and starts `hoocode -p --session <path> --max-turns <n> --deadline-ms <ms>` in the parent's cwd, with `setsid`, SIGHUP ignored, stdin `/dev/null`, stdout and stderr to `<path>.log`. Env: `HOOCODE_DETACHED=1`, `HOOCODE_SUBAGENT_DEPTH` removed. The new header sets `parentSession`.
+4. The parent shows a code block `hoocode --session <path>` and a status: running, parked, done, failed. Status comes from the lock and the session file.
+5. The child runs. Calls `auto_allow` lists run. The first gated call outside `auto_allow` parks: the pending call is written, the file flushed, the process exits as parked. Print mode's "allow and note on stderr" (runtime.md) does not apply.
+6. `hoocode --session <path>`: lock held, read-only follow view; Ctrl-C sends SIGINT to the lock's pid. Lock free, normal interactive session; a parked call shows as an approval and is re-checked first (target changed: tool error to the model, no run). An "approve and detach" key starts the detached process again.
+
+Rules:
+
+- Lock: `<path>.lock` holds the pid, taken with `File::try_lock`; the OS drops it when the process dies, so a crash leaves no stale lock. One writer per session file.
+- Detached runs flush after every entry, not at turn end, so the follow view is live per entry.
+- Grants: config `auto_allow` only. The parent's session grants ("allow always") are not carried.
+- Budget: the child enforces its own turn cap and deadline (subagent defaults, 200 turns and 4 h); no parent reaper exists. Hit: exit as failed with the reason.
+- Depth 1: `SessionSpawn` is not registered when `HOOCODE_DETACHED` is set or in a subagent. The child's subagents keep the normal limits.
+- Checkout: the child works in the parent's cwd. No worktree is made (the harness never enforces isolation; Not doing: a Rust worktree manager). The main use is handover, where the parent stops. If the parent keeps editing the same files, that is the user's call; the approval says so.
+- A parked or denied tool result says why, so the model stops and does not retry.
+
+Not in phase 1: interaction while running (TUI as app-server client, phase 2), opening a terminal or tmux window, messages between parent and child, a context-used signal to the model, a `cwd` for the child, `--resume <id>` by id.
+
+Eval (gate for done): scripted long session, spawn, the fresh session does the next step without asking again and does not retry a recorded dead end. Plus: park and resume, follow view while running, lock refuses a second writer, a killed child leaves no lock, depth-1 refusal, turn cap and deadline exit.
+
+Left for the implementation session: the parked-call entry format; how the follow view reuses the TUI read-only; check that `--session <path>` from another cwd opens without the cross-project fork prompt; `docs/user` and `docs/maps/ui.md` for `SessionSpawn` and the follow view.
+
 ## Decisions
 
 | Date | Decision |
@@ -235,6 +273,7 @@ The mock tests mechanics only. It does not show that a real model follows the br
 | 2026-11-19 | A plugin selector (`plugin:*`, `plugin:<p>`, `plugin:<p>/<Tool>`) takes no MCP tool. A subagent runs no plugin MCP server and exposes no plugin MCP tool, whatever its tool list says, so general-purpose (`plugin:*`) starts no MCP. Plugin WASM tools are unchanged. Never MCP plugin tools (see [plugins.md](plugins.md)). |
 | 2026-11-19 | A json or print run that has subagents answers their clearance requests with its own gate (`HeadlessClearanceRelay`): the same rules, and the same headless default. A fail-closed run denies with the gate's reason; an open run runs the call, as it runs its own. Before, a subagent's gated call was denied with "no UI to ask" whatever the run would have allowed. Tests: `hoocode-code-permissions` `relay`; eval `subagent_shell_runs_under_a_headless_parent`. |
 | 2026-11-19 | Agent `tools` and `disallowedTools` take selectors: a name, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>` or `mcp:*`. `ext_*` is removed, with no alias. A malformed entry rejects the definition. Supersedes the `ext_*` row of 2026-11-17 and the WebFetch row of 2026-11-18. See [plugins.md](plugins.md) Naming and identity. |
+| 2026-11-25 | Detached sessions (SA-12): a model-callable, user-approved `SessionSpawn` starts a tier-1 session in its own process (`hoocode -p`, `setsid`) in the parent's cwd. No result to the parent; the parent shows `hoocode --session <path>`. Gated calls outside `auto_allow` park, not deny; opening the session answers them. Session lock, per-entry flush, self-enforced budget, depth 1. No worktree: isolation stays by instruction. Phase 2 (live interaction via an app-server client in the TUI) waits for need. See Detached sessions. |
 
 Dispatch dirs are pruned (newest 50, older than 24 h dropped), so they are not kept for the whole session. Recover is view or resume on request, never automatic (TUI rule, 2026-10-09).
 
@@ -255,6 +294,7 @@ Size: S about a session, M a few, L many.
 | SA-9 | Group sweep misses a nested subagent's own process group | M | A leaked process seen in a run or soak | The parent sweep covers the child's group only (H2). Reach nested groups through the descendant walk |
 | SA-10 | Re-parented grandchildren (double-forked before cancel) are not found | M | Only if the policy on re-parented jobs changes | Accepted gap today. Options if needed: subreaper or cgroup. Do not build without a policy change |
 | SA-11 | `maxOutputTokens` read only by Anthropic | S | A subagent truncates on a non-Anthropic model | OpenAI, Responses, Google and Gemini CLI cap at min(model max, 32000). Pass the setting through |
+| SA-12 | Detached sessions, phase 1 | L | User picked for the next session (2026-11-25) | See Detached sessions. Done = the eval list there passes. |
 
 ## Not doing
 
