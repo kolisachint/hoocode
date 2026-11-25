@@ -175,12 +175,14 @@ fn every_token_role_is_a_known_role() {
 
 /// Source files that may name the warning token: the blocking dialogs, where
 /// yellow marks the thing that blocks the user (`blocking` in the roles above).
-const BLOCKING_DIALOG_FILES: [&str; 5] = [
+const BLOCKING_DIALOG_FILES: [&str; 6] = [
     "pane.rs",
     "card_frame.rs",
     "clearance_card.rs",
     "ask_options.rs",
     "end_shift.rs",
+    // The task panel's parked detached row: a session waiting for the user's answer.
+    "task_panel.rs",
 ];
 
 /// The crates that paint the transcript, the transient rows and the pickers.

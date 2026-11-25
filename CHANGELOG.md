@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: detached sessions (2026-11-25)
+- **`SessionSpawn`**: the model can hand work to a fresh session with its own context. You approve a brief (Goal, Decisions, Dead ends, Next step) and see what will run unattended (your `auto_allow`). The session runs on its own in this folder, outlives hoocode and returns nothing; the task panel's Detached tab shows it as running, parked, done or failed with `hoocode --session <path>`. A detached session cannot start another one, and stops itself after 200 turns or 4 hours.
+- **Parked calls**: a call the detached session needs approval for stops the run. Opening the session asks: yes, no, or approve and detach (`d`). A call whose file changed in between is not run, and the model is told.
+- **One writer per session**: a session another process writes opens read-only in the TUI (follow view; `ctrl+c` interrupts the writer) and is refused in print, json and rpc mode.
+
+### Added: automatic session names (2026-11-25)
+- After its first run and after each compaction, the cheapest model you scoped for the session's provider names the session; it keeps the name unless the goal changed. Print and json runs name once at the end. A `/name` name is never replaced. Turn it off with `"autoNameSessions": false`.
+
 ### Added: Shell gets each helper's binary (2026-11-21)
 - **Shell sees `HOOCODE_HELPER_BIN_<PLUGIN>`** next to `HOOCODE_HELPER_SOCKET_<PLUGIN>` for every started helper: the resolved executable the helper was started from (`binaryPath`, the download, or the mcp.json command). The helper binary is not on `PATH`, so a plugin's skill runs its CLI fallback as `"$HOOCODE_HELPER_BIN_<PLUGIN>" cli <args>`. Subagents learn it on their first shared tool call, through `EnsureHelper`.
 

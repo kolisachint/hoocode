@@ -79,8 +79,14 @@ mod bash;
 mod chrome;
 mod clipboard;
 mod commands;
+mod detached;
+#[cfg(test)]
+mod detached_tests;
 mod dialogs;
 mod events;
+mod follow;
+#[cfg(test)]
+mod follow_tests;
 mod history_search;
 #[cfg(test)]
 mod history_search_tests;
@@ -93,6 +99,9 @@ mod leader_tests;
 mod loop_command;
 mod mcp;
 mod models;
+mod parked;
+#[cfg(test)]
+mod parked_tests;
 mod plugin;
 #[cfg(test)]
 mod prompt_flight_tests;
@@ -282,6 +291,8 @@ enum AppEvent {
     AttachPicked(Option<attach::RunRow>),
     /// A session operation run off the UI thread ended (`session_op.rs`).
     SessionOp(Box<session_op::SessionOpDone>),
+    /// A parked call of a detached run was answered (`parked.rs`).
+    Parked(Result<parked::ParkedReport, String>),
     /// Queued messages sent after a compaction failed; they go back.
     CompactionQueueFailed(Vec<(String, StreamingBehavior)>, String),
     /// A message typed while streaming could not be queued.
@@ -503,6 +514,11 @@ struct Mode {
     clearance: Option<OpenClearance>,
     /// The clearance requests waiting behind the card that is up.
     clearance_queue: ClearanceQueue,
+    /// The card for a call a detached run parked, and that call.
+    parked_card: Option<parked::OpenParkedCard>,
+    parked_call: Option<hoocode_code_agent_session::ParkedCall>,
+    /// The session another process holds, shown read-only (SA-12 row 5).
+    follow: Option<follow::Follow>,
     end_shift_card: Option<OpenEndShift>,
     end_shift_jobs_card: Option<OpenEndShiftJobs>,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
@@ -529,6 +545,8 @@ struct Mode {
     /// `refresh_panel_takes_up`, read by `CustomEditor`.
     panel_takes_up: Rc<Cell<bool>>,
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
+    /// The detached sessions this session spawned, and their task-panel rows (SA-12).
+    detached: detached::DetachedWatch,
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
     restarted_input: Option<Receiver<TuiEvent>>,
     /// The session operation running off the UI thread, if any (`session_op.rs`).
@@ -607,6 +625,7 @@ pub fn run_interactive(options: InteractiveOptions) -> Result<(), String> {
 impl Mode {
     fn new(options: InteractiveOptions) -> Self {
         let session = options.session;
+        let follow = follow::Follow::for_session(&session);
         let settings = session.settings();
         let (
             show_hardware_cursor,
@@ -985,6 +1004,9 @@ impl Mode {
             ask_options: None,
             clearance: None,
             clearance_queue: ClearanceQueue::default(),
+            parked_card: None,
+            parked_call: None,
+            follow,
             end_shift_card: None,
             end_shift_jobs_card: None,
             settings_changes: Rc::default(),
@@ -1006,6 +1028,7 @@ impl Mode {
             history_search_active,
             queue_recallable,
             task_store_subscription: None,
+            detached: detached::DetachedWatch::default(),
             previous_cwd: Rc::new(RefCell::new(None)),
             restarted_input: None,
             session_op: None,
@@ -1244,6 +1267,10 @@ impl Mode {
                 wait = wait.min((at + STREAM_RENDER_THROTTLE).saturating_duration_since(now));
             }
         }
+        // The follow view checks the file each second (its own cadence).
+        if let Some(follow) = &self.follow {
+            wait = wait.min(follow.next_check.saturating_duration_since(now));
+        }
         // The once-a-second tick in `run` (attached view, task panel, turn clock,
         // ticking tool blocks): wake for it on time, not at the first pass after it.
         if self.tool_tick_running() {
@@ -1315,6 +1342,7 @@ impl Mode {
         })));
         let mut input = self.tui.start();
         self.install_interrupt_hook();
+        self.check_parked_call();
         // Only the interactive mode reports to Herdr: print, RPC and subagent
         // runs never build a reporter. OSC 7501 goes to any terminal.
         self.herdr = crate::herdr::Reporter::from_process_env();
@@ -1354,6 +1382,7 @@ impl Mode {
         };
         self.render_resources();
         self.show_startup_notices(changelog);
+        self.show_session_lock_warning();
         self.show_keymap_startup_notes();
         // Messages after the resource listing, as the pin orders them.
         self.render_initial_messages();
@@ -1504,6 +1533,7 @@ impl Mode {
             self.drain_extension_ui_requests();
             self.tick_scheduler();
             self.tick_job_wake();
+            self.tick_follow();
             self.poll_update_notice();
             self.advance_auto_loop();
             self.poll_auto_theme();
@@ -1599,6 +1629,7 @@ impl Mode {
                     }
                     AppEvent::QueueError(error) => self.show_error(&error),
                     AppEvent::Status(message) => self.show_status(&message),
+                    AppEvent::Parked(result) => self.finish_parked(result),
                     AppEvent::ImportAnswer {
                         input,
                         cwd_fallback,
@@ -1656,6 +1687,7 @@ impl Mode {
                 }
                 // The attached job's output is followed once a second, off the UI thread.
                 self.poll_shell_tail();
+                self.tick_detached();
                 for block in self.transcript.pending_tools.values() {
                     if block.borrow().is_ticking() {
                         block.borrow_mut().invalidate();

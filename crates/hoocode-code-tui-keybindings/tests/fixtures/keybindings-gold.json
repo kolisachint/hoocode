@@ -951,6 +951,13 @@
     "3"
    ],
    "Permission: pick option 3"
+  ],
+  [
+   "app.permission.detach",
+   [
+    "d"
+   ],
+   "Permission: approve a parked call and detach it"
   ]
  ],
  "format": {

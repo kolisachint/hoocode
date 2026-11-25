@@ -260,6 +260,9 @@ impl Mode {
     /// Sends the held prompt of `/loop auto` once the user is idle. The loop
     /// yields while the agent works, messages are queued, or the editor has text.
     pub(super) fn advance_auto_loop(&mut self) {
+        if self.is_following() {
+            return;
+        }
         let Some(run) = self.auto_loop.as_ref() else {
             return;
         };

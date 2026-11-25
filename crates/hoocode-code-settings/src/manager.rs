@@ -1043,6 +1043,11 @@ impl SettingsManager {
         finite(self.get("maxOutputTokens"))
     }
 
+    /// RT-39: a cheap model names sessions. Off: sessions keep their slug.
+    pub fn auto_name_sessions(&self) -> bool {
+        self.bool_or("autoNameSessions", true)
+    }
+
     pub fn enable_todo_write(&self) -> bool {
         self.bool_or("enableTodoWrite", true)
     }

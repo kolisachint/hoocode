@@ -761,6 +761,8 @@ impl PermissionGate for ServerGate {
         ) {
             Verdict::Allow => PermissionDecision::Grant,
             Verdict::Block(reason) => PermissionDecision::Deny { reason },
+            // Ui never parks: a `Ui` gate answers every call that needs approval.
+            Verdict::Park => deny(),
             Verdict::Prompt => {
                 let Some(thread) = lock(&self.thread).upgrade() else {
                     return deny();
@@ -1712,7 +1714,7 @@ fn base64_encode(bytes: &[u8]) -> String {
 
 /// Messages of a saved session file.
 fn read_messages(path: &Path) -> Vec<AgentMessage> {
-    let manager = hoocode_code_session::SessionManager::open(path, None, None);
+    let manager = hoocode_code_session::SessionManager::open_read_only(path, None, None);
     manager.build_context().messages
 }
 

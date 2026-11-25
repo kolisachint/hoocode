@@ -50,7 +50,8 @@ impl Mode {
         // Requests wait while a session operation runs: `/mode` asks for a
         // reload from inside its own prompt, and that reload would be refused
         // behind the operation. They are taken when it finishes.
-        if self.session_op.is_some() {
+        // The follow view takes no extension request: a request waits for the switch.
+        if self.session_op.is_some() || self.is_following() {
             return;
         }
         loop {
@@ -188,6 +189,10 @@ impl Mode {
     /// pass (`send_next_scheduled`), as a fresh prompt, so a slash or extension
     /// command works and no fire is claimed while a start is in flight.
     pub(super) fn tick_scheduler(&mut self) {
+        // The follow view runs no task: the scheduler would claim tasks of the session it follows.
+        if self.is_following() {
+            return;
+        }
         self.send_next_scheduled();
         let now = Instant::now();
         if now < self.scheduler_tick_at {
@@ -229,6 +234,7 @@ impl Mode {
     /// retried until the notices are gone.
     pub(super) fn tick_job_wake(&mut self) {
         if self.agent_busy()
+            || self.is_following()
             || self.session.is_bash_running()
             || self.auto_loop.is_some()
             || !self.editor.borrow().editor.get_text().trim().is_empty()

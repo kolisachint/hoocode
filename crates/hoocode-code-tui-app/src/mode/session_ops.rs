@@ -609,14 +609,24 @@ impl Mode {
                     .push(Action::SessionSelectorDone(None))
             }),
             SessionSelectorOptions {
-                rename_session: Some(Box::new(|path: &Path, next: &str| {
-                    let next = next.trim();
-                    if next.is_empty() {
-                        return Ok(());
+                rename_session: Some(Box::new({
+                    let session = self.session.clone();
+                    let notices = self.actions.clone();
+                    let current = current_file.clone();
+                    move |path: &Path, next: &str| {
+                        let next = next.trim();
+                        if next.is_empty() {
+                            return Ok(());
+                        }
+                        // The current session is renamed through the session itself.
+                        if current.as_deref() == Some(path) {
+                            session.set_session_name(next);
+                            return Ok(());
+                        }
+                        rename_session_file(path, next).inspect_err(|message| {
+                            notices.borrow_mut().push(Action::Notice(message.clone()));
+                        })
                     }
-                    let mut manager = SessionManager::open(path, None, None);
-                    manager.append_session_info(Some(next), None);
-                    Ok(())
                 })),
                 show_rename_hint: Some(true),
                 keybindings: None,
@@ -649,6 +659,11 @@ impl Mode {
     /// `handleResumeSession`: swap to `path`; a stored cwd that is gone asks
     /// first (`promptForMissingSessionCwd`).
     pub(super) fn handle_resume_session(&mut self, path: PathBuf, cwd_override: Option<String>) {
+        // The follow view's leave goes through here with its own file: it must take the lock.
+        if self.follow.is_none() && self.session.owns_session_file(&path) {
+            self.show_status("Already in this session.");
+            return;
+        }
         let overridden = cwd_override.is_some();
         let Some(runtime) = self.take_session_runtime("Resuming session") else {
             return;
@@ -678,13 +693,19 @@ impl Mode {
         match result {
             Ok(result) if result.cancelled => {}
             Ok(_) => {
+                // The follow view's session was held by a process that has ended now.
+                let ended = self.follow.as_ref().map(|follow| follow.pid);
                 self.rebind_current_session();
                 self.render_current_session_state();
-                self.show_status(if overridden {
-                    "Resumed session in current cwd"
-                } else {
-                    "Resumed session"
-                });
+                match ended {
+                    Some(pid) => self.show_status(&follow::follow_ended_text(pid)),
+                    None => self.show_status(if overridden {
+                        "Resumed session in current cwd"
+                    } else {
+                        "Resumed session"
+                    }),
+                }
+                self.check_parked_call();
             }
             Err(RuntimeError::MissingSessionCwd(issue)) if !overridden => {
                 let title = format!(
@@ -697,6 +718,14 @@ impl Mode {
                     choice,
                 });
                 self.show_dialog_selector(&title, vec!["Yes".into(), "No".into()], answer);
+            }
+            // SA-12: the session is in use elsewhere; the current one stays.
+            // The follow view stays: the lock is still held, so it keeps following.
+            Err(error @ RuntimeError::SessionInUse(_)) => {
+                if let Some(follow) = self.follow.as_mut() {
+                    follow.leaving = false;
+                }
+                self.show_error(&error.to_string());
             }
             Err(error) => {
                 // `handleFatalRuntimeError`.
@@ -732,6 +761,8 @@ impl Mode {
 
     /// `rebindCurrentSession`: point the mode at the runtime's session.
     pub(super) fn rebind_current_session(&mut self) {
+        // Whatever session this is now, it is not the one the view followed.
+        self.follow = None;
         let Some(runtime) = &self.session_runtime else {
             return;
         };
@@ -824,5 +855,48 @@ impl Mode {
                 .set_autocomplete_max_visible(autocomplete_max_visible);
         }
         self.dirty.set(true);
+    }
+}
+
+/// Renames the session file at `path` (a session this process does not own).
+/// Refused with the in-use notice when another process holds the file.
+fn rename_session_file(path: &Path, next: &str) -> Result<(), String> {
+    let mut manager = SessionManager::open(path, None, None);
+    if let Some(pid) = manager.lock_held_by() {
+        return Err(match pid {
+            0 => "Session is in use by another process.".to_string(),
+            pid => format!("Session is in use by process {pid}."),
+        });
+    }
+    manager.append_session_info(Some(next), None);
+    Ok(())
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::*;
+    use hoocode_code_session::SessionLock;
+
+    #[test]
+    fn renaming_a_session_another_process_holds_is_refused() {
+        let dir = std::env::temp_dir().join(format!(
+            "rename-held-{}-{}",
+            std::process::id(),
+            hoocode_code_session::create_session_id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let file = dir.join("held.jsonl");
+        std::fs::write(&file, "{}\n").expect("session file");
+        let held = SessionLock::acquire(&file).expect("lock");
+
+        let err = rename_session_file(&file, "New name").expect_err("refused");
+        assert_eq!(
+            err,
+            format!("Session is in use by process {}.", std::process::id())
+        );
+        drop(held);
+
+        assert!(rename_session_file(&file, "New name").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

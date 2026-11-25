@@ -165,6 +165,12 @@ while the reply field is empty:
 - **1**, **2** and **3** pick a row (`app.permission.pick1` to `app.permission.pick3`),
   and **e** edits the command first (`app.permission.edit`). **Up** and **Down**
   move the highlight, and **Enter** picks it. **Esc** refuses.
+- A call a detached run parked shows the card with three rows: **yes**,
+  **approve and detach** and **no**. **approve and detach** (**2**, or
+  **d** = `app.permission.detach`) runs the call once and hands the run to a
+  detached process; this window then opens a new empty session and shows the
+  `hoocode --session` command that opens the run. The card has no always row and
+  no edit key for a parked call.
 
 Once the reply has text, letters type into it, and Enter sends it as the reason
 for the refusal. `y`, `n` and `a` are the dialog keys `app.dialog.yes`,

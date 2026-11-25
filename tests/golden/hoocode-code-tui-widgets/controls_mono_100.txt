@@ -1,4 +1,4 @@
-┌─ Keys ─ ?   plain   ctrl   leader   alt  136 bindings · 26 shown ────────────────────────────────┐
+┌─ Keys ─ ?   plain   ctrl   leader   alt  137 bindings · 26 shown ────────────────────────────────┐
 │ Prompt                                                                                           │
 │   ctrl+x ?      Show keyboard shortcuts                                                          │
 │   ctrl+x L      Cycle task panel view backward                                                   │

@@ -98,6 +98,7 @@ impl Mode {
             effort,
             context_percent: session.get_context_usage().and_then(|u| u.percent),
             cost: Some(cost),
+            following: self.follow.as_ref().map(|follow| follow.pid),
         }
     }
 

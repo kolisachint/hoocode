@@ -38,6 +38,7 @@ use hoocode_code_tool_bash::{
 use crate::auth_guidance::{
     format_auth_failed_message, format_no_api_key_found_message, format_no_model_selected_message,
 };
+use crate::auto_name::{AutoNameMode, AutoNameState};
 use crate::compaction::{CompactionReason, CompactionState};
 use crate::hooks::{
     ExtensionError, ExtensionHooks, NoExtensions, ResourceLoader, SessionEvent, SessionStartEvent,
@@ -438,6 +439,8 @@ pub struct AgentSessionConfig {
     pub extensions: Option<Arc<dyn ExtensionHooks>>,
     /// Emitted by [`AgentSession::bind_extensions`]; default `startup`.
     pub session_start_event: Option<SessionStartEvent>,
+    /// Session naming (RT-39); default `Off`.
+    pub auto_name: AutoNameMode,
 }
 
 struct DefinitionEntry {
@@ -506,6 +509,7 @@ struct Inner {
     /// Set once the current run has emitted `agent_end`; the run still holds
     /// its slot until its listeners return (see `prompt_inner`).
     run_ended: std::sync::atomic::AtomicBool,
+    auto_name: AutoNameState,
     compaction: Mutex<CompactionState>,
     mcp: Mutex<Option<Arc<McpHub>>>,
     /// Builds the plugin tools and MCP hub again when the plugins change (PL-4).
@@ -733,6 +737,7 @@ impl AgentSession {
             model_fallback: Mutex::new(Default::default()),
             retry_notify: tokio::sync::Notify::new(),
             run_ended: std::sync::atomic::AtomicBool::new(false),
+            auto_name: AutoNameState::new(config.auto_name),
             compaction: Mutex::new(CompactionState::default()),
             mcp: Mutex::new(None),
             plugin_source: Mutex::new(None),
@@ -868,7 +873,7 @@ impl AgentSession {
 
     /// `_processAgentEvent`, run synchronously as the agent emits; the
     /// `agent_end` tail (retry backoff, compaction) runs in the background.
-    fn process_agent_event(&self, event: &AgentEvent) {
+    pub(crate) fn process_agent_event(&self, event: &AgentEvent) {
         match event {
             AgentEvent::AgentStart => self.inner.run_ended.store(false, Ordering::SeqCst),
             AgentEvent::AgentEnd { .. } => self.inner.run_ended.store(true, Ordering::SeqCst),
@@ -957,6 +962,7 @@ impl AgentSession {
             self.spawn(async move {
                 let _ = ticket.wait(SESSION_FLUSH_DEADLINE).await;
             });
+            self.schedule_auto_name_after_first_run();
             let last = lock(&self.inner.state).last_assistant_message.take();
             if let Some(message) = last {
                 let session = self.clone();
@@ -1022,6 +1028,9 @@ impl AgentSession {
     /// deadline here so the ordered shutdown can time them one by one.
     pub fn dispose(&self) {
         self.flush_for_shutdown(SESSION_FLUSH_DEADLINE);
+        // The queued writes are on disk; hand the session file to whoever
+        // resumes it next (SA-12). Clones of the manager may outlive this.
+        lock(&self.inner.session_manager).release_session_file();
         self.close_mcp(SHUTDOWN_WAIT);
         self.release();
     }
@@ -1256,6 +1265,16 @@ impl AgentSession {
         self.session_manager().session_file().map(Path::to_path_buf)
     }
 
+    /// Whether `path` is this session's file and this session writes it (it
+    /// holds the file lock). Resuming such a file is a no-op.
+    pub fn owns_session_file(&self, path: &Path) -> bool {
+        let manager = self.session_manager();
+        !manager.is_read_only()
+            && manager
+                .session_file()
+                .is_some_and(|file| same_file(file, path))
+    }
+
     pub fn session_id(&self) -> String {
         self.session_manager().session_id().to_string()
     }
@@ -1284,6 +1303,16 @@ impl AgentSession {
                 thinking_level: s.effort.clone(),
             })
             .collect()
+    }
+
+    /// The scope as resolved entries, for the session naming call.
+    pub(crate) fn resolved_scoped_models(&self) -> Vec<ResolvedScoped> {
+        lock(&self.inner.state).scoped_models.clone()
+    }
+
+    /// The session naming state (RT-39).
+    pub(crate) fn auto_name_state(&self) -> &AutoNameState {
+        &self.inner.auto_name
     }
 
     /// Replaces the scope with plain models, each with an optional effort and
@@ -2907,4 +2936,13 @@ mod tool_listed_tests {
         assert!(tool_listed(&denied, "WebFetch", &plugin("web", "WebFetch")));
         assert!(!tool_listed(&denied, "Read", &ToolOrigin::BuiltIn));
     }
+}
+
+/// Whether two paths name the same file (by text, or by canonical path).
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b
+        || matches!(
+            (a.canonicalize(), b.canonicalize()),
+            (Ok(a), Ok(b)) if a == b
+        )
 }

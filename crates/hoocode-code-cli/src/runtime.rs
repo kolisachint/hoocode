@@ -10,7 +10,7 @@ use crate::native_child;
 use crate::native_tools::{self, NativeHolder};
 use crate::plugin_live;
 use crate::{Args, DiagnosticKind};
-use hoocode_agent_types::{AgentEvent, PermissionGate, ToolOrigin, ToolSelector};
+use hoocode_agent_types::{AgentEvent, AgentMessage, PermissionGate, ToolOrigin, ToolSelector};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
@@ -18,7 +18,7 @@ use hoocode_code_permissions::{ApprovalChannel, HeadlessClearanceRelay, HooPermi
 
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionEvent, AgentSessionRuntime,
-    AgentSessionRuntimeDiagnostic, AgentSessionServices, BaseTools, BaseToolsFactory,
+    AgentSessionRuntimeDiagnostic, AgentSessionServices, AutoNameMode, BaseTools, BaseToolsFactory,
     CreateAgentSessionOptions, CreatedRuntime, DefaultResources, PromptOptions, SessionStartEvent,
 };
 use hoocode_code_models::{
@@ -423,6 +423,17 @@ fn custom_tools(
         tools.extend(hoocode_code_scheduler::create_cron_tool_definitions(cwd));
     }
     tools.extend(subagent_tools(args, settings, false, cwd));
+    // SA-12: a detached session for a clean handover. Not in a detached run, a subagent tree,
+    // or a task child.
+    if crate::detached::session_spawn_registered(
+        crate::detached::is_detached_run(),
+        hoocode_code_subagents::depth::current_subagent_depth(
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ),
+        args.task_id.is_some(),
+    ) {
+        tools.push(crate::detached::create_session_spawn_tool_definition());
+    }
     if args.task_id.is_none()
         && args
             .todo_write
@@ -651,6 +662,28 @@ fn headless_approval_channel_for(args: &Args) -> ApprovalChannel {
     )
 }
 
+/// Whether this process is a detached print run (SA-12): `HOOCODE_DETACHED` on a root
+/// print run. A subagent child may inherit the variable, so it is excluded.
+fn is_detached_print_run(args: &Args) -> bool {
+    crate::detached::is_detached_run()
+        && args.task_id.is_none()
+        && !matches!(args.mode, Some(Mode::Json | Mode::Rpc))
+}
+
+/// The approval channel of a headless print or json run: a detached print run parks on the
+/// calls that need approval, every other headless run is [`headless_approval_channel_for`].
+fn print_approval_channel(args: &Args) -> ApprovalChannel {
+    if is_detached_print_run(args) {
+        ApprovalChannel::Detached
+    } else {
+        headless_approval_channel_for(args)
+    }
+}
+
+/// The gate of the detached run's session, kept so the run can set its park handler once
+/// the session exists (see [`build_permission_gate`]).
+static DETACHED_PARK_GATE: std::sync::OnceLock<Arc<HooPermissionGate>> = std::sync::OnceLock::new();
+
 /// Build the permission gate for the current CLI mode. Read-only tools are
 /// hoocode's permission gate (hoo-core): per-mode hard rules always; prompts
 /// for bash/write/edit/web tools when a UI can ask, and otherwise the headless
@@ -676,9 +709,13 @@ fn build_permission_gate(
             Some(Arc::new(hoocode_code_tui_app::dialog_bridge::TuiPermissionUi) as _),
         )
     } else {
-        (headless_approval_channel_for(args), None)
+        (print_approval_channel(args), None)
     };
-    Arc::new(HooPermissionGate::new(cwd.to_path_buf(), channel, ui))
+    let gate = Arc::new(HooPermissionGate::new(cwd.to_path_buf(), channel, ui));
+    if channel == ApprovalChannel::Detached {
+        let _ = DETACHED_PARK_GATE.set(gate.clone());
+    }
+    gate
 }
 
 /// Whether this process is a subagent child that asks its parent about the
@@ -715,11 +752,28 @@ fn install_headless_clearance_relay(args: &Args, cwd: &std::path::Path) {
     if relays_clearance(args) {
         return;
     }
-    let ApprovalChannel::Headless { fail_closed } = headless_approval_channel_for(args) else {
-        return;
+    let relay = match print_approval_channel(args) {
+        ApprovalChannel::Headless { fail_closed } => {
+            HeadlessClearanceRelay::new(cwd.to_path_buf(), fail_closed)
+        }
+        ApprovalChannel::Detached => HeadlessClearanceRelay::detached(cwd.to_path_buf()),
+        ApprovalChannel::Ui => return,
     };
-    let relay = HeadlessClearanceRelay::new(cwd.to_path_buf(), fail_closed);
     hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(relay)));
+}
+
+/// RT-39: the naming mode a run gets. Off for a subagent child, a detached run
+/// (`HOOCODE_DETACHED`), and any process nested in a subagent tree.
+fn resolve_auto_name(requested: AutoNameMode, task_child: bool) -> AutoNameMode {
+    let detached = std::env::var_os("HOOCODE_DETACHED").is_some();
+    let nested = hoocode_code_subagents::depth::current_subagent_depth(
+        &hoocode_code_subagents::depth::ProcessEnv,
+    ) > 0;
+    if detached || nested || task_child {
+        AutoNameMode::Off
+    } else {
+        requested
+    }
 }
 
 /// Build the session for a CLI run: the initial session manager, then the
@@ -738,14 +792,43 @@ fn build_session(args: &Args, interactive: bool) -> (AgentSession, Diagnostics) 
         interactive,
         None,
         false,
+        AutoNameMode::Headless,
     );
     (session, diagnostics)
 }
 
 /// The session manager a run starts on (`--session`, `--continue`, ...). A
 /// session whose cwd is gone falls back to the startup cwd after asking
-/// (interactive) or exits (otherwise).
+/// (interactive) or exits (otherwise). A session another process is writing
+/// is refused (SA-12). `HOOCODE_DETACHED` turns on per-entry flush.
 fn initial_session_manager(args: &Args, interactive: bool) -> SessionManager {
+    let mut session_manager = open_initial_session_manager(args, interactive);
+    if std::env::var_os("HOOCODE_DETACHED").is_some() {
+        session_manager.set_flush_each_entry(true);
+    }
+    if let Some(error) = session_manager.lock_error() {
+        let path = session_manager
+            .session_file()
+            .unwrap_or(std::path::Path::new(""));
+        eprintln!(
+            "Could not lock {}: {error}; another process could write it too.",
+            path.display()
+        );
+    }
+    // SA-12 follow view: interactive mode keeps this read-only manager and follows
+    // the process that holds the session (`Mode::new`). Other modes refuse.
+    if let Some(pid) = session_manager.lock_held_by().filter(|_| !interactive) {
+        let path = session_manager
+            .session_file()
+            .unwrap_or(std::path::Path::new(""));
+        let message = hoocode_code_session::session_in_use_message(pid, path);
+        eprintln!("{}", crate::red(crate::Env::detect().color, &message));
+        std::process::exit(1);
+    }
+    session_manager
+}
+
+fn open_initial_session_manager(args: &Args, interactive: bool) -> SessionManager {
     let settings = crate::load_settings();
     let startup_cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let env = crate::Env::detect();
@@ -802,6 +885,7 @@ fn create_runtime(
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
     is_app_server: bool,
+    auto_name: AutoNameMode,
 ) -> (AgentSession, AgentSessionServices, Diagnostics) {
     let mut settings = SettingsManager::create_default(&cwd);
     if let Some(patterns) = &args.models {
@@ -860,6 +944,11 @@ fn create_runtime(
     }
 
     let plugins = load_session_plugins(&cwd, &mut diagnostics);
+    let auto_name = if settings.auto_name_sessions() {
+        resolve_auto_name(auto_name, args.task_id.is_some())
+    } else {
+        AutoNameMode::Off
+    };
     let (session, services) = assemble_session(
         args,
         cwd,
@@ -875,6 +964,7 @@ fn create_runtime(
         &plugins,
         &mut diagnostics,
         is_app_server,
+        auto_name,
     );
     (session, services, diagnostics)
 }
@@ -920,6 +1010,7 @@ fn assemble_session(
     plugins: &hoocode_code_plugins::PluginSet,
     diagnostics: &mut Diagnostics,
     is_app_server: bool,
+    auto_name: AutoNameMode,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
     // The gate is built here, not at `create_agent_session`, so the plugin tools' network
@@ -1126,6 +1217,7 @@ fn assemble_session(
             disallowed_tools,
             extensions: Some(modes),
             session_start_event,
+            auto_name,
             ..Default::default()
         },
     )
@@ -1324,10 +1416,11 @@ pub fn run_print_mode(
     let code = run_print_body(args, mode, stdin_content, color, output, err, &ran);
     // After the run, so the note names only the tools that actually ran.
     // A subagent child asks its parent instead, so the note is not true of it.
+    // A detached run parks instead of running ungated calls, so it has no such note.
     let asked =
         relays_clearance(args) && hoocode_code_subagents::instance::clearance_relay().is_some();
     if let (false, ApprovalChannel::Headless { fail_closed: false }) =
-        (asked, headless_approval_channel_for(args))
+        (asked, print_approval_channel(args))
     {
         let names = ran.lock().map(|set| set.clone()).unwrap_or_default();
         if let Some(note) = ungated_run_note(print_mode_label(mode), &names) {
@@ -1381,6 +1474,9 @@ fn run_print_body(
     let home = hoocode_home::home_dir();
     install_clearance_relay(args);
     let (session, diagnostics) = build_session(args, false);
+    if let Some(gate) = DETACHED_PARK_GATE.get() {
+        gate.set_park_handler(crate::detached::park_handler(session.clone()));
+    }
     install_headless_clearance_relay(args, session.cwd());
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| match event {
@@ -1418,6 +1514,7 @@ fn run_print_body(
         Ok(prepared) => prepared,
         Err(message) => {
             writeln!(err, "{}", crate::red(color, &message))?;
+            record_early_exit(&session, args, &message);
             return Ok(1);
         }
     };
@@ -1426,17 +1523,13 @@ fn run_print_body(
         .iter()
         .any(|(kind, _)| *kind == DiagnosticKind::Error)
     {
+        record_early_exit(&session, args, "startup diagnostics reported an error");
         return Ok(1);
     }
     if session.model().is_none() {
-        writeln!(
-            err,
-            "{}",
-            crate::red(
-                color,
-                &hoocode_code_auth::auth_guidance::format_no_models_available_message()
-            )
-        )?;
+        let message = hoocode_code_auth::auth_guidance::format_no_models_available_message();
+        writeln!(err, "{}", crate::red(color, &message))?;
+        record_early_exit(&session, args, &message);
         return Ok(1);
     }
 
@@ -1498,16 +1591,47 @@ fn run_print_body(
         })
     });
     drop(tx);
+    // SA-12: a root detached run enforces its own limits (no parent reaps it). It is not
+    // a subagent child, which may inherit `HOOCODE_DETACHED`.
+    let detached_limits = task_id.is_none() && crate::detached::is_detached_run();
     let reached_max_turns = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Set when the turn cap actually stops the run (its abort is applied), not merely reached.
+    let stopped_at_cap = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _turn_limit = args
         .max_turns
-        .filter(|cap| is_subagent && *cap > 0)
-        .map(|cap| turn_limit(&session, cap, reached_max_turns.clone()));
+        .filter(|cap| (is_subagent || detached_limits) && *cap > 0)
+        .map(|cap| {
+            turn_limit(
+                &session,
+                cap,
+                reached_max_turns.clone(),
+                stopped_at_cap.clone(),
+            )
+        });
     let reached_deadline = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _deadline = args
         .deadline_ms
-        .filter(|ms| is_subagent && *ms > 0)
+        .filter(|ms| (is_subagent || detached_limits) && *ms > 0)
         .map(|ms| deadline_wrap_up(&session, ms, reached_deadline.clone()));
+    // Set when the deadline stops a detached run mid-run.
+    let deadline_stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let _deadline_stop = args
+        .deadline_ms
+        .filter(|ms| detached_limits && *ms > 0)
+        .map(|ms| deadline_stop(&session, ms, deadline_stopped.clone()));
+    // The limit that stopped a detached run, with its exit reason; `None` otherwise.
+    let detached_limit = || -> Option<String> {
+        if !detached_limits {
+            return None;
+        }
+        let turn_cap = args
+            .max_turns
+            .filter(|_| stopped_at_cap.load(std::sync::atomic::Ordering::SeqCst));
+        let deadline = args
+            .deadline_ms
+            .filter(|_| deadline_stopped.load(std::sync::atomic::Ordering::SeqCst));
+        crate::detached::limit_stop_reason(turn_cap, deadline)
+    };
     // The lifeguard signals before it kills: SIGUSR1 for a stall, SIGTERM at the
     // deadline. Both paths write the result file through `result_written`, so
     // exactly one of them wins.
@@ -1515,44 +1639,69 @@ fn run_print_body(
         .as_ref()
         .map(|id| termination_handler(session.clone(), id.clone(), result_written.clone()));
 
-    // `session.prompt(initialMessage)` then each remaining message in turn.
+    // `session.prompt(initialMessage)` then each remaining message in turn. SA-12 row 4b:
+    // a detached run with no message, whose session ends in tool results (the user
+    // answered its parked call), continues from them instead.
+    let continue_run = crate::detached::is_detached_run()
+        && task_id.is_none()
+        && initial_message.is_none()
+        && messages.is_empty()
+        && matches!(session.messages().last(), Some(AgentMessage::ToolResult(_)));
+    let steps: Vec<Option<&String>> = if continue_run {
+        vec![None]
+    } else {
+        initial_message
+            .iter()
+            .chain(messages.iter())
+            .map(Some)
+            .collect()
+    };
     let mut initial_images = Some(initial_images);
-    for prompt in initial_message.iter().chain(messages.iter()) {
+    for step in steps {
         // The @file images go with the initial message only.
         let images = if initial_message.is_some() {
             initial_images.take().unwrap_or_default()
         } else {
             Vec::new()
         };
-        let run = session.prompt(
-            prompt,
-            PromptOptions {
-                images,
-                ..Default::default()
-            },
-        );
-        let result = async_runtime().block_on(async {
-            tokio::pin!(run);
-            loop {
-                tokio::select! {
-                    result = &mut run => break Ok(result),
-                    Some(line) = rx.recv() => {
-                        if let Err(e) = output.write_all(line.as_bytes()).and_then(|_| output.flush()) {
-                            break Err(e);
-                        }
-                    }
-                }
-            }
-        })?;
+        let result = match step {
+            Some(prompt) => await_run_writing(
+                session.prompt(
+                    prompt,
+                    PromptOptions {
+                        images,
+                        ..Default::default()
+                    },
+                ),
+                &mut rx,
+                output,
+            )?,
+            None => await_run_writing(session.continue_run(), &mut rx, output)?,
+        };
         write_lines(&mut rx, output)?;
         if let Err(e) = result {
             writeln!(err, "{e}")?;
+            if task_id.is_none() {
+                let message = e.to_string();
+                let limit = detached_limit();
+                record_detached_exit(&session, Some(limit.as_deref().unwrap_or(&message)));
+            }
             session.dispose();
             shutdown_native_blocking();
             return Ok(1);
         }
     }
 
+    // RT-39: one bounded naming pass; dispose below flushes what it wrote. A run with no
+    // session file (`--no-session`) has nowhere to keep a name, so it makes no call.
+    // The timer must be made inside the runtime, so build it in the block.
+    if session.session_manager().is_persisted() {
+        async_runtime().block_on(async {
+            let _ =
+                tokio::time::timeout(std::time::Duration::from_secs(5), session.auto_name_now())
+                    .await;
+        });
+    }
     // A spawned subagent writes the audit file the parent pool verifies.
     let mut exit_code = 0;
     if let Some(task_id) = &task_id {
@@ -1597,10 +1746,17 @@ fn run_print_body(
             exit_code = 1;
         }
     }
+    let limit = detached_limit();
+    if task_id.is_none() {
+        record_detached_exit(&session, limit.as_deref());
+    }
     if let Some(heartbeat) = heartbeat {
         heartbeat.abort();
     }
     if let Some(deadline) = _deadline {
+        deadline.abort();
+    }
+    if let Some(deadline) = _deadline_stop {
         deadline.abort();
     }
     drop(_turn_limit);
@@ -1618,10 +1774,57 @@ fn run_print_body(
             if let Some(message) = result.stderr {
                 writeln!(err, "{message}")?;
             }
-            Ok(result.exit_code)
+            // A detached run stopped by its own limit failed, whatever its last message said.
+            Ok(if limit.is_some() { 1 } else { result.exit_code })
         }
         // json mode never inspects the final message.
-        PrintMode::Json => Ok(exit_code),
+        PrintMode::Json => Ok(if limit.is_some() { 1 } else { exit_code }),
+    }
+}
+
+/// Drives one run to its end on the async runtime, writing the lines its listeners queue
+/// (json events) to `output` as they come.
+fn await_run_writing(
+    run: impl std::future::Future<Output = Result<(), hoocode_code_agent_session::AgentSessionError>>,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    output: &mut dyn Write,
+) -> std::io::Result<Result<(), hoocode_code_agent_session::AgentSessionError>> {
+    async_runtime().block_on(async {
+        tokio::pin!(run);
+        loop {
+            tokio::select! {
+                result = &mut run => break Ok(result),
+                Some(line) = rx.recv() => {
+                    if let Err(e) = output.write_all(line.as_bytes()).and_then(|_| output.flush()) {
+                        break Err(e);
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// SA-12: a detached run ends its file with a `detached_exit` record (done or failed), so
+/// its status can be read after the process is gone. A no-op outside a detached run. The
+/// caller skips a subagent child, which may inherit the variable.
+fn record_detached_exit(session: &AgentSession, run_error: Option<&str>) {
+    if !crate::detached::is_detached_run() {
+        return;
+    }
+    let data = crate::detached::detached_exit_data(run_error, &session.messages());
+    let mut manager = session.session_manager();
+    manager.append_custom_entry(
+        hoocode_code_session::detached::DETACHED_EXIT_ENTRY,
+        Some(data),
+    );
+    let _ = manager.flush(hoocode_code_session::SESSION_FLUSH_DEADLINE);
+}
+
+/// [`record_detached_exit`] for a run that stops before its first prompt. A subagent
+/// child is skipped, as in [`record_detached_exit`]'s callers.
+fn record_early_exit(session: &AgentSession, args: &Args, reason: &str) {
+    if args.task_id.is_none() {
+        record_detached_exit(session, Some(reason));
     }
 }
 
@@ -1634,6 +1837,12 @@ fn build_session_runtime(
 ) -> (AgentSessionRuntime, Diagnostics) {
     let session_manager = initial_session_manager(args, interactive);
     let cwd = std::path::PathBuf::from(session_manager.cwd());
+    // RT-39: the TUI names its sessions; the rpc server (not interactive) never does.
+    let auto_name = if interactive {
+        AutoNameMode::Interactive
+    } else {
+        AutoNameMode::Off
+    };
     let (session, services, diagnostics) = create_runtime(
         args,
         &auth,
@@ -1644,6 +1853,7 @@ fn build_session_runtime(
         interactive,
         None,
         false,
+        auto_name,
     );
     let factory_args = args.clone();
     let factory: hoocode_code_agent_session::RuntimeFactory = Arc::new(move |request| {
@@ -1666,6 +1876,7 @@ fn build_session_runtime(
             interactive,
             None,
             false,
+            auto_name,
         );
         let created = CreatedRuntime {
             session,
@@ -1756,6 +1967,7 @@ impl AppServerSessions {
             false,
             Some(gate),
             true,
+            AutoNameMode::Interactive,
         );
         if let Some((_, message)) = diagnostics
             .iter()
@@ -1783,6 +1995,10 @@ impl AppServerSessions {
         gate: Arc<dyn PermissionGate>,
     ) -> Result<AgentSession, String> {
         let manager = SessionManager::open(path, self.session_dir.clone(), None);
+        // Another process holds the file: refuse rather than hand out a read-only session.
+        if let Some(pid) = manager.lock_held_by() {
+            return Err(hoocode_code_session::session_in_use_message(pid, path));
+        }
         self.build(manager, model, gate)
     }
 
@@ -2067,6 +2283,24 @@ fn deadline_wrap_up(
     })
 }
 
+/// The deadline of a detached run, which has no parent to kill it: at the deadline a run
+/// still streaming is aborted, and `stopped` is set. A run that ended before the deadline
+/// is left alone. The wrap-up steer comes from [`deadline_wrap_up`].
+fn deadline_stop(
+    session: &AgentSession,
+    deadline_ms: u64,
+    stopped: Arc<std::sync::atomic::AtomicBool>,
+) -> tokio::task::JoinHandle<()> {
+    let target = session.clone();
+    async_runtime().spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(deadline_ms)).await;
+        if target.is_streaming() {
+            stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+            target.abort().await;
+        }
+    })
+}
+
 /// A spawned subagent's turn cap: near it (90%) the agent is asked to wrap
 /// up; at it the run is aborted.
 ///
@@ -2082,6 +2316,7 @@ fn turn_limit(
     session: &AgentSession,
     cap: u64,
     reached: Arc<std::sync::atomic::AtomicBool>,
+    stopped: Arc<std::sync::atomic::AtomicBool>,
 ) -> hoocode_code_agent_session::SessionSubscription {
     use hoocode_agent_types::AgentEvent;
     use hoocode_code_agent_session::AgentSessionEvent;
@@ -2109,6 +2344,7 @@ fn turn_limit(
                             let _ = target.steer(&text, &[]);
                         }
                         Deferred::Abort => {
+                            stopped.store(true, Ordering::SeqCst);
                             let session = target.clone();
                             async_runtime().spawn(async move { session.abort().await });
                         }
@@ -2421,6 +2657,7 @@ mod tests {
             &hoocode_code_plugins::PluginSet::default(),
             &mut Diagnostics::new(),
             false,
+            AutoNameMode::Off,
         );
         (session.system_prompt(), session.get_active_tool_names())
     }
@@ -2491,6 +2728,7 @@ mod tests {
             &hoocode_code_plugins::PluginSet::default(),
             &mut Diagnostics::new(),
             false,
+            AutoNameMode::Off,
         );
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
@@ -2621,6 +2859,7 @@ mod tests {
                 "AskUserQuestion",
                 "Agent",
                 "AgentOutput",
+                "SessionSpawn",
                 "TodoWrite"
             ]
         );
@@ -2929,6 +3168,7 @@ mod tests {
                 &hoocode_code_plugins::PluginSet::default(),
                 &mut Diagnostics::new(),
                 false,
+                AutoNameMode::Off,
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {

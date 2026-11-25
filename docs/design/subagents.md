@@ -1,6 +1,6 @@
 # Subagents
 
-Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-11.
+Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-11. Detached sessions (SA-12) phase 1 built 2026-11-25.
 
 Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
 
@@ -206,6 +206,44 @@ The mock tests mechanics only. It does not show that a real model follows the br
 
 **Last recorded:** `--include-slow` 22/22 as declared, 33 attempts, 32 usable (97%), 2026-10-30. Matrix 65/65 and soak 26 rounds, 0 leaks, were 2026-10-05 and predate the cancel and tree-kill rounds (SA-4).
 
+### Detached sessions (SA-12)
+
+Designed and built (phase 1) 2026-11-25. Eval: `scripts/eval/detached_evals.py`, 9/9 on 2026-11-25.
+
+Purpose: hand work to a fresh session with its own context. Compaction keeps a tail and summarises summaries; a fresh session starts from a brief only.
+
+| | Subagent | Detached session |
+|---|---|---|
+| Result | Returns to the parent | None. The parent shows a link |
+| Lifetime | Dies with the parent | Own process group, outlives the parent |
+| Trust | Parent's gate via clearance | Tier 1, same as a session the user started |
+| First prompt | Brief | Brief the user approved |
+
+Flow:
+
+1. The model calls `SessionSpawn { brief }`, when asked or on its own. The call is gated: the approval shows the brief and the effective `auto_allow` list (what will run unattended). An approved brief carries user authority. A headless parent follows its gate's headless default.
+2. The brief has four sections: Goal, Decisions, Dead ends, Next step. A missing section is a tool error. The harness appends facts: cwd, branch, HEAD, dirty files, todos, parent session path.
+3. The harness creates the child file path itself, `<parent session dir>/<ts>_<id>.jsonl` (absolute), and starts `hoocode -p --session <path> --max-turns <n> --deadline-ms <ms>` in the parent's cwd, with `setsid`, SIGHUP ignored, stdin `/dev/null`, stdout and stderr to `<path>.log`. Env: `HOOCODE_DETACHED=1`, `HOOCODE_SUBAGENT_DEPTH` removed. The new header sets `parentSession`.
+4. The parent shows a code block `hoocode --session <path>` and a status: running, parked, done, failed. Status comes from the lock and the session file.
+5. The child runs. Calls `auto_allow` lists run. The first gated call outside `auto_allow` parks: the pending call is written, the file flushed, the process exits as parked. Print mode's "allow and note on stderr" (runtime.md) does not apply.
+6. `hoocode --session <path>`: lock held, read-only follow view; Ctrl-C sends SIGINT to the lock's pid. Lock free, normal interactive session; a parked call shows as an approval and is re-checked first (target changed: tool error to the model, no run). An "approve and detach" key starts the detached process again.
+
+Rules:
+
+- Lock: `<path>.lock` holds the pid, taken with `File::try_lock`; the OS drops it when the process dies, so a crash leaves no stale lock. One writer per session file.
+- Detached runs flush after every entry, not at turn end, so the follow view is live per entry.
+- Grants: config `auto_allow` only. The parent's session grants ("allow always") are not carried.
+- Budget: the child enforces its own turn cap and deadline (subagent defaults, 200 turns and 4 h); no parent reaper exists. Hit: exit as failed with the reason.
+- Depth 1: `SessionSpawn` is not registered when `HOOCODE_DETACHED` is set or in a subagent. The child's subagents keep the normal limits.
+- Checkout: the child works in the parent's cwd. No worktree is made (the harness never enforces isolation; Not doing: a Rust worktree manager). The main use is handover, where the parent stops. If the parent keeps editing the same files, that is the user's call; the approval says so.
+- A parked or denied tool result says why, so the model stops and does not retry.
+
+Not in phase 1: interaction while running (TUI as app-server client, phase 2), opening a terminal or tmux window, messages between parent and child, a context-used signal to the model, a `cwd` for the child, `--resume <id>` by id.
+
+Eval (gate for done): scripted long session, spawn, the fresh session does the next step without asking again and does not retry a recorded dead end. Plus: park and resume, follow view while running, lock refuses a second writer, a killed child leaves no lock, depth-1 refusal, turn cap and deadline exit.
+
+Decided 2026-11-25 (Decisions): the parked-call entry format, the follow view, `--session <path>` from another cwd, the resume restart.
+
 ## Decisions
 
 | Date | Decision |
@@ -235,6 +273,17 @@ The mock tests mechanics only. It does not show that a real model follows the br
 | 2026-11-19 | A plugin selector (`plugin:*`, `plugin:<p>`, `plugin:<p>/<Tool>`) takes no MCP tool. A subagent runs no plugin MCP server and exposes no plugin MCP tool, whatever its tool list says, so general-purpose (`plugin:*`) starts no MCP. Plugin WASM tools are unchanged. Never MCP plugin tools (see [plugins.md](plugins.md)). |
 | 2026-11-19 | A json or print run that has subagents answers their clearance requests with its own gate (`HeadlessClearanceRelay`): the same rules, and the same headless default. A fail-closed run denies with the gate's reason; an open run runs the call, as it runs its own. Before, a subagent's gated call was denied with "no UI to ask" whatever the run would have allowed. Tests: `hoocode-code-permissions` `relay`; eval `subagent_shell_runs_under_a_headless_parent`. |
 | 2026-11-19 | Agent `tools` and `disallowedTools` take selectors: a name, `plugin:<p>`, `plugin:<p>/<Tool>`, `plugin:*`, `mcp:<s>`, `mcp:<s>/<tool>` or `mcp:*`. `ext_*` is removed, with no alias. A malformed entry rejects the definition. Supersedes the `ext_*` row of 2026-11-17 and the WebFetch row of 2026-11-18. See [plugins.md](plugins.md) Naming and identity. |
+| 2026-11-25 | SA-12 parked call: a `custom` entry `parked_call` with `toolCallId`, `toolName`, `reason` and, for a tool with a `path` or `file_path` argument, `target` (`path`, `sha256` or null if absent). The call is open while no tool result with its id follows. The child also ends with a `custom` entry `detached_exit` (`status`: `done`, `parked` or `failed`, `reason`). Status: lock held → running; open parked call → parked; else the exit entry; no exit entry and no lock → failed (crashed). No new entry type: `custom` already round-trips and old readers skip it. |
+| 2026-11-25 | SA-12 follow view: the normal TUI, with the session opened read-only and no agent run. It re-renders through the resume path (`render_session_context`) when the file grows (1 s poll, the git-poll cadence). The prompt does not send; Ctrl-C sends SIGINT to the lock's pid. When the lock frees, the view reopens the file as a normal session. No second renderer. |
+| 2026-11-25 | SA-12 `--session <path>` from another cwd: a value with `/` resolves as a path and opens directly (`resolve_session_path`), so the cross-project fork prompt never shows; the parent always passes an absolute path. Test: `session_flags` unit test. |
+| 2026-11-25 | SA-12 resume restarts the child with `hoocode -p --session <path>` and no prompt: a detached print run with no prompt continues from the session's last tool result (`continue`), so no fake user message is written. |
+| 2026-11-25 | SA-12 park scope: only the detached run's own calls park (`ApprovalChannel::Detached`, `Verdict::Park`; exit code 3). A gated call from one of its subagents is denied with a reason, not parked: parking would exit the process under running subagents. Deny rules still deny; `auto_allow` still runs. |
+| 2026-11-25 | Detached sessions (SA-12): a model-callable, user-approved `SessionSpawn` starts a tier-1 session in its own process (`hoocode -p`, `setsid`) in the parent's cwd. No result to the parent; the parent shows `hoocode --session <path>`. Gated calls outside `auto_allow` park, not deny; opening the session answers them. Session lock, per-entry flush, self-enforced budget, depth 1. No worktree: isolation stays by instruction. Phase 2 (live interaction via an app-server client in the TUI) waits for need. See Detached sessions. |
+| 2026-11-25 | SA-12 resume: an open parked call shows the clearance card with yes, approve and detach (`d`, `app.permission.detach`), no. No "always" row: grants are config `auto_allow` only. A target changed since parking is answered "not run" with no card. Approve and detach opens a new empty session to drop the lock, then restarts the child (`child_command_continue`, in `code-subagents` `detached_child.rs` so the TUI can reach it). The approved call runs without the loop's `before_tool_call` hooks. |
+| 2026-11-25 | SA-12 parent status: a Detached tab in the task panel, one row per session this session spawned (rebuilt from its `SessionSpawn` results on open): running, parked, done or `failed: <reason>`, with `hoocode --session <path>` in the detail. Polled each 1 s while not done or failed; a running row costs a lock probe, a parked row is re-read only when its file grows or is held. Parked is yellow (it is the one row that waits on the user), so `task_panel.rs` joins the yellow guard's file list. A notice on a change to parked or failed, never for rows restored on open. A crash reading in the first 5 s after spawn stays running (the child may not hold its lock yet). |
+| 2026-11-25 | SA-12 lock probe: `lock_holder` takes the lock for an instant, so `SessionLock::acquire` retries for about 100 ms before it reports a held lock. Without that, a writer starting during the parent's 1 s probe could be refused. |
+| 2026-11-25 | SA-12 review fixes (Opus review): only the loop's own call parks; a plugin's in-tool network request in a detached run is denied (`request_in_tool`). Readers load without the lock (`open_read_only`: app-server reads, attach, follow refresh); the app-server refuses to open a held session. A lock I/O error (no flock on the filesystem) warns and keeps writing. A changed parked target is answered with a not-run decision that never runs the tool. The `SessionSpawn` card has no "always" row. Kept: a never-written session's lock file is deleted on drop while held; only a second opener of the same random path could race. |
+| 2026-11-25 | SA-12 eval scope: the mock checks mechanics (the brief, Dead ends and facts reach the child; it does the next step and offers no `SessionSpawn`). It cannot show that a real model honours the brief (as SA-2). A headless (json or print) parent spawns without an approval, per its gate's default. |
 
 Dispatch dirs are pruned (newest 50, older than 24 h dropped), so they are not kept for the whole session. Recover is view or resume on request, never automatic (TUI rule, 2026-10-09).
 

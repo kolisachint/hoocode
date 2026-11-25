@@ -238,6 +238,23 @@ impl Mode {
 
     /// `showStartupNoticesIfNeeded`: the entries new since the last run, as
     /// one line. The full markdown is only behind `/changelog`.
+    /// The session file could not be locked: it is written anyway, and another
+    /// process could write it too.
+    pub(super) fn show_session_lock_warning(&mut self) {
+        let manager = self.session.session_manager();
+        let Some(error) = manager.lock_error() else {
+            return;
+        };
+        let path = manager
+            .session_file()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+        drop(manager);
+        self.show_warning(&format!(
+            "Could not lock {path}: {error}; another process could write it too."
+        ));
+    }
+
     pub(super) fn show_startup_notices(&mut self, changelog: Option<String>) {
         let Some(markdown) = changelog.filter(|m| !m.trim().is_empty()) else {
             return;

@@ -110,6 +110,8 @@ pub struct CreateAgentSessionOptions {
     pub stream_fn: Option<SharedStreamFn>,
     /// Default: `startup`.
     pub session_start_event: Option<SessionStartEvent>,
+    /// Session naming (RT-39); default `Off`.
+    pub auto_name: crate::auto_name::AutoNameMode,
 }
 
 /// `CreateAgentSessionResult`.
@@ -582,6 +584,7 @@ pub fn create_agent_session(
         }),
         extensions: options.extensions,
         session_start_event: options.session_start_event,
+        auto_name: options.auto_name,
     });
     session.set_model_fallbacks(model_fallbacks);
     // The interactive app wakes an idle agent from the same notices (`job_wake_pending`).

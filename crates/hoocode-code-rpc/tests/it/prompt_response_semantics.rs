@@ -88,6 +88,7 @@ impl Rpc {
             base_tools: BaseTools::Override(vec![]),
             extensions: None,
             session_start_event: None,
+            auto_name: Default::default(),
         });
         let lines = Arc::new(Mutex::new(Vec::new()));
         let sink = lines.clone();

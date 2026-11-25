@@ -11,8 +11,8 @@ use hoocode_ai_provider_faux::{
 };
 use hoocode_ai_types::{Content, Message};
 use hoocode_code_agent_session::{
-    AgentSession, AgentSessionConfig, AgentSessionEvent, BaseTools, ExtensionHooks, ResourceLoader,
-    SessionSubscription, StaticResourceLoader,
+    AgentSession, AgentSessionConfig, AgentSessionEvent, AutoNameMode, BaseTools, ExtensionHooks,
+    ResourceLoader, SessionSubscription, StaticResourceLoader,
 };
 use hoocode_code_models::{AuthLookup, ModelRegistry};
 use hoocode_code_session::SessionManager;
@@ -56,6 +56,8 @@ pub struct HarnessOptions {
     pub real_builtin_tools: bool,
     /// Replaces the faux provider's test auth.
     pub auth: Option<Arc<dyn AuthLookup + Send + Sync>>,
+    /// Session naming mode (default `Off`).
+    pub auto_name: Option<AutoNameMode>,
 }
 
 pub struct Harness {
@@ -129,6 +131,7 @@ impl Harness {
             },
             extensions: options.extensions,
             session_start_event: None,
+            auto_name: options.auto_name.unwrap_or_default(),
         });
         let events = Arc::new(Mutex::new(Vec::new()));
         let sink = events.clone();

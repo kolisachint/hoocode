@@ -1074,6 +1074,13 @@ enum DeleteMethod {
 
 /// `deleteSessionFile`: the `trash` CLI first, then a plain unlink.
 fn delete_session_file(path: &Path) -> Result<DeleteMethod, String> {
+    let method = delete_session_file_only(path)?;
+    // The SA-12 lock sidecar goes with its session.
+    let _ = std::fs::remove_file(hoocode_code_session::lock_path_for(path));
+    Ok(method)
+}
+
+fn delete_session_file_only(path: &Path) -> Result<DeleteMethod, String> {
     let lossy = path.to_string_lossy();
     let mut cmd = std::process::Command::new("trash");
     if lossy.starts_with('-') {

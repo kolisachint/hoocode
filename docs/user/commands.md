@@ -39,6 +39,7 @@ and does not open the picker.
 | `--provider <name>` | Pick a provider |
 | `-c`, `--continue` | Continue the last session |
 | `-r`, `--resume` | Choose a session to resume |
+| `--session <path or id>` | Open that session. One process writes a session at a time: a session another process has open is refused with its process id |
 | `--no-session` | Don't save this run |
 | `-t`, `--tools <list>` | Only these tools, e.g. `Read,CodeSearch` for a read-only run |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high` or `xhigh` |
@@ -50,6 +51,34 @@ and does not open the picker.
 | `--use-system-ca` | Also trust the operating system's CA store. Also applies to plugin (WASM) network requests |
 
 Built-in tools: **Read**, **Shell**, **Edit**, **Write** and **CodeSearch**.
+
+## Detached sessions
+
+The model can hand work to a fresh session with `SessionSpawn`. Before it starts,
+you see the brief (Goal, Decisions, Dead ends, Next step) in the approval card, and
+what will run unattended: the tools your `auto_allow` setting approves without asking.
+The new session runs on its own in this folder and outlives hoocode. It returns
+nothing to the session that started it. The task panel's **Detached** tab lists each
+one as `detached  <goal>  <status>`, with status `running`, `parked`, `done` or
+`failed: <reason>`. A call that needs approval parks the run until you open it with
+`hoocode --session <path>` (the path is on its row) and answer yes, no, or approve
+and detach (`d`). A run stops itself after 200 turns or 4 hours. A detached session
+cannot start another one.
+
+A background run can keep writing its session while you are away. Open that
+session with `hoocode --session <path>`, the command the run shows (`--resume`
+and `--continue` open it too when they pick it). It opens read-only:
+
+- The history shows, and new messages appear about once a second as the run writes them.
+- Enter does not send. The text stays in the prompt and a note says the session is read-only.
+  `/quit`, `/resume` and `/new` still work. Commands that change the session (`/name`,
+  `/compact`, `/model`, `/tree`, `/fork`) are refused.
+- Ctrl+C sends an interrupt (SIGINT) to the process that runs the session, and the
+  status line says so. A second Ctrl+C within half a second quits hoocode. Quitting does
+  not stop the run.
+- When the run ends, the status line says so and the session opens as a normal one, so
+  you can send messages to it. A tool call the run was waiting on (a permission) is
+  asked then.
 
 ## More
 

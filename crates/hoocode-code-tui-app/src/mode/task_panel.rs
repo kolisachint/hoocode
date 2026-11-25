@@ -259,7 +259,7 @@ impl Mode {
                     self.attach_job(key);
                 }
             }
-            TaskKind::Plan | TaskKind::Schedule | TaskKind::Mcp => {}
+            TaskKind::Plan | TaskKind::Schedule | TaskKind::Mcp | TaskKind::Detached => {}
         }
     }
 

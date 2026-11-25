@@ -560,13 +560,20 @@ fn run_hoocode(sc: &Value) -> RawRun {
         serde_json::to_string_pretty(&doc).expect("json"),
     )
     .expect("models");
-    if let Some(settings) = sc.get("settings") {
-        fs::write(
-            home.join(APP_CONFIG_DIR).join("settings.json"),
-            serde_json::to_string_pretty(settings).expect("json"),
-        )
-        .expect("settings");
+    // The scripted turns count requests; a naming call (RT-39) would take one.
+    let mut settings = sc
+        .get("settings")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(map) = settings.as_object_mut() {
+        map.entry("autoNameSessions")
+            .or_insert(serde_json::Value::Bool(false));
     }
+    fs::write(
+        home.join(APP_CONFIG_DIR).join("settings.json"),
+        serde_json::to_string_pretty(&settings).expect("json"),
+    )
+    .expect("settings");
     let (home_s, work_s, tmp_s) = (
         home.display().to_string(),
         work.display().to_string(),

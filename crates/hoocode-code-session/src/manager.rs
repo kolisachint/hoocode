@@ -6,6 +6,7 @@
 
 use crate::context::{build_session_context, SessionContext};
 use crate::entry::{CustomMessageContent, FileEntry, Header, CURRENT_SESSION_VERSION};
+use crate::lock::{SessionLock, SessionLockError};
 use chrono::{TimeZone, Utc};
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{Content, Message, UserMessage};
@@ -13,6 +14,7 @@ use hoocode_runtime::{session_io, FlushError, FlushTicket};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Longest a read or a shutdown waits for queued session writes to reach the
@@ -179,6 +181,21 @@ pub struct SessionManager {
     cwd: String,
     persist: bool,
     flushed: bool,
+    /// The lock on `session_file` while this manager owns it (SA-12).
+    lock: Option<Arc<SessionLock>>,
+    /// The pid of the process holding `session_file`, when another one does
+    /// (0 when its lock file does not say). Set only when the lock is held.
+    lock_held_by: Option<u32>,
+    /// Another manager owns the file: this manager never writes to the file.
+    read_only: bool,
+    /// Opened by [`SessionManager::open_read_only`]: never takes the lock and
+    /// never writes.
+    reader_only: bool,
+    /// The lock could not be taken for an I/O reason. The manager still writes
+    /// (as it did before locks existed); callers may warn with this message.
+    lock_error: Option<String>,
+    /// Write every entry as it is queued, and wait for it to reach the OS.
+    flush_each_entry: bool,
     entries: Vec<FileEntry>,
     by_id: HashMap<String, FileEntry>,
     labels_by_id: HashMap<String, String>,
@@ -192,6 +209,16 @@ impl SessionManager {
         session_dir: PathBuf,
         session_file: Option<PathBuf>,
         persist: bool,
+    ) -> Self {
+        Self::build(cwd, session_dir, session_file, persist, false)
+    }
+
+    fn build(
+        cwd: String,
+        session_dir: PathBuf,
+        session_file: Option<PathBuf>,
+        persist: bool,
+        reader_only: bool,
     ) -> Self {
         let mut manager = Self {
             header: Header {
@@ -207,6 +234,12 @@ impl SessionManager {
             cwd,
             persist,
             flushed: false,
+            lock: None,
+            lock_held_by: None,
+            read_only: false,
+            reader_only,
+            lock_error: None,
+            flush_each_entry: false,
             entries: Vec::new(),
             by_id: HashMap::new(),
             labels_by_id: HashMap::new(),
@@ -214,7 +247,7 @@ impl SessionManager {
             leaf_id: None,
         };
 
-        if persist && !manager.session_dir.as_os_str().is_empty() {
+        if persist && !reader_only && !manager.session_dir.as_os_str().is_empty() {
             let _ = fs::create_dir_all(&manager.session_dir);
         }
 
@@ -234,13 +267,32 @@ impl SessionManager {
         Self::new(cwd, dir, None, true)
     }
 
-    /// Open an existing session file.
+    /// Open an existing session file. Takes the file lock; a file another
+    /// process holds opens read-only (see [`SessionManager::lock_held_by`]).
     pub fn open(
         path: impl Into<PathBuf>,
         session_dir: Option<PathBuf>,
         cwd_override: Option<String>,
     ) -> Self {
-        let path = path.into();
+        Self::open_with(path.into(), session_dir, cwd_override, false)
+    }
+
+    /// Load an existing session file without taking its lock. The manager
+    /// never writes: use it to read a session another process may be writing.
+    pub fn open_read_only(
+        path: impl Into<PathBuf>,
+        session_dir: Option<PathBuf>,
+        cwd_override: Option<String>,
+    ) -> Self {
+        Self::open_with(path.into(), session_dir, cwd_override, true)
+    }
+
+    fn open_with(
+        path: PathBuf,
+        session_dir: Option<PathBuf>,
+        cwd_override: Option<String>,
+        reader_only: bool,
+    ) -> Self {
         let entries = load_entries_from_file(&path);
         let cwd = cwd_override
             .or_else(|| {
@@ -259,7 +311,7 @@ impl SessionManager {
                 .map(Path::to_path_buf)
                 .unwrap_or_else(default_sessions_root)
         });
-        Self::new(cwd, dir, Some(path), true)
+        Self::build(cwd, dir, Some(path), true, reader_only)
     }
 
     /// Continue the most recent session for `cwd`, or create one if none exists.
@@ -339,6 +391,7 @@ impl SessionManager {
     pub fn set_session_file(&mut self, session_file: impl Into<PathBuf>) {
         let session_file = session_file.into();
         self.session_file = Some(session_file.clone());
+        self.claim_session_file();
         if session_file.exists() {
             let LoadedSession {
                 entries: loaded,
@@ -346,7 +399,7 @@ impl SessionManager {
             } = load_session_file(&session_file);
             if loaded.is_empty() {
                 let explicit = self.session_file.clone();
-                self.new_session(NewSessionOptions::default());
+                self.start_new_session(NewSessionOptions::default());
                 self.session_file = explicit;
                 let _ = self.rewrite_file();
                 self.flushed = true;
@@ -358,7 +411,7 @@ impl SessionManager {
                 self.header = header;
             } else {
                 let explicit = self.session_file.clone();
-                self.new_session(NewSessionOptions::default());
+                self.start_new_session(NewSessionOptions::default());
                 self.session_file = explicit;
                 let _ = self.rewrite_file();
                 self.flushed = true;
@@ -370,7 +423,7 @@ impl SessionManager {
             self.flushed = true;
         } else {
             let explicit = self.session_file.clone();
-            self.new_session(NewSessionOptions::default());
+            self.start_new_session(NewSessionOptions::default());
             self.session_file = explicit;
         }
     }
@@ -386,6 +439,14 @@ impl SessionManager {
 
     /// Start a new empty session.
     pub fn new_session(&mut self, options: NewSessionOptions) -> Option<PathBuf> {
+        let file = self.start_new_session(options);
+        self.claim_session_file();
+        file
+    }
+
+    /// Resets to an empty session without taking the file lock; callers that
+    /// set the file take it themselves.
+    fn start_new_session(&mut self, options: NewSessionOptions) -> Option<PathBuf> {
         self.header = Header {
             branch: hoocode_code_paths::git_branch::read_git_branch(std::path::Path::new(
                 &self.cwd,
@@ -449,8 +510,65 @@ impl SessionManager {
         }
     }
 
+    /// Takes the lock on the current session file, dropping the lock on the
+    /// previous one. A file another process holds makes this manager read-only.
+    fn claim_session_file(&mut self) {
+        self.lock = None;
+        self.lock_held_by = None;
+        self.lock_error = None;
+        self.read_only = self.reader_only;
+        if !self.persist || self.reader_only {
+            return;
+        }
+        let Some(path) = self.session_file.clone() else {
+            return;
+        };
+        match SessionLock::acquire(&path) {
+            Ok(lock) => self.lock = Some(Arc::new(lock)),
+            Err(SessionLockError::Held { pid }) => {
+                self.lock_held_by = Some(pid.unwrap_or(0));
+                self.read_only = true;
+            }
+            // Without the lock a writer cannot be ruled out, but the session
+            // was writable before locks existed: stay writable and record why.
+            Err(SessionLockError::Io(message)) => self.lock_error = Some(message),
+        }
+    }
+
+    /// Why the file lock could not be taken (an I/O error), when it could not.
+    /// The manager still writes; another process could write the file too.
+    pub fn lock_error(&self) -> Option<String> {
+        self.lock_error.clone()
+    }
+
+    /// Gives up the file lock, so another manager or process can take it. The
+    /// manager is read-only afterwards: it must not write under a lock it no
+    /// longer holds. Call it once the session is closed.
+    pub fn release_session_file(&mut self) {
+        self.lock = None;
+        self.read_only = self.session_file.is_some() && self.persist;
+    }
+
+    /// Whether this manager must not write: another process owns the file, or
+    /// it was opened with [`SessionManager::open_read_only`] or released.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+
+    /// The pid of the process that owns this session file, when this manager
+    /// did not get the lock (0 when the lock file does not name it).
+    pub fn lock_held_by(&self) -> Option<u32> {
+        self.lock_held_by
+    }
+
+    /// Per-entry flush (detached runs, SA-12): write from the first entry on,
+    /// and wait for each entry to reach the OS before returning from the append.
+    pub fn set_flush_each_entry(&mut self, on: bool) {
+        self.flush_each_entry = on;
+    }
+
     fn rewrite_file(&self) -> Result<(), SessionError> {
-        if !self.persist {
+        if !self.persist || self.read_only {
             return Ok(());
         }
         if let Some(path) = &self.session_file {
@@ -479,7 +597,7 @@ impl SessionManager {
     }
 
     fn persist(&mut self, entry: &FileEntry) -> Result<(), SessionError> {
-        if !self.persist {
+        if !self.persist || self.read_only {
             return Ok(());
         }
         let Some(path) = self.session_file.clone() else {
@@ -494,7 +612,7 @@ impl SessionManager {
             }
         });
 
-        if !has_assistant {
+        if !has_assistant && !self.flush_each_entry {
             self.flushed = false;
             return Ok(());
         }
@@ -518,6 +636,9 @@ impl SessionManager {
         }
         self.entries.push(entry.clone());
         let _ = self.persist(&entry);
+        if self.flush_each_entry {
+            let _ = self.flush(SESSION_FLUSH_DEADLINE);
+        }
     }
 
     fn id_set(&self) -> std::collections::HashSet<String> {
@@ -629,6 +750,25 @@ impl SessionManager {
             timestamp: iso_timestamp(),
             name: name.map(|n| n.trim().to_string()),
             hull: None,
+            source: name.map(|_| NameSource::User.as_str().to_string()),
+        };
+        self.append(entry);
+        id
+    }
+
+    /// Record a name chosen by the session naming call (RT-39). Unlike
+    /// [`Self::append_session_info`], the entry is marked `auto`, so a later
+    /// naming pass knows it may replace it.
+    pub fn append_auto_session_name(&mut self, name: &str) -> String {
+        let id = generate_id(&self.id_set());
+        let entry = FileEntry::SessionInfo {
+            color: None,
+            id: id.clone(),
+            parent_id: self.leaf_id.clone(),
+            timestamp: iso_timestamp(),
+            name: Some(name.trim().to_string()),
+            hull: None,
+            source: Some(NameSource::Auto.as_str().to_string()),
         };
         self.append(entry);
         id
@@ -645,6 +785,7 @@ impl SessionManager {
             timestamp: iso_timestamp(),
             name: None,
             hull: Some(paint.unwrap_or_default().trim().to_string()),
+            source: None,
         };
         self.append(entry);
         id
@@ -1027,6 +1168,7 @@ impl SessionManager {
             None
         };
         self.build_index();
+        self.claim_session_file();
 
         if self.persist {
             let has_assistant = self.entries.iter().any(|e| {
@@ -1059,6 +1201,19 @@ impl SessionManager {
             } => Some(Some(name.trim().to_string()).filter(|n| !n.is_empty())),
             _ => None,
         })?
+    }
+
+    /// Who set the latest name (the same entry [`Self::session_name`] reads).
+    /// A name entry without a `source` (older files) counts as user.
+    pub fn session_name_source(&self) -> Option<NameSource> {
+        self.entries.iter().rev().find_map(|entry| match entry {
+            FileEntry::SessionInfo {
+                name: Some(_),
+                source,
+                ..
+            } => Some(NameSource::from_stored(source.as_deref())),
+            _ => None,
+        })
     }
 
     /// `getSessionBranch`: the git branch recorded in the header.
@@ -1100,6 +1255,33 @@ impl SessionManager {
                 _ => None,
             })
             .unwrap_or_else(|| crate::identity::session_color_slot_for(self.session_id()))
+    }
+}
+
+/// Who chose a session name (`source` on a `session_info` entry).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameSource {
+    /// `/name` or the rpc `set_session_name`: never replaced by the naming call.
+    User,
+    /// The session naming call (RT-39): may be replaced by a later pass.
+    Auto,
+}
+
+impl NameSource {
+    /// The stored `source` value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Auto => "auto",
+        }
+    }
+
+    /// Reads a stored `source`; anything but `"auto"` (including missing) is user.
+    pub fn from_stored(source: Option<&str>) -> Self {
+        match source {
+            Some("auto") => Self::Auto,
+            _ => Self::User,
+        }
     }
 }
 

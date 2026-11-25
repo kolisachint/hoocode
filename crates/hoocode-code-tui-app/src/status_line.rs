@@ -178,6 +178,8 @@ pub struct StatusLineData {
     pub context_percent: Option<f64>,
     /// Session cost in dollars; under one cent is hidden.
     pub cost: Option<f64>,
+    /// The process that holds the session the view follows (SA-12 row 5); 0 when unnamed.
+    pub following: Option<u32>,
 }
 
 /// What the left slot shows after the priority rules.
@@ -188,6 +190,8 @@ pub enum LeftSlot {
     Search(SearchInfo),
     Scroll(ScrollInfo),
     Notice(StatusNotice),
+    /// The follow view: the process that holds the session (0 when unnamed).
+    Following(u32),
     ExtraUsage,
     SkipPermissions,
     NotSignedIn,
@@ -212,6 +216,9 @@ impl StatusLineData {
         }
         if let Some(notice) = self.notice.as_ref().filter(|n| !n.expired()) {
             return LeftSlot::Notice(notice.clone());
+        }
+        if let Some(pid) = self.following {
+            return LeftSlot::Following(pid);
         }
         if self.extra_usage {
             return LeftSlot::ExtraUsage;
@@ -330,6 +337,15 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
                 ),
                 st.dim,
             ));
+        }
+        LeftSlot::Following(pid) => {
+            out.push(span("◉", st.acc));
+            let who = if *pid == 0 {
+                "another process".to_string()
+            } else {
+                format!("pid {pid}")
+            };
+            out.push(span(format!(" following {who}"), st.dim));
         }
         LeftSlot::Turn(turn) => {
             let (glyph, glyph_style, word) = match turn.outcome {
