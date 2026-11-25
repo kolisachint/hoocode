@@ -79,6 +79,9 @@ mod bash;
 mod chrome;
 mod clipboard;
 mod commands;
+mod detached;
+#[cfg(test)]
+mod detached_tests;
 mod dialogs;
 mod events;
 mod follow;
@@ -542,6 +545,8 @@ struct Mode {
     /// `refresh_panel_takes_up`, read by `CustomEditor`.
     panel_takes_up: Rc<Cell<bool>>,
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
+    /// The detached sessions this session spawned, and their task-panel rows (SA-12).
+    detached: detached::DetachedWatch,
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
     restarted_input: Option<Receiver<TuiEvent>>,
     /// The session operation running off the UI thread, if any (`session_op.rs`).
@@ -1023,6 +1028,7 @@ impl Mode {
             history_search_active,
             queue_recallable,
             task_store_subscription: None,
+            detached: detached::DetachedWatch::default(),
             previous_cwd: Rc::new(RefCell::new(None)),
             restarted_input: None,
             session_op: None,
@@ -1680,6 +1686,7 @@ impl Mode {
                 }
                 // The attached job's output is followed once a second, off the UI thread.
                 self.poll_shell_tail();
+                self.tick_detached();
                 for block in self.transcript.pending_tools.values() {
                     if block.borrow().is_ticking() {
                         block.borrow_mut().invalidate();

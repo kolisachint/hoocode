@@ -90,6 +90,7 @@ fn source_str(source: TaskSource) -> &'static str {
         TaskSource::Mcp => "mcp",
         TaskSource::Schedule => "schedule",
         TaskSource::Shell => "shell",
+        TaskSource::Detached => "detached",
     }
 }
 

@@ -45,7 +45,7 @@
       "role": "blocking",
       "meaning": "The title and chip of a permission or question dialog, the only yellow on screen.",
       "tokens": ["warning", "chipWarn", "warn"],
-      "use_for": ["the permission or question title chip (chipWarn)", "the bold title of a blocking dialog"],
+      "use_for": ["the permission or question title chip (chipWarn)", "the bold title of a blocking dialog", "the `○` mark and status of a detached session parked on a call (it waits for the user)"],
       "never_for": ["running jobs", "non-blocking warnings and notices", "markdown headings", "the selected row"],
       "dark": "#f0c674",
       "light": "#785000"

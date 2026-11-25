@@ -47,6 +47,8 @@ pub enum TaskSource {
     Schedule,
     /// A background shell job (`Shell` with `run_in_background`).
     Shell,
+    /// A detached session `SessionSpawn` started (SA-12): running, parked, done or failed.
+    Detached,
 }
 
 /// An action a row offers the panel (Enter or `x` on the row). The producer
@@ -164,7 +166,8 @@ pub struct Task {
     /// The action the panel can offer on this row, if any.
     pub action: Option<RowAction>,
     /// The file a row's output is written to (a shell job's log), so a view
-    /// can read it without asking the producer.
+    /// can read it without asking the producer. A detached session row keeps its
+    /// session file here, which its detail names.
     pub log_path: Option<PathBuf>,
 }
 
@@ -242,6 +245,8 @@ pub enum TaskKind {
     Schedule,
     /// A background shell job: running, exited or killed.
     Shell,
+    /// A detached session this process spawned: its file, its state.
+    Detached,
 }
 
 impl Task {
@@ -263,6 +268,7 @@ impl Task {
             Some(TaskSource::Mcp) => TaskKind::Mcp,
             Some(TaskSource::Schedule) => TaskKind::Schedule,
             Some(TaskSource::Shell) => TaskKind::Shell,
+            Some(TaskSource::Detached) => TaskKind::Detached,
             None => TaskKind::Plan,
         }
     }

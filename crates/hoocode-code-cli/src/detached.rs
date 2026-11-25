@@ -17,7 +17,7 @@ use hoocode_code_permissions::{ParkHandler, ParkRequest};
 use hoocode_code_session::detached::{DETACHED_EXIT_ENTRY, PARKED_CALL_ENTRY};
 use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
 pub use hoocode_code_subagents::detached_child::{
-    child_command, log_path_for, spawn_detached, DETACHED_ENV,
+    child_command, log_path_for, record_spawn, spawn_detached, DETACHED_ENV,
 };
 use hoocode_code_tool_api::{ToolContext, ToolDefinition, ToolError, ToolOrigin};
 use serde_json::{json, Value};
@@ -457,6 +457,7 @@ fn run_session_spawn(
     let _ = hoocode_runtime::spawn_named_thread("hoocode-detached-reaper", move || {
         let _ = child.wait();
     });
+    record_spawn(session.clone(), goal.clone());
 
     let text = format!(
         "Started a detached session: {goal}\n\nOpen it with:\n\n```\nhoocode --session {}\n```\n\nStatus: running. It works on its own and returns nothing here. Stop working on this task.",

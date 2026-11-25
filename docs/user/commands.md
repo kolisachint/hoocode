@@ -54,6 +54,17 @@ Built-in tools: **Read**, **Shell**, **Edit**, **Write** and **CodeSearch**.
 
 ## Detached sessions
 
+The model can hand work to a fresh session with `SessionSpawn`. Before it starts,
+you see the brief (Goal, Decisions, Dead ends, Next step) in the approval card, and
+what will run unattended: the tools your `auto_allow` setting approves without asking.
+The new session runs on its own in this folder and outlives hoocode. It returns
+nothing to the session that started it. The task panel's **Detached** tab lists each
+one as `detached  <goal>  <status>`, with status `running`, `parked`, `done` or
+`failed: <reason>`. A call that needs approval parks the run until you open it with
+`hoocode --session <path>` (the path is on its row) and answer yes, no, or approve
+and detach (`d`). A run stops itself after 200 turns or 4 hours. A detached session
+cannot start another one.
+
 A background run can keep writing its session while you are away. Open that
 session with `hoocode --session <path>`, the command the run shows (`--resume`
 and `--continue` open it too when they pick it). It opens read-only:

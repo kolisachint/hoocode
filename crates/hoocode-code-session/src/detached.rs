@@ -21,7 +21,8 @@ pub const DETACHED_EXIT_ENTRY: &str = "detached_exit";
 pub const PARKED_CALL_ENTRY: &str = "parked_call";
 
 /// Reason shown when a file has no `detached_exit` record and no process holds it.
-const CRASHED_REASON: &str = "exited without a result (crashed or killed)";
+/// The reason of a file that has no `detached_exit` record and no process holds it.
+pub const CRASHED_REASON: &str = "exited without a result (crashed or killed)";
 
 /// Where a detached session stands.
 #[derive(Debug, Clone, PartialEq, Eq)]

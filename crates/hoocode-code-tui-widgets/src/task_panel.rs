@@ -83,16 +83,19 @@ pub enum TaskPanelView {
     Schedule,
     /// MCP calls and servers.
     Mcp,
+    /// Detached sessions this process spawned (SA-12): running, parked, done or failed.
+    Detached,
 }
 
 impl TaskPanelView {
-    /// Every tab, in tab order (Plan · Agents · Shell · Schedule · MCP).
-    pub const ALL: [TaskPanelView; 5] = [
+    /// Every tab, in tab order (Plan · Agents · Shell · Schedule · MCP · Detached).
+    pub const ALL: [TaskPanelView; 6] = [
         Self::Plan,
         Self::Subagents,
         Self::Shell,
         Self::Schedule,
         Self::Mcp,
+        Self::Detached,
     ];
 
     /// The kind of task this tab lists.
@@ -103,6 +106,7 @@ impl TaskPanelView {
             Self::Shell => TaskKind::Shell,
             Self::Schedule => TaskKind::Schedule,
             Self::Mcp => TaskKind::Mcp,
+            Self::Detached => TaskKind::Detached,
         }
     }
 
@@ -114,6 +118,7 @@ impl TaskPanelView {
             Self::Shell => "Shell",
             Self::Schedule => "Schedule",
             Self::Mcp => "MCP",
+            Self::Detached => "Detached",
         }
     }
 }
@@ -331,9 +336,10 @@ fn lens_rows(view: TaskPanelView, tasks: &[Task]) -> Vec<PanelRow> {
     match view {
         TaskPanelView::Plan => plan_lens_rows(tasks),
         TaskPanelView::Subagents => subagent_lens_rows(tasks),
-        TaskPanelView::Shell | TaskPanelView::Schedule | TaskPanelView::Mcp => {
-            flat_lens_rows(tasks, view.kind())
-        }
+        TaskPanelView::Shell
+        | TaskPanelView::Schedule
+        | TaskPanelView::Mcp
+        | TaskPanelView::Detached => flat_lens_rows(tasks, view.kind()),
     }
 }
 
@@ -600,6 +606,20 @@ fn flight_detail(
         };
         return Some((vec![format!("press x again to {word}")], pal.dim()));
     }
+    if task.kind() == TaskKind::Detached {
+        // The status word, then the command that opens the session. Facts drop
+        // last-first when narrow, so the status stays and the command goes first.
+        let style = if task.status == TaskStatus::Pending {
+            pal.warn()
+        } else {
+            pal.dim()
+        };
+        let mut facts = vec![task.note.clone().unwrap_or_default()];
+        if let Some(path) = &task.log_path {
+            facts.push(format!("hoocode --session {}", path.display()));
+        }
+        return Some((facts, style));
+    }
     if let Some(note) = &task.note {
         // A schedule row's failed run still says when the job fires next.
         let next = schedule_next_in(task, now)
@@ -742,29 +762,32 @@ fn flight_row(
     scoped_aliases: &[(String, Option<String>)],
 ) -> Line<'static> {
     let pal = Palette::current();
+    // A parked detached session waits on the user: its mark is the one yellow.
+    let mark_style = if task.kind() == TaskKind::Detached && task.status == TaskStatus::Pending {
+        pal.warn()
+    } else {
+        flight_status_style(task.status)
+    };
     let mut spans = vec![
-        Span::styled(
-            task_status_icon(task.status),
-            flight_status_style(task.status),
-        ),
+        Span::styled(task_status_icon(task.status), mark_style),
         Span::raw(" "),
     ];
     if !tree_prefix.is_empty() {
         spans.push(Span::styled(tree_prefix.to_string(), pal.faint()));
     }
-    let is_mcp = task.kind() == TaskKind::Mcp;
-    // An agent or MCP row names its type first, lowercased, then two spaces:
-    // `explore  Trace the auth flow`.
-    let tag = if is_mcp {
-        Some((
+    // An agent, MCP or detached row names its type first, lowercased, then two
+    // spaces: `explore  Trace the auth flow`, `detached  Fix the parser`.
+    let tag = match task.kind() {
+        // The server label is ink: MCP has no colour role of its own.
+        TaskKind::Mcp => Some((
             task.subagent_mode.as_deref().unwrap_or("mcp").to_string(),
-            // The server label is ink: MCP has no colour role of its own.
             pal.ink(),
-        ))
-    } else {
-        task.subagent_mode
+        )),
+        TaskKind::Detached => Some(("detached".to_string(), pal.ink())),
+        _ => task
+            .subagent_mode
             .as_ref()
-            .map(|mode| (mode.to_lowercase(), pal.style(agent_color_for(mode))))
+            .map(|mode| (mode.to_lowercase(), pal.style(agent_color_for(mode)))),
     };
     if let Some((tag, style)) = tag {
         spans.push(Span::styled(tag, style));
@@ -1438,6 +1461,7 @@ mod row_model_tests {
     use hoocode_code_task_store::{
         CreateTaskOptions, TaskAgentKind, TaskAgentPatch, TaskPatch, TaskSource,
     };
+    use std::path::PathBuf;
 
     fn plan(store: &TaskStore, title: &str) -> u64 {
         store.create(title, CreateTaskOptions::default()).id
@@ -1658,6 +1682,7 @@ mod row_model_tests {
                 TaskPanelView::Shell,
                 TaskPanelView::Schedule,
                 TaskPanelView::Mcp,
+                TaskPanelView::Detached,
             ]
         );
         assert_eq!(TaskPanelView::Shell.label(), "Shell");
@@ -1671,6 +1696,75 @@ mod row_model_tests {
         let mut model = RowModel::default();
         model.sync(&store);
         assert_eq!(model.views(), [TaskPanelView::Mcp]);
+    }
+
+    /// A detached row: its key, its session file as `log_path`, and its state as the
+    /// status and note the app publishes.
+    fn detached_row(store: &TaskStore, path: &str, status: TaskStatus, note: &str) -> u64 {
+        let key = format!("detached:{path}");
+        store
+            .upsert_keyed(
+                &key,
+                "Fix the parser",
+                CreateTaskOptions {
+                    source: Some(TaskSource::Detached),
+                    key: Some(key.clone()),
+                    log_path: Some(PathBuf::from(path)),
+                    ..Default::default()
+                },
+                TaskPatch {
+                    status: Some(status),
+                    note: Some(Some(note.to_string())),
+                    ..Default::default()
+                },
+            )
+            .id
+    }
+
+    fn row_text(task: &Task) -> String {
+        let line = flight_row(task, None, "", false, 80, 0, &[]);
+        line.spans.iter().map(|s| s.content.to_string()).collect()
+    }
+
+    #[test]
+    fn a_detached_session_has_its_own_tab_and_its_state_and_command() {
+        let store = TaskStore::new();
+        let parked = detached_row(&store, "/w/a.jsonl", TaskStatus::Pending, "parked");
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert_eq!(model.views(), [TaskPanelView::Detached]);
+        assert_eq!(TaskPanelView::Detached.kind(), TaskKind::Detached);
+        assert_eq!(TaskPanelView::Detached.label(), "Detached");
+        let task = model.task(parked).unwrap();
+        assert_eq!(task.kind(), TaskKind::Detached);
+        let text = row_text(task);
+        assert_eq!(
+            text,
+            "○ detached  Fix the parser  parked · hoocode --session /w/a.jsonl"
+        );
+        // Parked is the one yellow: the mark, not the status word's own colour rule.
+        let mark = flight_row(task, None, "", false, 80, 0, &[]).spans[0].style;
+        assert_eq!(mark, Palette::current().warn());
+    }
+
+    #[test]
+    fn a_detached_row_keeps_its_state_word_when_the_line_is_narrow() {
+        let store = TaskStore::new();
+        let id = detached_row(
+            &store,
+            "/work/.hoocode/sessions/a-long-session-file-name.jsonl",
+            TaskStatus::Failed,
+            "failed: turn cap of 200 reached",
+        );
+        let mut model = RowModel::default();
+        model.sync(&store);
+        let line = flight_row(model.task(id).unwrap(), None, "", false, 70, 0, &[]);
+        let text: String = line.spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(text.contains("failed: turn cap of 200 reached"), "{text}");
+        assert!(
+            !text.contains("hoocode --session"),
+            "the command goes first: {text}"
+        );
     }
 
     fn mcp_options(server: Option<&str>) -> CreateTaskOptions {

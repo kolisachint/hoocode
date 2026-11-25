@@ -7,6 +7,7 @@
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, MutexGuard};
 
 use crate::depth::SUBAGENT_DEPTH_ENV;
 use crate::lifeguard::SUBAGENT_DEADLINE_MS;
@@ -103,4 +104,114 @@ pub fn spawn_detached(command: &mut Command, log: &Path) -> std::io::Result<Chil
     command.stdout(Stdio::from(file)).stderr(Stdio::from(copy));
     hoocode_runtime::spawn_detached_session(command);
     command.spawn()
+}
+
+/// A detached session this process (or the session it is resumed in) spawned:
+/// its file, its goal line and when it was started (unix ms; 0 when it is read
+/// back from a session file, which does not record the start).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnedSession {
+    pub session: PathBuf,
+    pub goal: String,
+    pub started_at: u64,
+}
+
+/// The sessions spawned by the session the process has open. Process-wide, so the
+/// tool (on the agent's thread) and the task panel (on the UI thread) share it.
+static SPAWNED: Mutex<Vec<SpawnedSession>> = Mutex::new(Vec::new());
+
+fn spawned() -> MutexGuard<'static, Vec<SpawnedSession>> {
+    SPAWNED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Records a session `SessionSpawn` has just started.
+pub fn record_spawn(session: PathBuf, goal: String) {
+    let started_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0);
+    spawned().push(SpawnedSession {
+        session,
+        goal,
+        started_at,
+    });
+}
+
+/// The spawned sessions, in the order they were recorded.
+pub fn spawned_sessions() -> Vec<SpawnedSession> {
+    spawned().clone()
+}
+
+/// Replaces the registry with `sessions` (the sessions a newly opened session spawned).
+pub fn replace_spawned_sessions(sessions: Vec<SpawnedSession>) {
+    *spawned() = sessions;
+}
+
+/// The session a `SessionSpawn` result names, read from its text: the goal from
+/// `Started a detached session: <goal>` and the file from the line
+/// `hoocode --session <path>`. `None` when the text has no such file line.
+pub fn parse_spawn_result(text: &str) -> Option<(PathBuf, String)> {
+    let session = text
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("hoocode --session "))
+        .map(str::trim)
+        .filter(|path| !path.is_empty())?;
+    let goal = text
+        .lines()
+        .find_map(|line| line.strip_prefix("Started a detached session: "))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Some((PathBuf::from(session), goal))
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    const RESULT: &str = "Started a detached session: Fix the parser\n\nOpen it with:\n\n```\nhoocode --session /work/.hoocode/sessions/child.jsonl\n```\n\nStatus: running. It works on its own and returns nothing here. Stop working on this task.";
+
+    #[test]
+    fn the_result_text_names_the_file_and_the_goal() {
+        let (path, goal) = parse_spawn_result(RESULT).unwrap();
+        assert_eq!(path, PathBuf::from("/work/.hoocode/sessions/child.jsonl"));
+        assert_eq!(goal, "Fix the parser");
+    }
+
+    #[test]
+    fn a_text_without_the_file_line_names_no_session() {
+        assert_eq!(parse_spawn_result("Started a detached session: x"), None);
+        assert_eq!(parse_spawn_result("hoocode --session   \n"), None);
+        assert_eq!(parse_spawn_result(""), None);
+    }
+
+    #[test]
+    fn a_result_without_a_goal_line_keeps_the_file() {
+        let (path, goal) = parse_spawn_result("hoocode --session /tmp/a.jsonl").unwrap();
+        assert_eq!(path, PathBuf::from("/tmp/a.jsonl"));
+        assert_eq!(goal, "");
+    }
+
+    #[test]
+    fn the_registry_records_replaces_and_lists_in_order() {
+        replace_spawned_sessions(Vec::new());
+        record_spawn(PathBuf::from("/a.jsonl"), "first".into());
+        record_spawn(PathBuf::from("/b.jsonl"), "second".into());
+        let listed = spawned_sessions();
+        assert_eq!(
+            listed.iter().map(|s| s.goal.as_str()).collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        assert!(listed[0].started_at > 0);
+        replace_spawned_sessions(vec![SpawnedSession {
+            session: PathBuf::from("/c.jsonl"),
+            goal: "restored".into(),
+            started_at: 0,
+        }]);
+        let restored = spawned_sessions();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].session, PathBuf::from("/c.jsonl"));
+        replace_spawned_sessions(Vec::new());
+    }
 }

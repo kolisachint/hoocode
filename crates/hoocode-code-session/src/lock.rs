@@ -10,6 +10,10 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+/// Tries after the first, and the wait between them: about 100 ms in all.
+const ACQUIRE_RETRIES: u32 = 5;
+const ACQUIRE_RETRY_GAP: std::time::Duration = std::time::Duration::from_millis(20);
+
 /// The sidecar lock file for `session_path`.
 pub fn lock_path_for(session_path: &Path) -> PathBuf {
     let mut name = session_path.as_os_str().to_owned();
@@ -94,14 +98,23 @@ impl SessionLock {
             .truncate(false)
             .open(&path)
             .map_err(io_error)?;
-        match file.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                return Err(SessionLockError::Held {
-                    pid: read_pid(&mut file),
-                });
+        // `lock_holder` probes by taking the lock for a moment (the parent's status poll does
+        // so every second), so a held lock is tried a few times before it counts as held.
+        let mut tries = 0;
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(TryLockError::WouldBlock) if tries < ACQUIRE_RETRIES => {
+                    tries += 1;
+                    std::thread::sleep(ACQUIRE_RETRY_GAP);
+                }
+                Err(TryLockError::WouldBlock) => {
+                    return Err(SessionLockError::Held {
+                        pid: read_pid(&mut file),
+                    });
+                }
+                Err(TryLockError::Error(e)) => return Err(io_error(e)),
             }
-            Err(TryLockError::Error(e)) => return Err(io_error(e)),
         }
         file.set_len(0).map_err(io_error)?;
         file.seek(SeekFrom::Start(0)).map_err(io_error)?;

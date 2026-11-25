@@ -1,6 +1,6 @@
 # Subagents
 
-Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-12.
+Status (2026-11-19): built. Each subagent is a child process. Runs are background by default. Writers work in git worktrees and commit but never push. Tool lists take selectors (2026-11-19, plugins.md PL-17). Built in P2 for `--tools` and agent lists. Built in P2b: a malformed agent entry rejects the definition, and clearance requests carry the tool's origin. Open items are SA-1 to SA-11. Detached sessions (SA-12) phase 1 built 2026-11-25.
 
 Doc map: [README.md](README.md) · [roadmap.md](roadmap.md) · [runtime.md](runtime.md) (caps, lanes, reliability) · [agent.md](agent.md) (loop, tools, models) · [tui.md](tui.md) (task panel, `/agents`).
 
@@ -208,7 +208,7 @@ The mock tests mechanics only. It does not show that a real model follows the br
 
 ### Detached sessions (SA-12)
 
-Designed 2026-11-25. Not built. Phase 1 below.
+Designed and built (phase 1) 2026-11-25. Eval: `scripts/eval/detached_evals.py`, 9/9 on 2026-11-25.
 
 Purpose: hand work to a fresh session with its own context. Compaction keeps a tail and summarises summaries; a fresh session starts from a brief only.
 
@@ -280,6 +280,9 @@ Decided 2026-11-25 (Decisions): the parked-call entry format, the follow view, `
 | 2026-11-25 | SA-12 park scope: only the detached run's own calls park (`ApprovalChannel::Detached`, `Verdict::Park`; exit code 3). A gated call from one of its subagents is denied with a reason, not parked: parking would exit the process under running subagents. Deny rules still deny; `auto_allow` still runs. |
 | 2026-11-25 | Detached sessions (SA-12): a model-callable, user-approved `SessionSpawn` starts a tier-1 session in its own process (`hoocode -p`, `setsid`) in the parent's cwd. No result to the parent; the parent shows `hoocode --session <path>`. Gated calls outside `auto_allow` park, not deny; opening the session answers them. Session lock, per-entry flush, self-enforced budget, depth 1. No worktree: isolation stays by instruction. Phase 2 (live interaction via an app-server client in the TUI) waits for need. See Detached sessions. |
 | 2026-11-25 | SA-12 resume: an open parked call shows the clearance card with yes, approve and detach (`d`, `app.permission.detach`), no. No "always" row: grants are config `auto_allow` only. A target changed since parking is answered "not run" with no card. Approve and detach opens a new empty session to drop the lock, then restarts the child (`child_command_continue`, in `code-subagents` `detached_child.rs` so the TUI can reach it). The approved call runs without the loop's `before_tool_call` hooks. |
+| 2026-11-25 | SA-12 parent status: a Detached tab in the task panel, one row per session this session spawned (rebuilt from its `SessionSpawn` results on open): running, parked, done or `failed: <reason>`, with `hoocode --session <path>` in the detail. Polled each 1 s while not done or failed; a running row costs a lock probe, a parked row is re-read only when its file grows or is held. Parked is yellow (it is the one row that waits on the user), so `task_panel.rs` joins the yellow guard's file list. A notice on a change to parked or failed, never for rows restored on open. A crash reading in the first 5 s after spawn stays running (the child may not hold its lock yet). |
+| 2026-11-25 | SA-12 lock probe: `lock_holder` takes the lock for an instant, so `SessionLock::acquire` retries for about 100 ms before it reports a held lock. Without that, a writer starting during the parent's 1 s probe could be refused. |
+| 2026-11-25 | SA-12 eval scope: the mock checks mechanics (the brief, Dead ends and facts reach the child; it does the next step and offers no `SessionSpawn`). It cannot show that a real model honours the brief (as SA-2). A headless (json or print) parent spawns without an approval, per its gate's default. |
 
 Dispatch dirs are pruned (newest 50, older than 24 h dropped), so they are not kept for the whole session. Recover is view or resume on request, never automatic (TUI rule, 2026-10-09).
 
@@ -300,7 +303,6 @@ Size: S about a session, M a few, L many.
 | SA-9 | Group sweep misses a nested subagent's own process group | M | A leaked process seen in a run or soak | The parent sweep covers the child's group only (H2). Reach nested groups through the descendant walk |
 | SA-10 | Re-parented grandchildren (double-forked before cancel) are not found | M | Only if the policy on re-parented jobs changes | Accepted gap today. Options if needed: subreaper or cgroup. Do not build without a policy change |
 | SA-11 | `maxOutputTokens` read only by Anthropic | S | A subagent truncates on a non-Anthropic model | OpenAI, Responses, Google and Gemini CLI cap at min(model max, 32000). Pass the setting through |
-| SA-12 | Detached sessions, phase 1 | L | User picked for the next session (2026-11-25) | See Detached sessions. Done = the eval list there passes. |
 
 ## Not doing
 
