@@ -12,7 +12,7 @@ use hoocode_code_agent_session::{
     parse_name_reply, pick_naming_model, AutoNameMode, PromptOptions,
 };
 use hoocode_code_models::ResolvedScoped;
-use hoocode_code_session::{FileEntry, NameSource};
+use hoocode_code_session::{FileEntry, NameSource, SessionManager};
 
 fn text(t: &str) -> FauxResponseStep {
     faux_assistant_message(t, Default::default()).into()
@@ -30,11 +30,19 @@ fn failing() -> FauxResponseStep {
     .into()
 }
 
-fn headless() -> HarnessOptions {
+/// A naming session in `mode` that persists to a session file in the temp dir.
+fn persisted(mode: AutoNameMode) -> HarnessOptions {
     HarnessOptions {
-        auto_name: Some(AutoNameMode::Headless),
+        auto_name: Some(mode),
+        session_manager: Some(Box::new(|dir: &std::path::Path| {
+            SessionManager::create(dir.to_string_lossy(), Some(dir.join("sessions")))
+        })),
         ..Default::default()
     }
+}
+
+fn headless() -> HarnessOptions {
+    persisted(AutoNameMode::Headless)
 }
 
 /// The `source` of every entry that defines a name, oldest first.
@@ -126,10 +134,7 @@ async fn keep_writes_nothing_and_a_new_name_is_stored_as_auto() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_interactive_session_names_after_its_first_run_only() {
-    let h = Harness::new(HarnessOptions {
-        auto_name: Some(AutoNameMode::Interactive),
-        ..Default::default()
-    });
+    let h = Harness::new(persisted(AutoNameMode::Interactive));
     h.set_responses(vec![
         text("one"),
         text("First name"),
@@ -212,4 +217,25 @@ fn caps_long_names_on_a_char_boundary() {
     let long = "é".repeat(70);
     let name = parse_name_reply(&long, None).unwrap();
     assert_eq!(name.chars().count(), 60);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_in_memory_session_makes_no_naming_call() {
+    // `--no-session`: nothing is persisted, so the name could not be kept. No model call.
+    let h = Harness::new(HarnessOptions {
+        auto_name: Some(AutoNameMode::Headless),
+        ..Default::default()
+    });
+    h.set_responses(vec![text("one"), text("Should not be used")]);
+    h.session
+        .prompt("one", PromptOptions::default())
+        .await
+        .unwrap();
+    let pending = h.pending_response_count();
+
+    h.session.auto_name_now().await;
+
+    assert_eq!(h.pending_response_count(), pending, "a model call was made");
+    assert!(name_sources(&h).is_empty());
+    assert_eq!(h.session.session_name(), None);
 }

@@ -184,7 +184,7 @@ fn read_run(
     let description = record_descriptions(parent)
         .remove(run_id)
         .unwrap_or_else(|| describe(&first_message));
-    let messages = SessionManager::open(path, None, None)
+    let messages = SessionManager::open_read_only(path, None, None)
         .build_context()
         .messages;
     Ok(LoadedRun {

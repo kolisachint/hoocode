@@ -32,6 +32,15 @@ fn target_changed_text(path: &Path) -> String {
     )
 }
 
+/// [`target_changed_text`] for a call, whatever its target (a call with no target is never
+/// reported as changed by the file check, but a caller may still record it as not run).
+fn changed_text_for(call: &ParkedCall) -> String {
+    match &call.target {
+        Some((path, _)) => target_changed_text(path),
+        None => "Not run: the call's target changed after this call was parked. Read it again before deciding what to do.".to_string(),
+    }
+}
+
 /// A call a detached run parked and no result answers yet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParkedCall {
@@ -51,6 +60,9 @@ pub struct ParkedCall {
 pub enum ParkedDecision {
     Approve,
     Deny,
+    /// The target changed since the call was parked, so the call is recorded as not run and
+    /// never runs: even if the file is back to its parked content by now.
+    NotRunTargetChanged,
 }
 
 /// How a parked call was answered.
@@ -181,53 +193,60 @@ impl AgentSession {
     /// Answers `call` by `decision` and the other open calls of its message with
     /// `Not run`, then flushes the session file. The target is checked again right before
     /// the call runs: a changed file gives [`ParkedOutcome::TargetChanged`] and nothing runs.
-    /// `call` comes from [`AgentSession::open_parked_call`].
+    /// [`ParkedDecision::NotRunTargetChanged`] records that outcome without checking the file
+    /// and never runs the tool. `call` comes from [`AgentSession::open_parked_call`].
     pub async fn resolve_parked_call(
         &self,
         call: &ParkedCall,
         decision: ParkedDecision,
     ) -> ParkedOutcome {
-        let outcome = match call
-            .target
-            .as_ref()
-            .filter(|_| self.parked_call_target_changed(call))
-        {
-            Some((path, _)) => {
+        let changed_now = self.parked_call_target_changed(call);
+        let outcome = match decision {
+            ParkedDecision::NotRunTargetChanged => {
                 self.record_result(
                     &call.tool_call_id,
                     &call.tool_name,
                     &call.input,
-                    vec![Content::text(target_changed_text(path))],
+                    vec![Content::text(changed_text_for(call))],
                     None,
                     true,
                 );
                 ParkedOutcome::TargetChanged
             }
-            None => match decision {
-                ParkedDecision::Approve => {
-                    let (content, details, is_error) = self.run_parked_tool(call).await;
-                    self.record_result(
-                        &call.tool_call_id,
-                        &call.tool_name,
-                        &call.input,
-                        content,
-                        details,
-                        is_error,
-                    );
-                    ParkedOutcome::Ran
-                }
-                ParkedDecision::Deny => {
-                    self.record_result(
-                        &call.tool_call_id,
-                        &call.tool_name,
-                        &call.input,
-                        vec![Content::text(DENIED_TEXT)],
-                        None,
-                        true,
-                    );
-                    ParkedOutcome::Denied
-                }
-            },
+            _ if changed_now => {
+                self.record_result(
+                    &call.tool_call_id,
+                    &call.tool_name,
+                    &call.input,
+                    vec![Content::text(changed_text_for(call))],
+                    None,
+                    true,
+                );
+                ParkedOutcome::TargetChanged
+            }
+            ParkedDecision::Approve => {
+                let (content, details, is_error) = self.run_parked_tool(call).await;
+                self.record_result(
+                    &call.tool_call_id,
+                    &call.tool_name,
+                    &call.input,
+                    content,
+                    details,
+                    is_error,
+                );
+                ParkedOutcome::Ran
+            }
+            ParkedDecision::Deny => {
+                self.record_result(
+                    &call.tool_call_id,
+                    &call.tool_name,
+                    &call.input,
+                    vec![Content::text(DENIED_TEXT)],
+                    None,
+                    true,
+                );
+                ParkedOutcome::Denied
+            }
         };
         self.answer_open_calls(NOT_RUN_TEXT);
         let _ = self.session_manager().flush(SESSION_FLUSH_DEADLINE);

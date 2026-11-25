@@ -847,3 +847,47 @@ async fn should_fork_from_middle_of_conversation() {
     assert_eq!(roles, ["user", "assistant"]);
     t.finish().await;
 }
+
+/// Forking to an earlier entry leaves the new runtime's session writable: a
+/// message appended after the fork reaches the forked file on disk.
+#[tokio::test(flavor = "multi_thread")]
+async fn writes_after_a_fork_reach_the_forked_file() {
+    let mut t = create_runtime(Options::default()).await;
+    t.prompt("Say one").await;
+    t.prompt("Say two").await;
+    let user_messages = t.runtime.session().get_user_messages_for_forking();
+    let result = t
+        .runtime
+        .fork(&user_messages[1].entry_id, ForkPosition::Before)
+        .await
+        .unwrap();
+    assert!(!result.cancelled);
+    let forked = t.session_file().unwrap();
+    assert!(!t.runtime.session().session_manager().is_read_only());
+
+    t.prompt("Say three").await;
+    t.runtime
+        .session()
+        .session_manager()
+        .flush(hoocode_code_session::SESSION_FLUSH_DEADLINE)
+        .unwrap();
+    let text = std::fs::read_to_string(&forked).unwrap();
+    assert!(text.contains("Say three"), "forked file: {text}");
+    t.finish().await;
+}
+
+/// Resuming the file the session already has open is a no-op: the same
+/// session stays, and nothing is shut down or reopened.
+#[tokio::test(flavor = "multi_thread")]
+async fn resuming_the_current_session_file_is_a_no_op() {
+    let mut t = create_runtime(Options::default()).await;
+    t.prompt("hello").await;
+    let file = PathBuf::from(t.session_file().unwrap());
+    let id = t.runtime.session().session_id();
+
+    let result = t.runtime.switch_session(&file, None).await.unwrap();
+    assert!(!result.cancelled);
+    assert_eq!(t.runtime.session().session_id(), id);
+    assert_eq!(t.session_file().map(PathBuf::from), Some(file));
+    t.finish().await;
+}

@@ -157,3 +157,72 @@ fn a_session_never_written_leaves_no_lock_file() {
     assert!(lock_path_for(&written).exists());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn an_unlockable_session_still_writes_and_reports_the_error() {
+    let dir = temp_dir("unlockable");
+    let file = dir.join("a.jsonl");
+    // A directory where the lock file goes: the lock cannot be taken (an I/O error).
+    std::fs::create_dir_all(lock_path_for(&file)).expect("blocking directory");
+
+    let mut manager = SessionManager::open(file.clone(), Some(dir.clone()), None);
+    assert!(manager.lock_error().is_some(), "the lock error is reported");
+    assert_eq!(manager.lock_held_by(), None, "no other process holds it");
+    manager.set_flush_each_entry(true);
+    manager.append_message(user("written without the lock"));
+
+    let text = std::fs::read_to_string(&file).expect("the session was written");
+    assert!(text.contains("written without the lock"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_locked_session_reports_no_lock_error() {
+    let dir = temp_dir("lock-ok");
+    let mut manager = SessionManager::create("/w", Some(dir.clone()));
+    manager.append_message(user("hello"));
+    assert_eq!(manager.lock_error(), None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn open_read_only_takes_no_lock_and_never_writes() {
+    let dir = temp_dir("reader");
+    let mut owner = SessionManager::create("/w", Some(dir.clone()));
+    owner.set_flush_each_entry(true);
+    owner.append_message(user("first"));
+    let file = owner.session_file().expect("file").to_path_buf();
+    drop(owner);
+
+    // Another process holds the lock: a reader still loads the session.
+    let held = SessionLock::acquire(&file).expect("lock");
+    let mut reader = SessionManager::open_read_only(file.clone(), Some(dir.clone()), None);
+    assert_eq!(
+        reader.lock_held_by(),
+        None,
+        "a reader does not report a holder"
+    );
+    assert_eq!(reader.build_context().messages.len(), 1);
+    let before = std::fs::read(&file).expect("bytes");
+    reader.append_message(user("second"));
+    reader.flush(SESSION_FLUSH_DEADLINE).expect("flushed");
+    assert_eq!(std::fs::read(&file).expect("bytes"), before);
+
+    // The reader took no lock: once the holder lets go, a writer gets it.
+    drop(held);
+    let writer = SessionManager::open(&file, Some(dir.clone()), None);
+    assert_eq!(writer.lock_held_by(), None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn open_read_only_of_a_missing_file_writes_nothing() {
+    let dir = temp_dir("reader-missing");
+    let file = dir.join("none.jsonl");
+    let mut reader = SessionManager::open_read_only(file.clone(), Some(dir.clone()), None);
+    reader.append_message(user("never"));
+    reader.flush(SESSION_FLUSH_DEADLINE).expect("flushed");
+    assert!(!file.exists());
+    assert!(!lock_path_for(&file).exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -200,16 +200,11 @@ impl Mode {
     }
 
     /// Re-reads the file and re-renders it through the resume path
-    /// (`render_current_session_state`). The new manager keeps the lock's read-only state.
+    /// (`render_current_session_state`). The holder keeps writing the file, so
+    /// the new manager reads it without the lock and never writes.
     fn follow_refresh(&mut self, path: &Path, len: u64) {
         let session_dir = self.session.session_manager().session_dir().to_path_buf();
-        let manager = SessionManager::open(path, Some(session_dir), None);
-        if manager.lock_held_by().is_none() {
-            // The holder ended between the two checks: this manager took the lock.
-            drop(manager);
-            self.follow_leave();
-            return;
-        }
+        let manager = SessionManager::open_read_only(path, Some(session_dir), None);
         let messages = manager.build_context().messages;
         *self.session.session_manager() = manager;
         self.session.agent().set_messages(messages);

@@ -186,6 +186,30 @@ async fn a_changed_target_is_not_run_and_the_model_is_told() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn not_run_target_changed_never_runs_even_when_the_file_is_back() {
+    let (h, ran, path) = parked_harness(Some("one"));
+    let call = h.session.open_parked_call().unwrap();
+    // Changed, then restored to the parked content: the hash matches again.
+    std::fs::write(&path, "two").unwrap();
+    assert!(h.session.parked_call_target_changed(&call));
+    std::fs::write(&path, "one").unwrap();
+    assert!(!h.session.parked_call_target_changed(&call));
+
+    let outcome = h
+        .session
+        .resolve_parked_call(&call, ParkedDecision::NotRunTargetChanged)
+        .await;
+
+    assert_eq!(outcome, ParkedOutcome::TargetChanged);
+    assert!(!ran.load(Ordering::SeqCst), "the tool must not run");
+    let results = persisted_results(&h);
+    assert_eq!(results[0].0, "a");
+    assert!(results[0].1.starts_with("Not run: "), "{results:?}");
+    assert!(results[0].2);
+    assert!(h.session.open_parked_call().is_none(), "answered now");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_file_that_appeared_after_parking_counts_as_changed() {
     let (h, _, path) = parked_harness(None);
     let call = h.session.open_parked_call().unwrap();

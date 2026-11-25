@@ -106,6 +106,11 @@ impl ClearanceCard {
         if self.info.mode.trim().eq_ignore_ascii_case("plan") {
             return None;
         }
+        // A SessionSpawn brief is never saved to auto_allow: later briefs would spawn unshown.
+        // `auto_allow` in config still works. (The name is `SESSION_SPAWN_TOOL` in the CLI.)
+        if self.info.tool == "SessionSpawn" {
+            return None;
+        }
         if self.info.tool == "Shell" {
             let command = self.info.detail.trim_start_matches("$ ").trim_start();
             let program = shell_program(command)?;

@@ -166,9 +166,13 @@ fn conversation_excerpt(messages: &[AgentMessage]) -> Option<String> {
 impl AgentSession {
     /// One naming pass: asks the naming model for a name and records it. A
     /// no-op when the mode is `Off`, a call is already in flight, or the
-    /// user named the session. Failures change nothing and report nothing.
+    /// user named the session. Failures change nothing and report nothing. A session that
+    /// does not persist (`--no-session`, in memory) has nowhere to keep a name: no call is made.
     pub async fn auto_name_now(&self) {
         if self.auto_name_state().mode == AutoNameMode::Off {
+            return;
+        }
+        if !self.session_manager().is_persisted() {
             return;
         }
         if !self.auto_name_state().begin() {

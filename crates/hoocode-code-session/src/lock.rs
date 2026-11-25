@@ -4,7 +4,10 @@
 //! `.lock` appended to its full name (`a.jsonl` → `a.jsonl.lock`). The lock is
 //! an advisory `flock` held by the open file descriptor, so the OS drops it
 //! when the process dies and a crash leaves no stale lock. The lock file is
-//! never deleted: removing it would race with a new opener.
+//! kept, except when a lock is dropped while its session file does not exist
+//! (a session that was never written): then it is removed while the lock is
+//! still held. Only such a never-written session (a random id, no other
+//! opener) is affected.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Read, Seek, SeekFrom, Write};

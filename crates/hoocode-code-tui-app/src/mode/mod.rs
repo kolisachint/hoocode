@@ -1382,6 +1382,7 @@ impl Mode {
         };
         self.render_resources();
         self.show_startup_notices(changelog);
+        self.show_session_lock_warning();
         self.show_keymap_startup_notes();
         // Messages after the resource listing, as the pin orders them.
         self.render_initial_messages();

@@ -200,3 +200,61 @@ fn a_missing_file_crashed() {
         }
     );
 }
+
+#[test]
+fn a_parked_exit_record_before_the_answer_is_stale() {
+    // The run parked, wrote its "parked" exit, was answered, and then died
+    // without a new exit record: it crashed, the old record does not count.
+    let status = status_of(
+        "stale-park-exit",
+        &[
+            parked_entry("p1", "c1"),
+            exit_entry(
+                "e1",
+                r#"{"status":"parked","reason":"Shell needs approval"}"#,
+            ),
+            tool_result_entry("t1", "c1"),
+        ],
+    );
+    assert_eq!(
+        status,
+        DetachedStatus::Failed {
+            reason: "exited without a result (crashed or killed)".into()
+        }
+    );
+}
+
+#[test]
+fn a_done_exit_after_the_answer_reads_done_despite_a_stale_park_exit() {
+    let status = status_of(
+        "stale-then-done",
+        &[
+            parked_entry("p1", "c1"),
+            exit_entry(
+                "e1",
+                r#"{"status":"parked","reason":"Shell needs approval"}"#,
+            ),
+            tool_result_entry("t1", "c1"),
+            exit_entry("e2", r#"{"status":"done","reason":null}"#),
+        ],
+    );
+    assert_eq!(status, DetachedStatus::Done);
+}
+
+#[test]
+fn a_failed_exit_after_the_answer_reads_its_reason() {
+    let status = status_of(
+        "stale-then-failed",
+        &[
+            parked_entry("p1", "c1"),
+            tool_result_entry("t1", "c1"),
+            exit_entry("e1", r#"{"status":"failed","reason":"disk full"}"#),
+        ],
+    );
+    assert_eq!(
+        status,
+        DetachedStatus::Failed {
+            reason: "disk full".into()
+        }
+    );
+}

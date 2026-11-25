@@ -36,6 +36,9 @@ pub(super) enum ParkedChoice {
     Deny,
     /// Run the call once, then continue the run in a detached process.
     ApproveAndDetach,
+    /// The target changed since the call was parked: record it as not run. Never runs it,
+    /// even when the file is back to its parked content by the time this is answered.
+    NotRunTargetChanged,
 }
 
 /// A run handed to a detached process.
@@ -68,7 +71,7 @@ impl Mode {
             return;
         };
         if self.session.parked_call_target_changed(&call) {
-            self.start_parked_op(call, ParkedChoice::Approve);
+            self.start_parked_op(call, ParkedChoice::NotRunTargetChanged);
             return;
         }
         self.open_parked_card(call);
@@ -237,6 +240,7 @@ async fn resolve_parked_call(
     let decision = match choice {
         ParkedChoice::Deny => ParkedDecision::Deny,
         ParkedChoice::Approve | ParkedChoice::ApproveAndDetach => ParkedDecision::Approve,
+        ParkedChoice::NotRunTargetChanged => ParkedDecision::NotRunTargetChanged,
     };
     let outcome = session.resolve_parked_call(call, decision).await;
     let changed = match outcome {

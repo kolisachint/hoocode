@@ -67,6 +67,13 @@ pub enum PermissionDecision {
 pub trait PermissionGate: Send + Sync {
     /// Return the permission decision for `tool_call`.
     fn request(&self, tool_call: &AgentToolCall) -> PermissionDecision;
+
+    /// The decision for a request a running tool makes for itself (a plugin's network
+    /// request), not the agent loop's per-call check. Such a request never parks a detached
+    /// run: a gate that can park overrides this to deny instead. Defaults to [`request`](Self::request).
+    fn request_in_tool(&self, tool_call: &AgentToolCall) -> PermissionDecision {
+        self.request(tool_call)
+    }
 }
 
 /// A finished background tool result.

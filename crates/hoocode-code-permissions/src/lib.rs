@@ -608,8 +608,12 @@ impl HeadlessClearanceRelay {
 impl ClearanceRelay for HeadlessClearanceRelay {
     fn ask(&self, request: &RelayRequest) -> Option<String> {
         // A subagent's call cannot park the run: it has no id, and no one would answer.
-        self.gate
-            .decide(None, &request.tool, &request.origin, &request.input)
+        self.gate.decide(
+            ParkSource::Subagent,
+            &request.tool,
+            &request.origin,
+            &request.input,
+        )
     }
 }
 
@@ -1039,6 +1043,18 @@ pub type ParkHandler = Arc<dyn Fn(ParkRequest) + Send + Sync>;
 /// The reason a subagent's call gets in a detached run: its clearance cannot wait for a user.
 pub const DETACHED_SUBAGENT_PARK_REASON: &str = "A detached session cannot ask the user for a subagent's call. Add the tool to auto_allow, or run it in the parent.";
 
+/// Where a call that needs approval came from. Only the agent loop's per-call check may park a
+/// detached run: it has a call id the session can record and resume on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParkSource<'a> {
+    /// The agent loop's per-call check, with the call's id.
+    Loop(&'a str),
+    /// A subagent's clearance relay: it has no id and no one to answer.
+    Subagent,
+    /// A request a running tool makes for itself (a plugin's network request).
+    InTool,
+}
+
 /// The hoocode `tool_call` handler up to the prompt, over a merged config. `origin` says where
 /// the tool comes from; the built-in rules (Shell's command patterns, the write paths) apply to
 /// the built-in tool of that name only.
@@ -1318,14 +1334,14 @@ impl HooPermissionGate {
         input: &Value,
     ) -> Option<String> {
         // No call id here: a call that parks in a detached run is reported with an empty id.
-        self.decide(Some(""), tool_name, origin, input)
+        self.decide(ParkSource::Loop(""), tool_name, origin, input)
     }
 
-    /// [`check_call`](Self::check_call) for one call. `park_as` is the call's id when a
-    /// detached run may park on it; `None` means it cannot wait (a subagent's clearance).
+    /// [`check_call`](Self::check_call) for one call. `source` says where the call came from;
+    /// only [`ParkSource::Loop`] may park a detached run.
     fn decide(
         &self,
-        park_as: Option<&str>,
+        source: ParkSource<'_>,
         tool_name: &str,
         origin: &ToolOrigin,
         input: &Value,
@@ -1335,8 +1351,17 @@ impl HooPermissionGate {
             Verdict::Allow => None,
             Verdict::Block(reason) => Some(reason),
             Verdict::Park => {
-                let Some(call_id) = park_as else {
-                    return Some(DETACHED_SUBAGENT_PARK_REASON.into());
+                let call_id = match source {
+                    ParkSource::Loop(call_id) => call_id,
+                    ParkSource::Subagent => return Some(DETACHED_SUBAGENT_PARK_REASON.into()),
+                    ParkSource::InTool => {
+                        let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
+                        let detail =
+                            gate_detail(tool_name, origin, input, &self.cwd, &merged, &mode);
+                        return Some(format!(
+                            "A detached session cannot ask for {detail}. Add it to auto_allow, or run this in an interactive session."
+                        ));
+                    }
                 };
                 let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
                 let reason = format!(
@@ -1440,8 +1465,18 @@ impl HooPermissionGate {
 
 impl PermissionGate for HooPermissionGate {
     fn request(&self, tool_call: &AgentToolCall) -> PermissionDecision {
+        self.decide_call(ParkSource::Loop(&tool_call.id), tool_call)
+    }
+
+    fn request_in_tool(&self, tool_call: &AgentToolCall) -> PermissionDecision {
+        self.decide_call(ParkSource::InTool, tool_call)
+    }
+}
+
+impl HooPermissionGate {
+    fn decide_call(&self, source: ParkSource<'_>, tool_call: &AgentToolCall) -> PermissionDecision {
         match self.decide(
-            Some(&tool_call.id),
+            source,
             &tool_call.name,
             &tool_call.origin,
             &tool_call.arguments,
@@ -1600,6 +1635,45 @@ mod tests {
             ),
             Verdict::Allow
         );
+    }
+
+    #[test]
+    fn detached_in_tool_request_is_denied_and_never_parks() {
+        let dir = fresh_cwd();
+        let gate =
+            HooPermissionGate::new(dir.path().to_path_buf(), ApprovalChannel::Detached, None);
+        let parks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = parks.clone();
+        gate.set_park_handler(Arc::new(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+        // A plugin's network request, made from inside a running tool.
+        let in_tool = AgentToolCall {
+            id: "ext-net-1".into(),
+            name: "WebFetch".into(),
+            arguments: json!({"url": "https://example.com/a"}),
+            origin: ToolOrigin::BuiltIn,
+        };
+        match gate.request_in_tool(&in_tool) {
+            PermissionDecision::Deny { reason } => assert_eq!(
+                reason,
+                "A detached session cannot ask for WebFetch https://example.com/a. Add it to auto_allow, or run this in an interactive session."
+            ),
+            other => panic!("expected a denial, got {other:?}"),
+        }
+        assert_eq!(parks.load(std::sync::atomic::Ordering::SeqCst), 0);
+        // The agent loop's per-call check parks on the call's id.
+        let looped = AgentToolCall {
+            id: "call-7".into(),
+            name: "Shell".into(),
+            arguments: shell("touch parked_probe.txt"),
+            origin: ToolOrigin::BuiltIn,
+        };
+        assert!(matches!(
+            gate.request(&looped),
+            PermissionDecision::Deny { .. }
+        ));
+        assert_eq!(parks.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     /// Serializes the tier C hint tests: they share the process-wide hint map.

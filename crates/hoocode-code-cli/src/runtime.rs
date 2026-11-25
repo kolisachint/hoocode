@@ -806,6 +806,15 @@ fn initial_session_manager(args: &Args, interactive: bool) -> SessionManager {
     if std::env::var_os("HOOCODE_DETACHED").is_some() {
         session_manager.set_flush_each_entry(true);
     }
+    if let Some(error) = session_manager.lock_error() {
+        let path = session_manager
+            .session_file()
+            .unwrap_or(std::path::Path::new(""));
+        eprintln!(
+            "Could not lock {}: {error}; another process could write it too.",
+            path.display()
+        );
+    }
     // SA-12 follow view: interactive mode keeps this read-only manager and follows
     // the process that holds the session (`Mode::new`). Other modes refuse.
     if let Some(pid) = session_manager.lock_held_by().filter(|_| !interactive) {
@@ -1683,12 +1692,16 @@ fn run_print_body(
         }
     }
 
-    // RT-39: one bounded naming pass; dispose below flushes what it wrote.
+    // RT-39: one bounded naming pass; dispose below flushes what it wrote. A run with no
+    // session file (`--no-session`) has nowhere to keep a name, so it makes no call.
     // The timer must be made inside the runtime, so build it in the block.
-    async_runtime().block_on(async {
-        let _ =
-            tokio::time::timeout(std::time::Duration::from_secs(5), session.auto_name_now()).await;
-    });
+    if session.session_manager().is_persisted() {
+        async_runtime().block_on(async {
+            let _ =
+                tokio::time::timeout(std::time::Duration::from_secs(5), session.auto_name_now())
+                    .await;
+        });
+    }
     // A spawned subagent writes the audit file the parent pool verifies.
     let mut exit_code = 0;
     if let Some(task_id) = &task_id {
@@ -1982,6 +1995,10 @@ impl AppServerSessions {
         gate: Arc<dyn PermissionGate>,
     ) -> Result<AgentSession, String> {
         let manager = SessionManager::open(path, self.session_dir.clone(), None);
+        // Another process holds the file: refuse rather than hand out a read-only session.
+        if let Some(pid) = manager.lock_held_by() {
+            return Err(hoocode_code_session::session_in_use_message(pid, path));
+        }
         self.build(manager, model, gate)
     }
 

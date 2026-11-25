@@ -336,6 +336,9 @@ impl AgentSessionRuntime {
         session_path: &Path,
         cwd_override: Option<String>,
     ) -> Result<ReplaceResult, RuntimeError> {
+        if self.session.owns_session_file(session_path) {
+            return Ok(ReplaceResult::default());
+        }
         let target = session_path.to_string_lossy().into_owned();
         if self
             .emit_before_switch(SessionSwitchReason::Resume, Some(target))
@@ -518,12 +521,17 @@ impl AgentSessionRuntime {
                     manager
                 }
                 Some(leaf) => {
-                    let mut source =
-                        SessionManager::open(&current_file, Some(session_dir.clone()), None);
-                    let forked = source
-                        .create_branched_session(leaf.clone())
-                        .map_err(other)?
-                        .ok_or_else(|| other("Failed to create forked session"))?;
+                    // Branching makes `source` take the lock on the forked file. It must
+                    // let that lock go before the forked file is opened for writing,
+                    // or the new manager would find the file held by this process.
+                    let forked = {
+                        let mut source =
+                            SessionManager::open(&current_file, Some(session_dir.clone()), None);
+                        source
+                            .create_branched_session(leaf.clone())
+                            .map_err(other)?
+                            .ok_or_else(|| other("Failed to create forked session"))?
+                    };
                     SessionManager::open(forked, Some(session_dir), None)
                 }
             }

@@ -1714,7 +1714,7 @@ fn base64_encode(bytes: &[u8]) -> String {
 
 /// Messages of a saved session file.
 fn read_messages(path: &Path) -> Vec<AgentMessage> {
-    let manager = hoocode_code_session::SessionManager::open(path, None, None);
+    let manager = hoocode_code_session::SessionManager::open_read_only(path, None, None);
     manager.build_context().messages
 }
 

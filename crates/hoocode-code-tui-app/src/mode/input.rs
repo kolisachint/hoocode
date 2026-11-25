@@ -60,6 +60,8 @@ pub(super) enum Action {
     ResumeSession,
     /// The session selector closed, with the chosen file.
     SessionSelectorDone(Option<PathBuf>),
+    /// A notice to show (raised from a callback that cannot reach the app).
+    Notice(String),
     /// An interrupted subagent run was chosen to resume from the session selector.
     SubagentResume(SubagentRunRef),
     /// The options pane closed: the answers, or `None` when skipped.
@@ -1069,6 +1071,7 @@ impl Mode {
                     self.handle_resume_session(path, None);
                 }
             }
+            Action::Notice(text) => self.show_status(&text),
             Action::SubagentResume(run) => {
                 self.close_session_selector();
                 self.resume_subagent(run);

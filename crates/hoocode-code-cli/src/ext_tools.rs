@@ -348,7 +348,8 @@ impl ToolNetGate {
             arguments: serde_json::json!({ "url": url }),
             origin: ToolOrigin::BuiltIn,
         };
-        match self.gate.request(&call) {
+        // In-tool: a detached run denies it rather than parking mid-tool.
+        match self.gate.request_in_tool(&call) {
             PermissionDecision::Grant | PermissionDecision::GrantAlways => Ok(()),
             PermissionDecision::Deny { reason } => Err(reason),
         }

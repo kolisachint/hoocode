@@ -186,9 +186,14 @@ pub struct SessionManager {
     /// The pid of the process holding `session_file`, when another one does
     /// (0 when its lock file does not say). Set only when the lock is held.
     lock_held_by: Option<u32>,
-    /// Another manager owns the file, or the lock could not be taken: this
-    /// manager never writes to the file.
+    /// Another manager owns the file: this manager never writes to the file.
     read_only: bool,
+    /// Opened by [`SessionManager::open_read_only`]: never takes the lock and
+    /// never writes.
+    reader_only: bool,
+    /// The lock could not be taken for an I/O reason. The manager still writes
+    /// (as it did before locks existed); callers may warn with this message.
+    lock_error: Option<String>,
     /// Write every entry as it is queued, and wait for it to reach the OS.
     flush_each_entry: bool,
     entries: Vec<FileEntry>,
@@ -204,6 +209,16 @@ impl SessionManager {
         session_dir: PathBuf,
         session_file: Option<PathBuf>,
         persist: bool,
+    ) -> Self {
+        Self::build(cwd, session_dir, session_file, persist, false)
+    }
+
+    fn build(
+        cwd: String,
+        session_dir: PathBuf,
+        session_file: Option<PathBuf>,
+        persist: bool,
+        reader_only: bool,
     ) -> Self {
         let mut manager = Self {
             header: Header {
@@ -222,6 +237,8 @@ impl SessionManager {
             lock: None,
             lock_held_by: None,
             read_only: false,
+            reader_only,
+            lock_error: None,
             flush_each_entry: false,
             entries: Vec::new(),
             by_id: HashMap::new(),
@@ -230,7 +247,7 @@ impl SessionManager {
             leaf_id: None,
         };
 
-        if persist && !manager.session_dir.as_os_str().is_empty() {
+        if persist && !reader_only && !manager.session_dir.as_os_str().is_empty() {
             let _ = fs::create_dir_all(&manager.session_dir);
         }
 
@@ -250,13 +267,32 @@ impl SessionManager {
         Self::new(cwd, dir, None, true)
     }
 
-    /// Open an existing session file.
+    /// Open an existing session file. Takes the file lock; a file another
+    /// process holds opens read-only (see [`SessionManager::lock_held_by`]).
     pub fn open(
         path: impl Into<PathBuf>,
         session_dir: Option<PathBuf>,
         cwd_override: Option<String>,
     ) -> Self {
-        let path = path.into();
+        Self::open_with(path.into(), session_dir, cwd_override, false)
+    }
+
+    /// Load an existing session file without taking its lock. The manager
+    /// never writes: use it to read a session another process may be writing.
+    pub fn open_read_only(
+        path: impl Into<PathBuf>,
+        session_dir: Option<PathBuf>,
+        cwd_override: Option<String>,
+    ) -> Self {
+        Self::open_with(path.into(), session_dir, cwd_override, true)
+    }
+
+    fn open_with(
+        path: PathBuf,
+        session_dir: Option<PathBuf>,
+        cwd_override: Option<String>,
+        reader_only: bool,
+    ) -> Self {
         let entries = load_entries_from_file(&path);
         let cwd = cwd_override
             .or_else(|| {
@@ -275,7 +311,7 @@ impl SessionManager {
                 .map(Path::to_path_buf)
                 .unwrap_or_else(default_sessions_root)
         });
-        Self::new(cwd, dir, Some(path), true)
+        Self::build(cwd, dir, Some(path), true, reader_only)
     }
 
     /// Continue the most recent session for `cwd`, or create one if none exists.
@@ -479,8 +515,9 @@ impl SessionManager {
     fn claim_session_file(&mut self) {
         self.lock = None;
         self.lock_held_by = None;
-        self.read_only = false;
-        if !self.persist {
+        self.lock_error = None;
+        self.read_only = self.reader_only;
+        if !self.persist || self.reader_only {
             return;
         }
         let Some(path) = self.session_file.clone() else {
@@ -492,9 +529,16 @@ impl SessionManager {
                 self.lock_held_by = Some(pid.unwrap_or(0));
                 self.read_only = true;
             }
-            // Without the lock another writer cannot be ruled out: stay read-only.
-            Err(SessionLockError::Io(_)) => self.read_only = true,
+            // Without the lock a writer cannot be ruled out, but the session
+            // was writable before locks existed: stay writable and record why.
+            Err(SessionLockError::Io(message)) => self.lock_error = Some(message),
         }
+    }
+
+    /// Why the file lock could not be taken (an I/O error), when it could not.
+    /// The manager still writes; another process could write the file too.
+    pub fn lock_error(&self) -> Option<String> {
+        self.lock_error.clone()
     }
 
     /// Gives up the file lock, so another manager or process can take it. The
@@ -503,6 +547,12 @@ impl SessionManager {
     pub fn release_session_file(&mut self) {
         self.lock = None;
         self.read_only = self.session_file.is_some() && self.persist;
+    }
+
+    /// Whether this manager must not write: another process owns the file, or
+    /// it was opened with [`SessionManager::open_read_only`] or released.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
     }
 
     /// The pid of the process that owns this session file, when this manager

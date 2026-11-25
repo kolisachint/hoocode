@@ -194,6 +194,25 @@ fn plan_mode_omits_always() {
 }
 
 #[test]
+fn session_spawn_offers_no_always_row() {
+    let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+    let mut info = shell_info("$ ignored");
+    info.tool = "SessionSpawn".to_string();
+    info.detail = "Goal: refactor the parser".to_string();
+    let (mut card, answered) = card(info);
+    let rows = rows(&mut card, 100);
+    assert!(
+        !rows.iter().any(|row| row.contains("always")),
+        "SessionSpawn must not offer always: {rows:?}"
+    );
+    // `a` has no row to highlight here, so Enter does not answer always.
+    card.handle_input("a");
+    card.handle_input("\r");
+    assert_ne!(*answered.borrow(), Some(ClearanceChoice::Always));
+}
+
+#[test]
 fn the_title_stays_bare_when_the_host_knows_the_step() {
     let _g = lock(Some("dark"));
     let mut info = shell_info("$ wc -l src/wrap.rs");

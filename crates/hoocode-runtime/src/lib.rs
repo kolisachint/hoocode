@@ -37,6 +37,7 @@ mod memory;
 mod runtime;
 mod session_io;
 mod shutdown;
+mod sigint;
 #[cfg(unix)]
 mod signals;
 mod threads;
@@ -70,7 +71,7 @@ pub use shutdown::{
     fits_budget, run_ordered, ShutdownStep, StepOutcome, StepReport, RESTORE_RESERVE,
     SHUTDOWN_BUDGET, SHUTDOWN_THREAD,
 };
-pub use signals::send_sigint;
+pub use sigint::send_sigint;
 #[cfg(unix)]
 pub use signals::{watch_sigcont, watch_terminate};
 #[cfg(unix)]

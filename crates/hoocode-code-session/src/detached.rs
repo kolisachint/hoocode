@@ -20,8 +20,8 @@ pub const DETACHED_EXIT_ENTRY: &str = "detached_exit";
 /// The `customType` of the record a run writes when it parks on a tool call.
 pub const PARKED_CALL_ENTRY: &str = "parked_call";
 
-/// Reason shown when a file has no `detached_exit` record and no process holds it.
-/// The reason of a file that has no `detached_exit` record and no process holds it.
+/// The reason of a file that has no `detached_exit` record after its last
+/// answered park, and no process holds it.
 pub const CRASHED_REASON: &str = "exited without a result (crashed or killed)";
 
 /// Where a detached session stands.
@@ -46,12 +46,20 @@ pub fn detached_status(path: &Path) -> DetachedStatus {
     if has_open_parked_call(&entries) {
         return DetachedStatus::Parked;
     }
-    let exit = entries.iter().rev().find_map(|entry| match entry {
-        FileEntry::Custom {
-            custom_type, data, ..
-        } if custom_type == DETACHED_EXIT_ENTRY => Some(data.clone().unwrap_or_default()),
-        _ => None,
-    });
+    // An exit record written before the last answered park is stale: the run
+    // went on after it, so only a later record says how the run ended.
+    let cutoff = last_answer_index(&entries);
+    let exit = entries
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(index, _)| cutoff.is_none_or(|cutoff| *index > cutoff))
+        .find_map(|(_, entry)| match entry {
+            FileEntry::Custom {
+                custom_type, data, ..
+            } if custom_type == DETACHED_EXIT_ENTRY => Some(data.clone().unwrap_or_default()),
+            _ => None,
+        });
     match exit {
         None => DetachedStatus::Failed {
             reason: CRASHED_REASON.to_string(),
@@ -70,26 +78,27 @@ pub fn detached_status(path: &Path) -> DetachedStatus {
     }
 }
 
-/// Whether some `parked_call` record has no tool result after it.
-fn has_open_parked_call(entries: &[FileEntry]) -> bool {
-    entries.iter().enumerate().any(|(index, entry)| {
-        let FileEntry::Custom {
-            custom_type, data, ..
-        } = entry
-        else {
-            return false;
-        };
-        if custom_type != PARKED_CALL_ENTRY {
-            return false;
-        }
-        let Some(call_id) = data
-            .as_ref()
-            .and_then(|d| d.get("toolCallId"))
-            .and_then(|id| id.as_str())
-        else {
-            return false;
-        };
-        !entries[index + 1..].iter().any(|later| {
+/// The call id a `parked_call` record names.
+fn parked_call_id(entry: &FileEntry) -> Option<&str> {
+    let FileEntry::Custom {
+        custom_type, data, ..
+    } = entry
+    else {
+        return None;
+    };
+    if custom_type != PARKED_CALL_ENTRY {
+        return None;
+    }
+    data.as_ref()?.get("toolCallId")?.as_str()
+}
+
+/// Index of the first tool result after the park at `park` that answers `call_id`.
+fn answer_index(entries: &[FileEntry], park: usize, call_id: &str) -> Option<usize> {
+    entries
+        .iter()
+        .enumerate()
+        .skip(park + 1)
+        .find_map(|(index, later)| {
             matches!(
                 later,
                 FileEntry::Message {
@@ -97,6 +106,25 @@ fn has_open_parked_call(entries: &[FileEntry]) -> bool {
                     ..
                 } if result.tool_call_id == call_id
             )
+            .then_some(index)
         })
+}
+
+/// Whether some `parked_call` record has no tool result after it.
+fn has_open_parked_call(entries: &[FileEntry]) -> bool {
+    entries.iter().enumerate().any(|(index, entry)| {
+        parked_call_id(entry).is_some_and(|call_id| answer_index(entries, index, call_id).is_none())
     })
+}
+
+/// Index of the latest answer to any answered `parked_call`.
+fn last_answer_index(entries: &[FileEntry]) -> Option<usize> {
+    entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            let call_id = parked_call_id(entry)?;
+            answer_index(entries, index, call_id)
+        })
+        .max()
 }

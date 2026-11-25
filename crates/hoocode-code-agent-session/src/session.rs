@@ -1265,6 +1265,16 @@ impl AgentSession {
         self.session_manager().session_file().map(Path::to_path_buf)
     }
 
+    /// Whether `path` is this session's file and this session writes it (it
+    /// holds the file lock). Resuming such a file is a no-op.
+    pub fn owns_session_file(&self, path: &Path) -> bool {
+        let manager = self.session_manager();
+        !manager.is_read_only()
+            && manager
+                .session_file()
+                .is_some_and(|file| same_file(file, path))
+    }
+
     pub fn session_id(&self) -> String {
         self.session_manager().session_id().to_string()
     }
@@ -2926,4 +2936,13 @@ mod tool_listed_tests {
         assert!(tool_listed(&denied, "WebFetch", &plugin("web", "WebFetch")));
         assert!(!tool_listed(&denied, "Read", &ToolOrigin::BuiltIn));
     }
+}
+
+/// Whether two paths name the same file (by text, or by canonical path).
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b
+        || matches!(
+            (a.canonicalize(), b.canonicalize()),
+            (Ok(a), Ok(b)) if a == b
+        )
 }
