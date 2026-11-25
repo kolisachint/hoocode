@@ -158,6 +158,10 @@ pub enum FileEntry {
         /// clears it, like an empty name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hull: Option<String>,
+        /// Who set the name in this entry: `"user"` (`/name`, rpc) or `"auto"`
+        /// (the session naming call). Missing in older files means user.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
     },
 }
 

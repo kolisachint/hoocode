@@ -1,4 +1,5 @@
 mod anthropic_subscription_auth;
+mod auto_name;
 mod background_notices;
 mod bash_persistence;
 mod common;

@@ -629,6 +629,25 @@ impl SessionManager {
             timestamp: iso_timestamp(),
             name: name.map(|n| n.trim().to_string()),
             hull: None,
+            source: name.map(|_| NameSource::User.as_str().to_string()),
+        };
+        self.append(entry);
+        id
+    }
+
+    /// Record a name chosen by the session naming call (RT-39). Unlike
+    /// [`Self::append_session_info`], the entry is marked `auto`, so a later
+    /// naming pass knows it may replace it.
+    pub fn append_auto_session_name(&mut self, name: &str) -> String {
+        let id = generate_id(&self.id_set());
+        let entry = FileEntry::SessionInfo {
+            color: None,
+            id: id.clone(),
+            parent_id: self.leaf_id.clone(),
+            timestamp: iso_timestamp(),
+            name: Some(name.trim().to_string()),
+            hull: None,
+            source: Some(NameSource::Auto.as_str().to_string()),
         };
         self.append(entry);
         id
@@ -645,6 +664,7 @@ impl SessionManager {
             timestamp: iso_timestamp(),
             name: None,
             hull: Some(paint.unwrap_or_default().trim().to_string()),
+            source: None,
         };
         self.append(entry);
         id
@@ -1061,6 +1081,19 @@ impl SessionManager {
         })?
     }
 
+    /// Who set the latest name (the same entry [`Self::session_name`] reads).
+    /// A name entry without a `source` (older files) counts as user.
+    pub fn session_name_source(&self) -> Option<NameSource> {
+        self.entries.iter().rev().find_map(|entry| match entry {
+            FileEntry::SessionInfo {
+                name: Some(_),
+                source,
+                ..
+            } => Some(NameSource::from_stored(source.as_deref())),
+            _ => None,
+        })
+    }
+
     /// `getSessionBranch`: the git branch recorded in the header.
     pub fn session_branch(&self) -> Option<&str> {
         self.header.branch.as_deref()
@@ -1100,6 +1133,33 @@ impl SessionManager {
                 _ => None,
             })
             .unwrap_or_else(|| crate::identity::session_color_slot_for(self.session_id()))
+    }
+}
+
+/// Who chose a session name (`source` on a `session_info` entry).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameSource {
+    /// `/name` or the rpc `set_session_name`: never replaced by the naming call.
+    User,
+    /// The session naming call (RT-39): may be replaced by a later pass.
+    Auto,
+}
+
+impl NameSource {
+    /// The stored `source` value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Auto => "auto",
+        }
+    }
+
+    /// Reads a stored `source`; anything but `"auto"` (including missing) is user.
+    pub fn from_stored(source: Option<&str>) -> Self {
+        match source {
+            Some("auto") => Self::Auto,
+            _ => Self::User,
+        }
     }
 }
 

@@ -18,7 +18,7 @@ use hoocode_code_permissions::{ApprovalChannel, HeadlessClearanceRelay, HooPermi
 
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionEvent, AgentSessionRuntime,
-    AgentSessionRuntimeDiagnostic, AgentSessionServices, BaseTools, BaseToolsFactory,
+    AgentSessionRuntimeDiagnostic, AgentSessionServices, AutoNameMode, BaseTools, BaseToolsFactory,
     CreateAgentSessionOptions, CreatedRuntime, DefaultResources, PromptOptions, SessionStartEvent,
 };
 use hoocode_code_models::{
@@ -722,6 +722,20 @@ fn install_headless_clearance_relay(args: &Args, cwd: &std::path::Path) {
     hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(relay)));
 }
 
+/// RT-39: the naming mode a run gets. Off for a subagent child, a detached run
+/// (`HOOCODE_DETACHED`), and any process nested in a subagent tree.
+fn resolve_auto_name(requested: AutoNameMode, task_child: bool) -> AutoNameMode {
+    let detached = std::env::var_os("HOOCODE_DETACHED").is_some();
+    let nested = hoocode_code_subagents::depth::current_subagent_depth(
+        &hoocode_code_subagents::depth::ProcessEnv,
+    ) > 0;
+    if detached || nested || task_child {
+        AutoNameMode::Off
+    } else {
+        requested
+    }
+}
+
 /// Build the session for a CLI run: the initial session manager, then the
 /// `createRuntime` factory on it. Diagnostics are for the caller to report.
 fn build_session(args: &Args, interactive: bool) -> (AgentSession, Diagnostics) {
@@ -738,6 +752,7 @@ fn build_session(args: &Args, interactive: bool) -> (AgentSession, Diagnostics) 
         interactive,
         None,
         false,
+        AutoNameMode::Headless,
     );
     (session, diagnostics)
 }
@@ -802,6 +817,7 @@ fn create_runtime(
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
     is_app_server: bool,
+    auto_name: AutoNameMode,
 ) -> (AgentSession, AgentSessionServices, Diagnostics) {
     let mut settings = SettingsManager::create_default(&cwd);
     if let Some(patterns) = &args.models {
@@ -875,6 +891,7 @@ fn create_runtime(
         &plugins,
         &mut diagnostics,
         is_app_server,
+        resolve_auto_name(auto_name, args.task_id.is_some()),
     );
     (session, services, diagnostics)
 }
@@ -920,6 +937,7 @@ fn assemble_session(
     plugins: &hoocode_code_plugins::PluginSet,
     diagnostics: &mut Diagnostics,
     is_app_server: bool,
+    auto_name: AutoNameMode,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
     // The gate is built here, not at `create_agent_session`, so the plugin tools' network
@@ -1126,6 +1144,7 @@ fn assemble_session(
             disallowed_tools,
             extensions: Some(modes),
             session_start_event,
+            auto_name,
             ..Default::default()
         },
     )
@@ -1553,6 +1572,11 @@ fn run_print_body(
         }
     }
 
+    // RT-39: one bounded naming pass; dispose below flushes what it wrote.
+    let _ = async_runtime().block_on(tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        session.auto_name_now(),
+    ));
     // A spawned subagent writes the audit file the parent pool verifies.
     let mut exit_code = 0;
     if let Some(task_id) = &task_id {
@@ -1634,6 +1658,12 @@ fn build_session_runtime(
 ) -> (AgentSessionRuntime, Diagnostics) {
     let session_manager = initial_session_manager(args, interactive);
     let cwd = std::path::PathBuf::from(session_manager.cwd());
+    // RT-39: the TUI names its sessions; the rpc server (not interactive) never does.
+    let auto_name = if interactive {
+        AutoNameMode::Interactive
+    } else {
+        AutoNameMode::Off
+    };
     let (session, services, diagnostics) = create_runtime(
         args,
         &auth,
@@ -1644,6 +1674,7 @@ fn build_session_runtime(
         interactive,
         None,
         false,
+        auto_name,
     );
     let factory_args = args.clone();
     let factory: hoocode_code_agent_session::RuntimeFactory = Arc::new(move |request| {
@@ -1666,6 +1697,7 @@ fn build_session_runtime(
             interactive,
             None,
             false,
+            auto_name,
         );
         let created = CreatedRuntime {
             session,
@@ -1756,6 +1788,7 @@ impl AppServerSessions {
             false,
             Some(gate),
             true,
+            AutoNameMode::Interactive,
         );
         if let Some((_, message)) = diagnostics
             .iter()
@@ -2421,6 +2454,7 @@ mod tests {
             &hoocode_code_plugins::PluginSet::default(),
             &mut Diagnostics::new(),
             false,
+            AutoNameMode::Off,
         );
         (session.system_prompt(), session.get_active_tool_names())
     }
@@ -2491,6 +2525,7 @@ mod tests {
             &hoocode_code_plugins::PluginSet::default(),
             &mut Diagnostics::new(),
             false,
+            AutoNameMode::Off,
         );
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
@@ -2929,6 +2964,7 @@ mod tests {
                 &hoocode_code_plugins::PluginSet::default(),
                 &mut Diagnostics::new(),
                 false,
+                AutoNameMode::Off,
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {

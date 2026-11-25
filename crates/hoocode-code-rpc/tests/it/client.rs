@@ -86,6 +86,7 @@ fn setup(replies: &[&str]) -> Setup {
         base_tools: BaseTools::Override(vec![]),
         extensions: None,
         session_start_event: None,
+        auto_name: Default::default(),
     });
 
     // client stdin -> agent input; agent output -> client stdout.

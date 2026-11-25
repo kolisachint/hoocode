@@ -16,6 +16,6 @@ pub use manager::{
     default_sessions_root, encode_cwd, find_most_recent_session, flush_session_writes, generate_id,
     list_all_sessions, list_sessions, list_subagent_sessions, load_entries_from_file,
     load_raw_entries, load_session_file, session_id_of_file, subagents_dir, LoadedSession,
-    NewSessionOptions, SessionError, SessionInfo, SessionListProgress, SessionManager,
+    NameSource, NewSessionOptions, SessionError, SessionInfo, SessionListProgress, SessionManager,
     SessionTreeNode, SubagentRun, SubagentState, SESSION_FLUSH_DEADLINE, SUBAGENT_RUN_ENTRY,
 };

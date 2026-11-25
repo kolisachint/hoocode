@@ -38,6 +38,7 @@ use hoocode_code_tool_bash::{
 use crate::auth_guidance::{
     format_auth_failed_message, format_no_api_key_found_message, format_no_model_selected_message,
 };
+use crate::auto_name::{AutoNameMode, AutoNameState};
 use crate::compaction::{CompactionReason, CompactionState};
 use crate::hooks::{
     ExtensionError, ExtensionHooks, NoExtensions, ResourceLoader, SessionEvent, SessionStartEvent,
@@ -438,6 +439,8 @@ pub struct AgentSessionConfig {
     pub extensions: Option<Arc<dyn ExtensionHooks>>,
     /// Emitted by [`AgentSession::bind_extensions`]; default `startup`.
     pub session_start_event: Option<SessionStartEvent>,
+    /// Session naming (RT-39); default `Off`.
+    pub auto_name: AutoNameMode,
 }
 
 struct DefinitionEntry {
@@ -506,6 +509,7 @@ struct Inner {
     /// Set once the current run has emitted `agent_end`; the run still holds
     /// its slot until its listeners return (see `prompt_inner`).
     run_ended: std::sync::atomic::AtomicBool,
+    auto_name: AutoNameState,
     compaction: Mutex<CompactionState>,
     mcp: Mutex<Option<Arc<McpHub>>>,
     /// Builds the plugin tools and MCP hub again when the plugins change (PL-4).
@@ -733,6 +737,7 @@ impl AgentSession {
             model_fallback: Mutex::new(Default::default()),
             retry_notify: tokio::sync::Notify::new(),
             run_ended: std::sync::atomic::AtomicBool::new(false),
+            auto_name: AutoNameState::new(config.auto_name),
             compaction: Mutex::new(CompactionState::default()),
             mcp: Mutex::new(None),
             plugin_source: Mutex::new(None),
@@ -957,6 +962,7 @@ impl AgentSession {
             self.spawn(async move {
                 let _ = ticket.wait(SESSION_FLUSH_DEADLINE).await;
             });
+            self.schedule_auto_name_after_first_run();
             let last = lock(&self.inner.state).last_assistant_message.take();
             if let Some(message) = last {
                 let session = self.clone();
@@ -1284,6 +1290,16 @@ impl AgentSession {
                 thinking_level: s.effort.clone(),
             })
             .collect()
+    }
+
+    /// The scope as resolved entries, for the session naming call.
+    pub(crate) fn resolved_scoped_models(&self) -> Vec<ResolvedScoped> {
+        lock(&self.inner.state).scoped_models.clone()
+    }
+
+    /// The session naming state (RT-39).
+    pub(crate) fn auto_name_state(&self) -> &AutoNameState {
+        &self.inner.auto_name
     }
 
     /// Replaces the scope with plain models, each with an optional effort and

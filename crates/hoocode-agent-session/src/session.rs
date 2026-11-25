@@ -216,6 +216,7 @@ impl<S: SessionStorage> Session<S> {
             name: Some(name.trim().to_string()),
             color: None,
             hull: None,
+            source: Some("user".into()),
         })
     }
 

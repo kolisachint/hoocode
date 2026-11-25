@@ -68,7 +68,7 @@ hoocode-tui-keys = { workspace = true }
 hoocode-tui-terminal = { workspace = true }
 serde_json = "1"
 tokio-util = { version = "0.7", default-features = false }
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "io-std"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "io-std", "time"] }
 url = "2"
 hoocode-code-mcp = { workspace = true }
 

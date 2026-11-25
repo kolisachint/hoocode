@@ -203,13 +203,16 @@ impl AgentSession {
             .run_manual_compaction(custom_instructions, &signal, mission_range)
             .await;
         match &result {
-            Ok(result) => self.emit(AgentSessionEvent::CompactionEnd {
-                reason: CompactionReason::Manual,
-                result: Some(result.clone()),
-                aborted: false,
-                will_retry: false,
-                error_message: None,
-            }),
+            Ok(result) => {
+                self.emit(AgentSessionEvent::CompactionEnd {
+                    reason: CompactionReason::Manual,
+                    result: Some(result.clone()),
+                    aborted: false,
+                    will_retry: false,
+                    error_message: None,
+                });
+                self.schedule_auto_name();
+            }
             Err(error) => {
                 let aborted = error.0 == "Compaction cancelled";
                 self.emit(AgentSessionEvent::CompactionEnd {
@@ -241,7 +244,14 @@ impl AgentSession {
             let branch: Vec<FileEntry> = manager.branch(None).into_iter().cloned().collect();
             (
                 prepare_compaction(&branch, &self.compaction_settings()),
-                matches!(branch.last(), Some(FileEntry::Compaction { .. })),
+                // A name written after the compaction (RT-39) does not end it.
+                matches!(
+                    branch
+                        .iter()
+                        .rev()
+                        .find(|e| !matches!(e, FileEntry::SessionInfo { .. })),
+                    Some(FileEntry::Compaction { .. })
+                ),
             )
         };
         let Some(preparation) = preparation else {
@@ -424,6 +434,7 @@ impl AgentSession {
                     will_retry,
                     error_message: None,
                 });
+                self.schedule_auto_name();
                 if will_retry {
                     let mut messages = self.messages();
                     if matches!(

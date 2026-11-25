@@ -5,6 +5,7 @@
 //! working directory.
 
 pub use hoocode_code_auth::auth_guidance;
+pub mod auto_name;
 pub mod compaction;
 pub mod event_bus;
 pub mod exec;
@@ -24,6 +25,7 @@ pub mod session;
 pub mod stats;
 pub mod tree;
 
+pub use auto_name::{parse_name_reply, pick_naming_model, AutoNameMode};
 pub use compaction::{CompactionPlan, CompactionReason};
 pub use hooks::{
     CommandFuture, ExpandedInput, ExtensionCommandInfo, ExtensionError, ExtensionHooks,

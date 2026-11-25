@@ -208,6 +208,7 @@ Measured, as recorded. Linux only. RT-16 adds real 10 and 15 turn runs.
 | 2026-11-06 | LLM stream queue stays unbounded until there is an async-permit design. |
 | 2026-11-06 | Build order approved (v2), P-R0 first. Old C5 worker parse folded into the lazy model catalog. Performance status lives in this file. |
 | 2026-11-25 | Auto session names (RT-39): the cheapest scoped model names a session after the first prompt, at each compaction and at close; headless runs name once at close. It gets the current name and keeps it unless the goal changed. A detached session (SA-12) takes the brief's Goal line, no model call. A `/name` name is never overwritten: `session_info` gains `source` (`user` or `auto`). Off the turn path; failure keeps the slug, no error. Same provider as the session. Not after every prompt: cost and a label that keeps changing. |
+| 2026-11-25 | RT-39 built. Interactive runs name after the first run and after each compaction, not at close: a quit would wait on a model call, and the shutdown budget is 3 s. Headless runs name once at the end, bounded at 5 s. rpc (the subagent transport), subagent children and detached runs (`HOOCODE_DETACHED`) never call the model. Old `session_info` entries without `source` read as `user`. Tests: `hoocode-code-agent-session` `auto_name`. |
 
 ## Open
 
@@ -255,7 +256,6 @@ Build order, as approved 2026-11-06: step 1 RT-1; step 2 RT-2 to RT-9; step 3 RT
 | RT-36 | One `home_dir` | S | None | `hoocode-home` is the policy. `hoocode-code-paths` wraps it and falls back to `.`. `hoocode-code-resources` `package_resolve.rs:156` has its own copy. Make every copy call `hoocode-home`. |
 | RT-37 | macOS: baseline measurement and lane QoS | M | A macOS machine | The load run is Linux only; macOS QoS for lanes is untested. The first green `test-macos` run on a pull request is still to confirm. |
 | RT-38 | Windows: `Shell` priority | S | Windows ships (not planned) | Process-wrap's JobObject overwrites creation flags, so `bashNice` may not apply. Set the priority after the job is created. |
-| RT-39 | Auto session names | S | User picked (2026-11-25), with SA-12 | See Decisions 2026-11-25. Tests: user name kept, slug on failure, rename only on goal change (mock LLM). |
 
 ### Measure first
 

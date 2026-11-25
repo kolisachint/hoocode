@@ -137,6 +137,7 @@ fn mode_over(
         base_tools: BaseTools::Override(vec![]),
         extensions: None,
         session_start_event: None,
+        auto_name: Default::default(),
     });
     Mode::new(InteractiveOptions {
         session,
