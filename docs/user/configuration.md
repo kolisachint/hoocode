@@ -16,6 +16,9 @@ to move it.
 | `~/.hoocode/themes/defaults/` | Reference copies of the built-in themes (`dark.json`, `dusk.json`, `high-contrast.json`, `light.json`, `paper.json`) and `theme-schema.json`. hoocode writes them again after each upgrade, so they match the version you run; a copy you edit is replaced at the next upgrade. The folder is not a theme list: `/theme` never shows it. To start a custom theme, copy one up a level to `~/.hoocode/themes/`, rename it, and change what you need. A shorter theme can instead set `"inherits": "dark"` (or `"light"`, or another file in `~/.hoocode/themes/`) and keep only its own colors. For editor completion, set a custom theme's `"$schema"` to the local `theme-schema.json` path. |
 | `~/.hoocode/sessions/` | Saved sessions |
 
+Session names: a session starts with a two-word slug. After its first run and after each compaction, the cheapest model you scoped for the session's provider proposes a name, and keeps the old one unless the goal changed. A name you set with `/name` is never replaced. Print and json runs name once, at the end. To turn this off, set `"autoNameSessions": false` in `settings.json`.
+
+
 ## Per project
 
 | File or folder | What it holds |

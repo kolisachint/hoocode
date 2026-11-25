@@ -1129,6 +1129,8 @@ def write_project(root: Path, port: int, scenario: Scenario) -> tuple[Path, Path
         "defaultModel": MODEL,
         "enableSubagent": True,
         "maxSubagentDepth": 1,
+        # The scripted turns count requests; a naming call (RT-39) would take one.
+        "autoNameSessions": False,
     }
     settings.update(scenario.settings)
     (home / CONFIG_DIR / "settings.json").write_text(json.dumps(settings), encoding="utf-8")

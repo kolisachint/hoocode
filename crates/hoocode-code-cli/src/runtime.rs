@@ -895,6 +895,11 @@ fn create_runtime(
     }
 
     let plugins = load_session_plugins(&cwd, &mut diagnostics);
+    let auto_name = if settings.auto_name_sessions() {
+        resolve_auto_name(auto_name, args.task_id.is_some())
+    } else {
+        AutoNameMode::Off
+    };
     let (session, services) = assemble_session(
         args,
         cwd,
@@ -910,7 +915,7 @@ fn create_runtime(
         &plugins,
         &mut diagnostics,
         is_app_server,
-        resolve_auto_name(auto_name, args.task_id.is_some()),
+        auto_name,
     );
     (session, services, diagnostics)
 }
@@ -1594,11 +1599,8 @@ fn run_print_body(
     // RT-39: one bounded naming pass; dispose below flushes what it wrote.
     // The timer must be made inside the runtime, so build it in the block.
     async_runtime().block_on(async {
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            session.auto_name_now(),
-        )
-        .await;
+        let _ =
+            tokio::time::timeout(std::time::Duration::from_secs(5), session.auto_name_now()).await;
     });
     // A spawned subagent writes the audit file the parent pool verifies.
     let mut exit_code = 0;

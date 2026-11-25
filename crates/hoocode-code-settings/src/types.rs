@@ -363,6 +363,7 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
     "subagentWaitTimeoutSeconds": 300,
     "maxOutputTokens": 64000,
     "enableTodoWrite": true,
+    "autoNameSessions": true,
     "enablePluginTools": false,
     "enableBackgroundShell": true,
     "pluginInstallScope": "user",
