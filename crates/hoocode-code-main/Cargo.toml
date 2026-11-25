@@ -21,6 +21,7 @@ hoocode-code-cli = { workspace = true }
 
 [dev-dependencies]
 hoocode-code-plugins = { workspace = true }
+hoocode-code-session = { workspace = true }
 insta = "1"
 regex = "1"
 serde = "1"

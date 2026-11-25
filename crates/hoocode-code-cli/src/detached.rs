@@ -13,12 +13,16 @@ use std::sync::Arc;
 
 use hoocode_agent_types::{AgentMessage, AgentToolResult};
 use hoocode_ai_types::{Content, StopReason, TextContent};
+use hoocode_code_agent_session::AgentSession;
+use hoocode_code_permissions::{ParkHandler, ParkRequest};
+use hoocode_code_session::detached::{DETACHED_EXIT_ENTRY, PARKED_CALL_ENTRY};
 use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
 use hoocode_code_subagents::depth::SUBAGENT_DEPTH_ENV;
 use hoocode_code_subagents::lifeguard::SUBAGENT_DEADLINE_MS;
 use hoocode_code_subagents::DEFAULT_SUBAGENT_MAX_TURNS;
 use hoocode_code_tool_api::{ToolContext, ToolDefinition, ToolError, ToolOrigin};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 /// The model-facing name of the tool.
 pub const SESSION_SPAWN_TOOL: &str = "SessionSpawn";
@@ -50,6 +54,81 @@ const HELPER_SOCKET_PREFIX: &str = "HOOCODE_HELPER_SOCKET_";
 /// Whether this process is a detached run.
 pub fn is_detached_run() -> bool {
     std::env::var_os(DETACHED_ENV).is_some()
+}
+
+/// The exit code of a detached run that parked on a call that needs approval.
+pub const PARKED_EXIT_CODE: i32 = 3;
+
+/// The `parked_call` record of a parked call: the call, why it parks, and the file it
+/// touches (`target`, with its sha256 when the file exists; `null` when the input names no
+/// path). A relative path is taken from `cwd`.
+pub fn parked_call_data(
+    tool_call_id: &str,
+    tool_name: &str,
+    reason: &str,
+    input: &Value,
+    cwd: &Path,
+) -> Value {
+    let named = input
+        .get("path")
+        .and_then(Value::as_str)
+        .or_else(|| input.get("file_path").and_then(Value::as_str));
+    let target = match named {
+        None => Value::Null,
+        Some(path) => {
+            let path = cwd.join(path);
+            json!({
+                "path": path.display().to_string(),
+                "sha256": file_sha256(&path),
+            })
+        }
+    };
+    json!({
+        "toolCallId": tool_call_id,
+        "toolName": tool_name,
+        "reason": reason,
+        "target": target,
+    })
+}
+
+/// The lowercase hex sha256 of the file at `path`; `None` when it cannot be read.
+fn file_sha256(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let digest = Sha256::digest(&bytes);
+    Some(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// The handler a detached run sets on its permission gate: it records the parked call and
+/// the exit in the session file, flushes it, names the file on stderr and exits with
+/// [`PARKED_EXIT_CODE`]. The call does not run.
+pub fn park_handler(session: AgentSession) -> ParkHandler {
+    Arc::new(move |request: ParkRequest| {
+        let cwd = session.cwd().to_path_buf();
+        let data = parked_call_data(
+            &request.tool_call_id,
+            &request.tool_name,
+            &request.reason,
+            &request.input,
+            &cwd,
+        );
+        let mut manager = session.session_manager();
+        manager.append_custom_entry(PARKED_CALL_ENTRY, Some(data));
+        manager.append_custom_entry(
+            DETACHED_EXIT_ENTRY,
+            Some(json!({"status": "parked", "reason": format!("{} needs approval", request.tool_name)})),
+        );
+        let _ = manager.flush(SESSION_FLUSH_DEADLINE);
+        let file = manager
+            .session_file()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+        drop(manager);
+        eprintln!(
+            "parked: {} needs approval; open with: hoocode --session {file}",
+            request.tool_name
+        );
+        std::process::exit(PARKED_EXIT_CODE);
+    })
 }
 
 /// Whether `SessionSpawn` is offered: never inside a detached run, never in a
@@ -467,6 +546,51 @@ fn run_session_spawn(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parked_call_data_names_the_file_with_its_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path();
+        std::fs::write(cwd.join("a.txt"), b"hello").unwrap();
+        let data = parked_call_data("c1", "Write", "why", &json!({"path": "a.txt"}), cwd);
+        assert_eq!(data["toolCallId"], "c1");
+        assert_eq!(data["toolName"], "Write");
+        assert_eq!(data["reason"], "why");
+        assert_eq!(
+            data["target"]["path"],
+            cwd.join("a.txt").display().to_string()
+        );
+        // sha256("hello")
+        assert_eq!(
+            data["target"]["sha256"],
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn parked_call_data_hashes_file_path_and_nulls_a_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path();
+        let data = parked_call_data("c2", "Edit", "why", &json!({"file_path": "gone.txt"}), cwd);
+        assert_eq!(
+            data["target"]["path"],
+            cwd.join("gone.txt").display().to_string()
+        );
+        assert!(data["target"]["sha256"].is_null());
+    }
+
+    #[test]
+    fn parked_call_data_target_is_null_without_a_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = parked_call_data("c3", "Shell", "why", &json!({"command": "ls"}), dir.path());
+        assert!(data["target"].is_null());
+        assert_eq!(data["toolCallId"], "c3");
+    }
+
+    #[test]
+    fn parked_exit_code_is_three() {
+        assert_eq!(PARKED_EXIT_CODE, 3);
+    }
 
     /// The arguments of `command`, as text.
     fn args_of(command: &Command) -> Vec<String> {

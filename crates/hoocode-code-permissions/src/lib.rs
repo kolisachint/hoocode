@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// `GATED_TOOLS`: prompted in interactive sessions, for the built-in tool (or category) of
 /// that name only (`ToolOrigin::BuiltIn`). `ShellKill` stops a background job, so it asks like
@@ -506,6 +506,10 @@ pub enum ApprovalChannel {
     /// Nobody can answer. A gated call that needs approval is denied when
     /// `fail_closed` (rpc mode), and runs otherwise (print, json).
     Headless { fail_closed: bool },
+    /// A detached run (SA-12): nobody is here to answer now. Every rule is as
+    /// `Headless { fail_closed: true }`, except that a gated call that needs
+    /// approval parks the run ([`Verdict::Park`]) instead of being blocked.
+    Detached,
 }
 
 /// The UI the gate prompts through (`ctx.ui.select` / `ctx.ui.notify`).
@@ -586,16 +590,26 @@ pub struct HeadlessClearanceRelay {
 impl HeadlessClearanceRelay {
     /// The relay for a run in `cwd`, failing closed when `fail_closed` is set.
     pub fn new(cwd: PathBuf, fail_closed: bool) -> Self {
+        Self::for_channel(cwd, ApprovalChannel::Headless { fail_closed })
+    }
+
+    /// The relay for a detached run in `cwd`: a subagent's call that needs approval is denied.
+    pub fn detached(cwd: PathBuf) -> Self {
+        Self::for_channel(cwd, ApprovalChannel::Detached)
+    }
+
+    fn for_channel(cwd: PathBuf, channel: ApprovalChannel) -> Self {
         Self {
-            gate: HooPermissionGate::new(cwd, ApprovalChannel::Headless { fail_closed }, None),
+            gate: HooPermissionGate::new(cwd, channel, None),
         }
     }
 }
 
 impl ClearanceRelay for HeadlessClearanceRelay {
     fn ask(&self, request: &RelayRequest) -> Option<String> {
+        // A subagent's call cannot park the run: it has no id, and no one would answer.
         self.gate
-            .check_call(&request.tool, &request.origin, &request.input)
+            .decide(None, &request.tool, &request.origin, &request.input)
     }
 }
 
@@ -1004,7 +1018,26 @@ pub enum Verdict {
     Allow,
     /// Ask the user.
     Prompt,
+    /// The call needs approval in a detached run: the run parks on it (see
+    /// [`ParkRequest`]) and the call does not run.
+    Park,
 }
+
+/// A gated call that a detached run cannot have answered: the run parks on it.
+#[derive(Debug, Clone)]
+pub struct ParkRequest {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub input: Value,
+    /// Why the call parks, for the user who opens the session.
+    pub reason: String,
+}
+
+/// What a detached run does with a parked call (see [`HooPermissionGate::set_park_handler`]).
+pub type ParkHandler = Arc<dyn Fn(ParkRequest) + Send + Sync>;
+
+/// The reason a subagent's call gets in a detached run: its clearance cannot wait for a user.
+pub const DETACHED_SUBAGENT_PARK_REASON: &str = "A detached session cannot ask the user for a subagent's call. Add the tool to auto_allow, or run it in the parent.";
 
 /// The hoocode `tool_call` handler up to the prompt, over a merged config. `origin` says where
 /// the tool comes from; the built-in rules (Shell's command patterns, the write paths) apply to
@@ -1096,6 +1129,7 @@ pub fn evaluate(
         // fail-closed even in print/json.
         ApprovalChannel::Headless { fail_closed: false } if !dangerous => return Verdict::Allow,
         ApprovalChannel::Headless { fail_closed } => fail_closed || dangerous,
+        ApprovalChannel::Detached => true,
     };
     // MCP and plugin lifecycle tools are gated only where nobody can answer (rpc). A UI still
     // runs them without a prompt, as before. A plugin WASM tool is never gated here: its network
@@ -1169,6 +1203,9 @@ pub fn evaluate(
         return Verdict::Allow;
     }
     if fail_closed {
+        if channel == ApprovalChannel::Detached {
+            return Verdict::Park;
+        }
         return Verdict::Block(format!(
             "Tool \"{tool_name}\" needs approval, but no client can answer in this session (rpc mode denies it). Add it to auto_allow for mode \"{mode}\" in hoo-config.json to allow it."
         ));
@@ -1243,6 +1280,9 @@ pub struct HooPermissionGate {
     /// Where a call that needs approval goes when this process cannot prompt
     /// (a subagent child). Takes precedence over `ui`.
     relay: Option<Arc<dyn ClearanceRelay>>,
+    /// What a detached run does with a call it parks on. Set once, after the
+    /// session exists (the gate is built before it); unset means such a call is blocked.
+    park: OnceLock<ParkHandler>,
 }
 
 impl HooPermissionGate {
@@ -1252,7 +1292,14 @@ impl HooPermissionGate {
             channel,
             ui,
             relay: None,
+            park: OnceLock::new(),
         }
+    }
+
+    /// Sets what a detached run does when a call parks: called with the call,
+    /// after which the call stays blocked. Only the first handler is kept.
+    pub fn set_park_handler(&self, handler: ParkHandler) {
+        let _ = self.park.set(handler);
     }
 
     /// A gate that hands every call needing approval to `relay`. Use it with
@@ -1270,10 +1317,44 @@ impl HooPermissionGate {
         origin: &ToolOrigin,
         input: &Value,
     ) -> Option<String> {
+        // No call id here: a call that parks in a detached run is reported with an empty id.
+        self.decide(Some(""), tool_name, origin, input)
+    }
+
+    /// [`check_call`](Self::check_call) for one call. `park_as` is the call's id when a
+    /// detached run may park on it; `None` means it cannot wait (a subagent's clearance).
+    fn decide(
+        &self,
+        park_as: Option<&str>,
+        tool_name: &str,
+        origin: &ToolOrigin,
+        input: &Value,
+    ) -> Option<String> {
         let merged = config::read_merged_config(&self.cwd);
         match evaluate(&merged, &self.cwd, tool_name, origin, input, self.channel) {
             Verdict::Allow => None,
             Verdict::Block(reason) => Some(reason),
+            Verdict::Park => {
+                let Some(call_id) = park_as else {
+                    return Some(DETACHED_SUBAGENT_PARK_REASON.into());
+                };
+                let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
+                let reason = format!(
+                    "Tool \"{tool_name}\" needs approval in mode \"{mode}\"; this detached run stops until the user answers."
+                );
+                let Some(handler) = self.park.get() else {
+                    return Some(format!(
+                        "Tool \"{tool_name}\" needs approval, and this run cannot wait for an answer. Add it to auto_allow for mode \"{mode}\" in hoo-config.json to allow it."
+                    ));
+                };
+                handler(ParkRequest {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: tool_name.to_string(),
+                    input: input.clone(),
+                    reason: reason.clone(),
+                });
+                Some(reason)
+            }
             Verdict::Prompt => {
                 if let Some(relay) = self.relay.as_ref() {
                     return relay.ask(&RelayRequest {
@@ -1359,7 +1440,12 @@ impl HooPermissionGate {
 
 impl PermissionGate for HooPermissionGate {
     fn request(&self, tool_call: &AgentToolCall) -> PermissionDecision {
-        match self.check_call(&tool_call.name, &tool_call.origin, &tool_call.arguments) {
+        match self.decide(
+            Some(&tool_call.id),
+            &tool_call.name,
+            &tool_call.origin,
+            &tool_call.arguments,
+        ) {
             None => PermissionDecision::Grant,
             Some(reason) => PermissionDecision::Deny { reason },
         }
@@ -1438,6 +1524,81 @@ mod tests {
                 ApprovalChannel::Ui,
             ),
             Verdict::Prompt
+        );
+    }
+
+    #[test]
+    fn detached_parks_a_gated_call_that_needs_approval() {
+        let dir = fresh_cwd();
+        let config = build_config();
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Shell",
+                &ToolOrigin::BuiltIn,
+                &shell("touch parked_probe.txt"),
+                ApprovalChannel::Detached,
+            ),
+            Verdict::Park
+        );
+    }
+
+    #[test]
+    fn detached_runs_an_auto_allowed_call() {
+        let dir = fresh_cwd();
+        let config = json!({"active_mode": "build", "modes": {"build": {"auto_allow": ["Shell"]}}})
+            .as_object()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Shell",
+                &ToolOrigin::BuiltIn,
+                &shell("touch parked_probe.txt"),
+                ApprovalChannel::Detached,
+            ),
+            Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn detached_blocks_a_denied_call_instead_of_parking_it() {
+        let dir = fresh_cwd();
+        let config =
+            json!({"active_mode": "build", "modes": {"build": {"denied_tools": ["Shell"]}}})
+                .as_object()
+                .unwrap()
+                .clone();
+        assert!(matches!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Shell",
+                &ToolOrigin::BuiltIn,
+                &shell("touch parked_probe.txt"),
+                ApprovalChannel::Detached,
+            ),
+            Verdict::Block(_)
+        ));
+    }
+
+    #[test]
+    fn detached_runs_a_read_only_call() {
+        let dir = fresh_cwd();
+        let config = build_config();
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Read",
+                &ToolOrigin::BuiltIn,
+                &json!({"path": "a.txt"}),
+                ApprovalChannel::Detached,
+            ),
+            Verdict::Allow
         );
     }
 

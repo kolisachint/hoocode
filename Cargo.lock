@@ -1924,6 +1924,7 @@ dependencies = [
  "hoocode-tui-util",
  "rcgen",
  "serde_json",
+ "sha2 0.11.1",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -1936,6 +1937,7 @@ version = "0.2.54"
 dependencies = [
  "hoocode-code-cli",
  "hoocode-code-plugins",
+ "hoocode-code-session",
  "insta",
  "regex",
  "serde",

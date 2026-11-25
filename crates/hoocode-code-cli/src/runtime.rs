@@ -662,6 +662,28 @@ fn headless_approval_channel_for(args: &Args) -> ApprovalChannel {
     )
 }
 
+/// Whether this process is a detached print run (SA-12): `HOOCODE_DETACHED` on a root
+/// print run. A subagent child may inherit the variable, so it is excluded.
+fn is_detached_print_run(args: &Args) -> bool {
+    crate::detached::is_detached_run()
+        && args.task_id.is_none()
+        && !matches!(args.mode, Some(Mode::Json | Mode::Rpc))
+}
+
+/// The approval channel of a headless print or json run: a detached print run parks on the
+/// calls that need approval, every other headless run is [`headless_approval_channel_for`].
+fn print_approval_channel(args: &Args) -> ApprovalChannel {
+    if is_detached_print_run(args) {
+        ApprovalChannel::Detached
+    } else {
+        headless_approval_channel_for(args)
+    }
+}
+
+/// The gate of the detached run's session, kept so the run can set its park handler once
+/// the session exists (see [`build_permission_gate`]).
+static DETACHED_PARK_GATE: std::sync::OnceLock<Arc<HooPermissionGate>> = std::sync::OnceLock::new();
+
 /// Build the permission gate for the current CLI mode. Read-only tools are
 /// hoocode's permission gate (hoo-core): per-mode hard rules always; prompts
 /// for bash/write/edit/web tools when a UI can ask, and otherwise the headless
@@ -687,9 +709,13 @@ fn build_permission_gate(
             Some(Arc::new(hoocode_code_tui_app::dialog_bridge::TuiPermissionUi) as _),
         )
     } else {
-        (headless_approval_channel_for(args), None)
+        (print_approval_channel(args), None)
     };
-    Arc::new(HooPermissionGate::new(cwd.to_path_buf(), channel, ui))
+    let gate = Arc::new(HooPermissionGate::new(cwd.to_path_buf(), channel, ui));
+    if channel == ApprovalChannel::Detached {
+        let _ = DETACHED_PARK_GATE.set(gate.clone());
+    }
+    gate
 }
 
 /// Whether this process is a subagent child that asks its parent about the
@@ -726,10 +752,13 @@ fn install_headless_clearance_relay(args: &Args, cwd: &std::path::Path) {
     if relays_clearance(args) {
         return;
     }
-    let ApprovalChannel::Headless { fail_closed } = headless_approval_channel_for(args) else {
-        return;
+    let relay = match print_approval_channel(args) {
+        ApprovalChannel::Headless { fail_closed } => {
+            HeadlessClearanceRelay::new(cwd.to_path_buf(), fail_closed)
+        }
+        ApprovalChannel::Detached => HeadlessClearanceRelay::detached(cwd.to_path_buf()),
+        ApprovalChannel::Ui => return,
     };
-    let relay = HeadlessClearanceRelay::new(cwd.to_path_buf(), fail_closed);
     hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(relay)));
 }
 
@@ -1378,10 +1407,11 @@ pub fn run_print_mode(
     let code = run_print_body(args, mode, stdin_content, color, output, err, &ran);
     // After the run, so the note names only the tools that actually ran.
     // A subagent child asks its parent instead, so the note is not true of it.
+    // A detached run parks instead of running ungated calls, so it has no such note.
     let asked =
         relays_clearance(args) && hoocode_code_subagents::instance::clearance_relay().is_some();
     if let (false, ApprovalChannel::Headless { fail_closed: false }) =
-        (asked, headless_approval_channel_for(args))
+        (asked, print_approval_channel(args))
     {
         let names = ran.lock().map(|set| set.clone()).unwrap_or_default();
         if let Some(note) = ungated_run_note(print_mode_label(mode), &names) {
@@ -1435,6 +1465,9 @@ fn run_print_body(
     let home = hoocode_home::home_dir();
     install_clearance_relay(args);
     let (session, diagnostics) = build_session(args, false);
+    if let Some(gate) = DETACHED_PARK_GATE.get() {
+        gate.set_park_handler(crate::detached::park_handler(session.clone()));
+    }
     install_headless_clearance_relay(args, session.cwd());
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| match event {

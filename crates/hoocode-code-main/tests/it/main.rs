@@ -1,4 +1,5 @@
 mod approval_note;
+mod detached_park;
 mod ext_plugin;
 mod mcp_print;
 mod native_plugin;

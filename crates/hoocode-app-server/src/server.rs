@@ -761,6 +761,8 @@ impl PermissionGate for ServerGate {
         ) {
             Verdict::Allow => PermissionDecision::Grant,
             Verdict::Block(reason) => PermissionDecision::Deny { reason },
+            // Ui never parks: a `Ui` gate answers every call that needs approval.
+            Verdict::Park => deny(),
             Verdict::Prompt => {
                 let Some(thread) = lock(&self.thread).upgrade() else {
                     return deny();

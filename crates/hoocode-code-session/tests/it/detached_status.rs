@@ -121,6 +121,37 @@ fn an_open_parked_call_reads_parked() {
 }
 
 #[test]
+fn an_open_park_wins_over_the_parked_exit_record() {
+    // The run writes `detached_exit` with status "parked" after its `parked_call`:
+    // the open call still reads Parked, not Done.
+    let status = status_of(
+        "park-and-exit",
+        &[
+            parked_entry("p1", "c1"),
+            exit_entry(
+                "e1",
+                r#"{"status":"parked","reason":"Shell needs approval"}"#,
+            ),
+        ],
+    );
+    assert_eq!(status, DetachedStatus::Parked);
+}
+
+#[test]
+fn a_parked_exit_record_without_an_open_park_is_done_on_its_own() {
+    // Once the parked call is answered, the status is what the exit record says.
+    let status = status_of(
+        "answered-then-exit",
+        &[
+            parked_entry("p1", "c1"),
+            tool_result_entry("t1", "c1"),
+            exit_entry("e1", r#"{"status":"done","reason":null}"#),
+        ],
+    );
+    assert_eq!(status, DetachedStatus::Done);
+}
+
+#[test]
 fn a_parked_call_with_a_later_result_is_not_open() {
     let status = status_of(
         "answered",
