@@ -40,4 +40,4 @@ hoocode-code-settings = { workspace = true }
 tempfile = "3"
 tokio = { version = "1", features = ["process"] }
 hoocode-code-tool-api = { workspace = true }
-jsonschema = { version = "0.60", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
