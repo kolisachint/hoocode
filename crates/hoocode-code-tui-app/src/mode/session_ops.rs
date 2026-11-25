@@ -698,6 +698,8 @@ impl Mode {
                 });
                 self.show_dialog_selector(&title, vec!["Yes".into(), "No".into()], answer);
             }
+            // SA-12: the session is in use elsewhere; the current one stays.
+            Err(error @ RuntimeError::SessionInUse(_)) => self.show_error(&error.to_string()),
             Err(error) => {
                 // `handleFatalRuntimeError`.
                 self.show_error(&format!("Failed to resume session: {error}"));

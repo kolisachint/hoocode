@@ -646,6 +646,10 @@ async fn updates_the_runtime_session_cwd_on_cross_cwd_session_replacement() {
         .await
         .unwrap();
     let other_file = other.session().session_file().unwrap();
+    // The other runtime owns its file's lock (SA-12); release it, as a closed
+    // session would, before resuming that file.
+    other.dispose().await;
+    drop(other);
 
     t.runtime.switch_session(&other_file, None).await.unwrap();
     assert_eq!(
@@ -655,6 +659,28 @@ async fn updates_the_runtime_session_cwd_on_cross_cwd_session_replacement() {
         second_dir
     );
     assert_eq!(t.runtime.cwd().canonicalize().unwrap(), second_dir);
+    t.finish().await;
+}
+
+/// SA-12: a session file another runtime holds is refused, and the current
+/// session stays as it was.
+#[tokio::test(flavor = "multi_thread")]
+async fn resuming_a_session_another_runtime_holds_keeps_the_current_one() {
+    let mut t = create_runtime(Options::default()).await;
+    let before = t.runtime.session().session_file();
+    let other_dir = t.dir().join("held-other");
+    std::fs::create_dir_all(&other_dir).unwrap();
+    let mut other = other_runtime(&t, &other_dir).await;
+    other
+        .session()
+        .prompt("held", PromptOptions::default())
+        .await
+        .unwrap();
+    let held = other.session().session_file().unwrap();
+
+    let err = t.runtime.switch_session(&held, None).await.unwrap_err();
+    assert!(matches!(err, RuntimeError::SessionInUse(_)), "{err:?}");
+    assert_eq!(t.runtime.session().session_file(), before);
     other.dispose().await;
     t.finish().await;
 }
@@ -680,11 +706,13 @@ async fn restores_model_and_thinking_state_from_the_destination_session() {
         .await
         .unwrap();
     let target = other.session().session_file().unwrap();
+    // Release the other runtime's lock on the file before resuming it.
+    other.dispose().await;
+    drop(other);
 
     t.runtime.switch_session(&target, None).await.unwrap();
     assert_eq!(t.runtime.session().model().unwrap().id, "faux-2");
     assert_eq!(t.runtime.session().thinking_level(), ThinkingLevel::Off);
-    other.dispose().await;
     t.finish().await;
 }
 

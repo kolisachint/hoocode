@@ -1028,6 +1028,9 @@ impl AgentSession {
     /// deadline here so the ordered shutdown can time them one by one.
     pub fn dispose(&self) {
         self.flush_for_shutdown(SESSION_FLUSH_DEADLINE);
+        // The queued writes are on disk; hand the session file to whoever
+        // resumes it next (SA-12). Clones of the manager may outlive this.
+        lock(&self.inner.session_manager).release_session_file();
         self.close_mcp(SHUTDOWN_WAIT);
         self.release();
     }

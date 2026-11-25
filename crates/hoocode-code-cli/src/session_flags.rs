@@ -239,6 +239,34 @@ mod tests {
         );
     }
 
+    /// An absolute path into another project's session dir is opened directly:
+    /// no cross-project prompt, whatever the cwd.
+    #[test]
+    fn an_absolute_path_into_another_projects_sessions_opens_without_a_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let other_sessions = dir.path().join("other-project-sessions");
+        std::fs::create_dir_all(&other_sessions).unwrap();
+        let file = other_sessions.join("2026-01-01_other.jsonl");
+        std::fs::write(
+            &file,
+            r#"{"type":"session","version":3,"id":"other-0000","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/other"}
+"#,
+        )
+        .unwrap();
+        let path = file.to_str().unwrap();
+        assert_eq!(
+            resolve_session_path(path, "/elsewhere", None),
+            ResolvedSession::Path(file.clone())
+        );
+        let args = parse(&["--session", path]);
+        let env = Env {
+            stdin_is_tty: false,
+            color: false,
+        };
+        let manager = create_session_manager(&args, "/elsewhere", None, env, None);
+        assert_eq!(manager.session_file(), Some(file.as_path()));
+    }
+
     #[test]
     fn a_path_like_argument_is_used_as_given() {
         for arg in ["dir/s.jsonl", "a\\b", "s.jsonl"] {

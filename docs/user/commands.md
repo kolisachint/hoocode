@@ -39,6 +39,7 @@ and does not open the picker.
 | `--provider <name>` | Pick a provider |
 | `-c`, `--continue` | Continue the last session |
 | `-r`, `--resume` | Choose a session to resume |
+| `--session <path or id>` | Open that session. One process writes a session at a time: a session another process has open is refused with its process id |
 | `--no-session` | Don't save this run |
 | `-t`, `--tools <list>` | Only these tools, e.g. `Read,CodeSearch` for a read-only run |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high` or `xhigh` |

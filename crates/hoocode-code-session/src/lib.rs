@@ -7,10 +7,12 @@
 pub mod context;
 pub mod entry;
 pub mod identity;
+pub mod lock;
 pub mod manager;
 
 pub use context::{build_session_context, ModelRef, SessionContext};
 pub use entry::{CustomMessageContent, FileEntry, Header, CURRENT_SESSION_VERSION};
+pub use lock::{lock_holder, lock_path_for, session_in_use_message, SessionLock, SessionLockError};
 pub use manager::{
     append_custom_entry_to_file, build_session_info, create_session_id, default_session_dir,
     default_sessions_root, encode_cwd, find_most_recent_session, flush_session_writes, generate_id,

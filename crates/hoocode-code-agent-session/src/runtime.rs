@@ -8,7 +8,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use hoocode_agent_types::AgentMessage;
-use hoocode_code_session::{default_session_dir, FileEntry, NewSessionOptions, SessionManager};
+use hoocode_code_session::{
+    default_session_dir, session_in_use_message, FileEntry, NewSessionOptions, SessionManager,
+};
 
 use crate::hooks::{
     ForkPosition, SessionEvent, SessionShutdownReason, SessionStartEvent, SessionStartReason,
@@ -92,6 +94,9 @@ pub enum RuntimeError {
     ImportFileNotFound(PathBuf),
     /// `MissingSessionCwdError`.
     MissingSessionCwd(SessionCwdIssue),
+    /// The target session file is owned by another running process (SA-12).
+    /// The current session is kept.
+    SessionInUse(String),
     /// Any other failure (the TS `Error(message)`).
     Other(String),
 }
@@ -106,6 +111,7 @@ impl std::fmt::Display for RuntimeError {
             RuntimeError::MissingSessionCwd(issue) => {
                 f.write_str(&format_missing_session_cwd_error(issue))
             }
+            RuntimeError::SessionInUse(message) => f.write_str(message),
             RuntimeError::Other(message) => f.write_str(message),
         }
     }
@@ -339,6 +345,12 @@ impl AgentSessionRuntime {
         }
         let previous = path_string(self.session.session_file());
         let manager = SessionManager::open(session_path, None, cwd_override);
+        if let Some(pid) = manager.lock_held_by() {
+            return Err(RuntimeError::SessionInUse(session_in_use_message(
+                pid,
+                session_path,
+            )));
+        }
         assert_session_cwd_exists(&manager, self.cwd())?;
         let target_file = path_string(manager.session_file().map(Path::to_path_buf));
         self.teardown_current(SessionShutdownReason::Resume, target_file)

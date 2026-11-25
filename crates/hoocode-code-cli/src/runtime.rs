@@ -759,8 +759,27 @@ fn build_session(args: &Args, interactive: bool) -> (AgentSession, Diagnostics) 
 
 /// The session manager a run starts on (`--session`, `--continue`, ...). A
 /// session whose cwd is gone falls back to the startup cwd after asking
-/// (interactive) or exits (otherwise).
+/// (interactive) or exits (otherwise). A session another process is writing
+/// is refused (SA-12). `HOOCODE_DETACHED` turns on per-entry flush.
 fn initial_session_manager(args: &Args, interactive: bool) -> SessionManager {
+    let mut session_manager = open_initial_session_manager(args, interactive);
+    if std::env::var_os("HOOCODE_DETACHED").is_some() {
+        session_manager.set_flush_each_entry(true);
+    }
+    if let Some(pid) = session_manager.lock_held_by() {
+        let path = session_manager
+            .session_file()
+            .unwrap_or(std::path::Path::new(""));
+        let message = hoocode_code_session::session_in_use_message(pid, path);
+        // SA-12 follow view: interactive mode will open this session read-only
+        // (following the other process) instead of exiting.
+        eprintln!("{}", crate::red(crate::Env::detect().color, &message));
+        std::process::exit(1);
+    }
+    session_manager
+}
+
+fn open_initial_session_manager(args: &Args, interactive: bool) -> SessionManager {
     let settings = crate::load_settings();
     let startup_cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let env = crate::Env::detect();
@@ -1573,10 +1592,14 @@ fn run_print_body(
     }
 
     // RT-39: one bounded naming pass; dispose below flushes what it wrote.
-    let _ = async_runtime().block_on(tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        session.auto_name_now(),
-    ));
+    // The timer must be made inside the runtime, so build it in the block.
+    async_runtime().block_on(async {
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            session.auto_name_now(),
+        )
+        .await;
+    });
     // A spawned subagent writes the audit file the parent pool verifies.
     let mut exit_code = 0;
     if let Some(task_id) = &task_id {

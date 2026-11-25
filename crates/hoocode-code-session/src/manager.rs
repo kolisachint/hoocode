@@ -6,6 +6,7 @@
 
 use crate::context::{build_session_context, SessionContext};
 use crate::entry::{CustomMessageContent, FileEntry, Header, CURRENT_SESSION_VERSION};
+use crate::lock::{SessionLock, SessionLockError};
 use chrono::{TimeZone, Utc};
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{Content, Message, UserMessage};
@@ -13,6 +14,7 @@ use hoocode_runtime::{session_io, FlushError, FlushTicket};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Longest a read or a shutdown waits for queued session writes to reach the
@@ -179,6 +181,16 @@ pub struct SessionManager {
     cwd: String,
     persist: bool,
     flushed: bool,
+    /// The lock on `session_file` while this manager owns it (SA-12).
+    lock: Option<Arc<SessionLock>>,
+    /// The pid of the process holding `session_file`, when another one does
+    /// (0 when its lock file does not say). Set only when the lock is held.
+    lock_held_by: Option<u32>,
+    /// Another manager owns the file, or the lock could not be taken: this
+    /// manager never writes to the file.
+    read_only: bool,
+    /// Write every entry as it is queued, and wait for it to reach the OS.
+    flush_each_entry: bool,
     entries: Vec<FileEntry>,
     by_id: HashMap<String, FileEntry>,
     labels_by_id: HashMap<String, String>,
@@ -207,6 +219,10 @@ impl SessionManager {
             cwd,
             persist,
             flushed: false,
+            lock: None,
+            lock_held_by: None,
+            read_only: false,
+            flush_each_entry: false,
             entries: Vec::new(),
             by_id: HashMap::new(),
             labels_by_id: HashMap::new(),
@@ -339,6 +355,7 @@ impl SessionManager {
     pub fn set_session_file(&mut self, session_file: impl Into<PathBuf>) {
         let session_file = session_file.into();
         self.session_file = Some(session_file.clone());
+        self.claim_session_file();
         if session_file.exists() {
             let LoadedSession {
                 entries: loaded,
@@ -346,7 +363,7 @@ impl SessionManager {
             } = load_session_file(&session_file);
             if loaded.is_empty() {
                 let explicit = self.session_file.clone();
-                self.new_session(NewSessionOptions::default());
+                self.start_new_session(NewSessionOptions::default());
                 self.session_file = explicit;
                 let _ = self.rewrite_file();
                 self.flushed = true;
@@ -358,7 +375,7 @@ impl SessionManager {
                 self.header = header;
             } else {
                 let explicit = self.session_file.clone();
-                self.new_session(NewSessionOptions::default());
+                self.start_new_session(NewSessionOptions::default());
                 self.session_file = explicit;
                 let _ = self.rewrite_file();
                 self.flushed = true;
@@ -370,7 +387,7 @@ impl SessionManager {
             self.flushed = true;
         } else {
             let explicit = self.session_file.clone();
-            self.new_session(NewSessionOptions::default());
+            self.start_new_session(NewSessionOptions::default());
             self.session_file = explicit;
         }
     }
@@ -386,6 +403,14 @@ impl SessionManager {
 
     /// Start a new empty session.
     pub fn new_session(&mut self, options: NewSessionOptions) -> Option<PathBuf> {
+        let file = self.start_new_session(options);
+        self.claim_session_file();
+        file
+    }
+
+    /// Resets to an empty session without taking the file lock; callers that
+    /// set the file take it themselves.
+    fn start_new_session(&mut self, options: NewSessionOptions) -> Option<PathBuf> {
         self.header = Header {
             branch: hoocode_code_paths::git_branch::read_git_branch(std::path::Path::new(
                 &self.cwd,
@@ -449,8 +474,51 @@ impl SessionManager {
         }
     }
 
-    fn rewrite_file(&self) -> Result<(), SessionError> {
+    /// Takes the lock on the current session file, dropping the lock on the
+    /// previous one. A file another process holds makes this manager read-only.
+    fn claim_session_file(&mut self) {
+        self.lock = None;
+        self.lock_held_by = None;
+        self.read_only = false;
         if !self.persist {
+            return;
+        }
+        let Some(path) = self.session_file.clone() else {
+            return;
+        };
+        match SessionLock::acquire(&path) {
+            Ok(lock) => self.lock = Some(Arc::new(lock)),
+            Err(SessionLockError::Held { pid }) => {
+                self.lock_held_by = Some(pid.unwrap_or(0));
+                self.read_only = true;
+            }
+            // Without the lock another writer cannot be ruled out: stay read-only.
+            Err(SessionLockError::Io(_)) => self.read_only = true,
+        }
+    }
+
+    /// Gives up the file lock, so another manager or process can take it. The
+    /// manager is read-only afterwards: it must not write under a lock it no
+    /// longer holds. Call it once the session is closed.
+    pub fn release_session_file(&mut self) {
+        self.lock = None;
+        self.read_only = self.session_file.is_some() && self.persist;
+    }
+
+    /// The pid of the process that owns this session file, when this manager
+    /// did not get the lock (0 when the lock file does not name it).
+    pub fn lock_held_by(&self) -> Option<u32> {
+        self.lock_held_by
+    }
+
+    /// Per-entry flush (detached runs, SA-12): write from the first entry on,
+    /// and wait for each entry to reach the OS before returning from the append.
+    pub fn set_flush_each_entry(&mut self, on: bool) {
+        self.flush_each_entry = on;
+    }
+
+    fn rewrite_file(&self) -> Result<(), SessionError> {
+        if !self.persist || self.read_only {
             return Ok(());
         }
         if let Some(path) = &self.session_file {
@@ -479,7 +547,7 @@ impl SessionManager {
     }
 
     fn persist(&mut self, entry: &FileEntry) -> Result<(), SessionError> {
-        if !self.persist {
+        if !self.persist || self.read_only {
             return Ok(());
         }
         let Some(path) = self.session_file.clone() else {
@@ -494,7 +562,7 @@ impl SessionManager {
             }
         });
 
-        if !has_assistant {
+        if !has_assistant && !self.flush_each_entry {
             self.flushed = false;
             return Ok(());
         }
@@ -518,6 +586,9 @@ impl SessionManager {
         }
         self.entries.push(entry.clone());
         let _ = self.persist(&entry);
+        if self.flush_each_entry {
+            let _ = self.flush(SESSION_FLUSH_DEADLINE);
+        }
     }
 
     fn id_set(&self) -> std::collections::HashSet<String> {
@@ -1047,6 +1118,7 @@ impl SessionManager {
             None
         };
         self.build_index();
+        self.claim_session_file();
 
         if self.persist {
             let has_assistant = self.entries.iter().any(|e| {
