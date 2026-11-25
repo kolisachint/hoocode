@@ -1582,16 +1582,47 @@ fn run_print_body(
         })
     });
     drop(tx);
+    // SA-12: a root detached run enforces its own limits (no parent reaps it). It is not
+    // a subagent child, which may inherit `HOOCODE_DETACHED`.
+    let detached_limits = task_id.is_none() && crate::detached::is_detached_run();
     let reached_max_turns = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Set when the turn cap actually stops the run (its abort is applied), not merely reached.
+    let stopped_at_cap = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _turn_limit = args
         .max_turns
-        .filter(|cap| is_subagent && *cap > 0)
-        .map(|cap| turn_limit(&session, cap, reached_max_turns.clone()));
+        .filter(|cap| (is_subagent || detached_limits) && *cap > 0)
+        .map(|cap| {
+            turn_limit(
+                &session,
+                cap,
+                reached_max_turns.clone(),
+                stopped_at_cap.clone(),
+            )
+        });
     let reached_deadline = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _deadline = args
         .deadline_ms
-        .filter(|ms| is_subagent && *ms > 0)
+        .filter(|ms| (is_subagent || detached_limits) && *ms > 0)
         .map(|ms| deadline_wrap_up(&session, ms, reached_deadline.clone()));
+    // Set when the deadline stops a detached run mid-run.
+    let deadline_stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let _deadline_stop = args
+        .deadline_ms
+        .filter(|ms| detached_limits && *ms > 0)
+        .map(|ms| deadline_stop(&session, ms, deadline_stopped.clone()));
+    // The limit that stopped a detached run, with its exit reason; `None` otherwise.
+    let detached_limit = || -> Option<String> {
+        if !detached_limits {
+            return None;
+        }
+        let turn_cap = args
+            .max_turns
+            .filter(|_| stopped_at_cap.load(std::sync::atomic::Ordering::SeqCst));
+        let deadline = args
+            .deadline_ms
+            .filter(|_| deadline_stopped.load(std::sync::atomic::Ordering::SeqCst));
+        crate::detached::limit_stop_reason(turn_cap, deadline)
+    };
     // The lifeguard signals before it kills: SIGUSR1 for a stall, SIGTERM at the
     // deadline. Both paths write the result file through `result_written`, so
     // exactly one of them wins.
@@ -1642,7 +1673,9 @@ fn run_print_body(
         if let Err(e) = result {
             writeln!(err, "{e}")?;
             if task_id.is_none() {
-                record_detached_exit(&session, Some(&e.to_string()));
+                let message = e.to_string();
+                let limit = detached_limit();
+                record_detached_exit(&session, Some(limit.as_deref().unwrap_or(&message)));
             }
             session.dispose();
             shutdown_native_blocking();
@@ -1700,13 +1733,17 @@ fn run_print_body(
             exit_code = 1;
         }
     }
+    let limit = detached_limit();
     if task_id.is_none() {
-        record_detached_exit(&session, None);
+        record_detached_exit(&session, limit.as_deref());
     }
     if let Some(heartbeat) = heartbeat {
         heartbeat.abort();
     }
     if let Some(deadline) = _deadline {
+        deadline.abort();
+    }
+    if let Some(deadline) = _deadline_stop {
         deadline.abort();
     }
     drop(_turn_limit);
@@ -1724,10 +1761,11 @@ fn run_print_body(
             if let Some(message) = result.stderr {
                 writeln!(err, "{message}")?;
             }
-            Ok(result.exit_code)
+            // A detached run stopped by its own limit failed, whatever its last message said.
+            Ok(if limit.is_some() { 1 } else { result.exit_code })
         }
         // json mode never inspects the final message.
-        PrintMode::Json => Ok(exit_code),
+        PrintMode::Json => Ok(if limit.is_some() { 1 } else { exit_code }),
     }
 }
 
@@ -2228,6 +2266,24 @@ fn deadline_wrap_up(
     })
 }
 
+/// The deadline of a detached run, which has no parent to kill it: at the deadline a run
+/// still streaming is aborted, and `stopped` is set. A run that ended before the deadline
+/// is left alone. The wrap-up steer comes from [`deadline_wrap_up`].
+fn deadline_stop(
+    session: &AgentSession,
+    deadline_ms: u64,
+    stopped: Arc<std::sync::atomic::AtomicBool>,
+) -> tokio::task::JoinHandle<()> {
+    let target = session.clone();
+    async_runtime().spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(deadline_ms)).await;
+        if target.is_streaming() {
+            stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+            target.abort().await;
+        }
+    })
+}
+
 /// A spawned subagent's turn cap: near it (90%) the agent is asked to wrap
 /// up; at it the run is aborted.
 ///
@@ -2243,6 +2299,7 @@ fn turn_limit(
     session: &AgentSession,
     cap: u64,
     reached: Arc<std::sync::atomic::AtomicBool>,
+    stopped: Arc<std::sync::atomic::AtomicBool>,
 ) -> hoocode_code_agent_session::SessionSubscription {
     use hoocode_agent_types::AgentEvent;
     use hoocode_code_agent_session::AgentSessionEvent;
@@ -2270,6 +2327,7 @@ fn turn_limit(
                             let _ = target.steer(&text, &[]);
                         }
                         Deferred::Abort => {
+                            stopped.store(true, Ordering::SeqCst);
                             let session = target.clone();
                             async_runtime().spawn(async move { session.abort().await });
                         }

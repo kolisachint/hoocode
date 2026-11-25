@@ -341,6 +341,22 @@ pub fn detached_exit_data(run_error: Option<&str>, messages: &[AgentMessage]) ->
     json!({"status": "done", "reason": null})
 }
 
+/// Why a detached run's own limit stopped it, or `None` when no limit did. `turn_cap` is the
+/// cap when the turn cap stopped the run; `deadline_ms` is the deadline when the deadline
+/// did. The turn cap is named when both are given. The deadline is named in whole minutes.
+pub fn limit_stop_reason(turn_cap: Option<u64>, deadline_ms: Option<u64>) -> Option<String> {
+    if let Some(cap) = turn_cap {
+        return Some(format!("turn cap of {cap} reached"));
+    }
+    deadline_ms.map(|ms| {
+        if ms >= 60_000 {
+            format!("deadline of {} min reached", ms / 60_000)
+        } else {
+            format!("deadline of {ms} ms reached")
+        }
+    })
+}
+
 /// The `SessionSpawn` tool definition. `execute` makes the child and returns the
 /// command that opens it.
 pub fn create_session_spawn_tool_definition() -> ToolDefinition {
@@ -761,6 +777,39 @@ mod tests {
         assert_eq!(
             detached_exit_data(Some("boom"), &[]),
             json!({"status": "failed", "reason": "boom"})
+        );
+    }
+
+    #[test]
+    fn limit_reason_is_none_when_no_limit_stopped_the_run() {
+        assert_eq!(limit_stop_reason(None, None), None);
+    }
+
+    #[test]
+    fn limit_reason_names_the_turn_cap() {
+        assert_eq!(
+            limit_stop_reason(Some(2), None).as_deref(),
+            Some("turn cap of 2 reached")
+        );
+    }
+
+    #[test]
+    fn limit_reason_names_the_deadline_in_whole_minutes() {
+        assert_eq!(
+            limit_stop_reason(None, Some(14_400_000)).as_deref(),
+            Some("deadline of 240 min reached")
+        );
+        assert_eq!(
+            limit_stop_reason(None, Some(1_500)).as_deref(),
+            Some("deadline of 1500 ms reached")
+        );
+    }
+
+    #[test]
+    fn limit_reason_names_the_turn_cap_when_both_stopped_the_run() {
+        assert_eq!(
+            limit_stop_reason(Some(200), Some(14_400_000)).as_deref(),
+            Some("turn cap of 200 reached")
         );
     }
 

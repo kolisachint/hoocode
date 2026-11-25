@@ -18,6 +18,15 @@ fn run_detached(
     script: Vec<serde_json::Value>,
     config: Option<serde_json::Value>,
 ) -> (Option<i32>, PathBuf, PathBuf, tempfile::TempDir) {
+    run_detached_with(script, config, &[])
+}
+
+/// [`run_detached`] with extra command-line arguments (the limits, in the SA-12 tests).
+fn run_detached_with(
+    script: Vec<serde_json::Value>,
+    config: Option<serde_json::Value>,
+    extra: &[&str],
+) -> (Option<i32>, PathBuf, PathBuf, tempfile::TempDir) {
     let root = tempfile::Builder::new()
         .prefix("detached-park-")
         .tempdir()
@@ -51,6 +60,7 @@ fn run_detached(
             "--session",
         ])
         .arg(&session)
+        .args(extra)
         .current_dir(&work)
         .env_clear()
         .env("HOME", &home)
@@ -98,6 +108,38 @@ fn detached_run_parks_on_a_gated_call_without_running_it() {
     assert!(text.contains("\"toolCallId\""), "{text}");
     assert!(text.contains("\"parked\""), "{text}");
     assert_eq!(detached_status(&session), DetachedStatus::Parked);
+}
+
+/// A detached run that stops at its turn cap fails with the cap as its reason, exit 1.
+#[test]
+fn detached_run_stops_at_its_turn_cap_and_fails() {
+    // Read is auto-allowed, so every turn runs; the script never ends the run by itself.
+    let script: Vec<_> = (0..10)
+        .map(|_| serde_json::json!({"tool_calls": [{"name": "Read", "arguments": {"file_path": "missing.txt"}}]}))
+        .collect();
+    let (code, _work, session, _root) = run_detached_with(script, None, &["--max-turns", "2"]);
+    assert_eq!(code, Some(1));
+    assert_eq!(
+        detached_status(&session),
+        DetachedStatus::Failed {
+            reason: "turn cap of 2 reached".into()
+        }
+    );
+}
+
+/// A detached run that is still streaming at its deadline is stopped and fails with the
+/// deadline as its reason, exit 1. The reply is delayed past the deadline.
+#[test]
+fn detached_run_stops_at_its_deadline_and_fails() {
+    let script = vec![serde_json::json!({"text": "late", "delay_s": 3})];
+    let (code, _work, session, _root) = run_detached_with(script, None, &["--deadline-ms", "1500"]);
+    assert_eq!(code, Some(1));
+    assert_eq!(
+        detached_status(&session),
+        DetachedStatus::Failed {
+            reason: "deadline of 1500 ms reached".into()
+        }
+    );
 }
 
 #[test]
